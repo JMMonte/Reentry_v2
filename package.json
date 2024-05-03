@@ -4,12 +4,24 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "parcel src/index.html",
+    "postbuild": "cp -R ./path/to/assets/* dist/",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "three": "^0.164.1"
+    "cannon": "^0.6.2",
+    "cannon-es": "^0.20.0",
+    "dat.gui": "^0.7.9",
+    "three": "^0.164.1",
+    "three-text2d": "^0.6.0"
+  },
+  "devDependencies": {
+    "@parcel/transformer-glsl": "^2.12.0",
+    "buffer": "^6.0.3",
+    "parcel": "^2.12.0",
+    "serve": "^14.2.3"
   }
 }
