@@ -5,7 +5,7 @@ export class Vectors {
         this.earth = earth;
         this.sun = sun;
         this.scene = scene;
-        this.scale = this.earth.earthRadius * 2;  // Scaled for visibility
+        this.scale = this.earth.EARTH_RADIUS * 2;  // Scaled for visibility
         this.initVectors();
     }
 
@@ -77,8 +77,7 @@ export class Vectors {
         // Assume 'sun' is an instance of the Sun class associated with the Earth class.
         const sunPosition = this.sun.getSunPosition(new Date(simulatedTime));  // Get the Sun's position for the given simulated time
         const earthPosition = new THREE.Vector3();
-        this.earth.earthMesh.getWorldPosition(earthPosition);  // Get Earth's world position
-    
+
         // Compute the direction from Earth to the Sun
         const sunDirection = new THREE.Vector3().subVectors(sunPosition, earthPosition).normalize();
         this.sunDirectionArrow.setDirection(sunDirection);
@@ -100,12 +99,6 @@ export class Vectors {
         const newDirection = this.calculateEarthVelocity(simulatedTime).normalize();
         this.velocityVector.setDirection(newDirection);
         this.velocityVector.position.copy(this.earth.earthMesh.position);
-    }
-
-    updateVernalEquinoxVector(simulatedTime) {
-        const newDirection = this.calculateVernalEquinoxDirection(simulatedTime).normalize();
-        this.vernalEquinoxVector.setDirection(newDirection);
-        this.vernalEquinoxVector.position.copy(this.earth.earthMesh.position);
     }
 
     // Mathematical calculations for vectors

@@ -2,9 +2,19 @@ import * as THREE from 'three';
 import geojsonData from './ne_50m_admin_0_sovereignty.json';  // Ensure this path is correct
 
 // Materials for lines with different levels of visibility
-const materialMajor = new THREE.LineBasicMaterial({ color: 0x00A5FF, transparent: true, opacity: 0.6 });
-const materialMinor = new THREE.LineBasicMaterial({ color: 0x00A5FF, transparent: true, opacity: 0.3 });
-const heightOffset = 20; // 10km
+const materialMajor = new THREE.LineBasicMaterial({
+    color: 0x00A5FF, transparent: true, opacity: 0.6,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 200
+});
+const materialMinor = new THREE.LineBasicMaterial({
+    color: 0x00A5FF, transparent: true, opacity: 0.3,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 200
+});
+const heightOffset = 2; // 10km
 
 // Function to add latitude lines to the scene
 function addLatitudeLines(scene, earthRadius) {

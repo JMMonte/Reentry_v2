@@ -1,15 +1,22 @@
 import * as THREE from 'three';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 
 export class Sun {
     constructor(scene) {
-        const geometry = new THREE.SphereGeometry(695700, 32, 32);  // Sun's radius approximately to scale but reduced for performance
-        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const geometry = new THREE.SphereGeometry(69570, 32, 32); // Sun's radius approximately to scale but reduced for performance
+        const material = new THREE.MeshPhongMaterial({
+            color: 0xFFFFFF,  // Sun's color
+            emissive: 0xFFFFFF,  // Glowing color
+            emissiveIntensity: 5,
+            shininess: 100
+        });
         this.sun = new THREE.Mesh(geometry, material);
         scene.add(this.sun);
 
-        this.sunLight = new THREE.PointLight(0xffffff, 400000000.0, 0);
+        this.sunLight = new THREE.PointLight(0xffffff, 70000000.0, 0);
         this.sunLight.decay = 1;
         this.sunLight.position.copy(this.sun.position);
+        this.sunLight.castShadow = true;
         scene.add(this.sunLight);
     }
 
@@ -33,7 +40,7 @@ export class Sun {
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;  // degrees
 
         // Convert to Cartesian coordinates
-        const distance = 1.496e+8; // 1 AU in km
+        const distance = 1.496e+7; // 1 AU in 10 km
         const x = -distance * Math.cos(trueLongitude * Math.PI / 180);
         const z = distance * Math.sin(trueLongitude * Math.PI / 180);
         return new THREE.Vector3(x, 0, z);
