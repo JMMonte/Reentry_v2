@@ -13,7 +13,9 @@ const earthRadius = Constants.earthRadius;
 
 export class Earth {
     
-    constructor(scene, world, renderer) {
+    constructor(scene, world, renderer, timeManager) {
+        this.timeManager = timeManager;
+
         this.EARTH_RADIUS = earthRadius; // Radius in kilometers
         this.ATMOSPHERE_RADIUS = earthRadius; // Slightly larger than Earth's radius to prevent z-fighting
         this.SIDEREAL_DAY_IN_SECONDS = 86164;
@@ -75,12 +77,12 @@ export class Earth {
     initializeMeshes() {
         const oblateness = 0.0033528; // Earth's oblateness factor
         const scaledRadius = this.EARTH_RADIUS * (1 - oblateness);
-        this.earthGeometry = new THREE.SphereGeometry(scaledRadius, 256, 256);
+        this.earthGeometry = new THREE.SphereGeometry(scaledRadius, 128, 128);
         this.earthMesh = new THREE.Mesh(this.earthGeometry, this.earthMaterial);
         this.rotationGroup.add(this.earthMesh);
         this.earthMesh.rotateY(1.5 * Math.PI);
         
-        const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS + 5, 256, 256); // slightly larger radius
+        const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS + 5, 128, 128); // slightly larger radius
         this.atmosphereMesh = new THREE.Mesh(atmosphereGeometry, this.atmosphereMaterial);
         this.rotationGroup.add(this.atmosphereMesh);
 
@@ -101,25 +103,9 @@ export class Earth {
         this.earthBody = earthBody;
     }
 
-    updateRotation(simulatedTime) {
-        const startOfYear = new Date(simulatedTime.getFullYear(), 0, 0);
-        const diff = simulatedTime - startOfYear;
-        const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const fractionOfDay = (simulatedTime - new Date(simulatedTime.getFullYear(), simulatedTime.getMonth(), simulatedTime.getDate())) / (this.SIDEREAL_DAY_IN_SECONDS * 1000);
-        this.rotationGroup.rotation.y = 2 * Math.PI * (fractionOfDay + (dayOfYear / this.DAYS_IN_YEAR));
-    }
-
-    updateCameraPosition(camera) {
-        const cameraPosition = new THREE.Vector3();
-        camera.getWorldPosition(cameraPosition); // Ensure camera position is updated to the world space position
-    
-        this.atmosphereMaterial.forEach(material => {
-            if (material.uniforms.uCameraPosition) {
-                material.uniforms.uCameraPosition.value.copy(cameraPosition);
-            } else {
-                console.error('Camera position uniform is missing in atmosphere material.');
-            }
-        });
+    updateRotation() {
+        const totalRotation = 2 * Math.PI * (this.timeManager.fractionOfDay + (this.timeManager.dayOfYear / 365.25));
+        this.rotationGroup.rotation.y = totalRotation;
     }
 
     updateLightDirection(newDirection) {

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import Stats from 'stats.js';
 import { GUI } from 'dat.gui';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -11,10 +12,21 @@ import { Satellite } from './Satellite.js';
 import { Vectors } from './Vectors.js';
 import { Constants } from './constants.js';
 import CannonDebugger from 'cannon-es-debugger';
+import { TimeUtils } from './TimeUtils.js';
 
-const satellites = []; // Array to store satellite instances
+// GUI and Time settings
+const settings = {
+    timeWarp: 1,
+    simulatedTime: new Date().toISOString(),
+    showGrid: true,
+    showVectors: true,
+    altitude: 50,
+};
 
-// Scene setup
+// Time management
+const timeUtils = new TimeUtils(settings);
+
+// Scene and Renderer Setup
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 1, 200000000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -22,170 +34,161 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.gammaFactor = 2.2;
 renderer.gammaOutput = true;
 renderer.physicallyCorrectLights = true;
+renderer.autoClear = false;
 document.body.appendChild(renderer.domElement);
 
-// Controls
+// Camera and Controls
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.minDistance = Constants.earthRadius;
 controls.maxDistance = 10000000;
+camera.position.set(1000, 1000, 6000);
+camera.lookAt(0, 0, 0);
 
 // Lighting
 scene.add(new THREE.AmbientLight(0x404040));
 
-// GUI for control
-const gui = new GUI();
-const settings = { timeWarp: 1, simulatedTime: new Date().toISOString(), showGrid: true };
-gui.add(settings, 'timeWarp', 1, 100000).name('Time Warp');
-gui.add(settings, 'simulatedTime').name('Simulated Time').listen();
-gui.add(settings, 'showGrid').name('Show Grid').onChange(value => {
-    gridHelper.visible = value;
-});
-const gridHelper = new THREE.PolarGridHelper(6000, 20, 40, 64);
-gridHelper.material.transparent = true;
-gridHelper.material.opacity = 0.2;
-scene.add(gridHelper);
-
-// Physics world setup
+// Physics World Setup
 const world = new CANNON.World();
 world.gravity.set(0, 0, 0);
 world.broadphase = new CANNON.NaiveBroadphase();
 world.solver.iterations = 1;
 
-
-// Initialize the debugger
-const cannonDebugger = new CannonDebugger(scene, world, {
-    color: 0xff0000, // Color of the wireframes
-    scale: 1.0, // Scale of the wireframes
-});
-
-// Save the original update function
-cannonDebugger.originalUpdate = cannonDebugger.update;
-
-// Redefine the update method to include an enabled check
-cannonDebugger.update = function() {
-    if (this.enabled) {
-        this.originalUpdate(); // Call the original update method only if enabled
-    } else {
-        this.clear(); // Clear the scene if not enabled
-    }
-};
-
-// GUI control for Cannon Debugger visibility
+// Cannon Debugger
+const cannonDebugger = new CannonDebugger(scene, world);
 const debugSettings = {
-    showDebugger: false // Initially disabled
+    showDebugger: false
 };
+// Main Components
+const earth = new Earth(scene, world, renderer, timeUtils);
+const sun = new Sun(scene, timeUtils);
+const vectors = new Vectors(earth, scene, timeUtils);  // Updated to use TimeUtils
 
-gui.add(debugSettings, 'showDebugger').name('Show Physics Debug').onChange(value => {
-    cannonDebugger.enabled = value; // Toggle the enabled state of the debugger
-});
+// Satellite Management
+const satellites = [];
 
-// Instantiate Earth, Sun, and Satellite
-const earth = new Earth(scene, world, renderer);
-const sun = new Sun(scene, earth);
-const vectors = new Vectors(earth, scene, sun);
-sun.sun.layers.enable(1); // Add the sun to bloom layer
-sun.sunLight.layers.enable(1); // Add the sun light to bloom layer
+function createSatellite(altitude) {
+    const radius = Constants.earthRadius + altitude;
+    const speed = -Math.sqrt(Constants.G * Constants.earthMass / radius) * settings.timeWarp;
+    const position = new CANNON.Vec3(radius, 0, 0);
+    const velocity = new CANNON.Vec3(0, 0, speed / (100/3));
+    
+    const newSatellite = new Satellite(scene, world, earth, position, velocity);
+    satellites.push(newSatellite);
+    updateSatelliteDisplay(newSatellite);
+}
 
-// camera position (in relation to earth's dimensions)
-camera.position.set(Constants.earthRadius, 1 * Constants.earthRadius, 5 * Constants.earthRadius);
-camera.lookAt(earth.earthMesh.position);
+function updateSatelliteVelocities() {
+    satellites.forEach(satellite => {
+        const radius = satellite.body.position.length();
+        const speed = -Math.sqrt(Constants.G * Constants.earthMass / radius) * settings.timeWarp;
+        satellite.body.velocity.set(0, 0, speed / (100/3));
+    });
+}
 
 function updateSatelliteDisplay(newSatellite) {
-    const satelliteFolder = gui.addFolder(`Satellite ${satellites.length + 1}`);
-    satelliteFolder.addColor(newSatellite, 'color').name('Color').onChange(value => {
+    if (!newSatellite || !newSatellite.mesh || !newSatellite.mesh.material) {
+        console.error('Invalid or incomplete satellite object:', newSatellite);
+        return;
+    }
+    const satelliteFolder = gui.addFolder(`Satellite ${satellites.length}`);
+    satelliteFolder.addColor(newSatellite.mesh.material, 'color').name('Color').onChange(value => {
         newSatellite.mesh.material.color.set(value);
     });
-    satelliteFolder.add(newSatellite, 'size').min(0.1).max(10).step(0.1).name('Size').onChange(value => {
+    satelliteFolder.add(newSatellite.mesh.scale, 'x', 0.1, 10, 0.1).name('Size').onChange(value => {
         newSatellite.mesh.scale.set(value, value, value);
     });
 
-    // Accessing position and velocity from the mesh and body, respectively
-    const altitude = (newSatellite.mesh.position.length() - Constants.earthRadius) * 10 ;
-    console.log(altitude);
-    satelliteFolder.add({altitude: altitude.toFixed(2)}, 'altitude').name('Altitude (km)').listen();
-
-    const velocityMagnitude = newSatellite.body.velocity.length() * (3/100); // Adjust for units
-    satelliteFolder.add({velocity: velocityMagnitude.toFixed(2)}, 'velocity').name('Velocity (km/s)').listen();
-
-    satelliteFolder.open();
+    // Compute altitude only if position is defined and valid
+    if (newSatellite.mesh.position && !isNaN(newSatellite.mesh.position.length())) {
+        const altitude = (newSatellite.mesh.position.length() - Constants.earthRadius) / 1000;
+        satelliteFolder.add({altitude}, 'altitude').name('Altitude (km)').listen();
+    }
 }
 
-// Adjusted satellite creation logic
-const satelliteParams = {
-    altitude: 50, // default altitude in km
-    createSatellite: function() {
-        const radius = Constants.earthRadius + (this.altitude); // Convert altitude to meters
-        const speed = -Math.sqrt(Constants.G * Constants.earthMass / radius);
-        const position = new CANNON.Vec3(radius, 0, 0);
-        const velocity = new CANNON.Vec3(0, 0, speed / (100/3)); // Adjust speed for units
-        const newSatellite = new Satellite(scene, world, earth, position, velocity);
-        satellites.push(newSatellite);
-        updateSatelliteDisplay(newSatellite);
-    }
-};
+// GUI Setup
+const gui = new GUI();
+// GUI Setup Function
+function setupGUI() {
+    // Time Warp Settings
+    gui.add(settings, 'timeWarp', { 'Paused': 0, 'Normal (1x)': 1, 'Fast (10)': 10, 'Faster (100)': 100 })
+        .name('Time Warp')
+        .onChange(value => {
+            timeUtils.setTimeWarp(value);
+            world.timeScale = value;
+            updateSatelliteVelocities(); // Ensure satellite velocities are updated
+        });
 
-gui.add(satelliteParams, 'altitude').min(0).max(2000).step(1).name('Satellite Altitude (km)');
-gui.add(satelliteParams, 'createSatellite').name('Launch Satellite');
+    // Simulated Time Display
+    gui.add(settings, 'simulatedTime').name('Simulated Time').listen();
+
+    // Satellite Launch Control
+    gui.add({createSatellite: () => createSatellite(settings.altitude)}, 'createSatellite').name('Launch Satellite');
+
+    // Display Options
+    const displayFolder = gui.addFolder('Display Options');
+    displayFolder.add(settings, 'showGrid').name('Show Grid').onChange(value => gridHelper.visible = value);
+    displayFolder.add(settings, 'showVectors').name('Show Vectors').onChange(value => vectors.setVisible(value));
+
+    // Debug Settings
+    const debugFolder = gui.addFolder('Debugging');
+    debugFolder.add(debugSettings, 'showDebugger').name('Show Physics Debug').onChange(value => cannonDebugger.enabled = value);
+
+    displayFolder.open(); // Open the Display Options by default
+    debugFolder.open(); // Open the Debugging folder by default
+}
+
+// Initialize the GUI
+setupGUI();
 
 
-// Post-processing setup
+const gridHelper = new THREE.PolarGridHelper(6000, 20, 40, 64, 0x404040, 0x404040);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.2;
+scene.add(gridHelper);
+
+// Post-processing
 const renderPass = new RenderPass(scene, camera);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-bloomPass.threshold = 0.9;
-bloomPass.strength = 0.7;
-bloomPass.radius = 1.0;
-
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 1.4, 0.99);
 const bloomComposer = new EffectComposer(renderer);
-bloomComposer.renderToScreen = false;
 bloomComposer.addPass(renderPass);
 bloomComposer.addPass(bloomPass);
-
 const finalComposer = new EffectComposer(renderer);
 finalComposer.addPass(renderPass);
 finalComposer.addPass(bloomComposer);
 
-// Function to handle window resizing
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-window.addEventListener('resize', onWindowResize, false);
-
-// Animation loop
-const fixedTimeStep = 1 / 60;  // Fixed physics time step in seconds
-let lastTime = performance.now() * 0.001;  // Initialize lastTime in seconds
-
+// Animation Loop
 function animate(timestamp) {
-    requestAnimationFrame(animate);
+    stats.begin();
 
-    const now = timestamp * 0.001; // Convert timestamp to seconds
-    let deltaTime = now - lastTime;
-    lastTime = now;
+    const currentTime = Date.now() / 1000; // Current time in seconds for trace update purposes
 
-    // Scale delta time according to the time warp setting
-    deltaTime *= settings.timeWarp;
+    // Update time utils with the high-resolution timestamp
+    timeUtils.update(timestamp);
 
-    // Perform physics integration for the frame
-    world.step(fixedTimeStep, deltaTime, 3);
+    // Cannon.js world step: step size, deltaTime (corrected for time warp), max sub steps
+    world.step(1 / 60, timeUtils.getDeltaTime(), 3);
 
-    // Update satellites and other simulation elements
-    satellites.forEach(satellite => satellite.updateSatellite(new Date(settings.simulatedTime)));
+    // Update each satellite
+    satellites.forEach(satellite => satellite.updateSatellite(timeUtils.getSimulatedTime(), settings.timeWarp));
 
-    // Update Earth and Sun position and rotation based on simulated time
-    earth.updateRotation(new Date(settings.simulatedTime));
-    sun.updatePosition(new Date(settings.simulatedTime));
-    vectors.updateVectors(new Date(settings.simulatedTime));
+    earth.updateRotation();
+    sun.updatePosition(timeUtils.getSimulatedTime());
+    vectors.updateVectors();
+    if (debugSettings.showDebugger) cannonDebugger.update();
 
-    // Conditionally update visual components like debugging tools
-    if (debugSettings.showDebugger) {
-        cannonDebugger.update();
-    }
-
-    // Render the scene
     renderer.clear();
+    renderer.render(scene, camera);
     bloomComposer.render();
     finalComposer.render();
+
+    stats.end();
+
+    requestAnimationFrame(animate);
 }
 
+
 requestAnimationFrame(animate);
+
+// Stats for Monitoring
+const stats = new Stats();
+document.body.appendChild(stats.dom);

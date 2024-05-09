@@ -36,38 +36,42 @@ export class Satellite {
         this.body.linearDamping = 0;
         this.body.angularDamping = 0;
         this.world.addBody(this.body);
+
     }
 
     initTraceLine() {
-        const maxTracePoints = 20; // Example size, adjust as needed
-        this.tracePositions = new Float32Array(maxTracePoints * 3);
-        this.traceColors = new Float32Array(maxTracePoints * 3); // Added for fading effect
+        this.maxTracePoints = 100; // Example size, adjust as needed
+        this.dynamicPositions = [];
+        this.creationTimes = [];
+    
+        const positions = new Float32Array(this.maxTracePoints * 3);
+        const colors = new Float32Array(this.maxTracePoints * 3);
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(this.tracePositions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(this.traceColors, 3)); // Add color attribute
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         const material = new THREE.LineBasicMaterial({
-            color: this.color,
-            vertexColors: THREE.VertexColors, // Enable vertex colors
-            linewidth: 5 // Increase line thickness
+            vertexColors: THREE.VertexColors,
+            linewidth: 2, // Note: linewidth might not be visible on Windows due to ANGLE
+            transparent: true
         });
         this.traceLine = new THREE.Line(geometry, material);
         this.scene.add(this.traceLine);
         this.currentTraceIndex = 0;
-        this.maxTracePoints = maxTracePoints;
     }
+    
 
-    updateSatellite(currentTime) {
-        this.updatePhysics();
+    updateSatellite(currentTime, timeWarp) {
+        this.updatePhysics(timeWarp);
         this.mesh.position.copy(this.body.position); // Update the mesh position from the physics body
     
         // Check if 0.5 seconds have passed since the last trace update
         if (currentTime - this.lastTraceUpdateTime >= this.traceUpdateInterval) {
-            this.updateTraceLine(); // Use the updated mesh position for the trace
+            this.updateTraceLine(currentTime); // Use the updated mesh position for the trace
             this.lastTraceUpdateTime = currentTime; // Reset the last update time
         }
     }
 
-    updatePhysics() {
+    updatePhysics(timeWarp) {
         const earthPosition = new CANNON.Vec3(0, 0, 0);
         let forceDirection = this.body.position.vsub(earthPosition);
         const distance = forceDirection.length();
@@ -78,8 +82,9 @@ export class Satellite {
         }
 
         const gravityStrength = G * this.earth_mass * this.body.mass / (distance * distance);
+
         forceDirection.normalize();
-        const gravityForce = forceDirection.scale(-gravityStrength); // Invert the gravity force
+        const gravityForce = forceDirection.scale(-gravityStrength * timeWarp); // Invert the gravity force and apply time warp
 
         if (isNaN(gravityForce.x) || isNaN(gravityForce.y) || isNaN(gravityForce.z)) {
             console.error('NaN gravitational force calculated:', gravityForce);
@@ -88,42 +93,49 @@ export class Satellite {
         this.body.applyForce(gravityForce, this.body.position);
     }
 
-    updateTraceLine() {
-        const idx = this.currentTraceIndex * 3;
-        this.tracePositions[idx] = this.mesh.position.x;
-        this.tracePositions[idx + 1] = this.mesh.position.y;
-        this.tracePositions[idx + 2] = this.mesh.position.z;
+    updateTraceLine(currentTime) {
+        // Add current position to the dynamic array if not initialized
+        if (!this.dynamicPositions) {
+            this.dynamicPositions = [];
+            this.creationTimes = [];
+        }
     
-        // Calculate color fade based on the buffer position
-        const fadeFactor = this.currentTraceIndex / this.maxTracePoints;
-        const colorValue = 1 - fadeFactor; // Fade to black
+        // Append the current position and time
+        this.dynamicPositions.push(this.mesh.position.clone());
+        this.creationTimes.push(currentTime);
     
-        this.traceColors[idx] = colorValue; // R
-        this.traceColors[idx + 1] = colorValue; // G
-        this.traceColors[idx + 2] = colorValue; // B
+        let positions = [];
+        let colors = [];
+        let activePoints = 0;
     
-        // Update buffer attributes
-        this.traceLine.geometry.attributes.position.needsUpdate = true;
-        this.traceLine.geometry.attributes.color.needsUpdate = true;
+        // Recalculate and update positions and colors
+        for (let i = 0; i < this.dynamicPositions.length; i++) {
+            const age = currentTime - this.creationTimes[i];
+            const halfLife = 10; // Adjust the half-life as necessary
     
-        // Ensure correct rendering when buffer wraps
-        if (this.currentTraceIndex < this.maxTracePoints - 1) {
-            // Buffer not yet full, draw from 0 to current index
-            this.traceLine.geometry.setDrawRange(0, this.currentTraceIndex + 1);
-        } else {
-            // Buffer is full, draw from next index to max points (wraps around)
-            const startIdx = (this.currentTraceIndex + 1) % this.maxTracePoints;
-            if (startIdx > 0) {
-                // If not wrapping to the beginning, draw from startIdx to the end of the buffer
-                this.traceLine.geometry.setDrawRange(startIdx, this.maxTracePoints - startIdx);
-            } else {
-                // StartIdx is 0, meaning we're wrapping around to the beginning
-                this.traceLine.geometry.setDrawRange(0, this.maxTracePoints);
+            if (age <= 2 * halfLife) { // Only keep points within twice the half-life
+                const decayFactor = Math.exp(-Math.log(2) * age / halfLife);
+                const colorValue = decayFactor;
+                const idx = activePoints * 3;
+    
+                positions.push(this.dynamicPositions[i].x, this.dynamicPositions[i].y, this.dynamicPositions[i].z);
+                colors.push(colorValue, colorValue, colorValue); // RGB
+                activePoints++;
             }
         }
     
-        // Increment the index and wrap around if necessary
-        this.currentTraceIndex = (this.currentTraceIndex + 1) % this.maxTracePoints;
+        // Update the Float32Array data
+        const floatPositions = new Float32Array(positions);
+        const floatColors = new Float32Array(colors);
+    
+        // Set the new attribute data
+        this.traceLine.geometry.setAttribute('position', new THREE.BufferAttribute(floatPositions, 3));
+        this.traceLine.geometry.setAttribute('color', new THREE.BufferAttribute(floatColors, 3));
+    
+        // Notify THREE.js to update the attributes
+        this.traceLine.geometry.attributes.position.needsUpdate = true;
+        this.traceLine.geometry.attributes.color.needsUpdate = true;
+        this.traceLine.geometry.setDrawRange(0, activePoints);
     }
     
 }
