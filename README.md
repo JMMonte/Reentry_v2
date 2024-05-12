@@ -1,71 +1,61 @@
-# Earth and Sun Simulation
+# REENTER v2 - Space Simulation Visualizer in Three.js
 
-![Screenshot](src/texture/Screenshot%202024-05-03%20at%2001.51.53.png)
+![Screenshot](src/texture/Screenshot%202024-05-13%20at%2000.28.32.png)
 
-This project is an accurate simulation of the Earth, Sun, and an orbiting satellite using Three.js for rendering and Cannon-es.js for physics. The simulation features realistic ephemerides and orientations, dynamic controls via dat.gui, and sophisticated physics interactions.
+This project utilizes WebGL via the Three.js library and the physics engine Cannon.js to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
 
 ## Features
 
-- **Three.js Rendering**: Utilizes Three.js for WebGL rendering, ensuring high-quality, real-time visualization of the Earth, Sun, and satellites.
-- **Cannon-es Physics**: Implements physics with Cannon-es to simulate orbital dynamics and gravitational interactions.
-- **Real-Time Ephemerides**: Calculates positions and orientations based on real astronomical data to ensure the Sun and Earth are accurately positioned.
-- **Dynamic Time Warping**: Allows manipulation of time progression to observe different scenarios and effects at various speeds.
-- **GUI Controls**: Offers interactive controls for adjusting simulation parameters such as time warp, simulated time, and visual elements like grid display.
+- Realistic 3D rendering of the Earth and Sun with orbit controls.
+- Physics simulation for zero-gravity environments.
+- GUI for real-time interaction and visualization adjustments.
+- Dynamic data visualization of satellite metrics such as altitude, velocity, and acceleration.
+- Customizable time warp features to speed up or slow down the simulation.
 
-## Setup and Build
+## Installation
 
-### Prerequisites
+Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, follow these steps:
 
-Ensure you have Node.js installed on your system to manage the dependencies and run the server. You can download it from [nodejs.org](https://nodejs.org/).
+1. Clone the repository:
 
-### Installation
+   ```bash
+   git clone https://your-repository-url
+   cd your-repository-directory
+   ```
 
-Clone the repository and install the necessary dependencies:
+2. Install the required dependencies:
 
-```bash
-git clone [repository-url]
-cd [repository-directory]
-npm install
-```
+   ```bash
+   npm install
+   ```
 
-### Running the Simulation
+3. Start the development server:
 
-To start the simulation, use the following command:
+   ```bash
+   npm start
+   ```
 
-```bash
-npm start
-```
-
-This command uses Parcel to bundle the application and serve it on `http://localhost:1234` by default. Open your web browser and navigate to this address to view the simulation.
-
-### Building for Production
-
-When you're ready to build the application for production, run:
-
-```bash
-npm run build
-npm run postbuild
-```
-
-This ensures that all your static assets are included in the final distribution.
+This will run the application on `http://localhost:3000`.
 
 ## Usage
 
-- **OrbitControls**: Use the mouse to pan, zoom, and rotate the camera around the scene.
-- **GUI**: Adjust the `Time Warp`, `Simulated Time`, and toggle the `Show Grid` option to control simulation parameters.
-- **Resize Handling**: The simulation automatically adjusts to browser window resizing to maintain aspect ratio and visibility.
+1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out.
+2. **Interacting with GUI**: Adjust simulation parameters like time warp, object visibility, and physics variables through the GUI.
+3. **Viewing Data**: Real-time data for satellites can be viewed and analyzed via the integrated chart system.
 
 ## Contributing
 
-Contributions are welcome. Please feel free to fork the repository, make your changes, and submit a pull request.
+Contributions to enhance or expand the simulation capabilities are welcome. Please follow the standard fork, branch, and pull request workflow.
 
-## License
+## Licensing
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) file for details.
 
-## Acknowledgements
+## Acknowledgments
 
-- **Three.js Community**: For the comprehensive 3D graphics library.
-- **Cannon-es Contributors**: For the robust physics engine tailored for JavaScript.
+- Three.js and Cannon.js communities for continuous support and resources.
+- Contributors and maintainers of the `stats.js`, `cannon-es-debugger`, and other utilized libraries.
 
-Enjoy exploring the dynamic interactions of Earth, the Sun, and satellites through this simulation!
+## Contact
+
+For support or queries, contact [your-email@example.com](mailto:your-email@example.com).

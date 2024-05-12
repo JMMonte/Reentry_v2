@@ -1,15 +1,17 @@
 import * as THREE from 'three';
+import { Constants } from './Constants.js';
 
 export class Sun {
     constructor(scene, timeUtils) {
         this.scene = scene;
         this.timeUtils = timeUtils;  // Inject TimeUtils instance directly into Sun
+        this.radius = Constants.sunRadius * Constants.scale;  // Scale down the Sun's radius
 
-        const geometry = new THREE.SphereGeometry(69570, 32, 32); // Approximate Sun's radius, scaled down
+        const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down
         const material = new THREE.MeshPhongMaterial({
             color: 0xFFFFFF,  // Sun's color
             emissive: 0xFFFFFF,  // Glowing color
-            emissiveIntensity: 5,
+            emissiveIntensity: 80,
             shininess: 100
         });
 

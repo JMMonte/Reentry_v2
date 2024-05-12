@@ -1,0 +1,43 @@
+body { margin: 0; overflow: hidden; }
+.chartContainer {
+    width: 400px;
+    height: 300px;
+    border: 1px solid #ddd;
+    background-color: #121212;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    display: none; /* Start hidden */
+}
+
+.chartHeader {
+    cursor: move;
+    background-color: #232323;
+    color: #E0E0E0;
+    padding: 10px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    user-select: none;
+}
+
+.chartTitle {
+    display: inline-block;
+    vertical-align: middle;
+    font-family: sans-serif;
+}
+
+.minimizeChart {
+    float: right;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-weight: bold;
+    color: #E0E0E0;
+}
+
+canvas { 
+    flex: 1;
+    display: block; 
+}

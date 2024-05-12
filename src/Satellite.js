@@ -1,16 +1,14 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { Constants } from './constants.js';
-
-const G = Constants.G / 1000; // Adjust G proportionally if needed
-const earth_mass = Constants.earthMass;
+import { Constants } from './Constants.js';
+import { PhysicsUtils } from './PhysicsUtils.js';
 
 export class Satellite {
     constructor(scene, world, earth, initialPosition, initialVelocity) {
         this.scene = scene;
         this.world = world;
         this.earth = earth;
-        this.earth_mass = earth_mass;
+        this.earth_mass = Constants.earthMass;
         this.color = Math.random() * 0xffffff;
         this.size = 1; // Scaled down size
         this.initMesh(initialPosition);
@@ -18,6 +16,22 @@ export class Satellite {
         this.initTraceLine();
         this.lastTraceUpdateTime = 0; // Initialize last update time for trace
         this.traceUpdateInterval = 0.5; // Update trace every 0.5 seconds
+        this.gravityVector = new CANNON.Vec3(); // Store the last calculated gravity vector
+        this.dragForce = new CANNON.Vec3(); // Store the last calculated drag force
+        this.altitude = 0; // Initialize altitude
+        this.position = new CANNON.Vec3(initialPosition.x, initialPosition.y, initialPosition.z);
+        
+    }
+
+    get velocity() {
+        return this.body.velocity.length();  // Returns the scalar magnitude of the velocity
+    }
+
+    set velocity(newVelocityMagnitude) {
+        // Assuming we want to set the velocity while maintaining the direction
+        const normalizedVelocity = new CANNON.Vec3(this.body.velocity.x, this.body.velocity.y, this.body.velocity.z).normalize();
+        normalizedVelocity.scale(newVelocityMagnitude, normalizedVelocity);
+        this.body.velocity.copy(normalizedVelocity);
     }
 
     initMesh(initialPosition) {
@@ -29,28 +43,44 @@ export class Satellite {
     }
 
     initPhysics(initialPosition, initialVelocity) {
-        const mass = 100; // Satellite mass
-        const shape = new CANNON.Sphere(this.size);
-        this.body = new CANNON.Body({ mass: mass, position: initialPosition, shape: shape });
-        this.body.velocity = new CANNON.Vec3(initialVelocity.x, initialVelocity.y, initialVelocity.z);
-        this.body.linearDamping = 0;
+        const mass = 10 * Constants.massScale;  // Satellite mass, adjust if scaling is necessary
+        const position = new CANNON.Vec3(
+            initialPosition.x * Constants.threeJsCannon / Constants.scale,
+            initialPosition.y * Constants.threeJsCannon / Constants.scale,
+            initialPosition.z * Constants.threeJsCannon / Constants.scale
+        );
+        const velocity = new CANNON.Vec3(
+            initialVelocity.x * Constants.threeJsCannon / Constants.scale,
+            initialVelocity.y * Constants.threeJsCannon / Constants.scale,
+            initialVelocity.z * Constants.threeJsCannon / Constants.scale
+        );
+        const earthPosition = new CANNON.Vec3(
+            this.earth.earthBody.position.x,
+            this.earth.earthBody.position.y,
+            this.earth.earthBody.position.z
+        );
+        this.earthPosition = earthPosition;
+        const shape = new CANNON.Sphere(this.size);  // Ensure size is converted if necessary
+        this.body = new CANNON.Body({ mass, position, shape });
         this.body.angularDamping = 0;
+        this.body.linearDamping = 0;
+        this.bodyMassKg = mass / Constants.massScale;  // Store mass in kg for calculations
+        this.body.velocity.copy(velocity);
         this.world.addBody(this.body);
-
     }
 
     initTraceLine() {
-        this.maxTracePoints = 100; // Example size, adjust as needed
+        this.maxTracePoints = 10000; // Example size, adjust as needed
         this.dynamicPositions = [];
         this.creationTimes = [];
-    
+
         const positions = new Float32Array(this.maxTracePoints * 3);
         const colors = new Float32Array(this.maxTracePoints * 3);
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         const material = new THREE.LineBasicMaterial({
-            vertexColors: THREE.VertexColors,
+            color: this.color,
             linewidth: 2, // Note: linewidth might not be visible on Windows due to ANGLE
             transparent: true
         });
@@ -58,84 +88,138 @@ export class Satellite {
         this.scene.add(this.traceLine);
         this.currentTraceIndex = 0;
     }
-    
 
-    updateSatellite(currentTime, timeWarp) {
-        this.updatePhysics(timeWarp);
-        this.mesh.position.copy(this.body.position); // Update the mesh position from the physics body
-    
-        // Check if 0.5 seconds have passed since the last trace update
-        if (currentTime - this.lastTraceUpdateTime >= this.traceUpdateInterval) {
-            this.updateTraceLine(currentTime); // Use the updated mesh position for the trace
-            this.lastTraceUpdateTime = currentTime; // Reset the last update time
-        }
+    initOrbitVisualization(orbitPoints) {
+        const geometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+        const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+        const orbitLine = new THREE.LineLoop(geometry, material);
+        this.scene.add(orbitLine);
     }
 
-    updatePhysics(timeWarp) {
-        const earthPosition = new CANNON.Vec3(0, 0, 0);
-        let forceDirection = this.body.position.vsub(earthPosition);
-        const distance = forceDirection.length();
+    updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
+        this.updatePhysics(realDeltaTime); // Real delta for accurate physics
+    
+        // Apply warped delta time for position updates that affect rendering and other timed elements
+        this.mesh.position.set(
+            this.body.position.x * Constants.scale * Constants.metersToKm, // Convert units as necessary
+            this.body.position.y * Constants.scale * Constants.metersToKm,
+            this.body.position.z * Constants.scale * Constants.metersToKm
+        );
 
-        if (distance < 1e-5) {
-            console.error('Distance too small, likely collision or initialization issue.');
-            return;
+        this.updateTraceLine(currentTime);
+    }
+
+    updatePhysics(deltaTime) {
+        // Get the position of the Earth and the satellite from the world state
+        const earthPosition = new THREE.Vector3(this.earthPosition.x, this.earthPosition.y, this.earthPosition.z);
+        const satellitePosition = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
+        
+        // Calculate the distance between the Earth and the satellite
+        const distance = satellitePosition.distanceTo(earthPosition);
+        this.altitude = satellitePosition.length() - Constants.earthRadius;
+
+        // Calculate the direction of the force (towards the Earth)
+        const forceDirection = earthPosition.clone().sub(satellitePosition).normalize();
+        
+        // Use PhysicsUtils to calculate gravitational force
+        const forceMagnitude = PhysicsUtils.calculateGravitationalForce(this.earth_mass, this.bodyMassKg, distance);
+
+        // Calculate the force vector
+        const force = forceDirection.multiplyScalar(forceMagnitude * 3.0001e-3);
+
+        // Calculate atmospheric drag
+        const Cd = 2.2; // Assume some value, needs to be adapted based on satellite shape
+        const A = Math.PI * Math.pow(this.size / 2, 2); // Assuming spherical satellite
+        const rho = this.calculateAtmosphericDensity();
+        const velocity = new THREE.Vector3(this.body.velocity.x, this.body.velocity.y, this.body.velocity.z);
+        const v = velocity.length();
+        const dragMagnitude = 0.5 * Cd * A * rho * v * v;
+
+        // Drag force direction is opposite to velocity
+        const dragForce = velocity.normalize().multiplyScalar(-dragMagnitude * 3.0001e-3);
+
+        // Apply the drag force
+        this.body.applyForce(dragForce, this.body.position);
+        this.body.applyForce(force, this.body.position);
+
+        // Store the force vectors for later use
+        this.dragForce.copy(dragForce);
+        this.gravityVector.copy(force);
+    }
+
+    calculateAtmosphericDensity() {
+        const rho0 = 1.225; // kg/m^3
+        const H = 8500; // meters
+        let h = this.getCurrentAltitude() * 1000; // Convert km to meters
+        return rho0 * Math.exp(-h / H);
+    }
+
+    deleteSatellite() {
+        this.scene.remove(this.mesh);
+        this.scene.remove(this.traceLine);
+        if (this.body) {
+            this.world.removeBody(this.body);
         }
-
-        const gravityStrength = G * this.earth_mass * this.body.mass / (distance * distance);
-
-        forceDirection.normalize();
-        const gravityForce = forceDirection.scale(-gravityStrength * timeWarp); // Invert the gravity force and apply time warp
-
-        if (isNaN(gravityForce.x) || isNaN(gravityForce.y) || isNaN(gravityForce.z)) {
-            console.error('NaN gravitational force calculated:', gravityForce);
-            return;
-        }
-        this.body.applyForce(gravityForce, this.body.position);
+        // remove traces
+        this.dynamicPositions = [];
+        this.creationTimes = [];
+        this.traceLine.geometry.dispose();
     }
 
     updateTraceLine(currentTime) {
-        // Add current position to the dynamic array if not initialized
-        if (!this.dynamicPositions) {
-            this.dynamicPositions = [];
-            this.creationTimes = [];
-        }
-    
-        // Append the current position and time
-        this.dynamicPositions.push(this.mesh.position.clone());
+        // Capture current position of the satellite
+        const currentPosition = new THREE.Vector3().copy(this.mesh.position);
+        this.dynamicPositions.push(currentPosition);
         this.creationTimes.push(currentTime);
-    
-        let positions = [];
-        let colors = [];
-        let activePoints = 0;
-    
-        // Recalculate and update positions and colors
-        for (let i = 0; i < this.dynamicPositions.length; i++) {
-            const age = currentTime - this.creationTimes[i];
-            const halfLife = 10; // Adjust the half-life as necessary
-    
-            if (age <= 2 * halfLife) { // Only keep points within twice the half-life
-                const decayFactor = Math.exp(-Math.log(2) * age / halfLife);
-                const colorValue = decayFactor;
-                const idx = activePoints * 3;
-    
-                positions.push(this.dynamicPositions[i].x, this.dynamicPositions[i].y, this.dynamicPositions[i].z);
-                colors.push(colorValue, colorValue, colorValue); // RGB
-                activePoints++;
-            }
+
+        // Remove the oldest point if we exceed the maximum trace length
+        if (this.dynamicPositions.length > this.maxTracePoints) {
+            this.dynamicPositions.shift();
+            this.creationTimes.shift();
         }
-    
-        // Update the Float32Array data
-        const floatPositions = new Float32Array(positions);
-        const floatColors = new Float32Array(colors);
-    
-        // Set the new attribute data
-        this.traceLine.geometry.setAttribute('position', new THREE.BufferAttribute(floatPositions, 3));
-        this.traceLine.geometry.setAttribute('color', new THREE.BufferAttribute(floatColors, 3));
-    
-        // Notify THREE.js to update the attributes
+
+        // Update positions in the geometry
+        const positions = this.traceLine.geometry.attributes.position.array;
+        let index = 0;
+        for (let i = 0; i < this.dynamicPositions.length; i++) {
+            positions[index++] = this.dynamicPositions[i].x;
+            positions[index++] = this.dynamicPositions[i].y;
+            positions[index++] = this.dynamicPositions[i].z;
+        }
         this.traceLine.geometry.attributes.position.needsUpdate = true;
-        this.traceLine.geometry.attributes.color.needsUpdate = true;
-        this.traceLine.geometry.setDrawRange(0, activePoints);
+
+        // Optionally update colors
+        // const colors = this.traceLine.geometry.attributes.color.array;
+        // index = 0;
+        // for (let i = 0; i < this.dynamicPositions.length; i++) {
+        //     const age = (currentTime - this.creationTimes[i]) / 10000000; // example to fade based on age
+        //     const alpha = 1 - Math.min(age, 1);
+        //     colors[index++] = alpha; // Assuming white color fades to transparent
+        //     colors[index++] = alpha;
+        //     colors[index++] = alpha;
+        // }
+        // this.traceLine.geometry.attributes.color.needsUpdate = true;
     }
-    
+
+    getCurrentAltitude() {
+        return this.altitude;
+    }
+
+    getCurrentVelocity() {
+        return this.body.velocity.length();
+    }
+
+    getCurrentAcceleration() {
+        return this.gravityVector.length();
+    }
+
+    getCurrentDragForce() {
+        return this.dragForce.length();
+    }
+
+    setColor(color) {
+        this.mesh.material = new THREE.MeshBasicMaterial({ color });
+        this.traceLine.material = new THREE.LineBasicMaterial({ color });
+    }
+
 }

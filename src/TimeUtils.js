@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Constants } from './Constants.js';
 
 export class TimeUtils {
     constructor(settings) {
@@ -8,6 +9,7 @@ export class TimeUtils {
         this.simulatedTime = new Date(settings.simulatedTime);
         this.dayOfYear = this.getDayOfYear(this.simulatedTime);
         this.fractionOfDay = this.getFractionOfDay();
+        this.AU = Constants.AU * Constants.scale;
     }
 
     // Update the timestamp and handle the simulation time, correctly applying the time warp
@@ -48,7 +50,7 @@ export class TimeUtils {
                                   0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180));
 
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
-        const distance = 1.496e+7;  // 1 AU in 10 km
+        const distance = this.AU;  // 1 AU in 10 km
         const x = -distance * Math.cos(trueLongitude * Math.PI / 180);
         const z = distance * Math.sin(trueLongitude * Math.PI / 180);
         const y = distance * eccentricity * Math.sin(trueLongitude * Math.PI / 180);

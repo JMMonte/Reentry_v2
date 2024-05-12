@@ -6,15 +6,15 @@ const materialMajor = new THREE.LineBasicMaterial({
     color: 0x00A5FF, transparent: true, opacity: 0.6,
     polygonOffset: true,
     polygonOffsetFactor: 1,
-    polygonOffsetUnits: 200
+    polygonOffsetUnits: 0
 });
 const materialMinor = new THREE.LineBasicMaterial({
     color: 0x00A5FF, transparent: true, opacity: 0.3,
     polygonOffset: true,
     polygonOffsetFactor: 1,
-    polygonOffsetUnits: 200
+    polygonOffsetUnits: 0
 });
-const heightOffset = 2; // 10km
+const heightOffset = 0;
 
 // Function to add latitude lines to the scene
 function addLatitudeLines(scene, earthRadius) {

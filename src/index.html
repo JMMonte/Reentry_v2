@@ -5,11 +5,161 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Earth Visualization</title>
     <style>
-        body { margin: 0; }
-        canvas { display: block; }
+            body { 
+                margin: 0; 
+                overflow: hidden; 
+            }
+            canvas { 
+                flex: 1; /* Takes up all available space */
+                display: block; /* Ensures it's a block-level flex item */
+            }
+            #chartContainer {
+                width: 400px;
+                height: 300px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                background-color: #121212;
+                border-radius: 5px;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+                position: absolute;
+                top: 50px;
+                left: 50px;
+                display: flex;
+                flex-direction: column;
+                resize: both;
+                overflow: hidden; /* Prevents any content from spilling out */
+            }
+            #chartHeader {
+                cursor: move;
+                background-color: #232323;
+                color: #E0E0E0;
+                padding: 10px;
+                border-top-left-radius: 5px;
+                border-top-right-radius: 5px;
+                user-select: none;
+                flex-shrink: 0; /* Prevent the header from shrinking */
+            }
+            #chartTitle {
+                display: inline-block;
+                vertical-align: middle;
+                font-family: sans-serif;
+            }
+            #minimizeChart {
+                float: right;
+                border: none;
+                background: none;
+                cursor: pointer;
+                font-weight: bold;
+                color: #E0E0E0;
+            }
+            #resizeHandle {
+                width: 10px;
+                height: 10px;
+                background-color: #666;
+                position: absolute;
+                bottom: 0;
+                right: 0;
+                cursor: nwse-resize;
+            }        
     </style>
 </head>
 <body>
+    <div id="chartContainer">
+        <div id="chartHeader">
+            <span id="chartTitle">Chart</span>
+            <button id="minimizeChart">-</button>
+        </div>
+        <canvas id="dataChart"></canvas>
+        <div id="resizeHandle"></div>
+    </div>
     <script type="module" src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chartContainer = document.getElementById('chartContainer');
+            const chartHeader = document.getElementById('chartHeader');
+            const resizeHandle = document.getElementById('resizeHandle');
+            const minimizeChartButton = document.getElementById('minimizeChart');
+            const dataChart = document.getElementById('dataChart');
+            let isMinimized = false;
+        
+            chartHeader.onmousedown = function(event) {
+                dragMouseDown(event, chartContainer);
+            };
+        
+            resizeHandle.onmousedown = function(event) {
+                resizeMouseDown(event, chartContainer);
+            };
+        
+            minimizeChartButton.onclick = function() {
+                if (isMinimized) {
+                    chartContainer.style.height = "300px";
+                    updateCanvasSize();
+                    minimizeChartButton.textContent = "-";
+                    isMinimized = false;
+                } else {
+                    chartContainer.style.height = "40px";
+                    updateCanvasSize();
+                    minimizeChartButton.textContent = "+";
+                    isMinimized = true;
+                }
+            };
+        
+            function updateCanvasSize() {
+                // Calculate available height by subtracting the header height
+                let containerHeight = chartContainer.clientHeight;
+                let headerHeight = chartHeader.offsetHeight;
+                let availableHeight = containerHeight - headerHeight;
+                dataChart.style.height = `${availableHeight}px`;
+            }
+        
+            function resizeMouseDown(e, container) {
+                e.preventDefault();
+                let startX = e.clientX;
+                let startY = e.clientY;
+                let startWidth = parseInt(document.defaultView.getComputedStyle(container).width, 10);
+                let startHeight = parseInt(document.defaultView.getComputedStyle(container).height, 10);
+                document.documentElement.addEventListener('mousemove', doDrag, false);
+                document.documentElement.addEventListener('mouseup', stopDrag, false);
+        
+                function doDrag(e) {
+                    container.style.width = (startWidth + e.clientX - startX) + 'px';
+                    container.style.height = (startHeight + e.clientY - startY) + 'px';
+                    updateCanvasSize();
+                }
+        
+                function stopDrag() {
+                    document.documentElement.removeEventListener('mousemove', doDrag, false);
+                    document.documentElement.removeEventListener('mouseup', stopDrag, false);
+                    updateCanvasSize(); // Ensure final update for canvas size
+                }
+            }
+        
+            function dragMouseDown(e, container) {
+                e.preventDefault();
+                let pos3 = e.clientX;
+                let pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = function(event) {
+                    elementDrag(event, container, pos3, pos4);
+                    pos3 = event.clientX;
+                    pos4 = event.clientY;
+                };
+        
+                function elementDrag(e, container, pos3, pos4) {
+                    e.preventDefault();
+                    let pos1 = pos3 - e.clientX;
+                    let pos2 = pos4 - e.clientY;
+                    container.style.top = (container.offsetTop - pos2) + "px";
+                    container.style.left = (container.offsetLeft - pos1) + "px";
+                }
+            }
+        
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        
+            updateCanvasSize(); // Set initial canvas size correctly
+        });
+        </script>
 </body>
 </html>
