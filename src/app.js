@@ -5,15 +5,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { Earth } from './Earth.js';
-import { Sun } from './Sun.js';
-import { Vectors } from './Vectors.js';
-import { Constants } from './Constants.js';
+import { Earth } from './components/Earth.js';
+import { Sun } from './components/Sun.js';
+import { Vectors } from './utils/Vectors.js';
+import { Constants } from './utils/Constants.js';
 import CannonDebugger from 'cannon-es-debugger';
-import { TimeUtils } from './TimeUtils.js';
-import { GUIManager } from './GUIManager.js';
-import {ChartManager} from './ChartManager.js';
-import {chartConfig} from './ChartConfig.js';
+import { TimeUtils } from './utils/TimeUtils.js';
+import { GUIManager } from './managers/GUIManager.js';
+import PhysicsWorkerURL from 'url:./workers/physicsWorker.js'; // Import worker URL
 
 // Scene and Renderer Setup
 const scene = new THREE.Scene();
@@ -37,11 +36,15 @@ controls.maxDistance = 10000000 * Constants.scale;
 camera.position.set(1000, 7000, 20000).multiplyScalar(Constants.scale);
 camera.lookAt(new THREE.Vector3(0, 0, 0));
 
+// Add ambient light
+const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.1);
+scene.add(ambientLight);
+
 // Physics World Setup
 const world = new CANNON.World();
 world.gravity.set(0, 0, 0);
 world.broadphase = new CANNON.NaiveBroadphase();
-world.solver.iterations = 100;
+world.solver.iterations = 10;
 
 // GUI and Time settings
 const settings = {
@@ -65,20 +68,6 @@ const satellites = [];
 // Instantiate the Cannon Debugger
 const cannonDebugger = new CannonDebugger(scene, world, { autoUpdate: false });
 
-// GUI Manager
-new GUIManager(scene, world, earth, satellites, vectors, settings, timeUtils, cannonDebugger);
-
-// Chart Configuration
-// Assuming you have a canvas element with id 'dataChart'
-const ctx = document.getElementById('dataChart').getContext('2d');
-const myChartManager = new ChartManager(ctx, chartConfig);
-
-// In your animation loop or update function
-function updateSimulationData(time, altitude, velocity, acceleration) {
-    const data = [altitude, velocity, acceleration]; // Ensure this matches the order in chartConfig
-    myChartManager.updateData(time, data);
-}
-
 // Post-processing
 const renderPass = new RenderPass(scene, camera);
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 1.4, 0.99);
@@ -89,46 +78,70 @@ const finalComposer = new EffectComposer(renderer);
 finalComposer.addPass(renderPass);
 finalComposer.addPass(bloomComposer);
 
-// Animation Loop
+// Stats for Monitoring
+const stats = new Stats();
+document.body.appendChild(stats.dom);
+
+// Initialize the physics worker
+const physicsWorker = new Worker(PhysicsWorkerURL);
+physicsWorker.onmessage = handlePhysicsWorkerMessage;
+
+function handlePhysicsWorkerMessage(event) {
+    const { type, data } = event.data;
+    if (type === 'stepComplete') {
+        const satellite = satellites.find(sat => sat.id === data.id);
+        if (satellite) {
+            satellite.updateFromSerialized(data);
+        }
+    }
+}
+
+// GUI Manager
+new GUIManager(scene, world, earth, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker);
+
+// Main animation loop
 function animate(timestamp) {
     stats.begin();
 
-    // Update time utils with the high-resolution timestamp
     timeUtils.update(timestamp);
 
-    // Calculate real and warped delta time
     const realDeltaTime = timeUtils.getDeltaTime();
-    const warpedDeltaTime = realDeltaTime * settings.timeWarp;
+    const warpedDeltaTime = realDeltaTime;
+    const currentTime = timeUtils.getSimulatedTime();
 
-    // Physics step - using real delta time for physics stability
-    world.step(realDeltaTime, 10 * realDeltaTime, 3);
+    // Step physics world
+    if (satellites.length > 0) {
+        physicsWorker.postMessage({
+            type: 'step',
+            data: {
+                warpedDeltaTime,
+                earthPosition: earth.earthBody.position,
+                earthRadius: Constants.earthRadius
+            }
+        });
+    }
 
-    // Update components
+    // Update satellites
     satellites.forEach(satellite => {
-        satellite.updateSatellite(timeUtils.getSimulatedTime(), realDeltaTime, warpedDeltaTime);
-        // Update GUI with current data
+        satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
         const altitude = satellite.getCurrentAltitude();
         const velocity = satellite.getCurrentVelocity();
         const acceleration = satellite.getCurrentAcceleration();
         const dragForce = satellite.getCurrentDragForce();
-        satellite.altitudeController.setValue((altitude).toFixed(4));
-        satellite.velocityController.setValue((velocity).toFixed(4));
-        satellite.accelerationController.setValue((acceleration).toFixed(4));
-        satellite.dragController.setValue((dragForce).toFixed(4));
-        updateSimulationData(timestamp, altitude, velocity, acceleration, dragForce);
+        satellite.altitudeController.setValue(parseFloat(altitude));
+        satellite.velocityController.setValue(parseFloat(velocity));
+        satellite.accelerationController.setValue(parseFloat(acceleration));
+        satellite.dragController.setValue(parseFloat(dragForce));
     });
 
-    // Updating celestial and other vectors
     earth.updateRotation();
-    sun.updatePosition(timeUtils.getSimulatedTime());
+    sun.updatePosition(currentTime);
     vectors.updateVectors();
 
-    // Debugger updates, if needed
     if (settings.showDebugger) {
         cannonDebugger.update();
     }
 
-    // Render scene with post-processing
     renderer.clear();
     bloomComposer.render();
     finalComposer.render();
@@ -149,7 +162,3 @@ function onWindowResize() {
 window.addEventListener('resize', onWindowResize);
 
 requestAnimationFrame(animate);
-
-// Stats for Monitoring
-const stats = new Stats();
-document.body.appendChild(stats.dom);

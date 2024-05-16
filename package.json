@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "parcel src/index.html",
-    "postbuild": "cp -R ./path/to/assets/* dist/",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "parcel public/index.html",
+    "build": "parcel build public/index.html",
+    "postbuild": "cp -R public/assets dist/"
   },
   "keywords": [],
   "author": "",
