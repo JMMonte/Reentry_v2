@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import { JulianDay, EclipticToCartesian, RotateAroundX, RotateAroundZ } from '../utils/AstronomyUtils.js';
+import moonTexture from '../../public/assets/texture/lroc_color_poles_8k.jpg';
+import moonBump from '../../public/assets/texture/ldem_16_uint.jpg';
 
 export class Moon {
     constructor(scene, world, renderer, timeUtils) {
@@ -11,12 +13,26 @@ export class Moon {
         this.renderer = renderer;
         this.timeUtils = timeUtils;
 
+        const textureLoader = new THREE.TextureLoader();
         // Create the moon mesh
-        const moonGeometry = new THREE.SphereGeometry(Constants.moonRadius * Constants.metersToKm * Constants.scale, 32, 32);
-        const moonMaterial = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
+        const moonGeometry = new THREE.SphereGeometry(
+            Constants.moonRadius * Constants.metersToKm * Constants.scale,
+            128,
+            128
+        );
+        const moonMaterial = new THREE.MeshPhongMaterial({
+            map: textureLoader.load(moonTexture),
+            bumpMap: textureLoader.load(moonBump),
+            bumpScale: 3.9,
+            displacementMap: textureLoader.load(moonBump),
+            displacementScale: 5.9,
+        });
         this.moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
+        
+        this.moonMesh.castShadow = true;
+        this.moonMesh.receiveShadow = true;
         scene.add(this.moonMesh);
-
+        this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
         // Create the moon body
         const moonShape = new CANNON.Sphere(Constants.moonRadius);
         this.moonBody = new CANNON.Body({
@@ -102,8 +118,28 @@ export class Moon {
     }
 
     updateRotation() {
-        // Update moon rotation (if needed)
-        const rotationSpeed = Constants.moonRotationSpeed;
-        this.moonMesh.rotation.y += rotationSpeed;
+        // Calculate the current fraction of the Moon's rotation
+        const fractionOfRotation = this.timeUtils.getFractionOfMoonRotation();
+    
+        // Calculate the total rotation angle in radians
+        const totalRotation = (2 * Math.PI) * fractionOfRotation;
+    
+        // Ensure to apply only the incremental change in rotation
+        if (this.previousRotation === undefined) {
+            this.previousRotation = totalRotation;
+        }
+        const deltaRotation = totalRotation - this.previousRotation;
+        this.previousRotation = totalRotation;
+    
+        // Update moon rotation
+        this.moonMesh.rotation.y -= deltaRotation;
+    }
+
+    getMesh() {
+        return this.moonMesh;
+    }
+
+    get quaternion() {
+        return this.moonMesh.quaternion;
     }
 }

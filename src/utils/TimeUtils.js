@@ -125,6 +125,14 @@ export class TimeUtils {
         return elapsedToday / millisecondsInDay;
     }
 
+    getFractionOfMoonRotation() {
+        const now = this.simulatedTime;
+        const startOfCycle = new Date(Date.UTC(2000, 0, 6));  // New Moon on January 6, 2000
+        const millisecondsInCycle = 29.53058867 * 24 * 60 * 60 * 1000;  // 29.53058867 days in milliseconds
+        const elapsedCycle = now - startOfCycle;
+        return (elapsedCycle % millisecondsInCycle) / millisecondsInCycle;
+    }
+
     getGreenwichPosition() {
         const distance = Constants.earthRadius;
         

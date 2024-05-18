@@ -1,3 +1,4 @@
+// Other imports remain the same
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import Stats from 'stats.js';
@@ -14,14 +15,13 @@ import CannonDebugger from 'cannon-es-debugger';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
 import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
-// import { addStars } from './components/background.js';
 
 // Scene and Renderer Setup
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
     42, // Field of view
     window.innerWidth / window.innerHeight, // Aspect ratio
-    1, // Near clipping plane
+    10, // Near clipping plane
     Constants.kmToMeters * 400000000 // Far clipping plane
 );
 const renderer = new THREE.WebGLRenderer({
@@ -107,7 +107,7 @@ function handlePhysicsWorkerMessage(event) {
 }
 
 // GUI Manager
-new GUIManager(scene, world, earth, moon, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker);
+const guiManager = new GUIManager(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker, camera, controls);
 
 // Main animation loop
 function animate(timestamp) {
@@ -165,6 +165,9 @@ function animate(timestamp) {
     if (settings.showDebugger) {
         cannonDebugger.update();
     }
+
+    // Update camera position
+    guiManager.updateCameraPosition();
 
     // Render scene with post-processing
     renderer.clear();
