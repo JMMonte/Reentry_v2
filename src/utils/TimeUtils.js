@@ -82,8 +82,8 @@ export class TimeUtils {
 
     getJulianDate() {
         const now = this.simulatedTime;
-        const year = now.getUTCFullYear();
-        const month = now.getUTCMonth() + 1;  // Month is zero-indexed
+        let year = now.getUTCFullYear();
+        let month = now.getUTCMonth() + 1;  // Month is zero-indexed
         const day = now.getUTCDate();
         const hour = now.getUTCHours();
         const minute = now.getUTCMinutes();
@@ -91,12 +91,12 @@ export class TimeUtils {
         const millisecond = now.getUTCMilliseconds();
         const isGregorian = year > 1582 || (year === 1582 && month > 10) || (year === 1582 && month === 10 && day >= 15);
         let julianDay = 0;
-
+    
         if (month <= 2) {
             year -= 1;
             month += 12;
         }
-
+    
         if (isGregorian) {
             const A = Math.floor(year / 100);
             const B = 2 - A + Math.floor(A / 4);
@@ -104,10 +104,11 @@ export class TimeUtils {
         } else {
             julianDay = Math.floor(365.25 * (year + 4716)) + Math.floor(30.6001 * (month + 1)) + day - 1524.5;
         }
-
+    
         const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / 86400 + millisecond / 86400000;
         return julianDate;
     }
+    
 
     getGreenwichSiderealTime() {
         const jd = this.getJulianDate();

@@ -36,34 +36,35 @@ export class PhysicsUtils {
     static calculateOrbitalElements(position, velocity, mu) {
         // Standard gravitational parameter (mu = G * M)
         // Position and velocity are vectors
-
+    
         const r = position.length();
         const v = velocity.length();
-
+    
         const vr = velocity.dot(position) / r;
-
+    
         const hVec = position.cross(velocity);
         const h = hVec.length();
-
+    
         const i = Math.acos(hVec.z / h); // Inclination
-
+    
         const nVec = new THREE.Vector3(0, 0, 1).cross(hVec);
-        const n = nVec.length();
-
+        let n = nVec.length(); // Change 'const' to 'let' here
+    
         const eVec = (velocity.cross(hVec)).divideScalar(mu).sub(position.divideScalar(r));
         const e = eVec.length(); // Eccentricity
-
-        const omega = Math.acos(nVec.x / n); // Longitude of ascending node
+    
+        let omega = Math.acos(nVec.x / n); // Longitude of ascending node
         if (nVec.y < 0) omega = 2 * Math.PI - omega;
-
-        const w = Math.acos(nVec.dot(eVec) / (n * e)); // Argument of periapsis
+    
+        let w = Math.acos(nVec.dot(eVec) / (n * e)); // Argument of periapsis
         if (eVec.z < 0) w = 2 * Math.PI - w;
-
-        const theta = Math.acos(eVec.dot(position) / (e * r)); // True anomaly
+    
+        let theta = Math.acos(eVec.dot(position) / (e * r)); // True anomaly
         if (vr < 0) theta = 2 * Math.PI - theta;
-
+    
         return { h, e, i, omega, w, theta };
     }
+    
 
     static computeOrbit({ h, e, i, omega, w, theta }, mu, numPoints = 100) {
         const points = [];

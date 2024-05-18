@@ -1,8 +1,7 @@
 {
   "name": "reentry_v2",
   "version": "1.0.0",
-  "description": "![Screenshot](src/texture/Screenshot%202024-05-13%20at%2000.28.32.png)",
-  "main": "index.js",
+  "description": "A space simulation for orbital mechanics, interplanetary travel, and reentry vehicles using Three.js and Cannon.js.",
   "scripts": {
     "start": "parcel public/index.html",
     "build": "parcel build public/index.html",
