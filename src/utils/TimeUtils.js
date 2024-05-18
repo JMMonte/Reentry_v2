@@ -80,6 +80,42 @@ export class TimeUtils {
         return this.simulatedTime;
     }
 
+    getJulianDate() {
+        const now = this.simulatedTime;
+        const year = now.getUTCFullYear();
+        const month = now.getUTCMonth() + 1;  // Month is zero-indexed
+        const day = now.getUTCDate();
+        const hour = now.getUTCHours();
+        const minute = now.getUTCMinutes();
+        const second = now.getUTCSeconds();
+        const millisecond = now.getUTCMilliseconds();
+        const isGregorian = year > 1582 || (year === 1582 && month > 10) || (year === 1582 && month === 10 && day >= 15);
+        let julianDay = 0;
+
+        if (month <= 2) {
+            year -= 1;
+            month += 12;
+        }
+
+        if (isGregorian) {
+            const A = Math.floor(year / 100);
+            const B = 2 - A + Math.floor(A / 4);
+            julianDay = Math.floor(365.25 * (year + 4716)) + Math.floor(30.6001 * (month + 1)) + day + B - 1524.5;
+        } else {
+            julianDay = Math.floor(365.25 * (year + 4716)) + Math.floor(30.6001 * (month + 1)) + day - 1524.5;
+        }
+
+        const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / 86400 + millisecond / 86400000;
+        return julianDate;
+    }
+
+    getGreenwichSiderealTime() {
+        const jd = this.getJulianDate();
+        const t = (jd - 2451545.0) / 36525;
+        const theta = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * t * t - t * t * t / 38710000;
+        return theta % 360;
+    }
+
     // Calculate the fraction of the day that has elapsed
     getFractionOfDay() {
         const now = this.simulatedTime;
@@ -99,7 +135,7 @@ export class TimeUtils {
         const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(23.5));
         
         // Earth's daily rotation based on the fraction of the day
-        const rotationAngle = this.getFractionOfDay() * 2 * Math.PI + Math.PI*0.25;  // Add PI to start at the back of the Earth
+        const rotationAngle = this.getFractionOfDay() * 2 * Math.PI + Math.PI * 0.256;  // Add PI to start at the back of the Earth
         const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
         
         // Combine the tilt and rotation quaternions: apply rotation first, then tilt
@@ -110,5 +146,5 @@ export class TimeUtils {
         
         return position;
     }
-    
+
 }

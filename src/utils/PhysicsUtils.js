@@ -1,5 +1,7 @@
 import { Constants } from './Constants.js';
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { TimeUtils } from './TimeUtils.js';
 
 export class PhysicsUtils {
     static calculateGravitationalForce(m1, m2, r) {
@@ -105,4 +107,71 @@ export class PhysicsUtils {
         earthSurfaceVelocity.vadd(satellitePosition, earthSurfaceVelocity);
         return earthSurfaceVelocity;
     }
+
+    static calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, timeUtils) {
+        const latRad = THREE.MathUtils.degToRad(latitude);
+        const lonRad = THREE.MathUtils.degToRad(longitude);
+    
+        // WGS84 ellipsoid constants
+        const a = 6378137.0;  // Semi-major axis in meters
+        const b = 6356752.314245;  // Semi-minor axis in meters
+        const e2 = 1 - (b * b) / (a * a);  // Eccentricity squared
+    
+        // Calculate prime vertical radius of curvature
+        const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) * Math.sin(latRad));
+    
+        // Position in ECEF coordinates
+        const X = (N + altitude) * Math.cos(latRad) * Math.cos(lonRad);
+        const Y = (N + altitude) * Math.cos(latRad) * Math.sin(lonRad);
+        const Z = ((1 - e2) * N + altitude) * Math.sin(latRad);
+    
+        let positionECEF = new THREE.Vector3(X, Y, Z);
+    
+        // Get Greenwich position vector from Vectors.js
+        let greenwichVector = timeUtils.getGreenwichPosition().normalize();
+    
+        // Convert position from ECEF to ECI using Greenwich position
+        let rotationQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), greenwichVector);
+    
+        // Rotate the azimuth by the title angle (hardcoded to 90 degrees)
+        const azimuthQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(azimuth));
+        rotationQuaternion.multiply(azimuthQuaternion);
+    
+        // Final 90-degree rotation around the y-axis (hardcoded to 8 degrees)
+        const finalRotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(8));
+        rotationQuaternion.multiply(finalRotationQuaternion);
+    
+        positionECEF.applyQuaternion(rotationQuaternion);
+    
+        // Hardcoded azimuth and angle of attack adjustments
+        const azimuthRad = THREE.MathUtils.degToRad(90);
+        const angleOfAttackRad = THREE.MathUtils.degToRad(0);
+    
+        // Velocity components in ECEF
+        const vEast = velocity * Math.cos(angleOfAttackRad) * Math.sin(azimuthRad);
+        const vNorth = velocity * Math.cos(angleOfAttackRad) * Math.cos(azimuthRad);
+        const vUp = velocity * Math.sin(angleOfAttackRad);
+    
+        // Convert velocity from ENU to ECEF
+        const sinLat = Math.sin(latRad);
+        const cosLat = Math.cos(latRad);
+        const sinLon = Math.sin(lonRad);
+        const cosLon = Math.cos(lonRad);
+    
+        const vx = -vEast * sinLon - vNorth * sinLat * cosLon + vUp * cosLat * cosLon;
+        const vy = vEast * cosLon - vNorth * sinLat * sinLon + vUp * cosLat * sinLon;
+        const vz = vNorth * cosLat + vUp * sinLat;
+    
+        // Velocity vector in ECEF
+        let velocityECEF = new THREE.Vector3(vx, vy, vz);
+        velocityECEF.applyQuaternion(rotationQuaternion);
+    
+        // Convert position and velocity to CANNON vectors
+        positionECEF = new CANNON.Vec3(positionECEF.x, positionECEF.y, positionECEF.z);
+        velocityECEF = new CANNON.Vec3(velocityECEF.x, velocityECEF.y, velocityECEF.z);
+    
+        return { positionECEF, velocityECEF };
+    }
+    
+
 }

@@ -1,21 +1,22 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { addLatitudeLines, addLongitudeLines, addCountryBorders } from './earthSurface.js';
+import { addLatitudeLines, addLongitudeLines, addCountryBorders, addCities, addStates } from './earthSurface.js';
 import earthTexture from '../../public/assets/texture/8k_earth_daymap.jpg';
 import earthSpecTexture from '../../public/assets/texture/8k_earth_specular_map.png';
-import earthRoughnessTexture from '../../public/assets/texture/8k_earth_roughness_map.png';
 import earthNormalTexture from '../../public/assets/texture/8k_earth_normal_map.png';
-import fragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
-import vertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';
+import cloudTexture from '../../public/assets/texture/cloud_combined_8192.png'; // Import the local cloud texture
 import { Constants } from '../utils/Constants.js';
+
+// Import the atmosphere shaders
+import atmosphereFragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
+import atmosphereVertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';
 
 export class Earth {
     constructor(scene, world, renderer, timeManager) {
         this.timeManager = timeManager;
-
+        this.MESH_RES = 128;
         this.EARTH_RADIUS = Constants.earthRadius * Constants.scale * Constants.metersToKm; // Radius in Three.js units (scaled km)
-        this.radius = Constants.earthRadius; // Radius in km
-        this.ATMOSPHERE_RADIUS = this.EARTH_RADIUS + 10; // Slightly larger to prevent z-fighting
+        this.ATMOSPHERE_RADIUS = this.EARTH_RADIUS + 4; // Slightly larger to prevent z-fighting (scaled to 40000km / 10)
         this.SIDEREAL_DAY_IN_SECONDS = 86164;
         this.DAYS_IN_YEAR = 365.25;
         this.EARTH_MASS = Constants.earthMass; // Mass in kg
@@ -44,73 +45,91 @@ export class Earth {
             texture.anisotropy = maxAnisotropy;
         });
 
-        this.earthMaterial = new THREE.MeshPhysicalMaterial({
-            map: earthTextureMap,
-            roughness: 0.9,
-            metalness: 0.2,
-            normalMap: textureLoader.load(earthNormalTexture),
-            metalnessMap: textureLoader.load(earthSpecTexture),
-            roughnessMap: textureLoader.load(earthRoughnessTexture),
-            specularIntensity: 0,
+        this.cloudTexture = textureLoader.load(cloudTexture, texture => {
+            texture.anisotropy = maxAnisotropy;
+            texture.transparent = true;
         });
-        this.atmosphereMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                uColor: { value: new THREE.Color(0.2, 0.5, 0.9) },
-                fresnelPower: { value: 10.0 },
-                // Note: We remove opacity here because we will set it per mesh
-            },
-            vertexShader: vertexShader,
-            fragmentShader: fragmentShader,
+
+        this.earthMaterial = new THREE.MeshPhongMaterial({
+            map: earthTextureMap,
+            specularMap: textureLoader.load(earthSpecTexture),
+            specular: 0xffffff,   
+            shininess: 40.0, // water is shiny
+            normalMap: textureLoader.load(earthNormalTexture),
+            normalScale: new THREE.Vector2(5.0,5.0),
+            lightMap: this.cloudTexture,
+            lightMapIntensity: -2.0  // turn the clouds into ground shadows
+        });
+
+
+        this.cloudMaterial = new THREE.MeshPhongMaterial({
+            alphaMap: this.cloudTexture,
+            bumpMap: this.cloudTexture,
+            bumpScale: 0.05,
             transparent: true,
-            side: THREE.DoubleSide, // Making the atmosphere material two-sided
+            opacity: 1.0,
+            side: THREE.DoubleSide,
+        });
+
+        this.atmosphereMaterial = new THREE.ShaderMaterial({
+            vertexShader: atmosphereVertexShader,
+            fragmentShader: atmosphereFragmentShader,
+            side: THREE.DoubleSide,
+            transparent: true,
+
+            depthWrite: false,  // Ensure the atmosphere doesn't write to the depth buffer
+            depthTest: true,    // Ensure depth testing is enabled
             blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            polygonOffset: true,
-            polygonOffsetFactor: 1,
-            polygonOffsetUnits: 1,
+
+            uniforms: {
+                lightPosition: { value: new THREE.Vector3(1.0, 0.0, 0.0) }, // Placeholder value
+                lightIntensity: { value: 4.0 },
+                surfaceRadius: { value: this.EARTH_RADIUS },
+                atmoRadius: { value: this.ATMOSPHERE_RADIUS },
+                ambientIntensity: { value: 0.01 }
+            }
         });
     }
 
     initializeMeshes() {
         const oblateness = 0.0033528; // Earth's oblateness factor
         const scaledRadius = this.EARTH_RADIUS * (1 - oblateness);
-        this.earthGeometry = new THREE.SphereGeometry(scaledRadius, 128, 128);
+        this.earthGeometry = new THREE.SphereGeometry(scaledRadius, this.MESH_RES, this.MESH_RES);
         this.earthMesh = new THREE.Mesh(this.earthGeometry, this.earthMaterial);
         this.rotationGroup.add(this.earthMesh);
         this.earthMesh.rotateY(1.5 * Math.PI);
+        this.earthMesh.renderOrder = 1; // Draw the Earth first
+        this.earthMesh.castShadow = true;
+        this.earthMesh.receiveShadow = true;
 
-        const atmosphereGeometries = [];
-        const numSpheres = 20; // Number of spheres in the atmosphere
-        const stepSize = (this.ATMOSPHERE_RADIUS - scaledRadius) / numSpheres;
-        const maxOpacity = 0.1; // Maximum opacity at the surface
-        const minOpacity = 0.0; // Minimum opacity at the outermost layer
+        const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS, this.MESH_RES, this.MESH_RES);
+        this.atmosphereMesh = new THREE.Mesh(atmosphereGeometry, this.atmosphereMaterial);
+        this.rotationGroup.add(this.atmosphereMesh);
+        this.atmosphereMesh.renderOrder = 2; // Draw the atmosphere after the Earth
+        this.atmosphereMesh.castShadow = true;
+        this.atmosphereMesh.receiveShadow = true;
 
-        for (let i = 0; i < numSpheres; i++) {
-            const radius = scaledRadius + (i * stepSize);
-            const atmosphereGeometry = new THREE.SphereGeometry(radius, 128, 128);
-            atmosphereGeometries.push(atmosphereGeometry);
-
-            // Compute logarithmic opacity
-            const opacity = minOpacity + (maxOpacity - minOpacity) * Math.log(numSpheres - i) / Math.log(numSpheres);
-
-            const atmosphereMaterial = this.atmosphereMaterial.clone();
-            atmosphereMaterial.uniforms.opacity = { value: opacity };
-
-            const atmosphereMesh = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
-            this.rotationGroup.add(atmosphereMesh);
-        }
+        // Create the cloud layer
+        const cloudRadius = this.EARTH_RADIUS + 0.1; // Slightly larger than the Earth radius
+        const cloudGeometry = new THREE.SphereGeometry(cloudRadius, this.MESH_RES, this.MESH_RES);
+        this.cloudMesh = new THREE.Mesh(cloudGeometry, this.cloudMaterial);
+        this.rotationGroup.add(this.cloudMesh);
+        this.cloudMesh.renderOrder = 3; // Draw the clouds after the Earth and atmosphere
+        this.cloudMesh.rotateY(1.5 * Math.PI);
     }
 
     addSurfaceDetails() {
         addLatitudeLines(this.earthMesh, this.EARTH_RADIUS);
         addLongitudeLines(this.earthMesh, this.EARTH_RADIUS);
         addCountryBorders(this.earthMesh, this.EARTH_RADIUS);
+        addCities(this.earthMesh, this.EARTH_RADIUS);  // Add cities with population-scaled dots
+        addStates(this.earthMesh, this.EARTH_RADIUS);
     }
 
     initializePhysics(world) {
         const earthBody = new CANNON.Body({
             mass: 0, // Static body
-            shape: new CANNON.Sphere((this.EARTH_RADIUS * Constants.kmToMeters)), // Convert to Cannon units
+            shape: new CANNON.Sphere((this.EARTH_RADIUS * 10000)), // Convert to Cannon units (10 km per unit)
             material: new CANNON.Material(),
             friction: 0.5 // Adjust based on simulation needs
         });
@@ -123,7 +142,8 @@ export class Earth {
         this.rotationGroup.rotation.y = totalRotation;
     }
 
-    updateLightDirection(newDirection) {
-        this.atmosphereMaterial.uniforms.uLightDirection.value.copy(newDirection.normalize());
+    updateLightDirection() {
+        const sunPosition = this.timeManager.getSunPosition();
+        this.atmosphereMaterial.uniforms.lightPosition.value.set(sunPosition.x, sunPosition.y, sunPosition.z);
     }
 }

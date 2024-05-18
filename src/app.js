@@ -7,16 +7,23 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Earth } from './components/Earth.js';
 import { Sun } from './components/Sun.js';
+import { Moon } from './components/Moon.js';
 import { Vectors } from './utils/Vectors.js';
 import { Constants } from './utils/Constants.js';
 import CannonDebugger from 'cannon-es-debugger';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
-import PhysicsWorkerURL from 'url:./workers/physicsWorker.js'; // Import worker URL
+import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
+// import { addStars } from './components/background.js';
 
 // Scene and Renderer Setup
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 1, Constants.kmToMeters * 200000000);
+const camera = new THREE.PerspectiveCamera(
+    42, // Field of view
+    window.innerWidth / window.innerHeight, // Aspect ratio
+    1, // Near clipping plane
+    Constants.kmToMeters * 400000000 // Far clipping plane
+);
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
     depth: false,
@@ -29,15 +36,18 @@ renderer.physicallyCorrectLights = true;
 renderer.autoClear = false;
 document.body.appendChild(renderer.domElement);
 
+// Background Stars
+// addStars(scene);
+
 // Camera and Controls
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.minDistance = 100 * Constants.metersToKm * Constants.scale * 2;
-controls.maxDistance = 10000000 * Constants.scale;
+controls.maxDistance = 50000000 * Constants.scale;
 camera.position.set(1000, 7000, 20000).multiplyScalar(Constants.scale);
 camera.lookAt(new THREE.Vector3(0, 0, 0));
 
 // Add ambient light
-const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.1);
+const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.05);
 scene.add(ambientLight);
 
 // Physics World Setup
@@ -52,7 +62,6 @@ const settings = {
     simulatedTime: new Date().toISOString(),
     showGrid: true,
     showVectors: true,
-    altitude: 500,
     showDebugger: false
 };
 
@@ -62,6 +71,7 @@ const timeUtils = new TimeUtils(settings);
 // Main Components
 const earth = new Earth(scene, world, renderer, timeUtils);
 const sun = new Sun(scene, timeUtils);
+const moon = new Moon(scene, world, renderer, timeUtils);
 const vectors = new Vectors(earth, scene, timeUtils);
 const satellites = [];
 
@@ -97,7 +107,7 @@ function handlePhysicsWorkerMessage(event) {
 }
 
 // GUI Manager
-new GUIManager(scene, world, earth, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker);
+new GUIManager(scene, world, earth, moon, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker);
 
 // Main animation loop
 function animate(timestamp) {
@@ -116,7 +126,8 @@ function animate(timestamp) {
             data: {
                 warpedDeltaTime,
                 earthPosition: earth.earthBody.position,
-                earthRadius: Constants.earthRadius
+                earthRadius: Constants.earthRadius,
+                moonPosition: moon.moonBody.position // Include Moon's position
             }
         });
     }
@@ -124,24 +135,38 @@ function animate(timestamp) {
     // Update satellites
     satellites.forEach(satellite => {
         satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
+
         const altitude = satellite.getCurrentAltitude();
         const velocity = satellite.getCurrentVelocity();
         const acceleration = satellite.getCurrentAcceleration();
         const dragForce = satellite.getCurrentDragForce();
-        satellite.altitudeController.setValue(parseFloat(altitude));
-        satellite.velocityController.setValue(parseFloat(velocity));
-        satellite.accelerationController.setValue(parseFloat(acceleration));
-        satellite.dragController.setValue(parseFloat(dragForce));
+
+        // Update GUI controllers with the new values
+        satellite.altitudeController.setValue(parseFloat(altitude)).updateDisplay();
+        satellite.velocityController.setValue(parseFloat(velocity)).updateDisplay();
+        satellite.accelerationController.setValue(parseFloat(acceleration)).updateDisplay();
+        satellite.dragController.setValue(parseFloat(dragForce)).updateDisplay();
     });
 
+    // Update Earth rotation and light direction
     earth.updateRotation();
+    earth.updateLightDirection();
+
+    // Update sun position
     sun.updatePosition(currentTime);
+
+    // Update moon position and rotation
+    moon.updatePosition(currentTime);
+    moon.updateRotation();
+
+    // Update vectors (if applicable)
     vectors.updateVectors();
 
     if (settings.showDebugger) {
         cannonDebugger.update();
     }
 
+    // Render scene with post-processing
     renderer.clear();
     bloomComposer.render();
     finalComposer.render();
@@ -158,7 +183,8 @@ function onWindowResize() {
     finalComposer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// Add the event listener
+// Add the event listener for window resize
 window.addEventListener('resize', onWindowResize);
 
+// Kickstart the animation loop
 requestAnimationFrame(animate);

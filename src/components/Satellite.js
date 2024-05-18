@@ -2,16 +2,16 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import PhysicsWorkerURL from 'url:../workers/physicsWorker.js';
-import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 
 export class Satellite {
-    constructor(scene, world, earth, position, velocity, id, color, chartManager) {
+    constructor(scene, world, earth, moon, position, velocity, id, color) {
         this.scene = scene;
         this.world = world;
         this.earth = earth;
+        this.moon = moon;
         this.id = id;
         this.color = color;
-        this.chartManager = chartManager;
+        this.initialized = false; // Add a flag to track initialization
 
         this.initProperties(position, velocity);
         this.initWorker();
@@ -47,10 +47,11 @@ export class Satellite {
         this.worker = new Worker(PhysicsWorkerURL);
         this.worker.onmessage = (event) => {
             const { type, data } = event.data;
-            if (type === 'stepComplete' && data.id === this.id) {
+            if (type === 'initComplete') {
+                this.initialized = true; // Mark initialization as complete
+            } else if (type === 'stepComplete' && data.id === this.id) {
                 this.updateFromSerialized(data);
                 this.updateTraceLine(Date.now());
-                this.updateChartData();
             }
         };
 
@@ -59,6 +60,7 @@ export class Satellite {
             type: 'init',
             data: {
                 earthMass: Constants.earthMass,
+                moonMass: Constants.moonMass, // Include Moon's mass
                 satellites: [satelliteData]
             }
         });
@@ -104,7 +106,6 @@ export class Satellite {
     deleteSatellite() {
         this.scene.remove(this.mesh);
         this.world.removeBody(this.body);
-        if (this.chartManager) this.chartManager.resetData(); // Reset the chart data when deleting the satellite
         this.scene.remove(this.traceLine);
         this.worker.terminate();
     }
@@ -133,6 +134,8 @@ export class Satellite {
     }
 
     updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
+        if (!this.initialized) return; // Wait for initialization to complete
+
         const utcCurrentTime = new Date(currentTime).toISOString();
 
         this.worker.postMessage({
@@ -142,23 +145,13 @@ export class Satellite {
                 realDeltaTime,
                 warpedDeltaTime,
                 earthPosition: this.earth.earthBody.position,
+                moonPosition: this.moon.moonBody.position, // Include Moon's position
                 earthRadius: Constants.earthRadius,
                 id: this.id
             }
         });
 
         this.updateMeshPosition();
-    }
-
-    updateChartData() {
-        if (this.chartManager) {
-            this.chartManager.updateData(Date.now(), [
-                this.getCurrentAltitude(),
-                this.getCurrentVelocity(),
-                this.getCurrentAcceleration(),
-                this.getCurrentDragForce()
-            ]);
-        }
     }
 
     updateTraceLine(currentTime) {

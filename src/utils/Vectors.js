@@ -192,4 +192,11 @@ export class Vectors {
         });
     }
 
+    getGreenwichSurfacePosition() {
+        const halfScale = this.scale / 2;
+        const greenwichPosition = this.greenwichVector.position.clone();
+        const greenwichDirection = this.greenwichVector.getDirection(new THREE.Vector3()).normalize();
+        const greenwichSurfacePosition = greenwichPosition.add(greenwichDirection.multiplyScalar(halfScale));
+        return greenwichSurfacePosition;
+    }
 }

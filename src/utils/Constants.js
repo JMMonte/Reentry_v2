@@ -10,4 +10,16 @@ export class Constants {
     static sunRadius = 695700; // Sun radius in km scaled down
     static satelliteRadius = 2; // Satellite radius in m
     static AU = 149.6e6; // Distance from Earth to Sun in km scaled down
+    static moonRadius = 1737.4 * 1000; // in meters
+    static moonMass = 7.342e22; // in kg
+    static moonOrbitRadius = 384400 * 1000; // in meters (not needed if using ephemerides)
+    static moonOrbitSpeed = 2.6617e-6; // radians per second (not needed if using ephemerides)
+    static moonRotationSpeed = 0.0001; // radians per frame
+    static moonInitialPosition = {
+        x: 384400 * 1000, // in meters (not needed if using ephemerides)
+        y: 0,
+        z: 0
+    };
+    static AUToMeters = 149597870700; // Astronomical unit to meters conversion
+
 }

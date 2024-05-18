@@ -1,12 +1,12 @@
 import * as CANNON from 'cannon-es';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 
-let world, satellites = [], earthMass;
+let world, satellites = [], earthMass, moonMass;
+let manuallyManagedSatellites = []; // To store satellites managed manually
 
 self.onmessage = function (event) {
     let messageData;
 
-    // Check if the data is a string and parse it
     if (typeof event.data === 'string') {
         try {
             messageData = JSON.parse(event.data);
@@ -15,7 +15,6 @@ self.onmessage = function (event) {
             return;
         }
     } else {
-        // If it's already an object, use it directly
         messageData = event.data;
     }
 
@@ -31,14 +30,20 @@ self.onmessage = function (event) {
                 console.error('Physics world is not initialized. Please send an "init" message first.');
             }
             break;
+        case 'createSatellite':
+            addSatellite(data);
+            break;
+        case 'removeSatellite':
+            removeSatellite(data.id);
+            break;
     }
 };
 
 function initPhysics(data) {
-    // console.log('Initializing physics world with data:', JSON.stringify(data));
     world = new CANNON.World();
-    world.gravity.set(0, 0, 0);  // No gravity, we handle it manually
+    world.gravity.set(0, 0, 0);
     earthMass = data.earthMass;
+    moonMass = data.moonMass; // Initialize Moon's mass
 
     satellites = data.satellites.map(satData => {
         const satellite = {
@@ -48,7 +53,8 @@ function initPhysics(data) {
                 position: new CANNON.Vec3(satData.position.x, satData.position.y, satData.position.z),
                 shape: new CANNON.Sphere(satData.size)
             }),
-            velocity: new CANNON.Vec3(satData.velocity.x, satData.velocity.y, satData.velocity.z)
+            velocity: new CANNON.Vec3(satData.velocity.x, satData.velocity.y, satData.velocity.z),
+            altitude: satData.altitude
         };
 
         satellite.body.linearDamping = 0;
@@ -58,10 +64,15 @@ function initPhysics(data) {
         world.addBody(satellite.body);
         return satellite;
     });
+
+    // Notify that initialization is complete
+    self.postMessage({
+        type: 'initComplete'
+    });
 }
 
 function stepPhysics(data) {
-    const { warpedDeltaTime, earthPosition, earthRadius, id } = data;
+    const { warpedDeltaTime, earthPosition, earthRadius, moonPosition } = data;
     if (warpedDeltaTime <= 0) {
         console.error('Invalid warpedDeltaTime:', warpedDeltaTime);
         return;
@@ -70,51 +81,123 @@ function stepPhysics(data) {
     world.step(warpedDeltaTime);
 
     const earthPos = new CANNON.Vec3(earthPosition.x, earthPosition.y, earthPosition.z);
+    const moonPos = new CANNON.Vec3(moonPosition.x, moonPosition.y, moonPosition.z);
 
-    const satellite = satellites.find(sat => sat.id === id);
-    if (satellite) {
+    satellites.forEach(satellite => {
         const satellitePosition = satellite.body.position;
-        const distance = satellitePosition.distanceTo(earthPos);
-        const altitude = distance - earthRadius;
+        const distanceToEarth = satellitePosition.distanceTo(earthPos);
+        const distanceToMoon = satellitePosition.distanceTo(moonPos);
+        const altitude = distanceToEarth - earthRadius;
 
-        if (altitude <= 0) {
-            const earthSurfaceVelocity = PhysicsUtils.calculateEarthSurfaceVelocity(satellitePosition, earthRadius, earthRotationSpeed, earthInclination);
-            satellite.body.velocity.copy(earthSurfaceVelocity);
+        if (altitude <= 10000) { // 10km threshold
+            manuallyManageSatellite(satellite, altitude, earthRadius);
+            removeSatelliteFromPhysicsWorld(satellite);
+        } else {
+            const gravitationalForceEarth = calculateGravitationalForce(earthPos, satellitePosition, distanceToEarth, earthMass, satellite);
+            const gravitationalForceMoon = calculateGravitationalForce(moonPos, satellitePosition, distanceToMoon, moonMass, satellite);
+            const totalGravitationalForce = gravitationalForceEarth.vadd(gravitationalForceMoon);
+
+            if (totalGravitationalForce) {
+                satellite.body.applyForce(totalGravitationalForce, satellite.body.position);
+            }
+
+            const dragForce = calculateDragForce(altitude, satellite);
+            if (dragForce) {
+                satellite.body.applyForce(dragForce, satellite.body.position);
+            }
+
+            self.postMessage({
+                type: 'stepComplete',
+                data: {
+                    id: satellite.id,
+                    position: satellite.body.position,
+                    velocity: satellite.body.velocity,
+                    altitude: altitude,
+                    acceleration: totalGravitationalForce,
+                    dragForce: dragForce
+                }
+            });
         }
+    });
 
-        const gravitationalForce = calculateGravitationalForce(earthPos, satellitePosition, distance, satellite);
-        if (gravitationalForce) {
-            satellite.body.applyForce(gravitationalForce, satellite.body.position);
-        }
-
-        const dragForce = calculateDragForce(altitude, satellite);
-        if (dragForce) {
-            satellite.body.applyForce(dragForce, satellite.body.position);
-        }
-
+    // Update positions of manually managed satellites
+    manuallyManagedSatellites.forEach(managedSat => {
+        updateManuallyManagedSatellite(managedSat, earthPosition, warpedDeltaTime);
         self.postMessage({
             type: 'stepComplete',
             data: {
-                id: satellite.id,
-                position: satellite.body.position,
-                velocity: satellite.body.velocity,
-                altitude: altitude,
-                acceleration: gravitationalForce,
-                dragForce: dragForce
+                id: managedSat.id,
+                position: managedSat.position,
+                velocity: new CANNON.Vec3(0, 0, 0),
+                altitude: managedSat.altitude,
+                acceleration: new CANNON.Vec3(0, 0, 0),
+                dragForce: new CANNON.Vec3(0, 0, 0)
             }
         });
+    });
+}
+
+function manuallyManageSatellite(satellite, altitude, earthRadius) {
+    satellite.altitude = altitude;
+    satellite.position = satellite.body.position.clone();
+    manuallyManagedSatellites.push(satellite);
+}
+
+function removeSatelliteFromPhysicsWorld(satellite) {
+    world.removeBody(satellite.body);
+    satellites = satellites.filter(sat => sat.id !== satellite.id);
+}
+
+function updateManuallyManagedSatellite(satellite, earthPosition, warpedDeltaTime) {
+    // Update the satellite's position based on Earth's rotation
+    const earthRotationAngle = earthRotationSpeed * warpedDeltaTime;
+    const rotationQuaternion = new CANNON.Quaternion().setFromAxisAngle(new CANNON.Vec3(0, 1, 0), earthRotationAngle);
+    satellite.position.applyQuaternion(rotationQuaternion);
+}
+
+function addSatellite(satData) {
+    const satellite = {
+        id: satData.id,
+        body: new CANNON.Body({
+            mass: satData.mass,
+            position: new CANNON.Vec3(satData.position.x, satData.position.y, satData.position.z),
+            shape: new CANNON.Sphere(satData.size)
+        }),
+        velocity: new CANNON.Vec3(satData.velocity.x, satData.velocity.y, satData.velocity.z),
+        altitude: satData.altitude
+    };
+
+    satellite.body.linearDamping = 0;
+    satellite.body.angularDamping = 0;
+
+    satellite.body.velocity.copy(satellite.velocity);
+    world.addBody(satellite.body);
+    satellites.push(satellite);
+}
+
+function removeSatellite(id) {
+    const index = satellites.findIndex(sat => sat.id === id);
+    if (index !== -1) {
+        world.removeBody(satellites[index].body);
+        satellites.splice(index, 1);
+    }
+
+    // Also remove from manually managed satellites if it exists there
+    const managedIndex = manuallyManagedSatellites.findIndex(sat => sat.id === id);
+    if (managedIndex !== -1) {
+        manuallyManagedSatellites.splice(managedIndex, 1);
     }
 }
 
-function calculateGravitationalForce(earthPosition, satellitePosition, distance, satellite) {
+function calculateGravitationalForce(bodyPosition, satellitePosition, distance, bodyMass, satellite) {
     const forceDirection = new CANNON.Vec3(
-        earthPosition.x - satellitePosition.x,
-        earthPosition.y - satellitePosition.y,
-        earthPosition.z - satellitePosition.z
+        bodyPosition.x - satellitePosition.x,
+        bodyPosition.y - satellitePosition.y,
+        bodyPosition.z - satellitePosition.z
     );
     forceDirection.normalize();
 
-    const forceMagnitude = PhysicsUtils.calculateGravitationalForce(earthMass, satellite.body.mass, distance);
+    const forceMagnitude = PhysicsUtils.calculateGravitationalForce(bodyMass, satellite.body.mass, distance);
     if (isNaN(forceMagnitude) || forceMagnitude <= 0) {
         console.error('Invalid forceMagnitude:', forceMagnitude);
         return null;
