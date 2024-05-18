@@ -1,6 +1,7 @@
 # REENTER v2 - Space Simulation Visualizer in Three.js
 
-![Screenshot](src/texture/Screenshot%202024-05-13%20at%2000.28.32.png)
+![Screenshot](public/assets/texture/reenter_v2.png)
+![Screenshot](public/assets/texture/reenter_v2_1.png)
 
 This project utilizes WebGL via the Three.js library and the physics engine Cannon.js to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
 
