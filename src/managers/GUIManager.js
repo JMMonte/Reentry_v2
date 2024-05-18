@@ -273,8 +273,8 @@ class GUIManager {
             azimuth, 
             angleOfAttack, 
             this.timeUtils,
+            earthQuaternion,
             tiltQuaternion,
-            earthQuaternion
         );
     
         const newSatellite = new Satellite(this.scene, this.world, this.earth, this.moon, positionECEF, velocityECEF, id, color);
