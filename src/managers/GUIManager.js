@@ -273,8 +273,8 @@ class GUIManager {
             azimuth, 
             angleOfAttack, 
             this.timeUtils,
-            earthQuaternion,
-            tiltQuaternion
+            tiltQuaternion,
+            earthQuaternion
         );
     
         const newSatellite = new Satellite(this.scene, this.world, this.earth, this.moon, positionECEF, velocityECEF, id, color);
@@ -289,6 +289,7 @@ class GUIManager {
     
         this.updateBodySelector(); // Update the body selector with new satellite
     }
+    
 
     removeSatellite(satellite) {
         const index = this.satellites.indexOf(satellite);
