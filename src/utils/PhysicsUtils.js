@@ -108,7 +108,7 @@ export class PhysicsUtils {
         return earthSurfaceVelocity;
     }
 
-    static calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, timeUtils) {
+    static calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, timeUtils, tiltQuaternion, earthQuaternion) {
         const latRad = THREE.MathUtils.degToRad(latitude);
         const lonRad = THREE.MathUtils.degToRad(-longitude); // Reverse the sign of longitude
         const azimuthRad = THREE.MathUtils.degToRad(azimuth); // Use azimuth directly
@@ -128,7 +128,7 @@ export class PhysicsUtils {
         const Y = ((1 - e2) * N + altitude) * Math.sin(latRad);
     
         // Position vector
-        const positionECI = new THREE.Vector3(X, Y, Z);
+        let positionECI = new THREE.Vector3(X, Y, Z);
     
         // Up direction
         const up = new THREE.Vector3(X, Y, Z).normalize();
@@ -157,12 +157,24 @@ export class PhysicsUtils {
             horizontalVelocityENU.z * Math.cos(angleOfAttackRad) + up.z * Math.sin(angleOfAttackRad)
         ).multiplyScalar(velocity);
     
-        // Convert velocity from ENU to ECEF
-        const velocityECI = new THREE.Vector3(velocityENU.x, velocityENU.y, velocityENU.z);
+        // Correction quaternion for -90 degrees around the y-axis
+        const correctionQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+    
+        // Apply correction quaternion to position and velocity vectors
+        positionECI.applyQuaternion(correctionQuaternion);
+        velocityENU.applyQuaternion(correctionQuaternion);
+    
+        // Apply Earth's tilt quaternion to position and velocity vectors
+        positionECI.applyQuaternion(tiltQuaternion);
+        velocityENU.applyQuaternion(tiltQuaternion);
+    
+        // Apply Earth's rotation quaternion to position and velocity vectors
+        positionECI.applyQuaternion(earthQuaternion);
+        velocityENU.applyQuaternion(earthQuaternion);
     
         // Convert position and velocity to CANNON vectors
         const position = new CANNON.Vec3(positionECI.x, positionECI.y, positionECI.z);
-        const velocityECEF = new CANNON.Vec3(velocityECI.x, velocityECI.y, velocityECI.z);
+        const velocityECEF = new CANNON.Vec3(velocityENU.x, velocityENU.y, velocityENU.z);
     
         return { positionECEF: position, velocityECEF: velocityECEF };
     }

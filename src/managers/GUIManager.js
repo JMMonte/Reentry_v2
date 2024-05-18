@@ -260,17 +260,33 @@ class GUIManager {
     createSatellite(latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
         const color = Math.random() * 0xffffff;
         const id = this.satellites.length > 0 ? Math.max(...this.satellites.map(sat => sat.id)) + 1 : 1;
-        const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, this.timeUtils);
+    
+        // Retrieve Earth's rotation quaternion and tilt quaternion
+        const earthQuaternion = this.earth.rotationGroup.quaternion;
+        const tiltQuaternion = this.earth.tiltGroup.quaternion;
+    
+        const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
+            latitude, 
+            longitude, 
+            altitude, 
+            velocity, 
+            azimuth, 
+            angleOfAttack, 
+            this.timeUtils,
+            earthQuaternion,
+            tiltQuaternion
+        );
+    
         const newSatellite = new Satellite(this.scene, this.world, this.earth, this.moon, positionECEF, velocityECEF, id, color);
         this.satellites.push(newSatellite);
         this.vectors.addSatellite(newSatellite);
         this.updateSatelliteGUI(newSatellite);
-
+    
         this.physicsWorker.postMessage({
             type: 'createSatellite',
             data: newSatellite.serialize()
         });
-
+    
         this.updateBodySelector(); // Update the body selector with new satellite
     }
 
