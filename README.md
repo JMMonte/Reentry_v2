@@ -7,11 +7,21 @@ This project utilizes WebGL via the Three.js library and the physics engine Cann
 
 ## Features
 
-- Realistic 3D rendering of the Earth and Sun with orbit controls.
-- Physics simulation for zero-gravity environments.
-- GUI for real-time interaction and visualization adjustments.
-- Dynamic data visualization of satellite metrics such as altitude, velocity, and acceleration.
-- Customizable time warp features to speed up or slow down the simulation.
+- Realistic 3D rendering of the Earth-Moon system and the Sun with orbit controls.
+- Realtime physics simulation for spacecraft navigation.
+- GUI for real-time interaction, satellite creation, and visualization adjustments.
+- Dynamic data visualization of satellite metrics such as altitude, velocity, atmospheric drag, and acceleration.
+- Customizable time warp features to speed up or slow down the simulation by many orders of magnitude.
+- Runs on the browser in high performance (trying to make it even faster).
+- Tested on iPhone at 60fps. (let me know how it performs on your machine 🙂).
+
+# To-do
+
+- Timeline based interface for complex missions.
+- JSON interface for missions
+- API
+- Simulation data streaming
+- Whole solar system
 
 ## Installation
 
