@@ -72,4 +72,4 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) f
 
 ## Contact
 
-For support or queries, contact [your-email@example.com](mailto:your-email@example.com).
+For support or queries, contact [jm@reenter.space](mailto:jm@reenter.space).
