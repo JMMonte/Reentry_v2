@@ -4,8 +4,10 @@
 ![Screenshot](public/assets/texture/reenter_v2_1.png)
 
 This project utilizes WebGL via the Three.js library and the physics engine Cannon.js to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth-Moon system and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
+
 There are no good space simulation environments with high quality visualization that run with modern software. Reenter means to change that by building an opensource simulation tool that can grow with its own community. Try it out and improve on it.
-All visuals implemented from scratch. Physics running in cannon-es ltest version through a service worker. Some mathematical models are running in javascript for now, would be great to change to higher precision ones later (C#?).
+
+All visuals implemented from scratch. Physics running in cannon-es latest version through a service worker. Some mathematical models are running in javascript for now, would be great to change to higher precision ones later (C#?).
 
 ## Features
 
