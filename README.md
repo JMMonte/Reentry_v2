@@ -15,7 +15,7 @@ This project utilizes WebGL via the Three.js library and the physics engine Cann
 - Runs on the browser in high performance (trying to make it even faster).
 - Tested on iPhone at 60fps. (let me know how it performs on your machine 🙂).
 
-# To-do
+## To-do
 
 - Timeline based interface for complex missions.
 - JSON interface for missions
