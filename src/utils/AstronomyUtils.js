@@ -1,4 +1,6 @@
 // utils/AstronomyUtils.js
+import { Constants } from './Constants.js';
+
 export function JulianDay(date) {
     const time = date.getTime() / 86400000.0 + 2440587.5;
     return time - 2451545.0; // Julian centuries since J2000.0

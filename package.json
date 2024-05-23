@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "astronomy-engine": "^2.1.19",
     "cannon-es": "^0.20.0",
     "cannon-es-debugger": "^1.0.0",
     "dat.gui": "^0.7.9",

@@ -83,7 +83,10 @@ class GUIManager {
             'Thanos (100)': 100,
             'Mr. Spock (300)': 300,
             'Dr. Strange (1000)': 1000,
-            'Godspeed (3000)': 3000
+            'Godspeed (3000)': 3000,
+            'Plaid (10000)': 10000,
+            'Harambe (30000)': 30000,
+            'Multiverse (100000)': 100000,
         }).name('Time Warp').onChange(this.updateTimeWarp.bind(this));
     }
 

@@ -11,7 +11,8 @@ export class Satellite {
         this.moon = moon;
         this.id = id;
         this.color = color;
-        this.initialized = false; // Add a flag to track initialization
+        this.initialized = false;
+        this.updateBuffer = [];
 
         this.initProperties(position, velocity);
         this.initWorker();
@@ -29,7 +30,6 @@ export class Satellite {
         this.body = new CANNON.Body({ mass: this.satelliteMass, shape, material });
         this.body.position.copy(position);
         this.body.velocity.copy(velocity);
-        this.world.addBody(this.body);
 
         const geometry = new THREE.SphereGeometry(Constants.satelliteRadius, 16, 16);
         const materialThree = new THREE.MeshBasicMaterial({ color: this.color });
@@ -48,26 +48,32 @@ export class Satellite {
         this.worker.onmessage = (event) => {
             const { type, data } = event.data;
             if (type === 'initComplete') {
-                this.initialized = true; // Mark initialization as complete
+                this.initialized = true;
+                this.world.addBody(this.body);
             } else if (type === 'stepComplete' && data.id === this.id) {
-                this.updateFromSerialized(data);
-                this.updateTraceLine(Date.now());
+                this.updateBuffer.push(data);
             }
         };
 
-        const satelliteData = this.serialize();
         this.worker.postMessage({
             type: 'init',
             data: {
                 earthMass: Constants.earthMass,
-                moonMass: Constants.moonMass, // Include Moon's mass
-                satellites: [satelliteData]
+                moonMass: Constants.moonMass,
+                satellites: []
             }
+        });
+
+        const satelliteData = this.serialize();
+        this.worker.postMessage({
+            type: 'createSatellite',
+            data: satelliteData
         });
     }
 
     initTraceLine() {
         const traceLineGeometry = new THREE.BufferGeometry();
+        traceLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
         const traceLineMaterial = new THREE.LineBasicMaterial({ color: this.color });
         this.traceLine = new THREE.Line(traceLineGeometry, traceLineMaterial);
         this.scene.add(this.traceLine);
@@ -134,7 +140,7 @@ export class Satellite {
     }
 
     updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
-        if (!this.initialized) return; // Wait for initialization to complete
+        if (!this.initialized) return;
 
         const utcCurrentTime = new Date(currentTime).toISOString();
 
@@ -145,13 +151,21 @@ export class Satellite {
                 realDeltaTime,
                 warpedDeltaTime,
                 earthPosition: this.earth.earthBody.position,
-                moonPosition: this.moon.moonBody.position, // Include Moon's position
+                moonPosition: this.moon.moonBody.position,
                 earthRadius: Constants.earthRadius,
                 id: this.id
             }
         });
 
         this.updateMeshPosition();
+    }
+
+    applyBufferedUpdates() {
+        if (this.updateBuffer.length > 0) {
+            const data = this.updateBuffer.shift();
+            this.updateFromSerialized(data);
+            this.updateTraceLine(Date.now());
+        }
     }
 
     updateTraceLine(currentTime) {
@@ -171,5 +185,6 @@ export class Satellite {
 
         this.traceLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         this.traceLine.geometry.attributes.position.needsUpdate = true;
+        this.traceLine.geometry.setDrawRange(0, this.dynamicPositions.length);
     }
 }

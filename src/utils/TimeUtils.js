@@ -9,73 +9,62 @@ export class TimeUtils {
         this.simulatedTime = new Date(settings.simulatedTime); // Ensure this is in UTC
         this.dayOfYear = this.getDayOfYear(this.simulatedTime);
         this.fractionOfDay = this.getFractionOfDay();
-        this.AU = Constants.AU * Constants.scale;
+        this.AU = Constants.AU;
     }
 
-    // Update the timestamp and handle the simulation time, correctly applying the time warp
     update(timestamp) {
-        const now = timestamp * 0.001;  // Convert timestamp from milliseconds to seconds
-        this.deltaTime = (now - this.lastTime) * this.settings.timeWarp;  // Apply time warp to deltaTime
+        const now = timestamp * 0.001;
+        this.deltaTime = (now - this.lastTime) * this.settings.timeWarp;
         this.lastTime = now;
-
-        const msToAdd = this.deltaTime * 1000;  // Convert deltaTime back to milliseconds for date manipulation
+        const msToAdd = this.deltaTime * 1000;
         this.simulatedTime = new Date(this.simulatedTime.getTime() + msToAdd);
         this.settings.simulatedTime = this.simulatedTime.toISOString();
-
         this.dayOfYear = this.getDayOfYear(this.simulatedTime);
         this.fractionOfDay = this.getFractionOfDay();
     }
 
-    // Adjust the time warp factor
     setTimeWarp(warpFactor) {
         this.settings.timeWarp = warpFactor;
     }
+    
+    getSimulatedTime() {
+        return this.simulatedTime;
+    }
 
-    // Utility method to calculate the day of the year
     getDayOfYear(date) {
-        if (!(date instanceof Date)) {
-            date = new Date(date);  // Ensure date is a Date object
-        }
-        const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0)); // Use UTC
+        const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0));
         const diff = date - start;
         const oneDay = 1000 * 60 * 60 * 24;
         return Math.floor(diff / oneDay);
     }
 
-    // Calculate the Sun's position based on Earth's orbit and day of year
     getSunPosition() {
         const meanAnomaly = (357.5291 + 0.98560028 * this.dayOfYear) % 360;
         const meanLongitude = (280.4665 + 0.98564736 * this.dayOfYear) % 360;
         const eccentricity = 0.0167;
-
         const equationOfCenter = (1.9148 * Math.sin(meanAnomaly * Math.PI / 180) +
                                   0.0200 * Math.sin(2 * meanAnomaly * Math.PI / 180) +
                                   0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180));
-
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
-        const distance = this.AU;  // 1 AU in 10 km
+        const distance = this.AU * Constants.metersToKm * Constants.scale;
         const x = -distance * Math.cos(trueLongitude * Math.PI / 180);
         const z = distance * Math.sin(trueLongitude * Math.PI / 180);
         const y = distance * eccentricity * Math.sin(trueLongitude * Math.PI / 180);
         return new THREE.Vector3(x, y, z);
     }
 
-    // Helper to calculate Earth's velocity in orbit
     calculateEarthVelocity() {
         return new THREE.Vector3(-Math.sin(2 * Math.PI * this.dayOfYear / 365.25), 0, Math.cos(2 * Math.PI * this.dayOfYear / 365.25));
     }
 
-    // Account for Earth's axial tilt
     getEarthTilt() {
         return new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(23.5)));
     }
 
-    // Return deltaTime adjusted for the current time warp
     getDeltaTime() {
         return this.deltaTime;
     }
 
-    // Return the simulated time as a Date object
     getSimulatedTime() {
         return this.simulatedTime;
     }
@@ -83,7 +72,7 @@ export class TimeUtils {
     getJulianDate() {
         const now = this.simulatedTime;
         let year = now.getUTCFullYear();
-        let month = now.getUTCMonth() + 1;  // Month is zero-indexed
+        let month = now.getUTCMonth() + 1;
         const day = now.getUTCDate();
         const hour = now.getUTCHours();
         const minute = now.getUTCMinutes();
@@ -91,12 +80,10 @@ export class TimeUtils {
         const millisecond = now.getUTCMilliseconds();
         const isGregorian = year > 1582 || (year === 1582 && month > 10) || (year === 1582 && month === 10 && day >= 15);
         let julianDay = 0;
-    
         if (month <= 2) {
             year -= 1;
             month += 12;
         }
-    
         if (isGregorian) {
             const A = Math.floor(year / 100);
             const B = 2 - A + Math.floor(A / 4);
@@ -104,11 +91,9 @@ export class TimeUtils {
         } else {
             julianDay = Math.floor(365.25 * (year + 4716)) + Math.floor(30.6001 * (month + 1)) + day - 1524.5;
         }
-    
-        const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / 86400 + millisecond / 86400000;
+        const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / Constants.secondsInDay + millisecond / Constants.milisecondsInDay;
         return julianDate;
     }
-    
 
     getGreenwichSiderealTime() {
         const jd = this.getJulianDate();
@@ -117,43 +102,30 @@ export class TimeUtils {
         return theta % 360;
     }
 
-    // Calculate the fraction of the day that has elapsed
     getFractionOfDay() {
         const now = this.simulatedTime;
-        const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())); // Use UTC
-        const millisecondsInDay = 86400000; // 24 * 60 * 60 * 1000
+        const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const millisecondsInDay = 86400000;
         const elapsedToday = now - startOfDay;
         return elapsedToday / millisecondsInDay;
     }
 
     getFractionOfMoonRotation() {
         const now = this.simulatedTime;
-        const startOfCycle = new Date(Date.UTC(2000, 0, 6));  // New Moon on January 6, 2000
-        const millisecondsInCycle = 29.53058867 * 24 * 60 * 60 * 1000;  // 29.53058867 days in milliseconds
+        const startOfCycle = new Date(Date.UTC(2000, 0, 6));
+        const millisecondsInCycle = 29.53058867 * 24 * 60 * 60 * 1000;
         const elapsedCycle = now - startOfCycle;
         return (elapsedCycle % millisecondsInCycle) / millisecondsInCycle;
     }
 
     getGreenwichPosition() {
         const distance = Constants.earthRadius;
-        
-        // Initial position of the Greenwich meridian at the equator (0° longitude)
         let position = new THREE.Vector3(distance, 0, 0);
-    
-        // Apply Earth's axial tilt (23.5 degrees)
         const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(23.5));
-        
-        // Earth's daily rotation based on the fraction of the day
-        const rotationAngle = this.getFractionOfDay() * 2 * Math.PI + Math.PI * 0.256;  // Add PI to start at the back of the Earth
+        const rotationAngle = this.getFractionOfDay() * 2 * Math.PI + Math.PI * 0.256;
         const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
-        
-        // Combine the tilt and rotation quaternions: apply rotation first, then tilt
         const combinedQuaternion = new THREE.Quaternion().multiplyQuaternions(tiltQuaternion, rotationQuaternion);
-        
-        // Apply the combined quaternion to the position
         position.applyQuaternion(combinedQuaternion);
-        
         return position;
     }
-
 }

@@ -1,4 +1,4 @@
-// Other imports remain the same
+// app.js
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import Stats from 'stats.js';
@@ -15,6 +15,14 @@ import CannonDebugger from 'cannon-es-debugger';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
 import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
+import { TextureManager } from './managers/textureManager.js';
+// import textures
+import earthTexture from '../public/assets/texture/8k_earth_daymap.jpg';
+import earthSpecTexture from '../public/assets/texture/8k_earth_specular_map.png';
+import earthNormalTexture from '../public/assets/texture/8k_earth_normal_map.png';
+import cloudTexture from '../public/assets/texture/cloud_combined_8192.png';
+import moonTexture from '../public/assets/texture/lroc_color_poles_8k.jpg';
+import moonBump from '../public/assets/texture/ldem_16_uint.jpg';
 
 // Scene and Renderer Setup
 const scene = new THREE.Scene();
@@ -59,6 +67,7 @@ world.solver.iterations = 10;
 // GUI and Time settings
 const settings = {
     timeWarp: 1,
+    startTime: new Date().toISOString(),
     simulatedTime: new Date().toISOString(),
     showGrid: true,
     showVectors: true,
@@ -68,126 +77,164 @@ const settings = {
 // Time management
 const timeUtils = new TimeUtils(settings);
 
+// Texture Manager
+const textureManager = new TextureManager();
+const textureList = [
+    { url: earthTexture, name: 'earthTexture' },
+    { url: earthSpecTexture, name: 'earthSpecTexture' },
+    { url: earthNormalTexture, name: 'earthNormalTexture' },
+    { url: cloudTexture, name: 'cloudTexture' },
+    { url: moonTexture, name: 'moonTexture' },
+    { url: moonBump, name: 'moonBump' }
+];
+
 // Main Components
-const earth = new Earth(scene, world, renderer, timeUtils);
-const sun = new Sun(scene, timeUtils);
-const moon = new Moon(scene, world, renderer, timeUtils);
-const vectors = new Vectors(earth, scene, timeUtils);
+let earth, sun, moon, vectors, guiManager, cannonDebugger;
 const satellites = [];
 
-// Instantiate the Cannon Debugger
-const cannonDebugger = new CannonDebugger(scene, world, { autoUpdate: false });
+async function init() {
+    try {
+        // Load all textures before starting the simulation
+        await textureManager.loadAllTextures(textureList);
+    } catch (error) {
+        console.error('Failed to load all textures:', error);
+        return;
+    }
 
-// Post-processing
-const renderPass = new RenderPass(scene, camera);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 1.4, 0.99);
-const bloomComposer = new EffectComposer(renderer);
-bloomComposer.addPass(renderPass);
-bloomComposer.addPass(bloomPass);
-const finalComposer = new EffectComposer(renderer);
-finalComposer.addPass(renderPass);
-finalComposer.addPass(bloomComposer);
+    earth = new Earth(scene, world, renderer, timeUtils, textureManager);
+    sun = new Sun(scene, timeUtils);
+    moon = new Moon(scene, world, renderer, timeUtils, textureManager);
+    vectors = new Vectors(earth, scene, timeUtils);
+    cannonDebugger = new CannonDebugger(scene, world, { autoUpdate: false });
+    
+    // Post-processing
+    const renderPass = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 1.4, 0.99);
+    const bloomComposer = new EffectComposer(renderer);
+    bloomComposer.addPass(renderPass);
+    bloomComposer.addPass(bloomPass);
+    const finalComposer = new EffectComposer(renderer);
+    finalComposer.addPass(renderPass);
+    finalComposer.addPass(bloomComposer);
 
-// Stats for Monitoring
-const stats = new Stats();
-document.body.appendChild(stats.dom);
+    // Stats for Monitoring
+    const stats = new Stats();
+    document.body.appendChild(stats.dom);
 
-// Initialize the physics worker
-const physicsWorker = new Worker(PhysicsWorkerURL);
-physicsWorker.onmessage = handlePhysicsWorkerMessage;
+    // Initialize the physics worker
+    const physicsWorker = new Worker(PhysicsWorkerURL);
+    physicsWorker.onmessage = handlePhysicsWorkerMessage;
 
-function handlePhysicsWorkerMessage(event) {
-    const { type, data } = event.data;
-    if (type === 'stepComplete') {
-        const satellite = satellites.find(sat => sat.id === data.id);
-        if (satellite) {
-            satellite.updateFromSerialized(data);
+    function handlePhysicsWorkerMessage(event) {
+        const { type, data } = event.data;
+        if (type === 'stepComplete') {
+            const satellite = satellites.find(sat => sat.id === data.id);
+            if (satellite) {
+                satellite.updateFromSerialized(data);
+            }
+        } else if (type === 'initComplete') {
+            // Handle initialization complete, e.g., enable satellite creation
+            console.log('Physics worker initialization complete');
         }
     }
-}
 
-// GUI Manager
-const guiManager = new GUIManager(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker, camera, controls);
-
-// Main animation loop
-function animate(timestamp) {
-    stats.begin();
-
-    timeUtils.update(timestamp);
-
-    const realDeltaTime = timeUtils.getDeltaTime();
-    const warpedDeltaTime = realDeltaTime;
-    const currentTime = timeUtils.getSimulatedTime();
-
-    // Step physics world
-    if (satellites.length > 0) {
-        physicsWorker.postMessage({
-            type: 'step',
-            data: {
-                warpedDeltaTime,
-                earthPosition: earth.earthBody.position,
-                earthRadius: Constants.earthRadius,
-                moonPosition: moon.moonBody.position // Include Moon's position
-            }
-        });
-    }
-
-    // Update satellites
-    satellites.forEach(satellite => {
-        satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
-
-        const altitude = satellite.getCurrentAltitude();
-        const velocity = satellite.getCurrentVelocity();
-        const acceleration = satellite.getCurrentAcceleration();
-        const dragForce = satellite.getCurrentDragForce();
-
-        // Update GUI controllers with the new values
-        satellite.altitudeController.setValue(parseFloat(altitude)).updateDisplay();
-        satellite.velocityController.setValue(parseFloat(velocity)).updateDisplay();
-        satellite.accelerationController.setValue(parseFloat(acceleration)).updateDisplay();
-        satellite.dragController.setValue(parseFloat(dragForce)).updateDisplay();
+    // Initialize physics worker with necessary data
+    physicsWorker.postMessage({
+        type: 'init',
+        data: {
+            earthMass: Constants.earthMass,
+            moonMass: Constants.moonMass,
+            satellites: []
+        }
     });
 
-    // Update Earth rotation and light direction
-    earth.updateRotation();
-    earth.updateLightDirection();
+    // GUI Manager
+    guiManager = new GUIManager(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker, camera, controls);
 
-    // Update sun position
-    sun.updatePosition(currentTime);
+    // Main animation loop
+    function animate(timestamp) {
+        stats.begin();
 
-    // Update moon position and rotation
-    moon.updatePosition(currentTime);
-    moon.updateRotation();
+        timeUtils.update(timestamp);
 
-    // Update vectors (if applicable)
-    vectors.updateVectors();
+        const realDeltaTime = timeUtils.getDeltaTime();
+        const warpedDeltaTime = realDeltaTime;
+        const currentTime = timeUtils.getSimulatedTime();
 
-    if (settings.showDebugger) {
-        cannonDebugger.update();
+        // Step physics world
+        if (satellites.length > 0) {
+            physicsWorker.postMessage({
+                type: 'step',
+                data: {
+                    warpedDeltaTime,
+                    earthPosition: earth.earthBody.position,
+                    earthRadius: Constants.earthRadius,
+                    moonPosition: moon.moonBody.position // Include Moon's position
+                }
+            });
+        }
+
+        // Update satellites
+        satellites.forEach(satellite => {
+            satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
+            satellite.applyBufferedUpdates(); // Apply buffered updates
+    
+            const altitude = satellite.getCurrentAltitude();
+            const velocity = satellite.getCurrentVelocity();
+            const acceleration = satellite.getCurrentAcceleration();
+            const dragForce = satellite.getCurrentDragForce();
+    
+            // Update GUI controllers with the new values
+            satellite.altitudeController.setValue(parseFloat(altitude)).updateDisplay();
+            satellite.velocityController.setValue(parseFloat(velocity)).updateDisplay();
+            satellite.accelerationController.setValue(parseFloat(acceleration)).updateDisplay();
+            satellite.dragController.setValue(parseFloat(dragForce)).updateDisplay();
+        });
+
+        // Update Earth rotation and light direction
+        earth.updateRotation();
+        earth.updateLightDirection();
+
+        // Update sun position
+        sun.updatePosition(currentTime);
+
+        // Update moon position and rotation
+        moon.updatePosition(currentTime);
+        moon.updateRotation();
+
+        // Update vectors (if applicable)
+        vectors.updateVectors();
+
+        if (settings.showDebugger) {
+            cannonDebugger.update();
+        }
+
+        // Update camera position
+        guiManager.updateCameraPosition();
+
+        // Render scene with post-processing
+        renderer.clear();
+        bloomComposer.render();
+        finalComposer.render();
+
+        stats.end();
+        requestAnimationFrame(animate);
     }
 
-    // Update camera position
-    guiManager.updateCameraPosition();
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        bloomComposer.setSize(window.innerWidth, window.innerHeight);
+        finalComposer.setSize(window.innerWidth, window.innerHeight);
+    }
 
-    // Render scene with post-processing
-    renderer.clear();
-    bloomComposer.render();
-    finalComposer.render();
+    // Add the event listener for window resize
+    window.addEventListener('resize', onWindowResize);
 
-    stats.end();
+    // Kickstart the animation loop
     requestAnimationFrame(animate);
 }
 
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    bloomComposer.setSize(window.innerWidth, window.innerHeight);
-    finalComposer.setSize(window.innerWidth, window.innerHeight);
-}
-
-// Add the event listener for window resize
-window.addEventListener('resize', onWindowResize);
-
-// Kickstart the animation loop
-requestAnimationFrame(animate);
+// Initialize the application
+init();
