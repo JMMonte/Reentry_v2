@@ -6,26 +6,26 @@ import geojsonDataStates from '../config/ne_110m_admin_1_states_provinces.json';
 
 // Materials for lines with different levels of visibility
 const materialMajor = new THREE.LineBasicMaterial({
-    color: 0x00A5FF, transparent: true, opacity: 0.6,
+    color: 0x00A5FF,
     polygonOffset: true,
-    polygonOffsetFactor: 0,
-    polygonOffsetUnits: 0
+    polygonOffsetFactor: 10,
+    polygonOffsetUnits: 1
 });
 const materialMinor = new THREE.LineBasicMaterial({
-    color: 0x00A5FF, transparent: true, opacity: 0.3,
+    color: 0x00A5FF,
     polygonOffset: true,
-    polygonOffsetFactor: 0,
-    polygonOffsetUnits: 0
+    polygonOffsetFactor: 10,
+    polygonOffsetUnits: 1
 });
 
 const stateLinesMaterial = new THREE.LineBasicMaterial({
-    color: 0x00FF00, transparent: true, opacity: 0.2,
+    color: 0x00FF00,
     polygonOffset: true,
-    polygonOffsetFactor: 0,
-    polygonOffsetUnits: 0
+    polygonOffsetFactor: 10,
+    polygonOffsetUnits: 1
 });
 
-const heightOffset = -1;
+const heightOffset = -2;
 
 // Function to add latitude lines to the scene
 function addLatitudeLines(scene, earthRadius) {

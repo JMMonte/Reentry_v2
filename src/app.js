@@ -34,8 +34,10 @@ const camera = new THREE.PerspectiveCamera(
 );
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    depth: false,
-    logarithmicDepthBuffer: false 
+    depth: true,
+    logarithmicDepthBuffer: false ,
+    powerPreference: 'high-performance',
+    precision: 'highp'
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.gammaFactor = 2.2;
@@ -69,8 +71,9 @@ const settings = {
     timeWarp: 1,
     startTime: new Date().toISOString(),
     simulatedTime: new Date().toISOString(),
-    showGrid: true,
-    showVectors: true,
+    showGrid: false,
+    showVectors: false,
+    showSatVectors: true,
     showDebugger: false
 };
 
@@ -109,7 +112,7 @@ async function init() {
     
     // Post-processing
     const renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 1.4, 0.99);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.4, 0.99);
     const bloomComposer = new EffectComposer(renderer);
     bloomComposer.addPass(renderPass);
     bloomComposer.addPass(bloomPass);

@@ -132,7 +132,7 @@ export class Moon {
         this.previousRotation = totalRotation;
     
         // Update moon rotation
-        this.moonMesh.rotation.y -= deltaRotation;
+        this.moonMesh.rotation.y += deltaRotation;
     }
 
     getMesh() {

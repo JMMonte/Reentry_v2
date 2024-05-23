@@ -72,7 +72,7 @@ function initPhysics(data) {
 }
 
 function stepPhysics(data) {
-    const { warpedDeltaTime, earthPosition, earthRadius, moonPosition } = data;
+    const { currentTime, warpedDeltaTime, earthPosition, earthRadius, moonPosition } = data;
     if (warpedDeltaTime <= 0) {
         console.error('Invalid warpedDeltaTime:', warpedDeltaTime);
         return;
@@ -114,7 +114,8 @@ function stepPhysics(data) {
                     velocity: satellite.body.velocity,
                     altitude: altitude,
                     acceleration: totalGravitationalForce,
-                    dragForce: dragForce
+                    dragForce: dragForce,
+                    currentTime: currentTime  // Include current time for synchronization
                 }
             });
         }
@@ -131,7 +132,8 @@ function stepPhysics(data) {
                 velocity: new CANNON.Vec3(0, 0, 0),
                 altitude: managedSat.altitude,
                 acceleration: new CANNON.Vec3(0, 0, 0),
-                dragForce: new CANNON.Vec3(0, 0, 0)
+                dragForce: new CANNON.Vec3(0, 0, 0),
+                currentTime: currentTime  // Include current time for synchronization
             }
         });
     });
@@ -210,6 +212,9 @@ function calculateDragForce(altitude, satellite) {
     if (altitude < 0) {
         console.error('Invalid altitude:', altitude);
         return null;
+    }
+    if (altitude > 4000000) {
+        return 0; // Ignore drag force if altitude is over 400km
     }
     const Cd = 2.2;
     const A = Math.PI * Math.pow(satellite.body.shapes[0].radius, 2);

@@ -31,12 +31,12 @@ export class PhysicsUtils {
         const r = position.length();
         const v = velocity.length();
         const vr = velocity.dot(position) / r;
-        const hVec = position.cross(velocity);
+        const hVec = position.clone().cross(velocity);
         const h = hVec.length();
         const i = Math.acos(hVec.z / h);
-        const nVec = new THREE.Vector3(0, 0, 1).cross(hVec);
+        const nVec = new THREE.Vector3(-hVec.y, hVec.x, 0);
         const n = nVec.length();
-        const eVec = (velocity.cross(hVec)).divideScalar(mu).sub(position.divideScalar(r));
+        const eVec = velocity.clone().cross(hVec).divideScalar(mu).sub(position.clone().divideScalar(r));
         const e = eVec.length();
         let omega = Math.acos(nVec.x / n);
         if (nVec.y < 0) omega = 2 * Math.PI - omega;
@@ -44,21 +44,48 @@ export class PhysicsUtils {
         if (eVec.z < 0) w = 2 * Math.PI - w;
         let theta = Math.acos(eVec.dot(position) / (e * r));
         if (vr < 0) theta = 2 * Math.PI - theta;
+    
         return { h, e, i, omega, w, theta };
     }
 
     static computeOrbit({ h, e, i, omega, w, theta }, mu, numPoints = 100) {
         const points = [];
         const step = 2 * Math.PI / numPoints;
+    
         for (let f = 0; f < 2 * Math.PI; f += step) {
             const r = (h * h / mu) / (1 + e * Math.cos(f));
-            const oX = r * (Math.cos(omega) * Math.cos(w + f) - Math.sin(omega) * Math.sin(w + f) * Math.cos(i));
-            const oY = r * (Math.sin(omega) * Math.cos(w + f) + Math.cos(omega) * Math.sin(w + f) * Math.cos(i));
-            const oZ = r * (Math.sin(i) * Math.sin(w + f));
-            points.push(new THREE.Vector3(oX, oY, oZ));
+            
+            // Position in the orbital plane
+            const xOrbitalPlane = r * Math.cos(f);
+            const yOrbitalPlane = r * Math.sin(f);
+    
+            // Rotate by argument of periapsis
+            const cos_w = Math.cos(w);
+            const sin_w = Math.sin(w);
+            const xAfterPeriapsis = cos_w * xOrbitalPlane - sin_w * yOrbitalPlane;
+            const yAfterPeriapsis = sin_w * xOrbitalPlane + cos_w * yOrbitalPlane;
+    
+            // Rotate by inclination
+            const cos_i = Math.cos(i);
+            const sin_i = Math.sin(i);
+            const xAfterInclination = xAfterPeriapsis;
+            const zAfterInclination = sin_i * yAfterPeriapsis;
+            const yAfterInclination = cos_i * yAfterPeriapsis;
+    
+            // Rotate by longitude of ascending node
+            const cos_omega = Math.cos(omega);
+            const sin_omega = Math.sin(omega);
+            const xECI = cos_omega * xAfterInclination - sin_omega * yAfterInclination;
+            const yECI = sin_omega * xAfterInclination + cos_omega * yAfterInclination;
+            const zECI = zAfterInclination;
+    
+            // Convert to kilometers for Three.js
+            points.push(new THREE.Vector3(xECI * Constants.metersToKm * Constants.scale, yECI * Constants.metersToKm * Constants.scale, zECI * Constants.metersToKm * Constants.scale));
         }
+    
         return points;
     }
+    
 
     static calculateVerticalAcceleration(planetRadius, planetMass, altitude) {
         return Constants.G * planetMass / Math.pow(planetRadius + altitude, 2);

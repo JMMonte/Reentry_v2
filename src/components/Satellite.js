@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import PhysicsWorkerURL from 'url:../workers/physicsWorker.js';
+import { PhysicsUtils } from '../utils/PhysicsUtils.js';  // Import PhysicsUtils
 
 export class Satellite {
     constructor(scene, world, earth, moon, position, velocity, id, color) {
@@ -17,6 +18,8 @@ export class Satellite {
         this.initProperties(position, velocity);
         this.initWorker();
         this.initTraceLine();
+        this.initOrbitLine();
+        this.initApsides();
     }
 
     initProperties(position, velocity) {
@@ -74,9 +77,64 @@ export class Satellite {
     initTraceLine() {
         const traceLineGeometry = new THREE.BufferGeometry();
         traceLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
-        const traceLineMaterial = new THREE.LineBasicMaterial({ color: this.color });
+        const traceLineMaterial = new THREE.LineBasicMaterial({
+            color: this.color,
+            linewidth: 1,
+        });
         this.traceLine = new THREE.Line(traceLineGeometry, traceLineMaterial);
         this.scene.add(this.traceLine);
+    }
+
+    initOrbitLine() {
+        const orbitLineGeometry = new THREE.BufferGeometry();
+        const orbitLineMaterial = new THREE.LineBasicMaterial({ color: this.color, opacity: 0.2, transparent: true });
+        this.orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
+        this.scene.add(this.orbitLine);
+    }
+
+    initApsides() {
+        const sphereGeometry = new THREE.SphereGeometry(10, 16, 16);
+        const periapsisMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.5, transparent: true }); // Red for periapsis
+        const apoapsisMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, opacity: 0.5, transparent: true }); // Blue for apoapsis
+
+        this.periapsisMesh = new THREE.Mesh(sphereGeometry, periapsisMaterial);
+        this.apoapsisMesh = new THREE.Mesh(sphereGeometry, apoapsisMaterial);
+
+        this.scene.add(this.periapsisMesh);
+        this.scene.add(this.apoapsisMesh);
+    }
+
+    updateApsides(orbitalElements) {
+        const { h, e, i, omega, w } = orbitalElements;
+        const mu = Constants.G * Constants.earthMass;
+        
+        // Calculate periapsis and apoapsis distances
+        const rPeriapsis = h * h / (mu * (1 + e));
+        const rApoapsis = h * h / (mu * (1 - e));
+
+        // Calculate position vectors in the orbital plane
+        const periapsisVector = new THREE.Vector3(rPeriapsis, 0, 0);
+        const apoapsisVector = new THREE.Vector3(-rApoapsis, 0, 0); // Apoapsis is in the opposite direction
+
+        // Rotate by argument of periapsis
+        periapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
+        apoapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
+
+        // Rotate by inclination
+        periapsisVector.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
+        apoapsisVector.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
+
+        // Rotate by longitude of ascending node
+        periapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+        apoapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+
+        // Convert to kilometers for Three.js
+        periapsisVector.multiplyScalar(Constants.metersToKm * Constants.scale);
+        apoapsisVector.multiplyScalar(Constants.metersToKm * Constants.scale);
+
+        // Set positions
+        this.periapsisMesh.position.copy(periapsisVector);
+        this.apoapsisMesh.position.copy(apoapsisVector);
     }
 
     serialize() {
@@ -97,10 +155,11 @@ export class Satellite {
         this.dragForce.copy(data.dragForce);
 
         this.updateMeshPosition();
+        this.updateOrbitalElements();
     }
 
     updateMeshPosition() {
-        const scaleFactor = Constants.scale * Constants.metersToKm;
+        const scaleFactor = Constants.metersToKm * Constants.scale;
         this.mesh.position.set(
             this.body.position.x * scaleFactor,
             this.body.position.y * scaleFactor,
@@ -113,6 +172,9 @@ export class Satellite {
         this.scene.remove(this.mesh);
         this.world.removeBody(this.body);
         this.scene.remove(this.traceLine);
+        this.scene.remove(this.orbitLine);
+        this.scene.remove(this.periapsisMesh);
+        this.scene.remove(this.apoapsisMesh);
         this.worker.terminate();
     }
 
@@ -137,6 +199,7 @@ export class Satellite {
         this.color = color;
         this.mesh.material.color.set(color);
         this.traceLine.material.color.set(color);
+        this.orbitLine.material.color.set(color);
     }
 
     updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
@@ -186,5 +249,27 @@ export class Satellite {
         this.traceLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         this.traceLine.geometry.attributes.position.needsUpdate = true;
         this.traceLine.geometry.setDrawRange(0, this.dynamicPositions.length);
+    }
+
+    updateOrbitalElements() {
+        const mu = Constants.G * Constants.earthMass; // Standard gravitational parameter for Earth
+        const position = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
+        const velocity = new THREE.Vector3(this.body.velocity.x, this.body.velocity.y, this.body.velocity.z);
+        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
+
+        // Compute orbit points
+        const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu);
+
+        // Update orbit line geometry
+        const positions = new Float32Array(orbitPoints.length * 3);
+        orbitPoints.forEach((point, i) => {
+            positions.set([point.x, point.y, point.z], i * 3);
+        });
+
+        this.orbitLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        this.orbitLine.geometry.attributes.position.needsUpdate = true;
+
+        // Update periapsis and apoapsis positions
+        this.updateApsides(orbitalElements);
     }
 }

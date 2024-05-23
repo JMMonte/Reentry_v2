@@ -121,6 +121,8 @@ export class Vectors {
         this.northPoleVector.visible = visible;
         this.sunDirectionArrow.visible = visible;
         this.greenwichVector.visible = visible;
+    }
+    setSatVisible(visible) {
         this.satellites.forEach(entry => {
             if (entry.velocityVector) {
                 entry.velocityVector.visible = visible;
@@ -174,5 +176,21 @@ export class Vectors {
         const greenwichDirection = this.greenwichVector.getDirection(new THREE.Vector3()).normalize();
         const greenwichSurfacePosition = greenwichPosition.add(greenwichDirection.multiplyScalar(halfScale));
         return greenwichSurfacePosition;
+    }
+
+    toggleVelocityVectorVisibility(visible) {
+        this.velocityVector.visible = visible;
+    }
+
+    toggleNorthPoleVectorVisibility(visible) {
+        this.northPoleVector.visible = visible;
+    }
+
+    toggleSunDirectionArrowVisibility(visible) {
+        this.sunDirectionArrow.visible = visible;
+    }
+
+    toggleGreenwichVectorVisibility(visible) {
+        this.greenwichVector.visible = visible;
     }
 }

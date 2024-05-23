@@ -109,15 +109,27 @@ class GUIManager {
             azimuth: 90,
             angleOfAttack: 0
         };
-
+    
         const satelliteFolder = this.gui.addFolder('Satellite Launch Controls');
-        satelliteFolder.add(satelliteData, 'latitude', -90, 90).name('Latitude (deg)').step(0.1).listen();
-        satelliteFolder.add(satelliteData, 'longitude', -180, 180).name('Longitude (deg)').step(0.1).listen();
-        satelliteFolder.add(satelliteData, 'altitude', 100, 50000).name('Altitude (km)').step(1).listen();
-        satelliteFolder.add(satelliteData, 'velocity', 1000, 20000).name('Velocity (m/s)').step(10).listen();
-        satelliteFolder.add(satelliteData, 'azimuth', 0, 360).name('Azimuth (deg)').step(1).listen();
-        satelliteFolder.add(satelliteData, 'angleOfAttack', -90, 90).name('Angle of Attack (deg)').step(0.1).listen();
-
+        satelliteFolder.add(satelliteData, 'latitude', -90, 90).name('Latitude (deg)').step(0.1).onChange(value => {
+            satelliteData.latitude = value;
+        }).listen();
+        satelliteFolder.add(satelliteData, 'longitude', -180, 180).name('Longitude (deg)').step(0.1).onChange(value => {
+            satelliteData.longitude = value;
+        }).listen();
+        satelliteFolder.add(satelliteData, 'altitude', 100, 50000).name('Altitude (km)').step(1).onChange(value => {
+            satelliteData.altitude = value;
+        }).listen();
+        satelliteFolder.add(satelliteData, 'velocity', 1000, 20000).name('Velocity (m/s)').step(10).onChange(value => {
+            satelliteData.velocity = value;
+        }).listen();
+        satelliteFolder.add(satelliteData, 'azimuth', 0, 360).name('Azimuth (deg)').step(1).onChange(value => {
+            satelliteData.azimuth = value;
+        }).listen();
+        satelliteFolder.add(satelliteData, 'angleOfAttack', -90, 90).name('Angle of Attack (deg)').step(0.1).onChange(value => {
+            satelliteData.angleOfAttack = value;
+        }).listen();
+    
         satelliteFolder.add({
             createDetailedSatellite: () => this.createSatellite(
                 satelliteData.latitude,
@@ -128,7 +140,7 @@ class GUIManager {
                 satelliteData.angleOfAttack
             )
         }, 'createDetailedSatellite').name('Launch Satellite');
-
+    
         satelliteFolder.add({
             addCircularOrbit: () => this.createSatellite(
                 satelliteData.latitude,
@@ -139,7 +151,7 @@ class GUIManager {
                 satelliteData.angleOfAttack
             )
         }, 'addCircularOrbit').name('Add Circular Orbit');
-
+    
         satelliteFolder.open();
     }
 
@@ -210,8 +222,6 @@ class GUIManager {
 
     clearCameraTarget() {
         this.followingBody = null;
-        // this.controls.target.set(0, 0, 0); // Reset the camera controller target
-        // this.camera.position.set(0, 0, 10000); // Reset the camera position (or any default position)
         this.controls.update();
     }
 
@@ -263,36 +273,35 @@ class GUIManager {
     createSatellite(latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
         const color = Math.random() * 0xffffff;
         const id = this.satellites.length > 0 ? Math.max(...this.satellites.map(sat => sat.id)) + 1 : 1;
-    
+
         // Retrieve Earth's rotation quaternion and tilt quaternion
         const earthQuaternion = this.earth.rotationGroup.quaternion;
         const tiltQuaternion = this.earth.tiltGroup.quaternion;
-    
+
         const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
-            latitude, 
-            longitude, 
-            altitude, 
-            velocity, 
-            azimuth, 
-            angleOfAttack, 
+            latitude,
+            longitude,
+            altitude,
+            velocity,
+            azimuth,
+            angleOfAttack,
             this.timeUtils,
             earthQuaternion,
             tiltQuaternion,
         );
-    
+
         const newSatellite = new Satellite(this.scene, this.world, this.earth, this.moon, positionECEF, velocityECEF, id, color);
         this.satellites.push(newSatellite);
         this.vectors.addSatellite(newSatellite);
         this.updateSatelliteGUI(newSatellite);
-    
+
         this.physicsWorker.postMessage({
             type: 'createSatellite',
             data: newSatellite.serialize()
         });
-    
+
         this.updateBodySelector(); // Update the body selector with new satellite
     }
-    
 
     removeSatellite(satellite) {
         const index = this.satellites.indexOf(satellite);
@@ -381,7 +390,9 @@ class GUIManager {
             }, {})
         };
 
-        this.bodySelector.remove(); // Remove the old selector
+        // Remove the old selector but keep its position
+        const oldSelectorContainer = this.bodySelector.domElement.parentNode;
+        oldSelectorContainer.removeChild(this.bodySelector.domElement);
 
         const bodySelector = this.gui.add({
             selectedBody: 'None'
@@ -396,6 +407,8 @@ class GUIManager {
             }
         });
 
+        // Add the new selector to the same container
+        oldSelectorContainer.appendChild(bodySelector.domElement);
         this.bodySelector = bodySelector; // Save the new selector
     }
 }
