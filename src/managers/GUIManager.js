@@ -66,6 +66,9 @@ class GUIManager {
         this.addSatelliteControls();
         this.addDisplayOptions();
         this.addDebugOptions();
+
+        // Add body selector folder
+        this.bodySelectorFolder = this.gui.addFolder('Body Selector');
         this.addBodySelector();
     }
 
@@ -109,7 +112,7 @@ class GUIManager {
             azimuth: 90,
             angleOfAttack: 0
         };
-    
+
         const satelliteFolder = this.gui.addFolder('Satellite Launch Controls');
         satelliteFolder.add(satelliteData, 'latitude', -90, 90).name('Latitude (deg)').step(0.1).onChange(value => {
             satelliteData.latitude = value;
@@ -129,7 +132,7 @@ class GUIManager {
         satelliteFolder.add(satelliteData, 'angleOfAttack', -90, 90).name('Angle of Attack (deg)').step(0.1).onChange(value => {
             satelliteData.angleOfAttack = value;
         }).listen();
-    
+
         satelliteFolder.add({
             createDetailedSatellite: () => this.createSatellite(
                 satelliteData.latitude,
@@ -140,7 +143,7 @@ class GUIManager {
                 satelliteData.angleOfAttack
             )
         }, 'createDetailedSatellite').name('Launch Satellite');
-    
+
         satelliteFolder.add({
             addCircularOrbit: () => this.createSatellite(
                 satelliteData.latitude,
@@ -151,7 +154,7 @@ class GUIManager {
                 satelliteData.angleOfAttack
             )
         }, 'addCircularOrbit').name('Add Circular Orbit');
-    
+
         satelliteFolder.open();
     }
 
@@ -191,11 +194,12 @@ class GUIManager {
             }, {})
         };
 
-        const bodySelector = this.gui.add({
+        // Create a new body selector with the updated bodies list
+        this.bodySelector = this.bodySelectorFolder.add({
             selectedBody: 'None'
         }, 'selectedBody', Object.keys(bodies)).name('Select Body');
 
-        bodySelector.onChange((value) => {
+        this.bodySelector.onChange((value) => {
             this.selectedBody = bodies[value];
             if (this.selectedBody) {
                 this.updateCameraTarget();
@@ -204,7 +208,17 @@ class GUIManager {
             }
         });
 
-        this.bodySelector = bodySelector; // Save the selector for later updates
+        this.bodySelectorFolder.open(); // Ensure the folder is open
+    }
+
+    updateBodySelector() {
+        // Remove old selector if it exists
+        if (this.bodySelector) {
+            this.bodySelectorFolder.remove(this.bodySelector);
+        }
+
+        // Add a new body selector with the updated bodies list
+        this.addBodySelector();
     }
 
     updateCameraTarget() {
@@ -243,38 +257,12 @@ class GUIManager {
     }
 
     updateSphericalFromCamera() {
-        // Update spherical coordinates based on the current camera position relative to the orbit target
-        this.spherical.setFromVector3(this.camera.position.clone().sub(this.controls.target));
-    }
-
-    updateCameraPosition() {
-        if (this.followingBody) {
-            const targetPosition = this.getBodyPosition(this.followingBody);
-            this.targetPosition.copy(targetPosition);
-
-            // Smoothly interpolate the orbit target to the new position
-            if (this.needsSmoothTransition) {
-                this.controls.target.lerp(this.targetPosition, 0.05); // Adjust the lerp factor as needed
-                if (this.controls.target.distanceTo(this.targetPosition) < 0.01) {
-                    this.controls.target.copy(this.targetPosition);
-                    this.needsSmoothTransition = false;
-                }
-            } else {
-                this.controls.target.copy(this.targetPosition);
-            }
-
-            // Update camera position based on spherical coordinates and user input (pan)
-            const deltaPosition = new THREE.Vector3().setFromSpherical(this.spherical);
-            this.camera.position.copy(this.controls.target).add(deltaPosition);
-            this.controls.update();
-        }
+        const offset = new THREE.Vector3();
+        offset.copy(this.camera.position).sub(this.controls.target);
+        this.spherical.setFromVector3(offset);
     }
 
     createSatellite(latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
-        const color = Math.random() * 0xffffff;
-        const id = this.satellites.length > 0 ? Math.max(...this.satellites.map(sat => sat.id)) + 1 : 1;
-
-        // Retrieve Earth's rotation quaternion and tilt quaternion
         const earthQuaternion = this.earth.rotationGroup.quaternion;
         const tiltQuaternion = this.earth.tiltGroup.quaternion;
 
@@ -290,47 +278,24 @@ class GUIManager {
             tiltQuaternion,
         );
 
+        const id = this.satellites.length;
+        const color = Math.random() * 0xffffff;
+
         const newSatellite = new Satellite(this.scene, this.world, this.earth, this.moon, positionECEF, velocityECEF, id, color);
         this.satellites.push(newSatellite);
-        this.vectors.addSatellite(newSatellite);
+        this.vectors.addSatellite(newSatellite); // Add the satellite to the vectors
+
         this.updateSatelliteGUI(newSatellite);
-
-        this.physicsWorker.postMessage({
-            type: 'createSatellite',
-            data: newSatellite.serialize()
-        });
-
         this.updateBodySelector(); // Update the body selector with new satellite
-    }
-
-    removeSatellite(satellite) {
-        const index = this.satellites.indexOf(satellite);
-        if (index !== -1) {
-            this.satellites.splice(index, 1);
-            satellite.deleteSatellite();
-            this.vectors.removeSatellite(satellite);
-            const folder = this.satelliteFolders[satellite.id];
-            if (folder) {
-                this.gui.removeFolder(folder);
-                delete this.satelliteFolders[satellite.id];
-            }
-
-            this.physicsWorker.postMessage({
-                type: 'removeSatellite',
-                data: { id: satellite.id }
-            });
-
-            this.updateBodySelector(); // Update the body selector after removal
-        }
     }
 
     updateSatelliteGUI(newSatellite) {
         const satelliteFolder = this.gui.addFolder(`Satellite ${newSatellite.id}`);
 
-        const altitudeObj = { altitude: parseFloat(newSatellite.altitude).toFixed(4) };
-        const velocityObj = { velocity: parseFloat(newSatellite.velocity).toFixed(4) };
-        const accelerationObj = { acceleration: parseFloat(newSatellite.acceleration).toFixed(4) };
-        const dragObj = { drag: parseFloat(newSatellite.drag).toFixed(8) };
+        const altitudeObj = { altitude: parseFloat(newSatellite.getCurrentAltitude()).toFixed(4) };
+        const velocityObj = { velocity: parseFloat(newSatellite.getCurrentVelocity()).toFixed(4) };
+        const accelerationObj = { acceleration: parseFloat(newSatellite.getCurrentAcceleration()).toFixed(4) };
+        const dragObj = { drag: parseFloat(newSatellite.getCurrentDragForce()).toFixed(8) };
 
         const altitudeController = satelliteFolder.add(altitudeObj, 'altitude').name('Altitude (m)').listen();
         const velocityController = satelliteFolder.add(velocityObj, 'velocity').name('Velocity (m/s)').listen();
@@ -379,37 +344,75 @@ class GUIManager {
         };
     }
 
-    updateBodySelector() {
-        const bodies = {
-            None: null,
-            Earth: this.earth,
-            Moon: this.moon,
-            ...this.satellites.reduce((acc, satellite) => {
-                acc[`Satellite ${satellite.id}`] = satellite;
-                return acc;
-            }, {})
-        };
-
-        // Remove the old selector but keep its position
-        const oldSelectorContainer = this.bodySelector.domElement.parentNode;
-        oldSelectorContainer.removeChild(this.bodySelector.domElement);
-
-        const bodySelector = this.gui.add({
-            selectedBody: 'None'
-        }, 'selectedBody', Object.keys(bodies)).name('Select Body');
-
-        bodySelector.onChange((value) => {
-            this.selectedBody = bodies[value];
-            if (this.selectedBody) {
-                this.updateCameraTarget();
-            } else {
-                this.clearCameraTarget();
+    removeSatellite(satellite) {
+        const index = this.satellites.indexOf(satellite);
+        if (index !== -1) {
+            this.satellites.splice(index, 1);
+            satellite.deleteSatellite();
+            this.vectors.removeSatellite(satellite); // Remove the satellite from the vectors
+            const folder = this.satelliteFolders[satellite.id];
+            if (folder) {
+                this.gui.removeFolder(folder);
+                delete this.satelliteFolders[satellite.id];
             }
-        });
 
-        // Add the new selector to the same container
-        oldSelectorContainer.appendChild(bodySelector.domElement);
-        this.bodySelector = bodySelector; // Save the new selector
+            this.physicsWorker.postMessage({
+                type: 'removeSatellite',
+                data: { id: satellite.id }
+            });
+
+            this.updateBodySelector(); // Update the body selector after removal
+        }
+    }
+
+    updateCameraPosition() {
+        if (this.followingBody) {
+            const targetPosition = this.getBodyPosition(this.followingBody);
+            this.targetPosition.copy(targetPosition);
+
+            // Smoothly interpolate the orbit target to the new position
+            if (this.needsSmoothTransition) {
+                this.controls.target.lerp(this.targetPosition, 0.05); // Adjust the lerp factor as needed
+                if (this.controls.target.distanceTo(this.targetPosition) < 0.01) {
+                    this.controls.target.copy(this.targetPosition);
+                    this.needsSmoothTransition = false;
+                }
+            } else {
+                this.controls.target.copy(this.targetPosition);
+            }
+
+            // Update camera position based on spherical coordinates and user input (pan)
+            const deltaPosition = new THREE.Vector3().setFromSpherical(this.spherical);
+            this.camera.position.copy(this.controls.target).add(deltaPosition);
+            this.controls.update();
+        }
+    }
+
+    update() {
+        this.smoothTransition();
+        this.updateCameraPosition(); // Call updateCameraPosition within the update loop
+    }
+
+    smoothTransition() {
+        if (this.needsSmoothTransition && this.followingBody) {
+            const currentPosition = new THREE.Vector3();
+            currentPosition.copy(this.controls.target);
+            const targetPosition = this.getBodyPosition(this.followingBody);
+
+            if (!currentPosition.equals(targetPosition)) {
+                const smoothFactor = 0.1;
+                currentPosition.lerp(targetPosition, smoothFactor);
+                this.controls.target.copy(currentPosition);
+
+                const cameraTargetPosition = new THREE.Vector3();
+                cameraTargetPosition.copy(currentPosition).add(this.initialOffset);
+                this.camera.position.copy(cameraTargetPosition);
+
+                this.controls.update();
+            } else {
+                this.needsSmoothTransition = false; // Transition complete
+            }
+        }
     }
 }
 

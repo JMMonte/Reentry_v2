@@ -35,11 +35,12 @@ const camera = new THREE.PerspectiveCamera(
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
     depth: true,
-    logarithmicDepthBuffer: false ,
+    logarithmicDepthBuffer: false,
     powerPreference: 'high-performance',
     precision: 'highp'
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3)); // Limit pixel ratio for performance
 renderer.gammaFactor = 2.2;
 renderer.gammaOutput = true;
 renderer.physicallyCorrectLights = true;
@@ -57,8 +58,8 @@ camera.position.set(1000, 7000, 20000).multiplyScalar(Constants.scale);
 camera.lookAt(new THREE.Vector3(0, 0, 0));
 
 // Add ambient light
-const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.05);
-scene.add(ambientLight);
+// const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.05);
+// scene.add(ambientLight);
 
 // Physics World Setup
 const world = new CANNON.World();
@@ -113,6 +114,8 @@ async function init() {
     // Post-processing
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.4, 0.99);
+    bloomPass.renderToScreen = true;
+    bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2); // Lower resolution for bloom
     const bloomComposer = new EffectComposer(renderer);
     bloomComposer.addPass(renderPass);
     bloomComposer.addPass(bloomPass);
@@ -228,6 +231,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3)); // Limit pixel ratio for performance
         bloomComposer.setSize(window.innerWidth, window.innerHeight);
         finalComposer.setSize(window.innerWidth, window.innerHeight);
     }

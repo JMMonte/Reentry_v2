@@ -76,7 +76,7 @@ export class Earth {
                 lightIntensity: { value: 4.0 },
                 surfaceRadius: { value: this.EARTH_RADIUS },
                 atmoRadius: { value: this.ATMOSPHERE_RADIUS },
-                ambientIntensity: { value: 0.005 }
+                ambientIntensity: { value: 0.0 }
             }
         });
     }

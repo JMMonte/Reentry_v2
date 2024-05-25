@@ -85,6 +85,23 @@ export class PhysicsUtils {
     
         return points;
     }
+
+    static calculateVelocity(velocity, latRad, lonRad, azimuthRad, angleOfAttackRad, x, y, z) {
+        // Calculate the initial velocity vector based on the provided parameters
+        const velocityVector = new THREE.Vector3(
+            velocity * Math.cos(angleOfAttackRad) * Math.cos(azimuthRad),
+            velocity * Math.cos(angleOfAttackRad) * Math.sin(azimuthRad),
+            velocity * Math.sin(angleOfAttackRad)
+        );
+
+        // Rotate the velocity vector based on latitude and longitude
+        const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
+            new THREE.Euler(latRad, lonRad, 0, 'XYZ')
+        );
+        velocityVector.applyMatrix4(rotationMatrix);
+
+        return velocityVector;
+    }
     
 
     static calculateVerticalAcceleration(planetRadius, planetMass, altitude) {
