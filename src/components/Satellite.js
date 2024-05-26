@@ -107,12 +107,14 @@ export class Satellite {
         const traceLineGeometry = new THREE.BufferGeometry();
         traceLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
         this.traceLine = new THREE.Line(traceLineGeometry, this.materials.traceLine);
+        this.traceLine.frustumCulled = false;
         this.scene.add(this.traceLine);
     }
 
     initOrbitLine() {
         const orbitLineGeometry = new THREE.BufferGeometry();
         this.orbitLine = new THREE.Line(orbitLineGeometry, this.materials.orbitLine);
+        this.orbitLine.frustumCulled = false;
         this.scene.add(this.orbitLine);
     }
 

@@ -7,6 +7,7 @@ class EarthSurface {
         this.scene = mesh;
         this.earthRadius = earthRadius;
         this.heightOffset = -2;
+        this.radius = this.earthRadius + this.heightOffset;
 
         // Centralize materials
         this.materials = {
@@ -86,6 +87,13 @@ class EarthSurface {
             groundStations: [],
             observatories: []
         };
+        this.labels = {
+            cities: [],
+            airports: [],
+            spaceports: [],
+            groundStations: [],
+            observatories: []
+        };
     }
 
     addLatitudeLines() {
@@ -95,9 +103,9 @@ class EarthSurface {
             for (let lon = -180; lon <= 180; lon += 2) {
                 const phi = THREE.MathUtils.degToRad(90 - lat);
                 const theta = THREE.MathUtils.degToRad(lon);
-                const x = (this.earthRadius + this.heightOffset) * Math.sin(phi) * Math.cos(theta);
-                const y = (this.earthRadius + this.heightOffset) * Math.cos(phi);
-                const z = (this.earthRadius + this.heightOffset) * Math.sin(phi) * Math.sin(theta);
+                const x = (this.radius) * Math.sin(phi) * Math.cos(theta);
+                const y = (this.radius) * Math.cos(phi);
+                const z = (this.radius) * Math.sin(phi) * Math.sin(theta);
                 points.push(new THREE.Vector3(x, y, z));
             }
             points.push(points[0]);
@@ -115,9 +123,9 @@ class EarthSurface {
             for (let lat = -90; lat <= 90; lat += 2) {
                 const phi = THREE.MathUtils.degToRad(90 - lat);
                 const theta = THREE.MathUtils.degToRad(lon);
-                const x = (this.earthRadius + this.heightOffset) * Math.sin(phi) * Math.cos(theta);
-                const y = (this.earthRadius + this.heightOffset) * Math.cos(phi);
-                const z = (this.earthRadius + this.heightOffset) * Math.sin(phi) * Math.sin(theta);
+                const x = (this.radius) * Math.sin(phi) * Math.cos(theta);
+                const y = (this.radius) * Math.cos(phi);
+                const z = (this.radius) * Math.sin(phi) * Math.sin(theta);
                 points.push(new THREE.Vector3(x, y, z));
             }
             points.push(points[0]);
@@ -149,6 +157,16 @@ class EarthSurface {
         this.points[category].push(points);
     }
 
+    createTextTexture(text) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = 'Bold 20px Arial';
+        context.fillStyle = 'rgba(255, 255, 255, 1.0)';
+        context.fillText(text, 0, 20);
+        const texture = new THREE.CanvasTexture(canvas);
+        return texture;
+    }
+
     addCountryBorders() {
         geojsonData.features.forEach((feature) => {
             const geometryType = feature.geometry.type;
@@ -165,7 +183,7 @@ class EarthSurface {
                     const points = ring.map(([lon, lat]) => {
                         const phi = (90 - lat) * (Math.PI / 180);
                         const theta = (lon + 89.96) * (Math.PI / 180);
-                        const radius = (this.earthRadius + this.heightOffset);
+                        const radius = (this.radius);
                         return new THREE.Vector3().setFromSphericalCoords(radius, phi, theta);
                     });
                     points.push(points[0]);
@@ -193,9 +211,8 @@ class EarthSurface {
                 polygon.forEach(ring => {
                     const points = ring.map(([lon, lat]) => {
                         const phi = (90 - lat) * (Math.PI / 180);
-                        const theta = (lon + 89.96) * (Math.PI / 180);
-                        const radius = (this.earthRadius + this.heightOffset);
-                        return new THREE.Vector3().setFromSphericalCoords(radius, phi, theta);
+                        const theta = (lon + 90) * (Math.PI / 180);  // Corrected longitude adjustment
+                        return new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
                     });
                     points.push(points[0]);
                     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);

@@ -57,6 +57,7 @@ export class Moon {
         const traceLineGeometry = new THREE.BufferGeometry();
         const traceLineMaterial = new THREE.LineBasicMaterial({ color: 0xaaaaaa });
         this.traceLine = new THREE.Line(traceLineGeometry, traceLineMaterial);
+        this.traceLine.frustumCulled = false;
         this.scene.add(this.traceLine);
 
         this.dynamicPositions = [];

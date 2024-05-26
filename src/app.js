@@ -24,6 +24,11 @@ import earthNormalTexture from '../public/assets/texture/8k_earth_normal_map.png
 import cloudTexture from '../public/assets/texture/cloud_combined_8192.png';
 import moonTexture from '../public/assets/texture/lroc_color_poles_8k.jpg';
 import moonBump from '../public/assets/texture/ldem_16_uint.jpg';
+import geojsonDataCities from './config/ne_110m_populated_places.json';
+import geojsonDataAirports from './config/ne_10m_airports.json';
+import geojsonDataSpaceports from './config/spaceports.json';
+import geojsonDataGroundStations from './config/ground_stations.json';
+import geojsonDataObservatories from './config/observatories.json';
 
 // Scene and Renderer Setup
 const scene = new THREE.Scene();
@@ -120,7 +125,14 @@ async function init() {
     moon = new Moon(scene, world, renderer, timeUtils, textureManager);
     vectors = new Vectors(earth, scene, timeUtils);
     cannonDebugger = new CannonDebugger(scene, world, { autoUpdate: false });
-    
+
+    // Add points to the Earth surface
+    earth.earthSurface.addPoints(geojsonDataCities, earth.earthSurface.materials.cityPoint, 'cities');
+    earth.earthSurface.addPoints(geojsonDataAirports, earth.earthSurface.materials.airportPoint, 'airports');
+    earth.earthSurface.addPoints(geojsonDataSpaceports, earth.earthSurface.materials.spaceportPoint, 'spaceports');
+    earth.earthSurface.addPoints(geojsonDataGroundStations, earth.earthSurface.materials.groundStationPoint, 'groundStations');
+    earth.earthSurface.addPoints(geojsonDataObservatories, earth.earthSurface.materials.observatoryPoint, 'observatories');
+
     // Post-processing
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.4, 0.99);
@@ -194,12 +206,12 @@ async function init() {
         satellites.forEach(satellite => {
             satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
             satellite.applyBufferedUpdates(); // Apply buffered updates
-    
+
             const altitude = satellite.getCurrentAltitude();
             const velocity = satellite.getCurrentVelocity();
             const acceleration = satellite.getCurrentAcceleration();
             const dragForce = satellite.getCurrentDragForce();
-    
+
             // Update GUI controllers with the new values
             satellite.altitudeController.setValue(parseFloat(altitude)).updateDisplay();
             satellite.velocityController.setValue(parseFloat(velocity)).updateDisplay();
