@@ -39,4 +39,10 @@ export class Constants {
     static atmosphereScaleHeight = 8500; // Atmosphere scale height in meters
     static atmosphereSeaLevelDensity = 1.225; // Sea level air density in kg/m^3
     static atmosphereRadius = Constants.earthRadius + 0.1; // Atmosphere radius in meters
+    // Orbital elements for the Moon
+    static semiMajorAxis = 384400000; // Semi-major axis in km
+    static eccentricity = 0.0549; // Orbital eccentricity
+    static inclination = 5.145 * (Math.PI / 180); // Inclination in radians
+    static ascendingNode = -11.26064 * (Math.PI / 180); // Longitude of ascending node in radians
+    static argumentOfPeriapsis = 318.15 * (Math.PI / 180); // Argument of periapsis in radians
 }

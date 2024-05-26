@@ -62,6 +62,7 @@ class GUIManager {
         this.toggleStatesVisibility(this.settings.showStates);
         this.toggleGroundStationsVisibility(this.settings.showGroundStations);
         this.toggleObservatoriesVisibility(this.settings.showObservatories);
+        this.toggleMoonOrbitVisibility(this.settings.showMoonOrbit);
     }
 
     addGridHelper() {
@@ -178,14 +179,16 @@ class GUIManager {
             { key: 'showVectors', name: 'Vectors', method: this.toggleVectorVisibility.bind(this) },
             { key: 'showSatVectors', name: 'Sat Vectors', method: this.toggleSatelliteVectorsVisibility.bind(this) },
             { key: 'showSurfaceLines', name: 'Surface Lines', method: this.toggleSurfaceLinesVisibility.bind(this) },
-            { key: 'showOrbits', name: 'Orbits', method: this.toggleOrbitVisibility.bind(this) },
+            { key: 'showOrbits', name: 'Sat Orbits', method: this.toggleOrbitVisibility.bind(this) },
+            { key: 'showTraces', name: 'Sat Traces', method: this.toggleSatTracesVisibility.bind(this) },
             { key: 'showCities', name: 'Cities', method: this.toggleCitiesVisibility.bind(this) },
             { key: 'showAirports', name: 'Airports', method: this.toggleAirportsVisibility.bind(this) },
             { key: 'showSpaceports', name: 'Spaceports', method: this.toggleSpaceportsVisibility.bind(this) },
             { key: 'showObservatories', name: 'Observatories', method: this.toggleObservatoriesVisibility.bind(this) },
             { key: 'showGroundStations', name: 'Ground Stations', method: this.toggleGroundStationsVisibility.bind(this) },
             { key: 'showCountryBorders', name: 'Country Borders', method: this.toggleCountryBordersVisibility.bind(this) },
-            { key: 'showStates', name: 'States', method: this.toggleStatesVisibility.bind(this) }
+            { key: 'showStates', name: 'States', method: this.toggleStatesVisibility.bind(this) },
+            { key: 'showMoonOrbit', name: 'Moon Orbit', method: this.toggleMoonOrbitVisibility.bind(this)}
         ];
     
         options.forEach(option => {
@@ -215,6 +218,16 @@ class GUIManager {
         this.satellites.forEach(satellite => {
             satellite.setOrbitVisible(value);
         });
+    }
+
+    toggleSatTracesVisibility(value) {
+        this.satellites.forEach(satellite => {
+            satellite.setTraceVisible(value);
+        });
+    }
+
+    toggleMoonOrbitVisibility(value) {
+        this.moon.setOrbitVisible(value);
     }
 
     toggleCitiesVisibility(value) {

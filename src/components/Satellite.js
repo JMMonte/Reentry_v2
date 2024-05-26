@@ -298,8 +298,8 @@ export class Satellite {
         this.updateApsides(orbitalElements);
     }
 
-    toggleTraceLine() {
-        this.traceLine.visible = !this.traceLine.visible;
+    setTraceVisible(visible) {
+        this.traceLine.visible = visible;
     }
 
     setOrbitVisible(visible) {

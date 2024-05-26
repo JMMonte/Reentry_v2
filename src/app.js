@@ -84,6 +84,7 @@ const settings = {
     showDebugger: false,
     showSurfaceLines: false,
     showOrbits: true,
+    showTraces: true,
     showCities: false,
     showAirports: false,
     showSpaceports: false,
@@ -91,6 +92,7 @@ const settings = {
     showGroundStations: false,
     showCountryBorders: false,
     showStates: false,
+    showMoonOrbit: true,
 };
 
 // Time management
@@ -228,7 +230,7 @@ async function init() {
 
         // Update moon position and rotation
         moon.updatePosition(currentTime);
-        moon.updateRotation();
+        moon.updateRotation(currentTime);
 
         // Update vectors (if applicable)
         vectors.updateVectors();
