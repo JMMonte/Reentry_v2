@@ -5,6 +5,11 @@ import { EarthSurface } from './earthSurface.js'; // Update import statement
 import { Constants } from '../utils/Constants.js';
 import atmosphereFragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
 import atmosphereVertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';
+import geojsonDataCities from '../config/ne_110m_populated_places.json';
+import geojsonDataAirports from '../config/ne_10m_airports.json';
+import geojsonDataSpaceports from '../config/spaceports.json';
+import geojsonDataGroundStations from '../config/ground_stations.json';
+import geojsonDataObservatories from '../config/observatories.json';
 
 export class Earth {
     constructor(scene, world, renderer, timeManager, textureManager) {
@@ -115,12 +120,14 @@ export class Earth {
         this.earthSurface.addLatitudeLines();
         this.earthSurface.addLongitudeLines();
         this.earthSurface.addCountryBorders();
-        this.earthSurface.addCities();
         this.earthSurface.addStates();
-        this.earthSurface.addAirports();
-        this.earthSurface.addSpaceports();
-        this.earthSurface.addGroundStations();
+        this.earthSurface.addPoints(geojsonDataCities, this.earthSurface.materials.cityPoint, 'cities');
+        this.earthSurface.addPoints(geojsonDataAirports, this.earthSurface.materials.airportPoint, 'airports');
+        this.earthSurface.addPoints(geojsonDataSpaceports, this.earthSurface.materials.spaceportPoint, 'spaceports');
+        this.earthSurface.addPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
+        this.earthSurface.addPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
     }
+    
 
     initializePhysics(world) {
         const earthBody = new CANNON.Body({
@@ -184,5 +191,8 @@ export class Earth {
 
     setGroundStationVisible(visible) {
         this.earthSurface.setGroundStationsVisible(visible);
+    }
+    setObservatoriesVisible(visible) {
+        this.earthSurface.setObservatoriesVisible(visible);
     }
 }

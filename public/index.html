@@ -5,19 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Earth Visualization</title>
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
+        body {
+            margin: 0;
+            overflow: hidden;
             background-color: #000; /* Optional: sets a universal background color */
         }
-        canvas { 
+        canvas {
             width: 100%; /* Ensures it takes up all available width */
             height: 100vh; /* Use the full height of the viewport */
             display: block; /* Removes bottom margin/gap */
         }
+        .info-card {
+            position: absolute;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            border-radius: 5px;
+            pointer-events: none;
+            display: none;
+            z-index: 10;
+        }
     </style>
 </head>
 <body>
+    <div id="info-card" class="info-card"></div>
     <script type="module" src="../src/app.js"></script>
 </body>
 </html>

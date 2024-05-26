@@ -61,6 +61,7 @@ class GUIManager {
         this.toggleCountryBordersVisibility(this.settings.showCountryBorders);
         this.toggleStatesVisibility(this.settings.showStates);
         this.toggleGroundStationsVisibility(this.settings.showGroundStations);
+        this.toggleObservatoriesVisibility(this.settings.showObservatories);
     }
 
     addGridHelper() {
@@ -171,17 +172,26 @@ class GUIManager {
 
     addDisplayOptions() {
         const displayFolder = this.gui.addFolder('Display Options');
-        displayFolder.add(this.settings, 'showGrid').name('Grid').onChange(this.toggleGridVisibility.bind(this));
-        displayFolder.add(this.settings, 'showVectors').name('Vectors').onChange(this.toggleVectorVisibility.bind(this));
-        displayFolder.add(this.settings, 'showSatVectors').name('Sat Vectors').onChange(this.toggleSatelliteVectorsVisibility.bind(this));
-        displayFolder.add(this.settings, 'showSurfaceLines').name('Surface Lines').onChange(this.toggleSurfaceLinesVisibility.bind(this));
-        displayFolder.add(this.settings, 'showOrbits').name('Orbits').onChange(this.toggleOrbitVisibility.bind(this));
-        displayFolder.add(this.settings, 'showCities').name('Cities').onChange(this.toggleCitiesVisibility.bind(this));
-        displayFolder.add(this.settings, 'showAirports').name('Airports').onChange(this.toggleAirportsVisibility.bind(this));
-        displayFolder.add(this.settings, 'showSpaceports').name('Spaceports').onChange(this.toggleSpaceportsVisibility.bind(this));
-        displayFolder.add(this.settings, 'showGroundStations').name('Ground Stations').onChange(this.toggleGroundStationsVisibility.bind(this));
-        displayFolder.add(this.settings, 'showCountryBorders').name('Country Borders').onChange(this.toggleCountryBordersVisibility.bind(this));
-        displayFolder.add(this.settings, 'showStates').name('States').onChange(this.toggleStatesVisibility.bind(this));
+    
+        const options = [
+            { key: 'showGrid', name: 'Grid', method: this.toggleGridVisibility.bind(this) },
+            { key: 'showVectors', name: 'Vectors', method: this.toggleVectorVisibility.bind(this) },
+            { key: 'showSatVectors', name: 'Sat Vectors', method: this.toggleSatelliteVectorsVisibility.bind(this) },
+            { key: 'showSurfaceLines', name: 'Surface Lines', method: this.toggleSurfaceLinesVisibility.bind(this) },
+            { key: 'showOrbits', name: 'Orbits', method: this.toggleOrbitVisibility.bind(this) },
+            { key: 'showCities', name: 'Cities', method: this.toggleCitiesVisibility.bind(this) },
+            { key: 'showAirports', name: 'Airports', method: this.toggleAirportsVisibility.bind(this) },
+            { key: 'showSpaceports', name: 'Spaceports', method: this.toggleSpaceportsVisibility.bind(this) },
+            { key: 'showObservatories', name: 'Observatories', method: this.toggleObservatoriesVisibility.bind(this) },
+            { key: 'showGroundStations', name: 'Ground Stations', method: this.toggleGroundStationsVisibility.bind(this) },
+            { key: 'showCountryBorders', name: 'Country Borders', method: this.toggleCountryBordersVisibility.bind(this) },
+            { key: 'showStates', name: 'States', method: this.toggleStatesVisibility.bind(this) }
+        ];
+    
+        options.forEach(option => {
+            displayFolder.add(this.settings, option.key).name(option.name).onChange(option.method);
+        });
+    
         displayFolder.open();
     }
 
@@ -213,6 +223,10 @@ class GUIManager {
 
     toggleAirportsVisibility(value) {
         this.earth.setAirportsVisible(value);
+    }
+
+    toggleObservatoriesVisibility(value) {
+        this.earth.setObservatoriesVisible(value);
     }
 
     toggleSpaceportsVisibility(value) {

@@ -16,6 +16,7 @@ import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
 import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
 import { TextureManager } from './managers/textureManager.js';
+import { BackgroundStars } from './components/background.js';
 // import textures
 import earthTexture from '../public/assets/texture/8k_earth_daymap.jpg';
 import earthSpecTexture from '../public/assets/texture/8k_earth_specular_map.png';
@@ -48,7 +49,7 @@ renderer.autoClear = false;
 document.body.appendChild(renderer.domElement);
 
 // Background Stars
-// addStars(scene);
+const backgroundStars = new BackgroundStars(scene, camera);
 
 // Camera and Controls
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -81,6 +82,7 @@ const settings = {
     showCities: false,
     showAirports: false,
     showSpaceports: false,
+    showObservatories: false,
     showGroundStations: false,
     showCountryBorders: false,
     showStates: false,

@@ -1,0 +1,135 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Arecibo Observatory",
+                "location": "Arecibo, Puerto Rico",
+                "type": "radio",
+                "wikipedia": "https://en.wikipedia.org/wiki/Arecibo_Observatory"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-66.7528, 18.3442]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Mauna Kea Observatories",
+                "location": "Hawaii, USA",
+                "type": "optical",
+                "wikipedia": "https://en.wikipedia.org/wiki/Mauna_Kea_Observatories"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-155.4681, 19.8206]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Paranal Observatory",
+                "location": "Atacama Desert, Chile",
+                "type": "optical",
+                "wikipedia": "https://en.wikipedia.org/wiki/Paranal_Observatory"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-70.4030, -24.6252]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Very Large Array",
+                "location": "New Mexico, USA",
+                "type": "radio",
+                "wikipedia": "https://en.wikipedia.org/wiki/Very_Large_Array"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-107.6178, 34.0790]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Royal Observatory, Greenwich",
+                "location": "London, United Kingdom",
+                "type": "historical",
+                "wikipedia": "https://en.wikipedia.org/wiki/Royal_Observatory,_Greenwich"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-0.0015, 51.4769]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Gran Telescopio Canarias",
+                "location": "La Palma, Spain",
+                "type": "optical",
+                "wikipedia": "https://en.wikipedia.org/wiki/Gran_Telescopio_Canarias"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-17.8893, 28.7580]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Submillimeter Array",
+                "location": "Hawaii, USA",
+                "type": "radio",
+                "wikipedia": "https://en.wikipedia.org/wiki/Submillimeter_Array"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-155.4783, 19.8240]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Atacama Large Millimeter Array",
+                "location": "Atacama Desert, Chile",
+                "type": "radio",
+                "wikipedia": "https://en.wikipedia.org/wiki/Atacama_Large_Millimeter_Array"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-67.755, -23.028]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Keck Observatory",
+                "location": "Hawaii, USA",
+                "type": "optical",
+                "wikipedia": "https://en.wikipedia.org/wiki/W._M._Keck_Observatory"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-155.4783, 19.8263]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Mount Wilson Observatory",
+                "location": "California, USA",
+                "type": "optical",
+                "wikipedia": "https://en.wikipedia.org/wiki/Mount_Wilson_Observatory"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-118.0578, 34.2244]
+            }
+        }
+    ]
+}
