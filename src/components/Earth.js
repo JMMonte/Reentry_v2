@@ -1,7 +1,7 @@
 // Earth.js
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { addLatitudeLines, addLongitudeLines, addCountryBorders, addCities, addStates } from './earthSurface.js';
+import { EarthSurface } from './earthSurface.js'; // Update import statement
 import { Constants } from '../utils/Constants.js';
 import atmosphereFragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
 import atmosphereVertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';
@@ -21,8 +21,11 @@ export class Earth {
         this.initializeGroups(scene);
         this.initializeMaterials();
         this.initializeMeshes();
-        this.addSurfaceDetails();
+        this.initializeSurfaceDetails(); // Modified method name
         this.initializePhysics(world);
+
+        // Add light source to simulate Earth's illumination
+        this.addLightSource();
     }
 
     initializeGroups(scene) {
@@ -60,13 +63,13 @@ export class Earth {
             bumpScale: 0.05,
             transparent: true,
             opacity: 1.0,
-            side: THREE.DoubleSide,
+            side: THREE.FrontSide,
         });
 
         this.atmosphereMaterial = new THREE.ShaderMaterial({
             vertexShader: atmosphereVertexShader,
             fragmentShader: atmosphereFragmentShader,
-            side: THREE.DoubleSide,
+            side: THREE.FrontSide,
             transparent: true,
             depthWrite: false,
             depthTest: true,
@@ -107,12 +110,16 @@ export class Earth {
         this.cloudMesh.rotateY(1.5 * Math.PI);
     }
 
-    addSurfaceDetails() {
-        addLatitudeLines(this.earthMesh, this.EARTH_RADIUS);
-        addLongitudeLines(this.earthMesh, this.EARTH_RADIUS);
-        addCountryBorders(this.earthMesh, this.EARTH_RADIUS);
-        addCities(this.earthMesh, this.EARTH_RADIUS);
-        addStates(this.earthMesh, this.EARTH_RADIUS);
+    initializeSurfaceDetails() {
+        this.earthSurface = new EarthSurface(this.earthMesh, this.EARTH_RADIUS);
+        this.earthSurface.addLatitudeLines();
+        this.earthSurface.addLongitudeLines();
+        this.earthSurface.addCountryBorders();
+        this.earthSurface.addCities();
+        this.earthSurface.addStates();
+        this.earthSurface.addAirports();
+        this.earthSurface.addSpaceports();
+        this.earthSurface.addGroundStations();
     }
 
     initializePhysics(world) {
@@ -124,6 +131,17 @@ export class Earth {
         });
         world.addBody(earthBody);
         this.earthBody = earthBody;
+    }
+
+    addLightSource() {
+        const light = new THREE.PointLight(0x87ceeb, 1e8, Constants.moonOrbitRadius * 2); // Sky blue light, intensity 1, distance twice the Moon's orbit radius
+        light.position.set(0, 0, 0); // Center of the Earth
+        light.decay = 2; // Physical decay factor
+
+        this.earthMesh.add(light);
+
+        const lightHelper = new THREE.PointLightHelper(light, 5); // Optional: visualize the light source position
+        this.scene.add(lightHelper);
     }
 
     updateRotation() {
@@ -138,5 +156,33 @@ export class Earth {
 
     getGreenwichPosition() {
         return this.timeManager.getGreenwichPosition();
+    }
+
+    setSurfaceLinesVisible(visible) {
+        this.earthSurface.setSurfaceLinesVisible(visible);
+    }
+
+    setCitiesVisible(visible) {
+        this.earthSurface.setCitiesVisible(visible);
+    }
+
+    setStatesVisible(visible) {
+        this.earthSurface.setStatesVisible(visible);
+    }
+
+    setAirportsVisible(visible) {
+        this.earthSurface.setAirportsVisible(visible);
+    }
+
+    setSpaceportsVisible(visible) {
+        this.earthSurface.setSpaceportsVisible(visible);
+    }
+
+    setCountryBordersVisible(visible) {
+        this.earthSurface.setCountryBordersVisible(visible);
+    }
+
+    setGroundStationVisible(visible) {
+        this.earthSurface.setGroundStationsVisible(visible);
     }
 }

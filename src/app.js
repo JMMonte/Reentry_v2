@@ -75,7 +75,15 @@ const settings = {
     showGrid: false,
     showVectors: false,
     showSatVectors: true,
-    showDebugger: false
+    showDebugger: false,
+    showSurfaceLines: false,
+    showOrbits: true,
+    showCities: false,
+    showAirports: false,
+    showSpaceports: false,
+    showGroundStations: false,
+    showCountryBorders: false,
+    showStates: false,
 };
 
 // Time management

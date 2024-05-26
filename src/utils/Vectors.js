@@ -122,6 +122,7 @@ export class Vectors {
         this.sunDirectionArrow.visible = visible;
         this.greenwichVector.visible = visible;
     }
+    
     setSatVisible(visible) {
         this.satellites.forEach(entry => {
             if (entry.velocityVector) {

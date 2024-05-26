@@ -50,6 +50,17 @@ class GUIManager {
         this.controls.addEventListener('change', () => {
             this.updateSphericalFromCamera();
         });
+
+        // Set initial visibility based on settings
+        this.toggleVectorVisibility(this.settings.showVectors);
+        this.toggleSurfaceLinesVisibility(this.settings.showSurfaceLines);
+        this.toggleOrbitVisibility(this.settings.showOrbits);
+        this.toggleCitiesVisibility(this.settings.showCities);
+        this.toggleAirportsVisibility(this.settings.showAirports);
+        this.toggleSpaceportsVisibility(this.settings.showSpaceports);
+        this.toggleCountryBordersVisibility(this.settings.showCountryBorders);
+        this.toggleStatesVisibility(this.settings.showStates);
+        this.toggleGroundStationsVisibility(this.settings.showGroundStations);
     }
 
     addGridHelper() {
@@ -160,8 +171,17 @@ class GUIManager {
 
     addDisplayOptions() {
         const displayFolder = this.gui.addFolder('Display Options');
-        displayFolder.add(this.settings, 'showGrid').name('Show Grid').onChange(this.toggleGridVisibility.bind(this));
-        displayFolder.add(this.settings, 'showVectors').name('Show Vectors').onChange(this.toggleVectorVisibility.bind(this));
+        displayFolder.add(this.settings, 'showGrid').name('Grid').onChange(this.toggleGridVisibility.bind(this));
+        displayFolder.add(this.settings, 'showVectors').name('Vectors').onChange(this.toggleVectorVisibility.bind(this));
+        displayFolder.add(this.settings, 'showSatVectors').name('Sat Vectors').onChange(this.toggleSatelliteVectorsVisibility.bind(this));
+        displayFolder.add(this.settings, 'showSurfaceLines').name('Surface Lines').onChange(this.toggleSurfaceLinesVisibility.bind(this));
+        displayFolder.add(this.settings, 'showOrbits').name('Orbits').onChange(this.toggleOrbitVisibility.bind(this));
+        displayFolder.add(this.settings, 'showCities').name('Cities').onChange(this.toggleCitiesVisibility.bind(this));
+        displayFolder.add(this.settings, 'showAirports').name('Airports').onChange(this.toggleAirportsVisibility.bind(this));
+        displayFolder.add(this.settings, 'showSpaceports').name('Spaceports').onChange(this.toggleSpaceportsVisibility.bind(this));
+        displayFolder.add(this.settings, 'showGroundStations').name('Ground Stations').onChange(this.toggleGroundStationsVisibility.bind(this));
+        displayFolder.add(this.settings, 'showCountryBorders').name('Country Borders').onChange(this.toggleCountryBordersVisibility.bind(this));
+        displayFolder.add(this.settings, 'showStates').name('States').onChange(this.toggleStatesVisibility.bind(this));
         displayFolder.open();
     }
 
@@ -173,10 +193,47 @@ class GUIManager {
         this.vectors.setVisible(value);
     }
 
+    toggleSatelliteVectorsVisibility(value) {
+        this.vectors.setSatVisible(value);
+    }
+
+    toggleSurfaceLinesVisibility(value) {
+        this.earth.setSurfaceLinesVisible(value);
+    }
+
+    toggleOrbitVisibility(value) {
+        this.satellites.forEach(satellite => {
+            satellite.setOrbitVisible(value);
+        });
+    }
+
+    toggleCitiesVisibility(value) {
+        this.earth.setCitiesVisible(value);
+    }
+
+    toggleAirportsVisibility(value) {
+        this.earth.setAirportsVisible(value);
+    }
+
+    toggleSpaceportsVisibility(value) {
+        this.earth.setSpaceportsVisible(value);
+    }
+
+    toggleGroundStationsVisibility(value) {
+        this.earth.setGroundStationVisible(value);
+    }
+
+    toggleCountryBordersVisibility(value) {
+        this.earth.setCountryBordersVisible(value);
+    }
+
+    toggleStatesVisibility(value) {
+        this.earth.setStatesVisible(value);
+    }
+
     addDebugOptions() {
         const debugFolder = this.gui.addFolder('Debugging');
         debugFolder.add(this.settings, 'showDebugger').name('Show Physics Debug').onChange(this.toggleDebuggerVisibility.bind(this));
-        debugFolder.open();
     }
 
     toggleDebuggerVisibility(value) {
@@ -284,9 +341,11 @@ class GUIManager {
         const newSatellite = new Satellite(this.scene, this.world, this.earth, this.moon, positionECEF, velocityECEF, id, color);
         this.satellites.push(newSatellite);
         this.vectors.addSatellite(newSatellite); // Add the satellite to the vectors
+        this.vectors.setSatVisible(this.settings.showSatVectors); // Ensure satellite vectors are visible
 
         this.updateSatelliteGUI(newSatellite);
         this.updateBodySelector(); // Update the body selector with new satellite
+
     }
 
     updateSatelliteGUI(newSatellite) {

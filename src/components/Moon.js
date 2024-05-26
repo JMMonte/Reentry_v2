@@ -48,6 +48,9 @@ export class Moon {
 
         // Initialize trace line
         this.initTraceLine();
+
+        // Add light source to simulate glare
+        this.addLightSource();
     }
 
     initTraceLine() {
@@ -59,6 +62,17 @@ export class Moon {
         this.dynamicPositions = [];
         this.creationTimes = [];
         this.maxTracePoints = 10000;
+    }
+
+    addLightSource() {
+        const light = new THREE.PointLight(0xffffff, 8e7, Constants.moonOrbitRadius * 2); // White light, intensity 1, distance twice the Moon's orbit radius
+        light.position.set(0, 0, 0); // Center of the moon
+        light.decay = 2; // Physical decay factor
+
+        this.moonMesh.add(light);
+
+        const lightHelper = new THREE.PointLightHelper(light, 5); // Optional: visualize the light source position
+        this.scene.add(lightHelper);
     }
 
     updatePosition(currentTime) {

@@ -15,6 +15,36 @@ export class Satellite {
         this.initialized = false;
         this.updateBuffer = [];
 
+        // Centralize materials
+        this.materials = {
+            satellite: new THREE.MeshBasicMaterial({
+                color: this.color
+            }),
+            traceLine: new THREE.LineBasicMaterial({
+                color: this.color,
+                linewidth: 1
+            }),
+            orbitLine: new THREE.LineBasicMaterial({
+                color: this.color,
+                opacity: 0.2,
+                transparent: true
+            }),
+            periapsis: new THREE.PointsMaterial({
+                color: 0xff0000,
+                size: 5,
+                opacity: 0.5,
+                transparent: true,
+                sizeAttenuation: false,
+            }),
+            apoapsis: new THREE.PointsMaterial({
+                color: 0x0000ff,
+                size: 5,
+                opacity: 0.5,
+                transparent: true,
+                sizeAttenuation: false,
+            }) 
+        };
+
         this.initProperties(position, velocity);
         this.initWorker();
         this.initTraceLine();
@@ -35,8 +65,7 @@ export class Satellite {
         this.body.velocity.copy(velocity);
 
         const geometry = new THREE.SphereGeometry(Constants.satelliteRadius, 16, 16);
-        const materialThree = new THREE.MeshBasicMaterial({ color: this.color });
-        this.mesh = new THREE.Mesh(geometry, materialThree);
+        this.mesh = new THREE.Mesh(geometry, this.materials.satellite);
         this.scene.add(this.mesh);
 
         this.gravityVector = new CANNON.Vec3();
@@ -77,28 +106,22 @@ export class Satellite {
     initTraceLine() {
         const traceLineGeometry = new THREE.BufferGeometry();
         traceLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
-        const traceLineMaterial = new THREE.LineBasicMaterial({
-            color: this.color,
-            linewidth: 1,
-        });
-        this.traceLine = new THREE.Line(traceLineGeometry, traceLineMaterial);
+        this.traceLine = new THREE.Line(traceLineGeometry, this.materials.traceLine);
         this.scene.add(this.traceLine);
     }
 
     initOrbitLine() {
         const orbitLineGeometry = new THREE.BufferGeometry();
-        const orbitLineMaterial = new THREE.LineBasicMaterial({ color: this.color, opacity: 0.2, transparent: true });
-        this.orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
+        this.orbitLine = new THREE.Line(orbitLineGeometry, this.materials.orbitLine);
         this.scene.add(this.orbitLine);
     }
 
     initApsides() {
-        const sphereGeometry = new THREE.SphereGeometry(10, 16, 16);
-        const periapsisMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.5, transparent: true }); // Red for periapsis
-        const apoapsisMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, opacity: 0.5, transparent: true }); // Blue for apoapsis
+        const sphereGeometry = new THREE.BufferGeometry();
+        sphereGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
 
-        this.periapsisMesh = new THREE.Mesh(sphereGeometry, periapsisMaterial);
-        this.apoapsisMesh = new THREE.Mesh(sphereGeometry, apoapsisMaterial);
+        this.periapsisMesh = new THREE.Points(sphereGeometry, this.materials.periapsis);
+        this.apoapsisMesh = new THREE.Points(sphereGeometry, this.materials.apoapsis);
 
         this.scene.add(this.periapsisMesh);
         this.scene.add(this.apoapsisMesh);
@@ -107,7 +130,7 @@ export class Satellite {
     updateApsides(orbitalElements) {
         const { h, e, i, omega, w } = orbitalElements;
         const mu = Constants.G * Constants.earthMass;
-        
+
         // Calculate periapsis and apoapsis distances
         const rPeriapsis = h * h / (mu * (1 + e));
         const rApoapsis = h * h / (mu * (1 - e));
@@ -271,5 +294,13 @@ export class Satellite {
 
         // Update periapsis and apoapsis positions
         this.updateApsides(orbitalElements);
+    }
+
+    toggleTraceLine() {
+        this.traceLine.visible = !this.traceLine.visible;
+    }
+
+    setOrbitVisible(visible) {
+        this.orbitLine.visible = visible;
     }
 }
