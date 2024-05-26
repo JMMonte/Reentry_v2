@@ -1,4 +1,3 @@
-// Earth.js
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { EarthSurface } from './earthSurface.js'; // Update import statement

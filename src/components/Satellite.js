@@ -14,6 +14,7 @@ export class Satellite {
         this.color = color;
         this.initialized = false;
         this.updateBuffer = [];
+        this.landed = false;
 
         // Centralize materials
         this.materials = {
@@ -84,6 +85,8 @@ export class Satellite {
                 this.world.addBody(this.body);
             } else if (type === 'stepComplete' && data.id === this.id) {
                 this.updateBuffer.push(data);
+            } else if (type === 'landed' && data.id === this.id) {
+                this.handleLanding(data.position);
             }
         };
 
@@ -101,6 +104,27 @@ export class Satellite {
             type: 'createSatellite',
             data: satelliteData
         });
+    }
+
+    handleLanding(position) {
+        this.landed = true;
+        this.body.position.copy(position);
+        this.body.velocity.set(0, 0, 0);
+        this.body.mass = 0; // Make the satellite static
+
+        // Remove the satellite from the physics world
+        this.world.removeBody(this.body);
+
+        // Attach the satellite to the Earth's rotation group
+        this.earth.rotationGroup.add(this.mesh);
+
+        // Update the satellite's position relative to Earth's rotation group
+        const scaleFactor = Constants.metersToKm * Constants.scale;
+        this.mesh.position.set(
+            position.x * scaleFactor,
+            position.y * scaleFactor,
+            position.z * scaleFactor
+        );
     }
 
     initTraceLine() {
@@ -178,7 +202,7 @@ export class Satellite {
         this.altitude = data.altitude;
         this.gravityVector.copy(data.acceleration);
         this.dragForce.copy(data.dragForce);
-
+    
         this.updateMeshPosition();
         this.updateOrbitalElements();
     }
@@ -232,20 +256,35 @@ export class Satellite {
 
         const utcCurrentTime = new Date(currentTime).toISOString();
 
-        this.worker.postMessage({
-            type: 'step',
-            data: {
-                currentTime: utcCurrentTime,
-                realDeltaTime,
-                warpedDeltaTime,
-                earthPosition: this.earth.earthBody.position,
-                moonPosition: this.moon.moonBody.position,
-                earthRadius: Constants.earthRadius,
-                id: this.id
-            }
-        });
+        if (!this.landed) {
+            this.worker.postMessage({
+                type: 'step',
+                data: {
+                    currentTime: utcCurrentTime,
+                    realDeltaTime,
+                    warpedDeltaTime,
+                    earthPosition: this.earth.earthBody.position,
+                    moonPosition: this.moon.moonBody.position,
+                    earthRadius: Constants.earthRadius,
+                    id: this.id
+                }
+            });
 
-        this.updateMeshPosition();
+            this.updateMeshPosition();
+        } else {
+            // Update position to follow Earth's rotation
+            this.updatePositionRelativeToEarth();
+        }
+    }
+
+    updatePositionRelativeToEarth() {
+        const position = this.body.position;
+        const scaleFactor = Constants.metersToKm * Constants.scale;
+        this.mesh.position.set(
+            position.x * scaleFactor,
+            position.y * scaleFactor,
+            position.z * scaleFactor
+        );
     }
 
     applyBufferedUpdates() {
