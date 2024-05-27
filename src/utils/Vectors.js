@@ -1,18 +1,33 @@
 import * as THREE from 'three';
-import { TimeUtils } from './TimeUtils.js';
-import { Constants } from './Constants.js';
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import helveticaRegular from '../../public/assets/fonts/helvetiker_regular.typeface.json';
 
 export class Vectors {
     constructor(earth, scene, timeUtils) {
         this.earth = earth;
         this.scene = scene;
-        this.timeUtils = timeUtils;  // Using the merged TimeUtils class
+        this.timeUtils = timeUtils;
         this.scale = this.earth.EARTH_RADIUS * 2;
-        this.satellites = []
-        this.initVectors();
+        this.satellites = [];
+        this.fontLoader = new FontLoader();
+        this.font = null;
+
+        // Attempt to parse the imported font JSON
+        try {
+            this.font = this.fontLoader.parse(helveticaRegular);
+            console.log('Font parsed successfully');
+            this.initVectors();
+        } catch (error) {
+            console.error('Failed to parse font:', error);
+        }
     }
 
     initVectors() {
+        if (!this.font) {
+            console.warn('Font not loaded yet, skipping vector initialization');
+            return;
+        }
+
         this.initVelocityVector();
         this.initNorthPoleVector();
         this.initSunDirection();
@@ -20,6 +35,41 @@ export class Vectors {
         if (this.satellites.length > 0) {
             this.initSatelliteVectors(this.satellites);
         }
+    }
+
+    createLabel(text, position, color) {
+        const fontSize = 64;
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+
+        context.font = `${fontSize}px Arial`;
+        const textWidth = context.measureText(text).width;
+        const textHeight = fontSize;
+
+        canvas.width = textWidth;
+        canvas.height = textHeight;
+
+        context.font = `${fontSize}px Arial`;
+        context.fillStyle = 'white';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+
+        const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(spriteMaterial);
+
+        const spriteScale = this.scale * 0.01; // Adjust the scale factor as needed
+        sprite.scale.set(spriteScale * (textWidth / textHeight), spriteScale, 1);
+        sprite.position.copy(position);
+        sprite.renderOrder = 999;  // Ensure labels are rendered last
+
+        this.scene.add(sprite);
+
+        return sprite;
     }
 
     initVelocityVector() {
@@ -32,6 +82,10 @@ export class Vectors {
         );
         this.velocityVector.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);
         this.scene.add(this.velocityVector);
+        this.velocityLabel = this.createLabel(
+            'Earth Orbital Velocity',
+            this.velocityVector.position.clone().add(velocityDirection.multiplyScalar(this.scale))
+        );
     }
 
     initNorthPoleVector() {
@@ -44,6 +98,10 @@ export class Vectors {
         );
         this.northPoleVector.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);
         this.scene.add(this.northPoleVector);
+        this.northPoleLabel = this.createLabel(
+            'Earth Rotation Axis Pole',
+            this.northPoleVector.position.clone().add(northPoleDirection.multiplyScalar(this.scale))
+        );
     }
 
     initSunDirection() {
@@ -56,12 +114,10 @@ export class Vectors {
         );
         this.sunDirectionArrow.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);
         this.scene.add(this.sunDirectionArrow);
-    }
-
-    initSatelliteVectors() {
-        this.satellites.forEach(satellite => {
-            this.addSatellite(satellite);
-        });
+        this.sunDirectionLabel = this.createLabel(
+            'Sun Direction',
+            this.sunDirectionArrow.position.clone().add(sunDirection.multiplyScalar(this.scale))
+        );
     }
 
     initGreenwichVector() {
@@ -74,6 +130,16 @@ export class Vectors {
         );
         this.greenwichVector.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);
         this.scene.add(this.greenwichVector);
+        this.greenwichLabel = this.createLabel(
+            'Greenwich-Equator',
+            this.greenwichVector.position.clone().add(greenwichDirection.multiplyScalar(this.scale))
+        );
+    }
+
+    initSatelliteVectors() {
+        this.satellites.forEach(satellite => {
+            this.addSatellite(satellite);
+        });
     }
 
     updateSatelliteVectors() {
@@ -109,20 +175,40 @@ export class Vectors {
     }
 
     updateVectors() {
-        this.velocityVector.setDirection(this.timeUtils.calculateEarthVelocity().normalize());
-        this.northPoleVector.setDirection(this.timeUtils.getEarthTilt());
-        this.sunDirectionArrow.setDirection(this.timeUtils.getSunPosition().normalize());
-        this.greenwichVector.setDirection(this.timeUtils.getGreenwichPosition().normalize());
+        if (this.velocityVector) {
+            const velocityDirection = this.timeUtils.calculateEarthVelocity().normalize();
+            this.velocityVector.setDirection(velocityDirection);
+            this.velocityLabel.position.copy(this.velocityVector.position.clone().add(velocityDirection.multiplyScalar(this.scale)));
+        }
+        if (this.northPoleVector) {
+            const northPoleDirection = this.timeUtils.getEarthTilt();
+            this.northPoleVector.setDirection(northPoleDirection);
+            this.northPoleLabel.position.copy(this.northPoleVector.position.clone().add(northPoleDirection.multiplyScalar(this.scale)));
+        }
+        if (this.sunDirectionArrow) {
+            const sunDirection = this.timeUtils.getSunPosition().normalize();
+            this.sunDirectionArrow.setDirection(sunDirection);
+            this.sunDirectionLabel.position.copy(this.sunDirectionArrow.position.clone().add(sunDirection.multiplyScalar(this.scale)));
+        }
+        if (this.greenwichVector) {
+            const greenwichDirection = this.timeUtils.getGreenwichPosition(this.earth).normalize();
+            this.greenwichVector.setDirection(greenwichDirection);
+            this.greenwichLabel.position.copy(this.greenwichVector.position.clone().add(greenwichDirection.multiplyScalar(this.scale)));
+        }
         this.updateSatelliteVectors();
     }
 
     setVisible(visible) {
-        this.velocityVector.visible = visible;
-        this.northPoleVector.visible = visible;
-        this.sunDirectionArrow.visible = visible;
-        this.greenwichVector.visible = visible;
+        if (this.velocityVector) this.velocityVector.visible = visible;
+        if (this.velocityLabel) this.velocityLabel.visible = visible;
+        if (this.northPoleVector) this.northPoleVector.visible = visible;
+        if (this.northPoleLabel) this.northPoleLabel.visible = visible;
+        if (this.sunDirectionArrow) this.sunDirectionArrow.visible = visible;
+        if (this.sunDirectionLabel) this.sunDirectionLabel.visible = visible;
+        if (this.greenwichVector) this.greenwichVector.visible = visible;
+        if (this.greenwichLabel) this.greenwichLabel.visible = visible;
     }
-    
+
     setSatVisible(visible) {
         this.satellites.forEach(entry => {
             if (entry.velocityVector) {
@@ -137,8 +223,18 @@ export class Vectors {
     removeSatellite(satellite) {
         const index = this.satellites.findIndex(entry => entry.satellite === satellite);
         if (index !== -1) {
-            this.scene.remove(this.satellites[index].velocityVector);
-            this.scene.remove(this.satellites[index].gravityVector);
+            if (this.satellites[index].velocityVector) {
+                this.scene.remove(this.satellites[index].velocityVector);
+            }
+            if (this.satellites[index].gravityVector) {
+                this.scene.remove(this.satellites[index].gravityVector);
+            }
+            if (this.satellites[index].velocityLabel) {
+                this.scene.remove(this.satellites[index].velocityLabel);
+            }
+            if (this.satellites[index].gravityLabel) {
+                this.scene.remove(this.satellites[index].gravityLabel);
+            }
             this.satellites.splice(index, 1);
         }
     }
@@ -167,7 +263,7 @@ export class Vectors {
         this.satellites.push({
             satellite: satellite,
             velocityVector: velocityVector,
-            gravityVector: gravityVector
+            gravityVector: gravityVector,
         });
     }
 
@@ -180,18 +276,22 @@ export class Vectors {
     }
 
     toggleVelocityVectorVisibility(visible) {
-        this.velocityVector.visible = visible;
+        if (this.velocityVector) this.velocityVector.visible = visible;
+        if (this.velocityLabel) this.velocityLabel.visible = visible;
     }
 
     toggleNorthPoleVectorVisibility(visible) {
-        this.northPoleVector.visible = visible;
+        if (this.northPoleVector) this.northPoleVector.visible = visible;
+        if (this.northPoleLabel) this.northPoleLabel.visible = visible;
     }
 
     toggleSunDirectionArrowVisibility(visible) {
-        this.sunDirectionArrow.visible = visible;
+        if (this.sunDirectionArrow) this.sunDirectionArrow.visible = visible;
+        if (this.sunDirectionLabel) this.sunDirectionLabel.visible = visible;
     }
 
     toggleGreenwichVectorVisibility(visible) {
-        this.greenwichVector.visible = visible;
+        if (this.greenwichVector) this.greenwichVector.visible = visible;
+        if (this.greenwichLabel) this.greenwichLabel.visible = visible;
     }
 }

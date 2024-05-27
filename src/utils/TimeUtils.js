@@ -118,13 +118,14 @@ export class TimeUtils {
         return (elapsedCycle % millisecondsInCycle) / millisecondsInCycle;
     }
 
-    getGreenwichPosition() {
+    getGreenwichPosition(earth) {
         const distance = Constants.earthRadius;
         let position = new THREE.Vector3(distance, 0, 0);
         const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(23.5));
-        const rotationAngle = this.getFractionOfDay() * 2 * Math.PI + Math.PI * 0.256;
-        const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
+        const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), earth.rotationGroup.rotation.y.toFixed(4));
         const combinedQuaternion = new THREE.Quaternion().multiplyQuaternions(tiltQuaternion, rotationQuaternion);
+        // rotate 1.5Pi to match earth surface orientation in ThreeJs
+        position.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.5));
         position.applyQuaternion(combinedQuaternion);
         return position;
     }
