@@ -280,7 +280,7 @@ export class Moon {
         const deltaRotation = rotationSpeed * elapsedTime;
 
         // Update moon rotation
-        this.moonMesh.rotation.y -= deltaRotation;
+        this.moonMesh.rotation.y += deltaRotation;
     }
 
     getMesh() {
