@@ -92,7 +92,9 @@ const settings = {
     showGroundStations: false,
     showCountryBorders: false,
     showStates: false,
-    showMoonOrbit: true,
+    showMoonOrbit: false,
+    showMoonTraces: false,
+    showMoonSurfaceLines: false,
 };
 
 // Time management
@@ -137,7 +139,12 @@ async function init() {
 
     // Post-processing
     const renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.4, 0.99);
+    const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        0.3, // Strength
+        0.999, // Radius
+        0.99 // Threshold
+    );
     bloomPass.renderToScreen = true;
     bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2); // Lower resolution for bloom
     const bloomComposer = new EffectComposer(renderer);
@@ -211,13 +218,13 @@ async function init() {
 
             const altitude = satellite.getCurrentAltitude();
             const velocity = satellite.getCurrentVelocity();
-            const acceleration = satellite.getCurrentAcceleration();
+            const earthGravityForce = satellite.getCurrentEarthGravityForce();
             const dragForce = satellite.getCurrentDragForce();
 
             // Update GUI controllers with the new values
             satellite.altitudeController.setValue(parseFloat(altitude)).updateDisplay();
             satellite.velocityController.setValue(parseFloat(velocity)).updateDisplay();
-            satellite.accelerationController.setValue(parseFloat(acceleration)).updateDisplay();
+            satellite.earthGravityForceController.setValue(parseFloat(earthGravityForce)).updateDisplay();
             satellite.dragController.setValue(parseFloat(dragForce)).updateDisplay();
         });
 

@@ -2,7 +2,16 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import PhysicsWorkerURL from 'url:../workers/physicsWorker.js';
-import { PhysicsUtils } from '../utils/PhysicsUtils.js';  // Import PhysicsUtils
+import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { ManeuverCalculator } from './ManeuverCalculator.js'; // Import the ManeuverCalculator class
+
+class ManeuverNode {
+    constructor(time, direction, deltaV) {
+        this.time = time; // Exact time in the simulation when the maneuver should occur
+        this.direction = direction; // THREE.Vector3 representing the direction of the thrust
+        this.deltaV = deltaV; // The amount of delta-v (change in velocity) necessary
+    }
+}
 
 export class Satellite {
     constructor(scene, world, earth, moon, position, velocity, id, color) {
@@ -46,11 +55,18 @@ export class Satellite {
             }) 
         };
 
+        if (!position || !velocity) {
+            throw new Error("Position and velocity must be defined");
+        }
+
         this.initProperties(position, velocity);
         this.initWorker();
         this.initTraceLine();
         this.initOrbitLine();
         this.initApsides();
+
+        this.maneuverNodes = []; // List to store maneuver nodes
+        this.maneuverCalculator = new ManeuverCalculator(); // Initialize the ManeuverCalculator
     }
 
     initProperties(position, velocity) {
@@ -62,10 +78,16 @@ export class Satellite {
         const monopropellantDensity = 800; // kg/m^3
         this.satelliteMass = (0.1 * volume * aluminumDensity) + (0.1 * volume * monopropellantDensity);
         this.body = new CANNON.Body({ mass: this.satelliteMass, shape, material });
-        this.body.position.copy(position);
-        this.body.velocity.copy(velocity);
 
-        const geometry = new THREE.SphereGeometry(Constants.satelliteRadius, 16, 16);
+        this.body.position.copy(position); // Ensure position is defined
+        this.body.velocity.copy(velocity); // Ensure velocity is defined
+
+        const geometry = new THREE.ConeGeometry(
+            Constants.satelliteRadius,
+            Constants.satelliteRadius * 2,
+            3,
+            1
+        );
         this.mesh = new THREE.Mesh(geometry, this.materials.satellite);
         this.scene.add(this.mesh);
 
@@ -235,9 +257,8 @@ export class Satellite {
         return this.body.velocity.length();
     }
 
-    getCurrentAcceleration() {
-        const force = this.gravityVector;
-        return force.length() / (this.body.mass); // Avoid division by zero
+    getCurrentEarthGravityForce() {
+        return this.gravityVector; // Avoid division by zero
     }
 
     getCurrentDragForce() {
@@ -257,6 +278,9 @@ export class Satellite {
         const utcCurrentTime = new Date(currentTime).toISOString();
 
         if (!this.landed) {
+            // Check for any maneuvers that need to be executed
+            this.executeManeuvers(currentTime);
+
             this.worker.postMessage({
                 type: 'step',
                 data: {
@@ -321,6 +345,8 @@ export class Satellite {
         const velocity = new THREE.Vector3(this.body.velocity.x, this.body.velocity.y, this.body.velocity.z);
         const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
 
+        this.maneuverCalculator.setCurrentOrbit(orbitalElements); // Update current orbit in ManeuverCalculator
+
         // Compute orbit points
         const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu);
 
@@ -337,11 +363,144 @@ export class Satellite {
         this.updateApsides(orbitalElements);
     }
 
-    setTraceVisible(visible) {
-        this.traceLine.visible = visible;
+    setTargetOrbit(targetElements) {
+        this.maneuverCalculator.setTargetOrbit(targetElements);
     }
 
-    setOrbitVisible(visible) {
-        this.orbitLine.visible = visible;
+    calculateDeltaV() {
+        return this.maneuverCalculator.calculateDeltaV();
     }
+
+    applyDeltaV(deltaV, direction) {
+        if (!this.initialized || this.landed) return;
+
+        // Get the current velocity vector
+        const velocity = this.body.velocity.clone();
+        const velocityLength = velocity.length();
+
+        if (velocityLength === 0) return; // Avoid division by zero
+
+        // Normalize the velocity vector to get the direction
+        const normalizedVelocity = velocity.clone().normalize();
+
+        // Calculate the thrust vector in the direction of the velocity
+        const thrustVector = new CANNON.Vec3(
+            normalizedVelocity.x * direction.x,
+            normalizedVelocity.y * direction.y,
+            normalizedVelocity.z * direction.z
+        );
+
+        // Scale the thrust vector by the deltaV
+        thrustVector.scale(deltaV, thrustVector);
+
+        // Apply the force to the satellite body
+        this.body.applyImpulse(thrustVector, this.body.position);
+    }
+
+    updateOrbitTrace() {
+        const positionAttribute = this.traceLine.geometry.attributes.position;
+        const tracePositions = positionAttribute.array;
+
+        if (this.dynamicPositions.length > this.maxTracePoints) {
+            this.dynamicPositions.shift();
+        }
+
+        this.dynamicPositions.push(this.mesh.position.clone());
+
+        for (let i = 0; i < this.dynamicPositions.length; i++) {
+            tracePositions[i * 3] = this.dynamicPositions[i].x;
+            tracePositions[i * 3 + 1] = this.dynamicPositions[i].y;
+            tracePositions[i * 3 + 2] = this.dynamicPositions[i].z;
+        }
+
+        positionAttribute.needsUpdate = true;
+    }
+
+    calculateBestMomentDeltaV(targetElements) {
+        return this.maneuverCalculator.calculateBestMomentDeltaV(targetElements);
+    }
+
+    executeManeuvers(currentTime) {
+        // Sort maneuvers by time
+        this.maneuverNodes.sort((a, b) => a.time - b.time);
+
+        // Execute maneuvers that are due
+        while (this.maneuverNodes.length > 0 && this.maneuverNodes[0].time <= currentTime) {
+            const node = this.maneuverNodes.shift();
+            this.applyDeltaV(node.deltaV, node.direction);
+        }
+    }
+
+    updateOrbitLine(orbitPoints) {
+        const positions = [];
+        for (const point of orbitPoints) {
+            positions.push(point.x, point.y, point.z);
+        }
+        this.orbitLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        this.orbitLine.geometry.attributes.position.needsUpdate = true;
+    }
+
+    renderTargetOrbit(targetElements) {
+        const orbitPoints = PhysicsUtils.computeOrbit(targetElements, Constants.G * Constants.earthMass);
+        this.updateOrbitLine(orbitPoints);
+    }
+
+    addManeuverNode(time, direction, deltaV) {
+        const maneuverNode = new ManeuverNode(time, direction, deltaV);
+        this.maneuverNodes.push(maneuverNode);
+    }
+
+    renderManeuverNode(time) {
+        const position = this.getPositionAtTime(time);
+        if (!this.maneuverNodeMesh) {
+            const sphereGeometry = new THREE.SphereGeometry(10, 16, 16);
+            this.maneuverNodeMesh = new THREE.Points(sphereGeometry, this.materials.maneuverNode);
+            this.scene.add(this.maneuverNodeMesh);
+        }
+        this.maneuverNodeMesh.position.copy(position);
+    }
+
+    getPositionAtTime(time) {
+        const mu = Constants.G * Constants.earthMass;
+        const a = this.maneuverCalculator.currentOrbitalElements.semiMajorAxis;
+        const e = this.maneuverCalculator.currentOrbitalElements.eccentricity;
+        const i = this.maneuverCalculator.currentOrbitalElements.inclination;
+        const omega = this.maneuverCalculator.currentOrbitalElements.longitudeOfAscendingNode;
+        const w = this.maneuverCalculator.currentOrbitalElements.argumentOfPeriapsis;
+
+        // Mean motion (rad/s)
+        const n = Math.sqrt(mu / Math.pow(a, 3));
+
+        // Mean anomaly
+        const M = n * time;
+
+        // Solve Kepler's equation for Eccentric anomaly (E)
+        const E = PhysicsUtils.solveKeplersEquation(M, e);
+
+        // True anomaly
+        const trueAnomaly = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+
+        // Distance to the central body
+        const r = a * (1 - e * e) / (1 + e * Math.cos(trueAnomaly));
+
+        // Position in the orbital plane
+        const x = r * Math.cos(trueAnomaly);
+        const y = r * Math.sin(trueAnomaly);
+
+        // Rotate by argument of periapsis
+        const position = new THREE.Vector3(x, y, 0);
+        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
+
+        // Rotate by inclination
+        position.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
+
+        // Rotate by longitude of ascending node
+        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+
+        // Convert to kilometers for Three.js
+        position.multiplyScalar(Constants.metersToKm * Constants.scale);
+
+        return position;
+    }
+
 }

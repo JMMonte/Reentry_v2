@@ -4,6 +4,8 @@ import { Constants } from '../utils/Constants.js';
 import { JulianDay, RotateAroundX, RotateAroundY } from '../utils/AstronomyUtils.js';
 import moonTexture from '../../public/assets/texture/lroc_color_poles_8k.jpg';
 import moonBump from '../../public/assets/texture/ldem_16_uint.jpg';
+import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { MoonSurface } from './MoonSurface.js';
 
 export class Moon {
     constructor(scene, world, renderer, timeUtils) {
@@ -23,15 +25,15 @@ export class Moon {
             map: textureLoader.load(moonTexture),
             bumpMap: textureLoader.load(moonBump),
             bumpScale: 3.9,
-            displacementMap: textureLoader.load(moonBump),
-            displacementScale: 5.9,
+            // displacementMap: textureLoader.load(moonBump),
+            // displacementScale: 5.9,
         });
         this.moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
 
         this.moonMesh.castShadow = true;
         this.moonMesh.receiveShadow = true;
         scene.add(this.moonMesh);
-        this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.5); // Rotate 180 degrees around the y-axis
+        this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.7); // Rotate 180 degrees around the y-axis
 
         // Create the moon body
         const moonShape = new CANNON.Sphere(Constants.moonRadius);
@@ -56,6 +58,9 @@ export class Moon {
         this.initOrbitLine();
 
         this.addPeriapsisApoapsisPoints();
+
+        // Add Moon surface contours
+        this.loadContourLines();
     }
 
     initTraceLine() {
@@ -86,8 +91,8 @@ export class Moon {
         const pointsCount = 1000; // Number of points to plot
 
         // Generate points along the orbit
-        const startTime = new Date("2024-01-01T00:00:00Z"); // Start date
-        const endTime = new Date("2025-01-01T00:00:00Z"); // End date
+        const startTime = new Date(); // Start date is the current date
+        const endTime = new Date(startTime.getTime() + (365 * 24 * 60 * 60 * 1000)); // End date is 1 year from the current date
         const timeStep = (endTime - startTime) / pointsCount; // Time step in milliseconds
 
         for (let i = 0; i <= pointsCount; i++) {
@@ -188,7 +193,7 @@ export class Moon {
         // Mean anomaly (M)
         const n = 13.176396; // Mean motion in degrees per day
         const M = (n * jd) % 360; // Mean anomaly in degrees
-        const E = this.solveKepler(M * (Math.PI / 180), e); // Eccentric anomaly in radians
+        const E = PhysicsUtils.solveKeplersEquation(M * (Math.PI / 180), e); // Eccentric anomaly in radians
 
         // True anomaly (ν)
         const ν = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
@@ -200,7 +205,7 @@ export class Moon {
         let x = r * Math.cos(ν);
         let z = r * Math.sin(ν);
         let y = 0;
-        // // Rotate around the x-axis by the inclination
+        // Rotate around the x-axis by the inclination
         ({ x, y, z } = RotateAroundX(x, y, z, -inclination));
         
         // Rotate 180 around x-axis to match the Moon's orientation
@@ -212,9 +217,8 @@ export class Moon {
         // Rotate around the z-axis by the argument of periapsis
         ({ x, y, z } = RotateAroundY(x, y, z, argumentOfPeriapsis));
 
-        // // // Rotate around the y-axis by the longitude of the ascending node
+        // Rotate around the y-axis by the longitude of the ascending node
         ({ x, y, z } = RotateAroundY(x, y, z, ascendingNode));
-        
 
         return { x, y, z };
     }
@@ -296,4 +300,25 @@ export class Moon {
         this.apoapsisPoint && (this.apoapsisPoint.visible = visible);
         this.periapsisPoint && (this.periapsisPoint.visible = visible);
     }
+
+    setSurfaceDetailsVisible(visible) {
+        this.moonSurface.setVisibility(visible);
+    }
+
+    setTraceVisible(visible) {
+        this.traceLine.visible = visible;
+    }
+
+    loadContourLines() {
+        this.moonSurface = new MoonSurface(this.moonMesh, Constants.moonRadius * Constants.metersToKm * Constants.scale);
+        fetch('../config/moon_contours.svg')
+            .then(response => response.text())
+            .then(svgText => {
+                this.moonSurface.addContourLinesFromSVG(svgText);
+            })
+            .catch(error => {
+                console.error('Error loading contour lines:', error);
+            });
+    }
 }
+

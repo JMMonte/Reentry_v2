@@ -45,10 +45,10 @@ export class PhysicsUtils {
         let theta = Math.acos(eVec.dot(position) / (e * r));
         if (vr < 0) theta = 2 * Math.PI - theta;
     
-        return { h, e, i, omega, w, theta };
+        return { h, e, i, omega, w, trueAnomaly: theta };
     }
 
-    static computeOrbit({ h, e, i, omega, w, theta }, mu, numPoints = 100) {
+    static computeOrbit({ h, e, i, omega, w }, mu, numPoints = 100) {
         const points = [];
         const step = 2 * Math.PI / numPoints;
     
@@ -86,7 +86,7 @@ export class PhysicsUtils {
         return points;
     }
 
-    static calculateVelocity(velocity, latRad, lonRad, azimuthRad, angleOfAttackRad, x, y, z) {
+    static calculateVelocity(velocity, latRad, lonRad, azimuthRad, angleOfAttackRad) {
         // Calculate the initial velocity vector based on the provided parameters
         const velocityVector = new THREE.Vector3(
             velocity * Math.cos(angleOfAttackRad) * Math.cos(azimuthRad),
@@ -119,16 +119,16 @@ export class PhysicsUtils {
     }
 
     static calculateEarthSurfaceVelocity(satellitePosition, earthRadius, earthRotationSpeed, earthInclination) {
-        const earthSurfaceVelocity = new CANNON.Vec3(
+        const earthSurfaceVelocity = new THREE.Vector3(
             -earthRotationSpeed * earthRadius * Math.sin(earthInclination * Math.PI / 180),
             0,
             earthRotationSpeed * earthRadius * Math.cos(earthInclination * Math.PI / 180)
         );
-        earthSurfaceVelocity.vadd(satellitePosition, earthSurfaceVelocity);
+        earthSurfaceVelocity.add(satellitePosition);
         return earthSurfaceVelocity;
     }
 
-    static calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, timeUtils, tiltQuaternion, earthQuaternion) {
+    static calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, tiltQuaternion, earthQuaternion) {
         const latRad = THREE.MathUtils.degToRad(latitude);
         const lonRad = THREE.MathUtils.degToRad(-longitude);
         const azimuthRad = THREE.MathUtils.degToRad(azimuth);
@@ -168,5 +168,90 @@ export class PhysicsUtils {
         const position = new CANNON.Vec3(positionECI.x, positionECI.y, positionECI.z);
         const velocityECEF = new CANNON.Vec3(velocityENU.x, velocityENU.y, velocityENU.z);
         return { positionECEF: position, velocityECEF: velocityECEF };
+    }
+
+    static orbitalVelocityAtAnomaly(orbitalElements, trueAnomaly, mu) {
+        const { h, e } = orbitalElements;
+        const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
+        const velocityMagnitude = Math.sqrt(mu * ((2 / r) - (1 / (h * h / mu / (1 - e * e)))));
+        const velocityAngle = trueAnomaly + Math.PI / 2; // Perpendicular to the radius vector in the orbital plane
+        const xVelocity = velocityMagnitude * Math.cos(velocityAngle);
+        const yVelocity = velocityMagnitude * Math.sin(velocityAngle);
+        return new THREE.Vector3(xVelocity, yVelocity, 0);
+    }
+
+    static rotateToECI(velocity, inclination, omega, w) {
+        const rotationMatrix = new THREE.Matrix4();
+        rotationMatrix.multiply(new THREE.Matrix4().makeRotationZ(-w));
+        rotationMatrix.multiply(new THREE.Matrix4().makeRotationX(-inclination));
+        rotationMatrix.multiply(new THREE.Matrix4().makeRotationZ(-omega));
+        velocity.applyMatrix4(rotationMatrix);
+        return velocity;
+    }
+
+    static calculateOrbitalPosition(orbitalElements, mu, time) {
+        const { h, e, i, omega, w, trueAnomaly } = orbitalElements;
+        const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
+        const position = new THREE.Vector3(
+            r * Math.cos(trueAnomaly),
+            r * Math.sin(trueAnomaly),
+            0
+        );
+        return this.rotateToECI(position, i, omega, w);
+    }
+
+    // New Methods
+
+    static solveKeplersEquation(M, e, tol = 1e-6) {
+        let E = M;
+        let deltaE;
+        do {
+            deltaE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
+            E += deltaE;
+        } while (Math.abs(deltaE) > tol);
+        return E;
+    }
+
+    static calculateStateVectorsAtAnomaly(orbitalElements, trueAnomaly, mu) {
+        const { h, e, i, omega, w } = orbitalElements;
+        const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
+
+        // Position in the orbital plane
+        const x = r * Math.cos(trueAnomaly);
+        const y = r * Math.sin(trueAnomaly);
+
+        // Rotate by argument of periapsis
+        const position = new THREE.Vector3(x, y, 0);
+        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
+
+        // Rotate by inclination
+        position.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
+
+        // Rotate by longitude of ascending node
+        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+
+        // Velocity in the orbital plane
+        const p = h * h / mu;
+        const vr = (mu / h) * e * Math.sin(trueAnomaly);
+        const vt = (mu / h) * (1 + e * Math.cos(trueAnomaly));
+        const vx = vr * Math.cos(trueAnomaly) - vt * Math.sin(trueAnomaly);
+        const vy = vr * Math.sin(trueAnomaly) + vt * Math.cos(trueAnomaly);
+        const velocity = new THREE.Vector3(vx, vy, 0);
+
+        // Rotate velocity by argument of periapsis, inclination, and longitude of ascending node
+        velocity.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
+        velocity.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
+        velocity.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+
+        return { position, velocity };
+    }
+
+    static calculateDeltaVAtAnomaly(currentOrbitalElements, targetOrbitalElements, trueAnomaly, mu) {
+        const currentState = this.calculateStateVectorsAtAnomaly(currentOrbitalElements, trueAnomaly, mu);
+        const targetState = this.calculateStateVectorsAtAnomaly(targetOrbitalElements, trueAnomaly, mu);
+
+        const deltaV = targetState.velocity.clone().sub(currentState.velocity);
+
+        return deltaV.length(); // Return the magnitude of Delta-V
     }
 }

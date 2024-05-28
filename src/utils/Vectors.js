@@ -15,7 +15,6 @@ export class Vectors {
         // Attempt to parse the imported font JSON
         try {
             this.font = this.fontLoader.parse(helveticaRegular);
-            console.log('Font parsed successfully');
             this.initVectors();
         } catch (error) {
             console.error('Failed to parse font:', error);

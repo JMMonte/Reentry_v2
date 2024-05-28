@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { EarthSurface } from './earthSurface.js'; // Update import statement
+import { EarthSurface } from './EarthSurface.js';
 import { Constants } from '../utils/Constants.js';
 import atmosphereFragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
 import atmosphereVertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';

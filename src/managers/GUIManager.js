@@ -3,12 +3,7 @@ import { GUI } from 'dat.gui';
 import { Constants } from '../utils/Constants.js';
 import { Satellite } from '../components/Satellite.js';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
-
-function numberToHexColor(colorNumber) {
-    const integerColor = Math.floor(colorNumber) & 0xFFFFFF;
-    const hexColor = integerColor.toString(16).padStart(6, '0');
-    return `#${hexColor}`;
-}
+import { numberToHexColor } from '../utils/colorUtils.js';
 
 class GUIManager {
     constructor(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, worldDebugger, physicsWorker, camera, controls) {
@@ -63,6 +58,8 @@ class GUIManager {
         this.toggleGroundStationsVisibility(this.settings.showGroundStations);
         this.toggleObservatoriesVisibility(this.settings.showObservatories);
         this.toggleMoonOrbitVisibility(this.settings.showMoonOrbit);
+        this.toggleMoonTraceLinesVisibility(this.settings.showMoonTraces);
+        this.toggleMoonSurfaceLinesVisibility(this.settings.showMoonSurfaceLines);
     }
 
     addGridHelper() {
@@ -79,10 +76,105 @@ class GUIManager {
         this.addSatelliteControls();
         this.addDisplayOptions();
         this.addDebugOptions();
+        this.addManeuverControls(); // Add this line to initialize maneuver controls
 
         // Add body selector folder
         this.bodySelectorFolder = this.gui.addFolder('Body Selector');
         this.addBodySelector();
+    }
+
+    addManeuverControls() {
+        this.maneuverFolder = this.gui.addFolder('Maneuvers');
+        this.biImpulseFolder = this.maneuverFolder.addFolder('Bi-Impulse Maneuver');
+
+        this.biImpulseData = {
+            semiMajorAxis: 7000, // Example value in km
+            eccentricity: 0.1,
+            inclination: 0,
+            longitudeOfAscendingNode: 0,
+            argumentOfPeriapsis: 0,
+            maneuverMoment: 'Best Moment', // Options: Best Moment, Periapsis, Apoapsis
+            selectedSatellite: 'None'
+        };
+
+        this.updateBiImpulseControls();
+
+        // this.maneuverFolder.open();
+    }
+
+    addBiImpulseControls(parentFolder) {
+        const biImpulseData = {
+            semiMajorAxis: 7000, // Example value in km
+            eccentricity: 0.1,
+            inclination: 0,
+            longitudeOfAscendingNode: 0,
+            argumentOfPeriapsis: 0,
+            maneuverMoment: 'Best Moment', // Options: Best Moment, Periapsis, Apoapsis
+            selectedSatellite: 'None'
+        };
+
+        const satellitesList = this.satellites.reduce((acc, satellite) => {
+            acc[`Satellite ${satellite.id}`] = satellite.id;
+            return acc;
+        }, { 'None': 'None' });
+
+        const biImpulseFolder = parentFolder.addFolder('Bi-Impulse Maneuver');
+
+        biImpulseFolder.add(biImpulseData, 'selectedSatellite', satellitesList).name('Select Satellite');
+        biImpulseFolder.add(biImpulseData, 'semiMajorAxis', 6578, 42000).name('Semi-Major Axis (km)').step(1);
+        biImpulseFolder.add(biImpulseData, 'eccentricity', 0, 1).name('Eccentricity').step(0.01);
+        biImpulseFolder.add(biImpulseData, 'inclination', 0, 180).name('Inclination (deg)').step(0.1);
+        biImpulseFolder.add(biImpulseData, 'longitudeOfAscendingNode', 0, 360).name('Longitude of Asc. Node (deg)').step(0.1);
+        biImpulseFolder.add(biImpulseData, 'argumentOfPeriapsis', 0, 360).name('Arg. of Periapsis (deg)').step(0.1);
+        biImpulseFolder.add(biImpulseData, 'maneuverMoment', ['Best Moment', 'Periapsis', 'Apoapsis']).name('Maneuver Moment');
+
+        biImpulseFolder.add({
+            executeManeuver: () => this.executeBiImpulseManeuver(biImpulseData)
+        }, 'executeManeuver').name('Execute Maneuver');
+
+        biImpulseFolder.open();
+    }
+
+    executeBiImpulseManeuver(biImpulseData) {
+        const selectedSatellite = this.satellites.find(sat => `${sat.id}` === biImpulseData.selectedSatellite);
+        if (!selectedSatellite) {
+            console.error('No satellite selected for the maneuver.');
+            return;
+        }
+    
+        const targetElements = {
+            semiMajorAxis: biImpulseData.semiMajorAxis * Constants.kmToMeters, // Convert km to meters
+            eccentricity: biImpulseData.eccentricity,
+            inclination: THREE.MathUtils.degToRad(biImpulseData.inclination),
+            longitudeOfAscendingNode: THREE.MathUtils.degToRad(biImpulseData.longitudeOfAscendingNode),
+            argumentOfPeriapsis: THREE.MathUtils.degToRad(biImpulseData.argumentOfPeriapsis),
+            trueAnomaly: 0, // This will be updated based on the maneuver moment
+        };
+    
+        selectedSatellite.setTargetOrbit(targetElements);
+        selectedSatellite.maneuverCalculator.setCurrentOrbit(selectedSatellite.maneuverCalculator.currentOrbitalElements);
+    
+        // Determine the exact moment for the maneuver
+        let maneuverTime = 0;
+        switch (biImpulseData.maneuverMoment) {
+            case 'Best Moment':
+                const bestMoment = selectedSatellite.calculateBestMomentDeltaV(targetElements);
+                maneuverTime = bestMoment.trueAnomaly;
+                break;
+            case 'Periapsis':
+                maneuverTime = 0; // Placeholder for periapsis
+                break;
+            case 'Apoapsis':
+                maneuverTime = Math.PI; // Placeholder for apoapsis
+                break;
+        }
+    
+        const deltaV = selectedSatellite.calculateDeltaV();
+        if (deltaV) {
+            selectedSatellite.addManeuverNode(maneuverTime, deltaV.normalize(), deltaV.length());
+            selectedSatellite.renderTargetOrbit(targetElements); // Render the target orbit
+            selectedSatellite.renderManeuverNode(maneuverTime); // Render the maneuver node
+        }
     }
 
     setupEventListeners() {
@@ -188,14 +280,16 @@ class GUIManager {
             { key: 'showGroundStations', name: 'Ground Stations', method: this.toggleGroundStationsVisibility.bind(this) },
             { key: 'showCountryBorders', name: 'Country Borders', method: this.toggleCountryBordersVisibility.bind(this) },
             { key: 'showStates', name: 'States', method: this.toggleStatesVisibility.bind(this) },
-            { key: 'showMoonOrbit', name: 'Moon Orbit', method: this.toggleMoonOrbitVisibility.bind(this)}
+            { key: 'showMoonOrbit', name: 'Moon Orbit', method: this.toggleMoonOrbitVisibility.bind(this)},
+            { key: 'showMoonTraces', name: 'Moon Trace Lines', method: this.toggleMoonTraceLinesVisibility.bind(this) },
+            { key: 'showMoonSurfaceLines', name: 'Moon Surface Lines', method: this.toggleMoonSurfaceLinesVisibility.bind(this) }
         ];
     
         options.forEach(option => {
             displayFolder.add(this.settings, option.key).name(option.name).onChange(option.method);
         });
     
-        displayFolder.open();
+        // displayFolder.open();
     }
 
     toggleGridVisibility(value) {
@@ -228,6 +322,14 @@ class GUIManager {
 
     toggleMoonOrbitVisibility(value) {
         this.moon.setOrbitVisible(value);
+    }
+
+    toggleMoonSurfaceLinesVisibility(value) {
+        this.moon.setSurfaceDetailsVisible(value);
+    }
+
+    toggleMoonTraceLinesVisibility(value) {
+        this.moon.setTraceVisible(value);
     }
 
     toggleCitiesVisibility(value) {
@@ -357,7 +459,6 @@ class GUIManager {
             velocity,
             azimuth,
             angleOfAttack,
-            this.timeUtils,
             earthQuaternion,
             tiltQuaternion,
         );
@@ -373,6 +474,50 @@ class GUIManager {
         this.updateSatelliteGUI(newSatellite);
         this.updateBodySelector(); // Update the body selector with new satellite
 
+        this.enableManeuverFolder(); // Enable the maneuver folder
+        this.updateBiImpulseControls(); // Update the list of spacecraft
+    }
+
+    enableManeuverFolder() {
+        if (!this.maneuverFolder) {
+            this.addManeuverControls();
+        }
+        this.maneuverFolder.domElement.style.display = 'block';
+    }
+
+    updateBiImpulseControls() {
+        if (this.selectedSatelliteController) {
+            this.biImpulseFolder.remove(this.selectedSatelliteController);
+        }
+
+        const satellitesList = this.satellites.reduce((acc, satellite) => {
+            acc[`Satellite ${satellite.id}`] = `${satellite.id}`; // Ensure ID is a string
+            return acc;
+        }, { 'None': 'None' });
+
+        this.selectedSatelliteController = this.biImpulseFolder.add(this.biImpulseData, 'selectedSatellite', satellitesList).name('Select Satellite');
+        
+        if (this.semiMajorAxisController) {
+            this.biImpulseFolder.remove(this.semiMajorAxisController);
+            this.biImpulseFolder.remove(this.eccentricityController);
+            this.biImpulseFolder.remove(this.inclinationController);
+            this.biImpulseFolder.remove(this.longitudeOfAscendingNodeController);
+            this.biImpulseFolder.remove(this.argumentOfPeriapsisController);
+            this.biImpulseFolder.remove(this.maneuverMomentController);
+            this.biImpulseFolder.remove(this.executeManeuverController);
+        }
+
+        this.semiMajorAxisController = this.biImpulseFolder.add(this.biImpulseData, 'semiMajorAxis', 6578, 42000).name('Semi-Major Axis (km)').step(1);
+        this.eccentricityController = this.biImpulseFolder.add(this.biImpulseData, 'eccentricity', 0, 1).name('Eccentricity').step(0.01);
+        this.inclinationController = this.biImpulseFolder.add(this.biImpulseData, 'inclination', 0, 180).name('Inclination (deg)').step(0.1);
+        this.longitudeOfAscendingNodeController = this.biImpulseFolder.add(this.biImpulseData, 'longitudeOfAscendingNode', 0, 360).name('Longitude of Asc. Node (deg)').step(0.1);
+        this.argumentOfPeriapsisController = this.biImpulseFolder.add(this.biImpulseData, 'argumentOfPeriapsis', 0, 360).name('Arg. of Periapsis (deg)').step(0.1);
+        this.maneuverMomentController = this.biImpulseFolder.add(this.biImpulseData, 'maneuverMoment', ['Best Moment', 'Periapsis', 'Apoapsis']).name('Maneuver Moment');
+        this.executeManeuverController = this.biImpulseFolder.add({
+            executeManeuver: () => this.executeBiImpulseManeuver(this.biImpulseData)
+        }, 'executeManeuver').name('Execute Maneuver');
+
+        this.biImpulseFolder.open();
     }
 
     updateSatelliteGUI(newSatellite) {
@@ -380,17 +525,17 @@ class GUIManager {
 
         const altitudeObj = { altitude: parseFloat(newSatellite.getCurrentAltitude()).toFixed(4) };
         const velocityObj = { velocity: parseFloat(newSatellite.getCurrentVelocity()).toFixed(4) };
-        const accelerationObj = { acceleration: parseFloat(newSatellite.getCurrentAcceleration()).toFixed(4) };
+        const earthGravityForceObj = { earthGravityForce: parseFloat(newSatellite.getCurrentEarthGravityForce()).toFixed(4) };
         const dragObj = { drag: parseFloat(newSatellite.getCurrentDragForce()).toFixed(8) };
 
         const altitudeController = satelliteFolder.add(altitudeObj, 'altitude').name('Altitude (m)').listen();
         const velocityController = satelliteFolder.add(velocityObj, 'velocity').name('Velocity (m/s)').listen();
-        const accelerationController = satelliteFolder.add(accelerationObj, 'acceleration').name('Acc. (m/s^2)').listen();
+        const earthGravityForceController = satelliteFolder.add(earthGravityForceObj, 'earthGravityForce').name('Grav. Force (N)').listen();
         const dragController = satelliteFolder.add(dragObj, 'drag').name('Drag Force (N)').listen();
 
         newSatellite.altitudeController = altitudeController;
         newSatellite.velocityController = velocityController;
-        newSatellite.accelerationController = accelerationController;
+        newSatellite.earthGravityForceController = earthGravityForceController;
         newSatellite.dragController = dragController;
 
         const colorData = {
@@ -419,9 +564,9 @@ class GUIManager {
             velocityController.updateDisplay();
         };
 
-        newSatellite.updateAcceleration = function(value) {
-            accelerationObj.acceleration = parseFloat(value).toFixed(4);
-            accelerationController.updateDisplay();
+        newSatellite.updateearthGravityForce = function(value) {
+            earthGravityForceObj.earthGravityForce = parseFloat(value).toFixed(4);
+            earthGravityForceController.updateDisplay();
         };
 
         newSatellite.updateDrag = function(value) {
