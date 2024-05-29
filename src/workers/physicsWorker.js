@@ -3,6 +3,7 @@ import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 
 let world, satellites = [], earthMass, moonMass;
 let manuallyManagedSatellites = []; // To store satellites managed manually
+let timeStep = 0.01; // Default time step for high precision
 
 self.onmessage = function (event) {
     let messageData;
@@ -35,6 +36,9 @@ self.onmessage = function (event) {
             break;
         case 'removeSatellite':
             removeSatellite(data.id);
+            break;
+        case 'setPrecision':
+            setPrecision(data);
             break;
     }
 };
@@ -117,6 +121,10 @@ function stepPhysics(data) {
             }
         });
     });
+}
+
+function setPrecision(data) {
+    timeStep = data.timeStep || 0.01; // Set the time step for desired precision
 }
 
 function rungeKuttaStep(satellite, dt, earthPosition, moonPosition, earthMass, moonMass, earthRadius) {

@@ -544,4 +544,13 @@ export class Satellite {
         return this.mesh;
     }
 
+    setOrbitVisible(visible) {
+        this.orbitLine.visible = visible;
+        this.apoapsisMesh.visible = visible;
+        this.periapsisMesh.visible = visible;
+    }
+
+    setTraceVisible(visible) {
+        this.traceLine.visible = visible;
+    }
 }
