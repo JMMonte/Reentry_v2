@@ -104,7 +104,6 @@ class GUIManager {
     }
 
     updateCamera() {
-        // this.cameraControls.smoothTransition();
         this.cameraControls.updateCameraPosition();
     }
 }

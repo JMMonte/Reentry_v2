@@ -38,7 +38,7 @@ class CameraControls {
                 this.targetPosition.copy(targetPosition);
 
                 if (this.needsSmoothTransition) {
-                    this.controls.target.lerp(this.targetPosition, 0.05);
+                    // this.controls.target.lerp(this.targetPosition, 0.05);
                     if (this.controls.target.distanceTo(this.targetPosition) < 0.01) {
                         this.controls.target.copy(this.targetPosition);
                         this.needsSmoothTransition = false;
