@@ -52,7 +52,19 @@ export class Satellite {
                 opacity: 0.5,
                 transparent: true,
                 sizeAttenuation: false,
-            }) 
+            }),
+            maneuverNode: new THREE.PointsMaterial({
+                color: 0x00ff00,
+                size: 5,
+                opacity: 0.5,
+                transparent: true,
+                sizeAttenuation: false,
+            }),
+            targetOrbitLine: new THREE.LineBasicMaterial({
+                color: 0xff00ff,
+                opacity: 0.5,
+                transparent: true
+            })
         };
 
         if (!position || !velocity) {
@@ -63,6 +75,7 @@ export class Satellite {
         this.initWorker();
         this.initTraceLine();
         this.initOrbitLine();
+        this.initTargetOrbitLine(); // Initialize the target orbit line
         this.initApsides();
 
         this.maneuverNodes = []; // List to store maneuver nodes
@@ -92,6 +105,7 @@ export class Satellite {
         this.scene.add(this.mesh);
 
         this.gravityVector = new CANNON.Vec3();
+        this.moonGravityVector = new CANNON.Vec3();
         this.dragForce = new CANNON.Vec3();
         this.dynamicPositions = [];
         this.creationTimes = [];
@@ -164,6 +178,13 @@ export class Satellite {
         this.scene.add(this.orbitLine);
     }
 
+    initTargetOrbitLine() {
+        const targetOrbitLineGeometry = new THREE.BufferGeometry();
+        this.targetOrbitLine = new THREE.Line(targetOrbitLineGeometry, this.materials.targetOrbitLine);
+        this.targetOrbitLine.frustumCulled = false;
+        this.scene.add(this.targetOrbitLine);
+    }
+
     initApsides() {
         const sphereGeometry = new THREE.BufferGeometry();
         sphereGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
@@ -222,7 +243,8 @@ export class Satellite {
         this.body.position.copy(data.position);
         this.body.velocity.copy(data.velocity);
         this.altitude = data.altitude;
-        this.gravityVector.copy(data.acceleration);
+        this.gravityVector.copy(data.earthGravity);
+        this.moonGravityVector.copy(data.moonGravity);
         this.dragForce.copy(data.dragForce);
     
         this.updateMeshPosition();
@@ -246,6 +268,8 @@ export class Satellite {
         this.scene.remove(this.orbitLine);
         this.scene.remove(this.periapsisMesh);
         this.scene.remove(this.apoapsisMesh);
+        if (this.targetOrbitLine) this.scene.remove(this.targetOrbitLine); // Remove target orbit line
+        if (this.maneuverNodeMesh) this.scene.remove(this.maneuverNodeMesh); // Remove maneuver node mesh
         this.worker.terminate();
     }
 
@@ -259,6 +283,10 @@ export class Satellite {
 
     getCurrentEarthGravityForce() {
         return this.gravityVector; // Avoid division by zero
+    }
+
+    getCurrentMoonGravityForce() {
+        return this.moonGravityVector.length();
     }
 
     getCurrentDragForce() {
@@ -440,9 +468,18 @@ export class Satellite {
         this.orbitLine.geometry.attributes.position.needsUpdate = true;
     }
 
+    updateTargetOrbitLine(orbitPoints) {
+        const positions = [];
+        for (const point of orbitPoints) {
+            positions.push(point.x, point.y, point.z);
+        }
+        this.targetOrbitLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        this.targetOrbitLine.geometry.attributes.position.needsUpdate = true;
+    }
+
     renderTargetOrbit(targetElements) {
         const orbitPoints = PhysicsUtils.computeOrbit(targetElements, Constants.G * Constants.earthMass);
-        this.updateOrbitLine(orbitPoints);
+        this.updateTargetOrbitLine(orbitPoints);
     }
 
     addManeuverNode(time, direction, deltaV) {
@@ -501,6 +538,10 @@ export class Satellite {
         position.multiplyScalar(Constants.metersToKm * Constants.scale);
 
         return position;
+    }
+
+    getMesh() {
+        return this.mesh;
     }
 
 }

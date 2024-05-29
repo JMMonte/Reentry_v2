@@ -219,12 +219,14 @@ async function init() {
             const altitude = satellite.getCurrentAltitude();
             const velocity = satellite.getCurrentVelocity();
             const earthGravityForce = satellite.getCurrentEarthGravityForce();
+            const moonGravityForce = satellite.getCurrentMoonGravityForce();
             const dragForce = satellite.getCurrentDragForce();
 
             // Update GUI controllers with the new values
             satellite.altitudeController.setValue(parseFloat(altitude)).updateDisplay();
             satellite.velocityController.setValue(parseFloat(velocity)).updateDisplay();
             satellite.earthGravityForceController.setValue(parseFloat(earthGravityForce)).updateDisplay();
+            satellite.moonGravityForceController.setValue(parseFloat(moonGravityForce)).updateDisplay();
             satellite.dragController.setValue(parseFloat(dragForce)).updateDisplay();
         });
 
@@ -247,7 +249,7 @@ async function init() {
         }
 
         // Update camera position
-        guiManager.updateCameraPosition();
+        guiManager.updateCamera();
 
         // Render scene with post-processing
         renderer.clear();

@@ -188,7 +188,7 @@ export class Earth {
         this.earthSurface.setCountryBordersVisible(visible);
     }
 
-    setGroundStationVisible(visible) {
+    setGroundStationsVisible(visible) {
         this.earthSurface.setGroundStationsVisible(visible);
     }
     setObservatoriesVisible(visible) {
