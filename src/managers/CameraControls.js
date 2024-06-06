@@ -24,7 +24,9 @@ class CameraControls {
 
     updateSphericalFromCamera() {
         const offset = new THREE.Vector3();
-        offset.copy(this.camera.position).sub(this.controls.target);
+        if (this.controls.target) {
+            offset.copy(this.camera.position).sub(this.controls.target);
+        }
         this.spherical.setFromVector3(offset);
         this.sphericalRadius = this.spherical.radius;
         this.sphericalPhi = this.spherical.phi;

@@ -5,17 +5,19 @@ import { numberToHexColor } from '../../utils/colorUtils.js';
 
 class SatelliteControls {
     constructor(gui, settings, guiManager, satellites, scene, world, earth, moon, vectors) {
-        this.gui = gui;
-        this.settings = settings;
-        this.guiManager = guiManager;
-        this.satellites = satellites;
-        this.scene = scene;
-        this.world = world;
-        this.earth = earth;
-        this.moon = moon;
-        this.vectors = vectors;
-        this.satelliteFolders = {};
-        this.addSatelliteControls();
+        if (typeof window !== 'undefined') {
+            this.gui = gui;
+            this.settings = settings;
+            this.guiManager = guiManager;
+            this.satellites = satellites;
+            this.scene = scene;
+            this.world = world;
+            this.earth = earth;
+            this.moon = moon;
+            this.vectors = vectors;
+            this.satelliteFolders = {};
+            this.addSatelliteControls();
+        }
     }
 
     addSatelliteControls() {

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { GUI } from 'dat.gui';
 import { TimeControls } from './gui/TimeControls.js';
 import { DisplayOptions } from './gui/DisplayOptions.js';
 import { SatelliteControls } from './gui/SatelliteControls.js';
@@ -8,6 +7,10 @@ import { DebugOptions } from './gui/DebugOptions.js';
 import { BodySelector } from './gui/BodySelector.js';
 import { CameraControls } from './CameraControls.js';
 
+let GUI;
+if (typeof window !== 'undefined') {
+    GUI = require('dat.gui').GUI; // Import `dat.gui` only in client-side environment
+}
 
 class GUIManager {
     constructor(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, worldDebugger, physicsWorker, camera, controls) {
@@ -17,7 +20,9 @@ class GUIManager {
     }
 
     initProperties(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, worldDebugger, physicsWorker, camera, controls) {
-        this.gui = new GUI();
+        if (typeof window !== 'undefined') {
+            this.gui = new GUI();
+        }
         this.scene = scene;
         this.world = world;
         this.earth = earth;
@@ -33,25 +38,29 @@ class GUIManager {
         this.satelliteFolders = {};
         this.maneuverNodes = [];
         this.addGridHelper();
+        this.satelliteControls = new SatelliteControls(this.gui, this.settings, this, this.satellites, this.scene, this.world, this.earth, this.moon, this.vectors);
     }
 
     initGUI() {
-        new TimeControls(this.gui, this.settings, this.timeUtils, this.world);
-        this.displayOptions = new DisplayOptions(this.gui, this.settings, this); // Store instance for later use
-        new SatelliteControls(this.gui, this.settings, this, this.satellites, this.scene, this.world, this.earth, this.moon, this.vectors);
-        this.maneuverControls = new ManeuverControls(this.gui, this.settings, this, this.satellites, this);
-        new DebugOptions(this.gui, this.settings, this.worldDebugger);
-        this.bodySelector = new BodySelector(this.gui, this, this.satellites, this.earth, this.moon);
-        this.displayOptions.applyInitialSettings(); // Apply initial settings after GUI initialization
+        if (this.gui) {
+            new TimeControls(this.gui, this.settings, this.timeUtils, this.world);
+            this.displayOptions = new DisplayOptions(this.gui, this.settings, this); // Store instance for later use
+            this.maneuverControls = new ManeuverControls(this.gui, this.settings, this, this.satellites, this);
+            new DebugOptions(this.gui, this.settings, this.worldDebugger);
+            this.bodySelector = new BodySelector(this.gui, this, this.satellites, this.earth, this.moon);
+            this.displayOptions.applyInitialSettings(); // Apply initial settings after GUI initialization
+        }
     }
 
     updateBodySelector() {
         // Remove old selector if it exists
-        this.bodySelector.updateBodySelector();
+        if (this.bodySelector) {
+            this.bodySelector.updateBodySelector();
+        }
     }
 
     enableManeuverFolder() {
-        if (!this.maneuverControls) {
+        if (this.maneuverControls && !this.maneuverControls.maneuverFolder) {
             this.maneuverControls.addManeuverControls();
         }
     }
@@ -105,6 +114,10 @@ class GUIManager {
 
     updateCamera() {
         this.cameraControls.updateCameraPosition();
+    }
+
+    createSatelliteFromGUI(latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
+        this.satelliteControls.createSatellite(latitude, longitude, altitude, velocity, azimuth, angleOfAttack);
     }
 }
 

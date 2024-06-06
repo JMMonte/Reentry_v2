@@ -30,6 +30,9 @@ import geojsonDataSpaceports from './config/spaceports.json';
 import geojsonDataGroundStations from './config/ground_stations.json';
 import geojsonDataObservatories from './config/observatories.json';
 
+import { io } from "socket.io-client";
+const socket = io('http://localhost:3000'); // Connect to WebSocket server
+
 // Scene and Renderer Setup
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -39,6 +42,7 @@ const camera = new THREE.PerspectiveCamera(
     Constants.kmToMeters * 400000000 // Far clipping plane
 );
 const renderer = new THREE.WebGLRenderer({
+    canvas: document.getElementById('three-canvas'), // Ensure canvas is referenced correctly
     antialias: true,
     depth: true,
     logarithmicDepthBuffer: false,
@@ -51,7 +55,7 @@ renderer.gammaFactor = 2.2;
 renderer.gammaOutput = true;
 renderer.physicallyCorrectLights = true;
 renderer.autoClear = false;
-document.body.appendChild(renderer.domElement);
+// document.body.appendChild(renderer.domElement);
 
 // Background Stars
 const backgroundStars = new BackgroundStars(scene, camera);
@@ -187,6 +191,16 @@ async function init() {
 
     // GUI Manager
     guiManager = new GUIManager(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, cannonDebugger, physicsWorker, camera, controls);
+
+    socket.on('createSatellite', (data) => {
+        console.log('Received createSatellite event with data:', data);
+        const { latitude, longitude, altitude, velocity, azimuth, angleOfAttack } = data;
+        if (guiManager && guiManager.createSatelliteFromGUI) {
+            guiManager.createSatelliteFromGUI(latitude, longitude, altitude, velocity, azimuth, angleOfAttack);
+        } else {
+            console.error('GUI Manager or createSatelliteFromGUI function not found.');
+        }
+    });
 
     // Main animation loop
     function animate(timestamp) {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
-import PhysicsWorkerURL from 'url:../workers/physicsWorker.js';
+const PhysicsWorkerURL = new URL('../workers/physicsWorker.js', import.meta.url).href;
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { ManeuverCalculator } from './ManeuverCalculator.js'; // Import the ManeuverCalculator class
 

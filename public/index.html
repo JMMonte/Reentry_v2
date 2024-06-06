@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Earth Visualization</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
         body { 
             margin: 0; 
@@ -22,10 +23,67 @@
             border-radius: 5px;
             display: none;
         }
+        #toggle-chat-button {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: #1f2937;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #chat-sidebar.hidden {
+            width: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        .transition-all {
+            transition: all 0.3s ease;
+        }
+        .user-message {
+            background-color: #1f2937;
+            color: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+        }
+        .assistant-message {
+            background-color: #4b5563;
+            color: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
+    <button id="toggle-chat-button">Toggle Chat</button>
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div id="chat-sidebar" class="bg-gray-800 text-white p-4 transition-all" style="min-width: 250px">
+            <div id="chat-box" class="flex-1 overflow-y-auto mb-4 bg-gray-700 p-2 rounded" style="height: calc(100vh - 200px);">
+                <!-- Chat messages will go here -->
+            </div>
+            <form id="chat-form">
+                <input id="chat-input" type="text" placeholder="Type a message..." class="w-full p-2 rounded bg-gray-600 text-white" />
+            </form>
+        </div>
+
+        <!-- Main content (Three.js canvas) -->
+        <div class="flex-1 relative">
+            <canvas id="three-canvas"></canvas>
+            <div id="info-card"></div>
+        </div>
+    </div>
     <script type="module" src="../src/app.js"></script>
-    <div id="info-card"></div>
+    <script type="module" src="../src/chatbot.js"></script>
+    <script>
+        document.getElementById('toggle-chat-button').addEventListener('click', () => {
+            const chatSidebar = document.getElementById('chat-sidebar');
+            chatSidebar.classList.toggle('hidden');
+        });
+    </script>
 </body>
 </html>
