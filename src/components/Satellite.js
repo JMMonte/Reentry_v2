@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
-const PhysicsWorkerURL = new URL('../workers/physicsWorker.js', import.meta.url).href;
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
-import { ManeuverCalculator } from './ManeuverCalculator.js'; // Import the ManeuverCalculator class
+import { ManeuverCalculator } from './ManeuverCalculator.js';
+import PhysicsWorkerURL from 'url:../workers/physicsWorker.js';
 
 class ManeuverNode {
     constructor(time, direction, deltaV) {
@@ -25,46 +25,14 @@ export class Satellite {
         this.updateBuffer = [];
         this.landed = false;
 
-        // Centralize materials
         this.materials = {
-            satellite: new THREE.MeshBasicMaterial({
-                color: this.color
-            }),
-            traceLine: new THREE.LineBasicMaterial({
-                color: this.color,
-                linewidth: 1
-            }),
-            orbitLine: new THREE.LineBasicMaterial({
-                color: this.color,
-                opacity: 0.2,
-                transparent: true
-            }),
-            periapsis: new THREE.PointsMaterial({
-                color: 0xff0000,
-                size: 5,
-                opacity: 0.5,
-                transparent: true,
-                sizeAttenuation: false,
-            }),
-            apoapsis: new THREE.PointsMaterial({
-                color: 0x0000ff,
-                size: 5,
-                opacity: 0.5,
-                transparent: true,
-                sizeAttenuation: false,
-            }),
-            maneuverNode: new THREE.PointsMaterial({
-                color: 0x00ff00,
-                size: 5,
-                opacity: 0.5,
-                transparent: true,
-                sizeAttenuation: false,
-            }),
-            targetOrbitLine: new THREE.LineBasicMaterial({
-                color: 0xff00ff,
-                opacity: 0.5,
-                transparent: true
-            })
+            satellite: new THREE.MeshBasicMaterial({ color: this.color }),
+            traceLine: new THREE.LineBasicMaterial({ color: this.color, linewidth: 1 }),
+            orbitLine: new THREE.LineBasicMaterial({ color: this.color, opacity: 0.2, transparent: true }),
+            periapsis: new THREE.PointsMaterial({ color: 0xff0000, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
+            apoapsis: new THREE.PointsMaterial({ color: 0x0000ff, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
+            maneuverNode: new THREE.PointsMaterial({ color: 0x00ff00, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
+            targetOrbitLine: new THREE.LineBasicMaterial({ color: 0xff00ff, opacity: 0.5, transparent: true })
         };
 
         if (!position || !velocity) {
@@ -75,11 +43,18 @@ export class Satellite {
         this.initWorker();
         this.initTraceLine();
         this.initOrbitLine();
-        this.initTargetOrbitLine(); // Initialize the target orbit line
+        this.initTargetOrbitLine();
         this.initApsides();
 
-        this.maneuverNodes = []; // List to store maneuver nodes
-        this.maneuverCalculator = new ManeuverCalculator(); // Initialize the ManeuverCalculator
+        this.maneuverNodes = [];
+        this.maneuverCalculator = new ManeuverCalculator();
+
+        // Dummy controllers for properties, to avoid undefined errors
+        this.altitudeController = { setValue: () => this, updateDisplay: () => {} };
+        this.velocityController = { setValue: () => this, updateDisplay: () => {} };
+        this.earthGravityForceController = { setValue: () => this, updateDisplay: () => {} };
+        this.moonGravityForceController = { setValue: () => this, updateDisplay: () => {} };
+        this.dragController = { setValue: () => this, updateDisplay: () => {} };
     }
 
     initProperties(position, velocity) {
@@ -92,15 +67,10 @@ export class Satellite {
         this.satelliteMass = (0.1 * volume * aluminumDensity) + (0.1 * volume * monopropellantDensity);
         this.body = new CANNON.Body({ mass: this.satelliteMass, shape, material });
 
-        this.body.position.copy(position); // Ensure position is defined
-        this.body.velocity.copy(velocity); // Ensure velocity is defined
+        this.body.position.copy(position);
+        this.body.velocity.copy(velocity);
 
-        const geometry = new THREE.ConeGeometry(
-            Constants.satelliteRadius,
-            Constants.satelliteRadius * 2,
-            3,
-            1
-        );
+        const geometry = new THREE.ConeGeometry(Constants.satelliteRadius, Constants.satelliteRadius * 2, 3, 1);
         this.mesh = new THREE.Mesh(geometry, this.materials.satellite);
         this.scene.add(this.mesh);
 
@@ -146,15 +116,12 @@ export class Satellite {
         this.landed = true;
         this.body.position.copy(position);
         this.body.velocity.set(0, 0, 0);
-        this.body.mass = 0; // Make the satellite static
+        this.body.mass = 0;
 
-        // Remove the satellite from the physics world
         this.world.removeBody(this.body);
 
-        // Attach the satellite to the Earth's rotation group
         this.earth.rotationGroup.add(this.mesh);
 
-        // Update the satellite's position relative to Earth's rotation group
         const scaleFactor = Constants.metersToKm * Constants.scale;
         this.mesh.position.set(
             position.x * scaleFactor,
@@ -200,31 +167,24 @@ export class Satellite {
         const { h, e, i, omega, w } = orbitalElements;
         const mu = Constants.G * Constants.earthMass;
 
-        // Calculate periapsis and apoapsis distances
         const rPeriapsis = h * h / (mu * (1 + e));
         const rApoapsis = h * h / (mu * (1 - e));
 
-        // Calculate position vectors in the orbital plane
         const periapsisVector = new THREE.Vector3(rPeriapsis, 0, 0);
-        const apoapsisVector = new THREE.Vector3(-rApoapsis, 0, 0); // Apoapsis is in the opposite direction
+        const apoapsisVector = new THREE.Vector3(-rApoapsis, 0, 0);
 
-        // Rotate by argument of periapsis
         periapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
         apoapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
 
-        // Rotate by inclination
         periapsisVector.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
         apoapsisVector.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
 
-        // Rotate by longitude of ascending node
         periapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
         apoapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
 
-        // Convert to kilometers for Three.js
         periapsisVector.multiplyScalar(Constants.metersToKm * Constants.scale);
         apoapsisVector.multiplyScalar(Constants.metersToKm * Constants.scale);
 
-        // Set positions
         this.periapsisMesh.position.copy(periapsisVector);
         this.apoapsisMesh.position.copy(apoapsisVector);
     }
@@ -268,8 +228,8 @@ export class Satellite {
         this.scene.remove(this.orbitLine);
         this.scene.remove(this.periapsisMesh);
         this.scene.remove(this.apoapsisMesh);
-        if (this.targetOrbitLine) this.scene.remove(this.targetOrbitLine); // Remove target orbit line
-        if (this.maneuverNodeMesh) this.scene.remove(this.maneuverNodeMesh); // Remove maneuver node mesh
+        if (this.targetOrbitLine) this.scene.remove(this.targetOrbitLine);
+        if (this.maneuverNodeMesh) this.scene.remove(this.maneuverNodeMesh);
         this.worker.terminate();
     }
 
@@ -282,7 +242,7 @@ export class Satellite {
     }
 
     getCurrentEarthGravityForce() {
-        return this.gravityVector; // Avoid division by zero
+        return this.gravityVector;
     }
 
     getCurrentMoonGravityForce() {
@@ -306,7 +266,6 @@ export class Satellite {
         const utcCurrentTime = new Date(currentTime).toISOString();
 
         if (!this.landed) {
-            // Check for any maneuvers that need to be executed
             this.executeManeuvers(currentTime);
 
             this.worker.postMessage({
@@ -324,7 +283,6 @@ export class Satellite {
 
             this.updateMeshPosition();
         } else {
-            // Update position to follow Earth's rotation
             this.updatePositionRelativeToEarth();
         }
     }
@@ -368,17 +326,15 @@ export class Satellite {
     }
 
     updateOrbitalElements() {
-        const mu = Constants.G * Constants.earthMass; // Standard gravitational parameter for Earth
+        const mu = Constants.G * Constants.earthMass;
         const position = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
         const velocity = new THREE.Vector3(this.body.velocity.x, this.body.velocity.y, this.body.velocity.z);
         const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
 
-        this.maneuverCalculator.setCurrentOrbit(orbitalElements); // Update current orbit in ManeuverCalculator
+        this.maneuverCalculator.setCurrentOrbit(orbitalElements);
 
-        // Compute orbit points
         const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu);
 
-        // Update orbit line geometry
         const positions = new Float32Array(orbitPoints.length * 3);
         orbitPoints.forEach((point, i) => {
             positions.set([point.x, point.y, point.z], i * 3);
@@ -387,7 +343,6 @@ export class Satellite {
         this.orbitLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         this.orbitLine.geometry.attributes.position.needsUpdate = true;
 
-        // Update periapsis and apoapsis positions
         this.updateApsides(orbitalElements);
     }
 
@@ -402,26 +357,21 @@ export class Satellite {
     applyDeltaV(deltaV, direction) {
         if (!this.initialized || this.landed) return;
 
-        // Get the current velocity vector
         const velocity = this.body.velocity.clone();
         const velocityLength = velocity.length();
 
-        if (velocityLength === 0) return; // Avoid division by zero
+        if (velocityLength === 0) return;
 
-        // Normalize the velocity vector to get the direction
         const normalizedVelocity = velocity.clone().normalize();
 
-        // Calculate the thrust vector in the direction of the velocity
         const thrustVector = new CANNON.Vec3(
             normalizedVelocity.x * direction.x,
             normalizedVelocity.y * direction.y,
             normalizedVelocity.z * direction.z
         );
 
-        // Scale the thrust vector by the deltaV
         thrustVector.scale(deltaV, thrustVector);
 
-        // Apply the force to the satellite body
         this.body.applyImpulse(thrustVector, this.body.position);
     }
 
@@ -449,10 +399,8 @@ export class Satellite {
     }
 
     executeManeuvers(currentTime) {
-        // Sort maneuvers by time
         this.maneuverNodes.sort((a, b) => a.time - b.time);
 
-        // Execute maneuvers that are due
         while (this.maneuverNodes.length > 0 && this.maneuverNodes[0].time <= currentTime) {
             const node = this.maneuverNodes.shift();
             this.applyDeltaV(node.deltaV, node.direction);
@@ -505,36 +453,23 @@ export class Satellite {
         const omega = this.maneuverCalculator.currentOrbitalElements.longitudeOfAscendingNode;
         const w = this.maneuverCalculator.currentOrbitalElements.argumentOfPeriapsis;
 
-        // Mean motion (rad/s)
         const n = Math.sqrt(mu / Math.pow(a, 3));
 
-        // Mean anomaly
         const M = n * time;
 
-        // Solve Kepler's equation for Eccentric anomaly (E)
         const E = PhysicsUtils.solveKeplersEquation(M, e);
 
-        // True anomaly
         const trueAnomaly = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
 
-        // Distance to the central body
         const r = a * (1 - e * e) / (1 + e * Math.cos(trueAnomaly));
 
-        // Position in the orbital plane
         const x = r * Math.cos(trueAnomaly);
         const y = r * Math.sin(trueAnomaly);
 
-        // Rotate by argument of periapsis
         const position = new THREE.Vector3(x, y, 0);
         position.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
-
-        // Rotate by inclination
         position.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
-
-        // Rotate by longitude of ascending node
         position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
-
-        // Convert to kilometers for Three.js
         position.multiplyScalar(Constants.metersToKm * Constants.scale);
 
         return position;

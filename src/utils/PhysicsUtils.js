@@ -44,14 +44,14 @@ export class PhysicsUtils {
         if (eVec.z < 0) w = 2 * Math.PI - w;
         let theta = Math.acos(eVec.dot(position) / (e * r));
         if (vr < 0) theta = 2 * Math.PI - theta;
-    
+
         return { h, e, i, omega, w, trueAnomaly: theta };
     }
 
     static computeOrbit({ h, e, i, omega, w }, mu, numPoints = 100) {
         const points = [];
         const step = 2 * Math.PI / numPoints;
-    
+
         for (let f = 0; f < 2 * Math.PI; f += step) {
             const r = (h * h / mu) / (1 + e * Math.cos(f));
             
@@ -102,7 +102,6 @@ export class PhysicsUtils {
 
         return velocityVector;
     }
-    
 
     static calculateVerticalAcceleration(planetRadius, planetMass, altitude) {
         return Constants.G * planetMass / Math.pow(planetRadius + altitude, 2);
@@ -168,6 +167,82 @@ export class PhysicsUtils {
         const position = new CANNON.Vec3(positionECI.x, positionECI.y, positionECI.z);
         const velocityECEF = new CANNON.Vec3(velocityENU.x, velocityENU.y, velocityENU.z);
         return { positionECEF: position, velocityECEF: velocityECEF };
+    }
+
+    static calculatePositionAndVelocityFromOrbitalElements(semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly) {
+        // Constants
+        const mu = Constants.earthGravitationalParameter;
+    
+        // Convert angles from degrees to radians
+        const iRad = THREE.MathUtils.degToRad(inclination);
+        const raanRad = THREE.MathUtils.degToRad(raan);
+        const argPeriapsisRad = THREE.MathUtils.degToRad(argumentOfPeriapsis);
+        const trueAnomalyRad = THREE.MathUtils.degToRad(trueAnomaly);
+    
+        // Perifocal coordinates
+        const p = semiMajorAxis * (1 - eccentricity * eccentricity);
+        if (p <= 0) {
+            console.error('Invalid value for p:', p);
+            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+        }
+    
+        const r = p / (1 + eccentricity * Math.cos(trueAnomalyRad));
+        const xP = r * Math.cos(trueAnomalyRad);
+        const yP = r * Math.sin(trueAnomalyRad);
+        const zP = 0;
+    
+        const positionPerifocal = new THREE.Vector3(xP, yP, zP);
+    
+        // Velocity in perifocal coordinates
+        const h = Math.sqrt(mu * semiMajorAxis * (1 - eccentricity * eccentricity));
+        if (isNaN(h) || h <= 0) {
+            console.error('Invalid value for h:', h);
+            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+        }
+    
+        const sqrtMuOverP = Math.sqrt(mu / p);
+        if (isNaN(sqrtMuOverP) || sqrtMuOverP <= 0) {
+            console.error('Invalid value for sqrtMuOverP:', sqrtMuOverP);
+            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+        }
+    
+        const vxP = -sqrtMuOverP * Math.sin(trueAnomalyRad);
+        const vyP = sqrtMuOverP * (eccentricity + Math.cos(trueAnomalyRad));
+        const vzP = 0;
+    
+        const velocityPerifocal = new THREE.Vector3(vxP, vyP, vzP);
+    
+        // Rotation matrices
+        const R1 = new THREE.Matrix4().makeRotationZ(-raanRad);
+        const R2 = new THREE.Matrix4().makeRotationX(-iRad);
+        const R3 = new THREE.Matrix4().makeRotationZ(-argPeriapsisRad);
+    
+        // Flip Y and Z coordinates to handle the Three.js coordinate system
+        const flipYzMatrix = new THREE.Matrix4().set(
+            1, 0, 0, 0,
+            0, 0, 1, 0,
+            0, -1, 0, 0,
+            0, 0, 0, 1
+        );
+    
+        // Total rotation matrix with Y and Z flipped
+        const rotationMatrix = new THREE.Matrix4().multiplyMatrices(flipYzMatrix, R3).multiply(R2).multiply(R1);
+    
+        // Convert to ECI coordinates
+        const positionECI = positionPerifocal.applyMatrix4(rotationMatrix);
+        const velocityECI = velocityPerifocal.applyMatrix4(rotationMatrix);
+    
+        if (isNaN(positionECI.x) || isNaN(positionECI.y) || isNaN(positionECI.z) ||
+            isNaN(velocityECI.x) || isNaN(velocityECI.y) || isNaN(velocityECI.z)) {
+            console.error('Invalid ECI coordinates:', positionECI, velocityECI);
+            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+        }
+    
+        // Return the position and velocity in ECI frame
+        return { 
+            positionECI: new CANNON.Vec3(positionECI.x, positionECI.y, positionECI.z),
+            velocityECI: new CANNON.Vec3(velocityECI.x, velocityECI.y, velocityECI.z) 
+        };
     }
 
     static orbitalVelocityAtAnomaly(orbitalElements, trueAnomaly, mu) {
@@ -253,5 +328,24 @@ export class PhysicsUtils {
         const deltaV = targetState.velocity.clone().sub(currentState.velocity);
 
         return deltaV.length(); // Return the magnitude of Delta-V
+    }
+
+    // Hohmann Transfer Maneuver
+    static calculateHohmannTransferDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
+        // Initial circular orbit velocity
+        const v1 = Math.sqrt(mu / r1);
+
+        // Transfer orbit velocities
+        const v_transfer1 = Math.sqrt(mu * (2 / r1 - 1 / ((r1 + r2) / 2)));
+        const v_transfer2 = Math.sqrt(mu * (2 / r2 - 1 / ((r1 + r2) / 2)));
+
+        // Final circular orbit velocity
+        const v2 = Math.sqrt(mu / r2);
+
+        // Delta-V for each burn
+        const deltaV1 = v_transfer1 - v1;
+        const deltaV2 = v2 - v_transfer2;
+
+        return { deltaV1, deltaV2 };
     }
 }

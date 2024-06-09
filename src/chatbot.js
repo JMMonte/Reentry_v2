@@ -4,14 +4,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatForm = document.getElementById('chat-form');
 
     const eventSource = new EventSource('http://localhost:3000/events');
+    let currentAssistantMessage = null;
 
     eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        
+        if (data.isNewMessage) {
+            currentAssistantMessage = document.createElement('div');
+            currentAssistantMessage.className = 'assistant-message';
+            chatBox.appendChild(currentAssistantMessage);
+        }
+        if (!currentAssistantMessage) {
+            currentAssistantMessage = document.createElement('div');
+            currentAssistantMessage.className = 'assistant-message';
+            chatBox.appendChild(currentAssistantMessage);
+        }
         if (data.textDelta) {
-            appendMessage('assistant', data.textDelta);
+            currentAssistantMessage.textContent += data.textDelta;
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
         if (data.end) {
-            appendMessage('assistant', '\n');
+            currentAssistantMessage = null;
         }
     };
 
@@ -24,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = chatInput.value;
         if (message.trim() === '') return;
 
-        appendMessage('user', message);
+        appendMessage('user-message', message);
         chatInput.value = '';
 
         try {
@@ -45,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function appendMessage(role, text) {
         const messageElement = document.createElement('div');
-        messageElement.className = `message ${role}`;
+        messageElement.className = role;
         messageElement.textContent = text;
         chatBox.appendChild(messageElement);
         chatBox.scrollTop = chatBox.scrollHeight;

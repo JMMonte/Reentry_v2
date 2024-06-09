@@ -19,6 +19,7 @@ export class Constants {
     static earthPolarRadius = 6356752.314245; // Earth polar radius in meters
     static earthMass = 5.972e24; // Earth mass in kg
     static earthInclination = 23.5; // Earth's axial tilt in degrees
+    static earthGravitationalParameter = Constants.G * Constants.earthMass; // Earth gravitational parameter in m^3/s^2
     // Satellite constants
     static satelliteRadius = 2; // Satellite radius in meters
     // Solar system constants
