@@ -2,11 +2,7 @@
 import { Satellite } from './components/Satellite.js';
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
 import { Constants } from './utils/Constants.js';
-
-// Define or import numberToHexColor
-function numberToHexColor(number) {
-    return `#${Math.floor(number).toString(16).padStart(6, '0')}`;
-}
+import { numberToHexColor } from './utils/colorUtils.js';
 
 export function createSatelliteFromLatLon(scene, world, earth, moon, satellites, vectors, gui, guiManager, latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
