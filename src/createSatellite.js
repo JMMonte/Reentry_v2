@@ -1,8 +1,35 @@
-// createSatellite.js
 import { Satellite } from './components/Satellite.js';
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
 import { Constants } from './utils/Constants.js';
-import { numberToHexColor } from './utils/colorUtils.js';
+
+// Define or import numberToHexColor
+function numberToHexColor(number) {
+    return `#${Math.floor(number).toString(16).padStart(6, '0')}`;
+}
+
+export function createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, initialPosition, initialVelocity) {
+    let id = satellites.length;
+    const existingSatellite = satellites.find(satellite => satellite.id === id);
+    if (existingSatellite) {
+        id = id + 1;
+    }
+
+    const color = Math.random() * 0xffffff;
+    const newSatellite = new Satellite(scene, world, earth, moon, initialPosition, initialVelocity, id, color);
+
+    // Ensure dummy controllers are set
+    setupDummyControllers(newSatellite);
+
+    satellites.push(newSatellite);
+    vectors.addSatellite(newSatellite);
+    vectors.setSatVisible(true);
+
+    if (gui && guiManager) {
+        updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors);
+    }
+
+    return newSatellite;
+}
 
 export function createSatelliteFromLatLon(scene, world, earth, moon, satellites, vectors, gui, guiManager, latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
@@ -19,32 +46,34 @@ export function createSatelliteFromLatLon(scene, world, earth, moon, satellites,
         tiltQuaternion
     );
 
-    let id = satellites.length;
-    const existingSatellite = satellites.find(satellite => satellite.id === id);
-    if (existingSatellite) {
-        id = id + 1;
-    }
+    return createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, positionECEF, velocityECEF);
+}
 
-    const color = Math.random() * 0xffffff;
+export function createSatelliteFromLatLonCircular(scene, world, earth, moon, satellites, vectors, gui, guiManager, latitude, longitude, altitude, azimuth) {
+    const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
+    const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
 
-    const newSatellite = new Satellite(scene, world, earth, moon, positionECEF, velocityECEF, id, color);
+    // Calculate the radius from the center of the Earth to the satellite
+    const radius = Constants.earthRadius + (altitude * Constants.kmToMeters);
 
-    // Ensure dummy controllers are set
-    newSatellite.altitudeController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.velocityController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.earthGravityForceController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.moonGravityForceController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.dragController = { setValue: () => newSatellite, updateDisplay: () => {} };
+    // Calculate the orbital velocity for a circular orbit
+    const orbitalVelocity = PhysicsUtils.calculateOrbitalVelocity(Constants.earthMass, radius);
 
-    satellites.push(newSatellite);
-    vectors.addSatellite(newSatellite);
-    vectors.setSatVisible(true);
+    // Assuming angle of attack for a circular orbit is zero
+    const angleOfAttack = 0;
 
-    if (gui && guiManager) {
-        updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors);
-    }
+    const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
+        latitude,
+        longitude,
+        altitude * Constants.kmToMeters,
+        orbitalVelocity,
+        azimuth,
+        angleOfAttack,
+        earthQuaternion,
+        tiltQuaternion
+    );
 
-    return newSatellite;
+    return createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, positionECEF, velocityECEF);
 }
 
 export function createSatelliteFromOrbitalElements(scene, world, earth, moon, satellites, vectors, gui, guiManager, semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly) {
@@ -57,34 +86,17 @@ export function createSatelliteFromOrbitalElements(scene, world, earth, moon, sa
         trueAnomaly
     );
 
-    console.log(positionECI, velocityECI);
+    return createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, positionECI, velocityECI);
+}
 
-    let id = satellites.length;
-    const existingSatellite = satellites.find(satellite => satellite.id === id);
-    if (existingSatellite) {
-        id = id + 1;
-    }
-
-    const color = Math.random() * 0xffffff;
-
-    const newSatellite = new Satellite(scene, world, earth, moon, positionECI, velocityECI, id, color);
-
-    // Ensure dummy controllers are set
+function setupDummyControllers(newSatellite) {
     newSatellite.altitudeController = { setValue: () => newSatellite, updateDisplay: () => {} };
     newSatellite.velocityController = { setValue: () => newSatellite, updateDisplay: () => {} };
     newSatellite.earthGravityForceController = { setValue: () => newSatellite, updateDisplay: () => {} };
     newSatellite.moonGravityForceController = { setValue: () => newSatellite, updateDisplay: () => {} };
     newSatellite.dragController = { setValue: () => newSatellite, updateDisplay: () => {} };
-
-    satellites.push(newSatellite);
-    vectors.addSatellite(newSatellite);
-    vectors.setSatVisible(true);
-
-    if (gui && guiManager) {
-        updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors);
-    }
-
-    return newSatellite;
+    newSatellite.periapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => {} };
+    newSatellite.apoapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => {} };
 }
 
 function updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors) {
@@ -95,18 +107,24 @@ function updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors) 
     const earthGravityForceObj = { earthGravityForce: parseFloat(newSatellite.getCurrentEarthGravityForce()).toFixed(4) };
     const moonGravityForceObj = { moonGravityForce: parseFloat(newSatellite.getCurrentMoonGravityForce()).toFixed(4) };
     const dragObj = { drag: parseFloat(newSatellite.getCurrentDragForce()).toFixed(8) };
+    const periapsisAltitudeObj = { periapsisAltitude: parseFloat(newSatellite.getPeriapsisAltitude()).toFixed(4) };
+    const apoapsisAltitudeObj = { apoapsisAltitude: parseFloat(newSatellite.getApoapsisAltitude()).toFixed(4) };
 
     const altitudeController = satelliteFolder.add(altitudeObj, 'altitude').name('Altitude (m)').listen();
     const velocityController = satelliteFolder.add(velocityObj, 'velocity').name('Velocity (m/s)').listen();
     const earthGravityForceController = satelliteFolder.add(earthGravityForceObj, 'earthGravityForce').name('Grav. Force (N)').listen();
     const moonGravityForceController = satelliteFolder.add(moonGravityForceObj, 'moonGravityForce').name('Moon Force (N)').listen();
     const dragController = satelliteFolder.add(dragObj, 'drag').name('Drag Force (N)').listen();
+    const periapsisAltitudeController = satelliteFolder.add(periapsisAltitudeObj, 'periapsisAltitude').name('Periapsis alt. (m)').listen();
+    const apoapsisAltitudeController = satelliteFolder.add(apoapsisAltitudeObj, 'apoapsisAltitude').name('Apoapsis alt. (m)').listen();
 
     newSatellite.altitudeController = altitudeController;
     newSatellite.velocityController = velocityController;
     newSatellite.earthGravityForceController = earthGravityForceController;
     newSatellite.moonGravityForceController = moonGravityForceController;
     newSatellite.dragController = dragController;
+    newSatellite.periapsisAltitudeController = periapsisAltitudeController;
+    newSatellite.apoapsisAltitudeController = apoapsisAltitudeController;
 
     const colorData = {
         color: numberToHexColor(newSatellite.color)
@@ -142,11 +160,21 @@ function updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors) 
     newSatellite.updateMoonGravityForce = function(value) {
         moonGravityForceObj.moonGravityForce = parseFloat(value).toFixed(4);
         moonGravityForceController.updateDisplay();
-    }
+    };
 
     newSatellite.updateDrag = function(value) {
         dragObj.drag = parseFloat(value).toFixed(4);
         dragController.updateDisplay();
+    };
+
+    newSatellite.updatePeriapsisAltitude = function(value) {
+        periapsisAltitudeObj.periapsisAltitude = parseFloat(value).toFixed(4);
+        periapsisAltitudeController.updateDisplay();
+    };
+
+    newSatellite.updateApoapsisAltitude = function(value) {
+        apoapsisAltitudeObj.apoapsisAltitude = parseFloat(value).toFixed(4);
+        apoapsisAltitudeController.updateDisplay();
     };
 }
 

@@ -17,7 +17,7 @@ import { GUIManager } from './managers/GUIManager.js';
 import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
 import { TextureManager } from './managers/textureManager.js';
 import { BackgroundStars } from './components/background.js';
-import { createSatelliteFromLatLon, createSatelliteFromOrbitalElements } from './createSatellite.js'; // Importing both functions
+import { createSatelliteFromLatLon, createSatelliteFromOrbitalElements, createSatelliteFromLatLonCircular } from './createSatellite.js'; // Importing both functions
 
 // import textures
 import earthTexture from '../public/assets/texture/8k_earth_daymap.jpg';
@@ -52,8 +52,8 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
-renderer.gammaFactor = 2.2;
-renderer.gammaOutput = true;
+// renderer.gammaFactor = 2.2;
+// renderer.gammaOutput = true;
 renderer.physicallyCorrectLights = true;
 renderer.autoClear = false;
 
@@ -81,6 +81,7 @@ const settings = {
     showSurfaceLines: false,
     showOrbits: true,
     showTraces: true,
+    showGroundTraces: true, // Add this line
     showCities: false,
     showAirports: false,
     showSpaceports: false,
@@ -185,6 +186,12 @@ async function init() {
         createSatelliteFromOrbitalElements(scene, world, earth, moon, satellites, vectors, guiManager.gui, guiManager, semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly);
     });
 
+    socket.on('createSatelliteFromLatLonCircular', (data) => {
+        console.log('Received createSatelliteFromLatLonCircular event with data:', data);
+        const { latitude, longitude, altitude, azimuth } = data;
+        createSatelliteFromLatLonCircular(scene, world, earth, moon, satellites, vectors, guiManager.gui, guiManager, latitude, longitude, altitude, azimuth);
+    });
+
     function animate(timestamp) {
         stats.begin();
 
@@ -209,18 +216,22 @@ async function init() {
         satellites.forEach(satellite => {
             satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
             satellite.applyBufferedUpdates();
-
+        
             const altitude = satellite.getCurrentAltitude();
             const velocity = satellite.getCurrentVelocity();
             const earthGravityForce = satellite.getCurrentEarthGravityForce();
             const moonGravityForce = satellite.getCurrentMoonGravityForce();
             const dragForce = satellite.getCurrentDragForce();
-
+            const periapsisAltitude = satellite.getPeriapsisAltitude();
+            const apoapsisAltitude = satellite.getApoapsisAltitude();
+        
             satellite.altitudeController.setValue(parseFloat(altitude)).updateDisplay();
             satellite.velocityController.setValue(parseFloat(velocity)).updateDisplay();
             satellite.earthGravityForceController.setValue(parseFloat(earthGravityForce)).updateDisplay();
             satellite.moonGravityForceController.setValue(parseFloat(moonGravityForce)).updateDisplay();
             satellite.dragController.setValue(parseFloat(dragForce)).updateDisplay();
+            satellite.periapsisAltitudeController.setValue(parseFloat(periapsisAltitude)).updateDisplay();
+            satellite.apoapsisAltitudeController.setValue(parseFloat(apoapsisAltitude)).updateDisplay();
         });
 
         earth.updateRotation();

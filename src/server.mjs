@@ -44,6 +44,15 @@ const functionConfig = {
             io.emit('createSatelliteFromOrbitalElements', { semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly });
             return { status: 'Satellite creation from Orbital Elements initiated' };
         }
+    },
+    createSatelliteFromLatLonCircular: {
+        requiredArgs: ['latitude', 'longitude', 'altitude', 'azimuth'],
+        handler: (args) => {
+            const { latitude, longitude, altitude, azimuth } = args;
+            console.log(`Emitting createSatelliteFromLatLonCircular with args: ${JSON.stringify(args)}`);
+            io.emit('createSatelliteFromLatLonCircular', { latitude, longitude, altitude, azimuth });
+            return { status: 'Satellite creation from LatLon Circular initiated' };
+        }
     }
 };
 

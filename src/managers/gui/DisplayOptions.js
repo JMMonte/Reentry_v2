@@ -1,3 +1,4 @@
+// DisplayOptions.js
 class DisplayOptions {
     constructor(gui, settings, guiManager) {
         this.gui = gui;
@@ -16,6 +17,7 @@ class DisplayOptions {
             { key: 'showSurfaceLines', name: 'Surface Lines', method: this.toggleSurfaceLinesVisibility.bind(this) },
             { key: 'showOrbits', name: 'Sat Orbits', method: this.toggleOrbitVisibility.bind(this) },
             { key: 'showTraces', name: 'Sat Traces', method: this.toggleSatTracesVisibility.bind(this) },
+            { key: 'showGroundTraces', name: 'Ground Traces', method: this.toggleGroundTracesVisibility.bind(this) },
             { key: 'showCities', name: 'Cities', method: this.toggleCitiesVisibility.bind(this) },
             { key: 'showAirports', name: 'Airports', method: this.toggleAirportsVisibility.bind(this) },
             { key: 'showSpaceports', name: 'Spaceports', method: this.toggleSpaceportsVisibility.bind(this) },
@@ -23,7 +25,7 @@ class DisplayOptions {
             { key: 'showGroundStations', name: 'Ground Stations', method: this.toggleGroundStationsVisibility.bind(this) },
             { key: 'showCountryBorders', name: 'Country Borders', method: this.toggleCountryBordersVisibility.bind(this) },
             { key: 'showStates', name: 'States', method: this.toggleStatesVisibility.bind(this) },
-            { key: 'showMoonOrbit', name: 'Moon Orbit', method: this.toggleMoonOrbitVisibility.bind(this)},
+            { key: 'showMoonOrbit', name: 'Moon Orbit', method: this.toggleMoonOrbitVisibility.bind(this) },
             { key: 'showMoonTraces', name: 'Moon Trace Lines', method: this.toggleMoonTraceLinesVisibility.bind(this) },
             { key: 'showMoonSurfaceLines', name: 'Moon Surface Lines', method: this.toggleMoonSurfaceLinesVisibility.bind(this) }
         ];
@@ -58,6 +60,12 @@ class DisplayOptions {
     toggleSatTracesVisibility(value) {
         this.guiManager.satellites.forEach(satellite => {
             satellite.setTraceVisible(value);
+        });
+    }
+
+    toggleGroundTracesVisibility(value) {
+        this.guiManager.satellites.forEach(satellite => {
+            satellite.setGroundTraceVisible(value);
         });
     }
 
@@ -101,18 +109,6 @@ class DisplayOptions {
         this.guiManager.earth.setStatesVisible(value);
     }
 
-    toggleMoonOrbitVisibility(value) {
-        this.guiManager.moon.setOrbitVisible(value);
-    }
-
-    toggleMoonSurfaceLinesVisibility(value) {
-        this.guiManager.moon.setSurfaceDetailsVisible(value);
-    }
-
-    toggleMoonTraceLinesVisibility(value) {
-        this.guiManager.moon.setTraceVisible(value);
-    }
-
     update() {
         this.guiManager.update();
     }
@@ -124,6 +120,7 @@ class DisplayOptions {
         this.toggleSurfaceLinesVisibility(this.settings.showSurfaceLines);
         this.toggleOrbitVisibility(this.settings.showOrbits);
         this.toggleSatTracesVisibility(this.settings.showTraces);
+        this.toggleGroundTracesVisibility(this.settings.showGroundTraces); // New line
         this.toggleCitiesVisibility(this.settings.showCities);
         this.toggleAirportsVisibility(this.settings.showAirports);
         this.toggleSpaceportsVisibility(this.settings.showSpaceports);

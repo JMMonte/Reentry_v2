@@ -127,6 +127,33 @@ export class PhysicsUtils {
         return earthSurfaceVelocity;
     }
 
+    static eciToEcef(position, gmst) {
+        const x = position.x * Math.cos(gmst) + position.y * Math.sin(gmst);
+        const y = -position.x * Math.sin(gmst) + position.y * Math.cos(gmst);
+        const z = position.z;
+        return new THREE.Vector3(x, y, z);
+    }
+    
+    static calculateGMST(date) {
+        const jd = date / 86400000 + 2440587.5;
+        const T = (jd - 2451545.0) / 36525.0;
+        const GMST = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - (T * T * T) / 38710000.0;
+        return THREE.MathUtils.degToRad(GMST % 360);
+    }
+    
+    static calculateIntersectionWithEarth(position) {
+        const earthRadius = Constants.earthRadius * Constants.metersToKm * Constants.scale;
+        const origin = new THREE.Vector3(0, 0, 0);
+        const direction = position.clone().normalize();
+        
+        // Ray from position to the center of the Earth
+        const ray = new THREE.Ray(origin, direction);
+        
+        // Find intersection with the Earth's surface
+        const intersection = ray.at(earthRadius, new THREE.Vector3());
+        return intersection;
+    }
+
     static calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, tiltQuaternion, earthQuaternion) {
         const latRad = THREE.MathUtils.degToRad(latitude);
         const lonRad = THREE.MathUtils.degToRad(-longitude);
@@ -330,22 +357,102 @@ export class PhysicsUtils {
         return deltaV.length(); // Return the magnitude of Delta-V
     }
 
-    // Hohmann Transfer Maneuver
-    static calculateHohmannTransferDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
-        // Initial circular orbit velocity
-        const v1 = Math.sqrt(mu / r1);
+    static convertLatLonToCartesian(lat, lon, radius = Constants.earthRadius * Constants.metersToKm * Constants.scale) {
+        const phi = THREE.MathUtils.degToRad(90 - lat);
+        const theta = THREE.MathUtils.degToRad(lon);
+        const x = radius * Math.sin(phi) * Math.cos(theta);
+        const y = radius * Math.cos(phi);
+        const z = radius * Math.sin(phi) * Math.sin(theta);
 
-        // Transfer orbit velocities
+        return new THREE.Vector3(x, y, z);
+    }
+
+    // Maneuvering Methods //
+    // ------------------- //
+
+    static calculateHohmannOrbitRaiseDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
+        const v1 = Math.sqrt(mu / r1);
         const v_transfer1 = Math.sqrt(mu * (2 / r1 - 1 / ((r1 + r2) / 2)));
         const v_transfer2 = Math.sqrt(mu * (2 / r2 - 1 / ((r1 + r2) / 2)));
-
-        // Final circular orbit velocity
         const v2 = Math.sqrt(mu / r2);
 
-        // Delta-V for each burn
         const deltaV1 = v_transfer1 - v1;
         const deltaV2 = v2 - v_transfer2;
 
-        return { deltaV1, deltaV2 };
+        return { deltaV1, deltaV2, totalDeltaV: deltaV1 + deltaV2 };
+    }
+
+    static calculateHohmannInterceptDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
+        const a_transfer = (r1 + r2) / 2;
+        const v1 = Math.sqrt(mu / r1);
+        const v_transfer1 = Math.sqrt(mu * (2 / r1 - 1 / a_transfer));
+        const v_transfer2 = Math.sqrt(mu * (2 / r2 - 1 / a_transfer));
+        const v2 = Math.sqrt(mu / r2);
+
+        const deltaV1 = v_transfer1 - v1;
+        const deltaV2 = v2 - v_transfer2;
+
+        return { deltaV1, deltaV2, totalDeltaV: deltaV1 + deltaV2 };
+    }
+
+    static calculateHohmannTransferNodes(r1, r2, orbitalElements, mu = Constants.earthGravitationalParameter) {
+        const { deltaV1, deltaV2 } = this.calculateHohmannOrbitRaiseDeltaV(r1, r2, mu);
+
+        const trueAnomaly1 = orbitalElements.trueAnomaly;
+        const trueAnomaly2 = trueAnomaly1 + Math.PI;
+
+        const burnDirection1 = new THREE.Vector3(1, 0, 0); // Assumes burn is in the prograde direction
+        const burnDirection2 = new THREE.Vector3(1, 0, 0); // Assumes burn is in the prograde direction
+
+        const burnNode1 = {
+            trueAnomaly: trueAnomaly1,
+            deltaV: deltaV1,
+            direction: burnDirection1
+        };
+
+        const burnNode2 = {
+            trueAnomaly: trueAnomaly2,
+            deltaV: deltaV2,
+            direction: burnDirection2
+        };
+
+        return { burnNode1, burnNode2 };
+    }
+
+    static solveKeplersEquation(M, e, tol = 1e-6) {
+        let E = M;
+        let deltaE;
+        do {
+            deltaE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
+            E += deltaE;
+        } while (Math.abs(deltaE) > tol);
+        return E;
+    }
+
+    static meanAnomalyFromTrueAnomaly(trueAnomaly, eccentricity) {
+        const E = 2 * Math.atan(Math.sqrt((1 - eccentricity) / (1 + eccentricity)) * Math.tan(trueAnomaly / 2));
+        return E - eccentricity * Math.sin(E);
+    }
+
+    static getPositionAtTime(orbitalElements, time) {
+        const mu = Constants.G * Constants.earthMass;
+        const { semiMajorAxis: a, eccentricity: e, inclination: i, longitudeOfAscendingNode: omega, argumentOfPeriapsis: w } = orbitalElements;
+
+        const n = Math.sqrt(mu / Math.pow(a, 3));
+        const M = n * time;
+        const E = this.solveKeplersEquation(M, e);
+        const trueAnomaly = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+        const r = a * (1 - e * e) / (1 + e * Math.cos(trueAnomaly));
+
+        const x = r * Math.cos(trueAnomaly);
+        const y = r * Math.sin(trueAnomaly);
+
+        const position = new THREE.Vector3(x, y, 0);
+        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
+        position.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
+        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+        position.multiplyScalar(Constants.metersToKm * Constants.scale);
+
+        return position;
     }
 }

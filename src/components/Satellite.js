@@ -15,6 +15,7 @@ class ManeuverNode {
 
 export class Satellite {
     constructor(scene, world, earth, moon, position, velocity, id, color) {
+        // Properties
         this.scene = scene;
         this.world = world;
         this.earth = earth;
@@ -25,15 +26,7 @@ export class Satellite {
         this.updateBuffer = [];
         this.landed = false;
 
-        this.materials = {
-            satellite: new THREE.MeshBasicMaterial({ color: this.color }),
-            traceLine: new THREE.LineBasicMaterial({ color: this.color, linewidth: 1 }),
-            orbitLine: new THREE.LineBasicMaterial({ color: this.color, opacity: 0.2, transparent: true }),
-            periapsis: new THREE.PointsMaterial({ color: 0xff0000, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
-            apoapsis: new THREE.PointsMaterial({ color: 0x0000ff, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
-            maneuverNode: new THREE.PointsMaterial({ color: 0x00ff00, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
-            targetOrbitLine: new THREE.LineBasicMaterial({ color: 0xff00ff, opacity: 0.5, transparent: true })
-        };
+        this.materials = this.createMaterials(color);
 
         if (!position || !velocity) {
             throw new Error("Position and velocity must be defined");
@@ -41,22 +34,16 @@ export class Satellite {
 
         this.initProperties(position, velocity);
         this.initWorker();
-        this.initTraceLine();
-        this.initOrbitLine();
-        this.initTargetOrbitLine();
-        this.initApsides();
+        this.initVisualElements();
 
         this.maneuverNodes = [];
         this.maneuverCalculator = new ManeuverCalculator();
 
         // Dummy controllers for properties, to avoid undefined errors
-        this.altitudeController = { setValue: () => this, updateDisplay: () => {} };
-        this.velocityController = { setValue: () => this, updateDisplay: () => {} };
-        this.earthGravityForceController = { setValue: () => this, updateDisplay: () => {} };
-        this.moonGravityForceController = { setValue: () => this, updateDisplay: () => {} };
-        this.dragController = { setValue: () => this, updateDisplay: () => {} };
+        this.initDummyControllers();
     }
 
+    // Initialization methods
     initProperties(position, velocity) {
         const material = new CANNON.Material({ friction: 0.0, restitution: 0.3 });
         const size = new CANNON.Vec3(Constants.satelliteRadius, Constants.satelliteRadius, Constants.satelliteRadius * 2);
@@ -80,6 +67,7 @@ export class Satellite {
         this.dynamicPositions = [];
         this.creationTimes = [];
         this.maxTracePoints = 10000;
+        this.groundTracePoints = [];
     }
 
     initWorker() {
@@ -112,22 +100,12 @@ export class Satellite {
         });
     }
 
-    handleLanding(position) {
-        this.landed = true;
-        this.body.position.copy(position);
-        this.body.velocity.set(0, 0, 0);
-        this.body.mass = 0;
-
-        this.world.removeBody(this.body);
-
-        this.earth.rotationGroup.add(this.mesh);
-
-        const scaleFactor = Constants.metersToKm * Constants.scale;
-        this.mesh.position.set(
-            position.x * scaleFactor,
-            position.y * scaleFactor,
-            position.z * scaleFactor
-        );
+    initVisualElements() {
+        this.initTraceLine();
+        this.initOrbitLine();
+        this.initTargetOrbitLine();
+        this.initApsides();
+        this.initGroundTrace(); // Initialize ground trace
     }
 
     initTraceLine() {
@@ -163,6 +141,175 @@ export class Satellite {
         this.scene.add(this.apoapsisMesh);
     }
 
+    initGroundTrace() {
+        const groundTraceGeometry = new THREE.BufferGeometry();
+        groundTraceGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
+        this.groundTrace = new THREE.Line(groundTraceGeometry, this.materials.traceLine);
+        this.groundTrace.frustumCulled = false;
+        this.scene.add(this.groundTrace); // Add to the scene initially
+    }
+
+    initDummyControllers() {
+        this.altitudeController = { setValue: () => this, updateDisplay: () => {} };
+        this.velocityController = { setValue: () => this, updateDisplay: () => {} };
+        this.earthGravityForceController = { setValue: () => this, updateDisplay: () => {} };
+        this.moonGravityForceController = { setValue: () => this, updateDisplay: () => {} };
+        this.dragController = { setValue: () => this, updateDisplay: () => {} };
+    }
+
+    // Serialization methods
+    serialize() {
+        return {
+            id: this.id,
+            mass: this.body.mass,
+            position: { x: this.body.position.x, y: this.body.position.y, z: this.body.position.z },
+            velocity: { x: this.body.velocity.x, y: this.body.velocity.y, z: this.body.velocity.z },
+            size: Constants.satelliteRadius,
+        };
+    }
+
+    updateFromSerialized(data) {
+        this.body.position.copy(data.position);
+        this.body.velocity.copy(data.velocity);
+        this.altitude = data.altitude;
+        this.gravityVector.copy(data.earthGravity);
+        this.moonGravityVector.copy(data.moonGravity);
+        this.dragForce.copy(data.dragForce);
+
+        this.updateMeshPosition();
+        this.updateOrbitalElements();
+    }
+
+    // Update methods
+    updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
+        if (!this.initialized) return;
+
+        const utcCurrentTime = new Date(currentTime).toISOString();
+
+        if (!this.landed) {
+            this.executeManeuvers(currentTime);
+
+            this.worker.postMessage({
+                type: 'step',
+                data: {
+                    currentTime: utcCurrentTime,
+                    realDeltaTime,
+                    warpedDeltaTime,
+                    earthPosition: this.earth.earthBody.position,
+                    moonPosition: this.moon.moonBody.position,
+                    earthRadius: Constants.earthRadius,
+                    id: this.id
+                }
+            });
+
+            this.updateMeshPosition();
+            this.updateGroundTrace(); // Add this line
+        } else {
+            this.updatePositionRelativeToEarth();
+        }
+    }
+
+    applyBufferedUpdates() {
+        if (this.updateBuffer.length > 0) {
+            const data = this.updateBuffer.shift();
+            this.updateFromSerialized(data);
+            this.updateTraceLine(Date.now());
+        }
+    }
+
+    updateMeshPosition() {
+        const scaleFactor = Constants.metersToKm * Constants.scale;
+        this.mesh.position.set(
+            this.body.position.x * scaleFactor,
+            this.body.position.y * scaleFactor,
+            this.body.position.z * scaleFactor
+        );
+        this.mesh.quaternion.copy(this.body.quaternion);
+    }
+
+    updateTraceLine(currentTime) {
+        const currentPosition = new THREE.Vector3().copy(this.mesh.position);
+        this.dynamicPositions.push(currentPosition);
+        this.creationTimes.push(currentTime);
+
+        if (this.dynamicPositions.length > this.maxTracePoints) {
+            this.dynamicPositions.shift();
+            this.creationTimes.shift();
+        }
+
+        const positions = new Float32Array(this.dynamicPositions.length * 3);
+        this.dynamicPositions.forEach((pos, i) => {
+            positions.set([pos.x, pos.y, pos.z], i * 3);
+        });
+
+        this.traceLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        this.traceLine.geometry.attributes.position.needsUpdate = true;
+        this.traceLine.geometry.setDrawRange(0, this.dynamicPositions.length);
+    }
+
+    updateGroundTrace() {
+        const currentPosition = this.mesh.position.clone();
+        const earthPosition = this.earth.earthMesh.position.clone();
+    
+        // Calculate relative position to Earth
+        const relativePosition = currentPosition.sub(earthPosition);
+    
+        // Normalize the relative position and scale by Earth's radius to project onto the surface
+        const radius = Constants.earthRadius * Constants.metersToKm * Constants.scale;
+        const normalizedPosition = relativePosition.normalize();
+        const surfacePosition = normalizedPosition.multiplyScalar(radius);
+    
+        // Convert the projected position to latitude and longitude
+        const lat = Math.asin(surfacePosition.z / radius);
+        const lon = Math.atan2(surfacePosition.y, surfacePosition.x);
+    
+        // Convert latitude and longitude back to ECI coordinates
+        const groundPoint = new THREE.Vector3(
+            radius * Math.cos(lat) * Math.cos(lon),
+            radius * Math.cos(lat) * Math.sin(lon),
+            radius * Math.sin(lat)
+        );
+    
+        // Store the point in the ground trace points array
+        this.groundTracePoints.push(groundPoint);
+    
+        // Remove the oldest point if we exceed the maximum number of points
+        if (this.groundTracePoints.length > this.maxTracePoints) {
+            this.groundTracePoints.shift();
+        }
+    
+        // Update the ground trace line geometry
+        const positions = new Float32Array(this.groundTracePoints.length * 3);
+        this.groundTracePoints.forEach((pos, i) => {
+            positions.set([pos.x, pos.y, pos.z], i * 3);
+        });
+    
+        this.groundTrace.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        this.groundTrace.geometry.attributes.position.needsUpdate = true;
+        this.groundTrace.geometry.setDrawRange(0, this.groundTracePoints.length);
+    }
+
+    updateOrbitalElements() {
+        const mu = Constants.G * Constants.earthMass;
+        const position = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
+        const velocity = new THREE.Vector3(this.body.velocity.x, this.body.velocity.y, this.body.velocity.z);
+        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
+
+        this.maneuverCalculator.setCurrentOrbit(orbitalElements);
+
+        const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu);
+
+        const positions = new Float32Array(orbitPoints.length * 3);
+        orbitPoints.forEach((point, i) => {
+            positions.set([point.x, point.y, point.z], i * 3);
+        });
+
+        this.orbitLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        this.orbitLine.geometry.attributes.position.needsUpdate = true;
+
+        this.updateApsides(orbitalElements);
+    }
+
     updateApsides(orbitalElements) {
         const { h, e, i, omega, w } = orbitalElements;
         const mu = Constants.G * Constants.earthMass;
@@ -189,169 +336,14 @@ export class Satellite {
         this.apoapsisMesh.position.copy(apoapsisVector);
     }
 
-    serialize() {
-        return {
-            id: this.id,
-            mass: this.body.mass,
-            position: { x: this.body.position.x, y: this.body.position.y, z: this.body.position.z },
-            velocity: { x: this.body.velocity.x, y: this.body.velocity.y, z: this.body.velocity.z },
-            size: Constants.satelliteRadius,
-        };
-    }
+    // Maneuver methods
+    executeManeuvers(currentTime) {
+        this.maneuverNodes.sort((a, b) => a.time - b.time);
 
-    updateFromSerialized(data) {
-        this.body.position.copy(data.position);
-        this.body.velocity.copy(data.velocity);
-        this.altitude = data.altitude;
-        this.gravityVector.copy(data.earthGravity);
-        this.moonGravityVector.copy(data.moonGravity);
-        this.dragForce.copy(data.dragForce);
-    
-        this.updateMeshPosition();
-        this.updateOrbitalElements();
-    }
-
-    updateMeshPosition() {
-        const scaleFactor = Constants.metersToKm * Constants.scale;
-        this.mesh.position.set(
-            this.body.position.x * scaleFactor,
-            this.body.position.y * scaleFactor,
-            this.body.position.z * scaleFactor
-        );
-        this.mesh.quaternion.copy(this.body.quaternion);
-    }
-
-    deleteSatellite() {
-        this.scene.remove(this.mesh);
-        this.world.removeBody(this.body);
-        this.scene.remove(this.traceLine);
-        this.scene.remove(this.orbitLine);
-        this.scene.remove(this.periapsisMesh);
-        this.scene.remove(this.apoapsisMesh);
-        if (this.targetOrbitLine) this.scene.remove(this.targetOrbitLine);
-        if (this.maneuverNodeMesh) this.scene.remove(this.maneuverNodeMesh);
-        this.worker.terminate();
-    }
-
-    getCurrentAltitude() {
-        return this.altitude;
-    }
-
-    getCurrentVelocity() {
-        return this.body.velocity.length();
-    }
-
-    getCurrentEarthGravityForce() {
-        return this.gravityVector;
-    }
-
-    getCurrentMoonGravityForce() {
-        return this.moonGravityVector.length();
-    }
-
-    getCurrentDragForce() {
-        return this.dragForce.length();
-    }
-
-    setColor(color) {
-        this.color = color;
-        this.mesh.material.color.set(color);
-        this.traceLine.material.color.set(color);
-        this.orbitLine.material.color.set(color);
-    }
-
-    updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
-        if (!this.initialized) return;
-
-        const utcCurrentTime = new Date(currentTime).toISOString();
-
-        if (!this.landed) {
-            this.executeManeuvers(currentTime);
-
-            this.worker.postMessage({
-                type: 'step',
-                data: {
-                    currentTime: utcCurrentTime,
-                    realDeltaTime,
-                    warpedDeltaTime,
-                    earthPosition: this.earth.earthBody.position,
-                    moonPosition: this.moon.moonBody.position,
-                    earthRadius: Constants.earthRadius,
-                    id: this.id
-                }
-            });
-
-            this.updateMeshPosition();
-        } else {
-            this.updatePositionRelativeToEarth();
+        while (this.maneuverNodes.length > 0 && this.maneuverNodes[0].time <= currentTime) {
+            const node = this.maneuverNodes.shift();
+            this.applyDeltaV(node.deltaV, node.direction);
         }
-    }
-
-    updatePositionRelativeToEarth() {
-        const position = this.body.position;
-        const scaleFactor = Constants.metersToKm * Constants.scale;
-        this.mesh.position.set(
-            position.x * scaleFactor,
-            position.y * scaleFactor,
-            position.z * scaleFactor
-        );
-    }
-
-    applyBufferedUpdates() {
-        if (this.updateBuffer.length > 0) {
-            const data = this.updateBuffer.shift();
-            this.updateFromSerialized(data);
-            this.updateTraceLine(Date.now());
-        }
-    }
-
-    updateTraceLine(currentTime) {
-        const currentPosition = new THREE.Vector3().copy(this.mesh.position);
-        this.dynamicPositions.push(currentPosition);
-        this.creationTimes.push(currentTime);
-
-        if (this.dynamicPositions.length > this.maxTracePoints) {
-            this.dynamicPositions.shift();
-            this.creationTimes.shift();
-        }
-
-        const positions = new Float32Array(this.dynamicPositions.length * 3);
-        this.dynamicPositions.forEach((pos, i) => {
-            positions.set([pos.x, pos.y, pos.z], i * 3);
-        });
-
-        this.traceLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        this.traceLine.geometry.attributes.position.needsUpdate = true;
-        this.traceLine.geometry.setDrawRange(0, this.dynamicPositions.length);
-    }
-
-    updateOrbitalElements() {
-        const mu = Constants.G * Constants.earthMass;
-        const position = new THREE.Vector3(this.body.position.x, this.body.position.y, this.body.position.z);
-        const velocity = new THREE.Vector3(this.body.velocity.x, this.body.velocity.y, this.body.velocity.z);
-        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
-
-        this.maneuverCalculator.setCurrentOrbit(orbitalElements);
-
-        const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu);
-
-        const positions = new Float32Array(orbitPoints.length * 3);
-        orbitPoints.forEach((point, i) => {
-            positions.set([point.x, point.y, point.z], i * 3);
-        });
-
-        this.orbitLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        this.orbitLine.geometry.attributes.position.needsUpdate = true;
-
-        this.updateApsides(orbitalElements);
-    }
-
-    setTargetOrbit(targetElements) {
-        this.maneuverCalculator.setTargetOrbit(targetElements);
-    }
-
-    calculateDeltaV() {
-        return this.maneuverCalculator.calculateDeltaV();
     }
 
     applyDeltaV(deltaV, direction) {
@@ -375,36 +367,37 @@ export class Satellite {
         this.body.applyImpulse(thrustVector, this.body.position);
     }
 
-    updateOrbitTrace() {
-        const positionAttribute = this.traceLine.geometry.attributes.position;
-        const tracePositions = positionAttribute.array;
-
-        if (this.dynamicPositions.length > this.maxTracePoints) {
-            this.dynamicPositions.shift();
-        }
-
-        this.dynamicPositions.push(this.mesh.position.clone());
-
-        for (let i = 0; i < this.dynamicPositions.length; i++) {
-            tracePositions[i * 3] = this.dynamicPositions[i].x;
-            tracePositions[i * 3 + 1] = this.dynamicPositions[i].y;
-            tracePositions[i * 3 + 2] = this.dynamicPositions[i].z;
-        }
-
-        positionAttribute.needsUpdate = true;
+    calculateDeltaV() {
+        return this.maneuverCalculator.calculateDeltaV();
     }
 
     calculateBestMomentDeltaV(targetElements) {
         return this.maneuverCalculator.calculateBestMomentDeltaV(targetElements);
     }
 
-    executeManeuvers(currentTime) {
-        this.maneuverNodes.sort((a, b) => a.time - b.time);
+    addManeuverNode(time, direction, deltaV) {
+        const maneuverNode = new ManeuverNode(time, direction, deltaV);
+        this.maneuverNodes.push(maneuverNode);
+    }
 
-        while (this.maneuverNodes.length > 0 && this.maneuverNodes[0].time <= currentTime) {
-            const node = this.maneuverNodes.shift();
-            this.applyDeltaV(node.deltaV, node.direction);
+    renderManeuverNode(time) {
+        const position = this.getPositionAtTime(time);
+        if (!this.maneuverNodeMesh) {
+            const sphereGeometry = new THREE.SphereGeometry(10, 16, 16);
+            this.maneuverNodeMesh = new THREE.Points(sphereGeometry, this.materials.maneuverNode);
+            this.scene.add(this.maneuverNodeMesh);
         }
+        this.maneuverNodeMesh.position.copy(position);
+    }
+
+    getPositionAtTime(time) {
+        return PhysicsUtils.getPositionAtTime(this.maneuverCalculator.currentOrbitalElements, time);
+    }
+
+    // Render methods
+    renderTargetOrbit(targetElements) {
+        const orbitPoints = PhysicsUtils.computeOrbit(targetElements, Constants.G * Constants.earthMass);
+        this.updateTargetOrbitLine(orbitPoints);
     }
 
     updateOrbitLine(orbitPoints) {
@@ -425,60 +418,51 @@ export class Satellite {
         this.targetOrbitLine.geometry.attributes.position.needsUpdate = true;
     }
 
-    renderTargetOrbit(targetElements) {
-        const orbitPoints = PhysicsUtils.computeOrbit(targetElements, Constants.G * Constants.earthMass);
-        this.updateTargetOrbitLine(orbitPoints);
+    // Getters
+    getCurrentAltitude() {
+        return this.altitude;
     }
 
-    addManeuverNode(time, direction, deltaV) {
-        const maneuverNode = new ManeuverNode(time, direction, deltaV);
-        this.maneuverNodes.push(maneuverNode);
+    getCurrentVelocity() {
+        return this.body.velocity.length();
     }
 
-    renderManeuverNode(time) {
-        const position = this.getPositionAtTime(time);
-        if (!this.maneuverNodeMesh) {
-            const sphereGeometry = new THREE.SphereGeometry(10, 16, 16);
-            this.maneuverNodeMesh = new THREE.Points(sphereGeometry, this.materials.maneuverNode);
-            this.scene.add(this.maneuverNodeMesh);
-        }
-        this.maneuverNodeMesh.position.copy(position);
+    getCurrentEarthGravityForce() {
+        return this.gravityVector;
     }
 
-    getPositionAtTime(time) {
-        const mu = Constants.G * Constants.earthMass;
-        const a = this.maneuverCalculator.currentOrbitalElements.semiMajorAxis;
-        const e = this.maneuverCalculator.currentOrbitalElements.eccentricity;
-        const i = this.maneuverCalculator.currentOrbitalElements.inclination;
-        const omega = this.maneuverCalculator.currentOrbitalElements.longitudeOfAscendingNode;
-        const w = this.maneuverCalculator.currentOrbitalElements.argumentOfPeriapsis;
+    getCurrentMoonGravityForce() {
+        return this.moonGravityVector.length();
+    }
 
-        const n = Math.sqrt(mu / Math.pow(a, 3));
+    getCurrentDragForce() {
+        return this.dragForce.length();
+    }
 
-        const M = n * time;
+    getPeriapsisAltitude() {
+        const periapsisDistance = this.periapsisMesh.position.length();
+        return (periapsisDistance / Constants.scale - Constants.earthRadius * Constants.metersToKm) * Constants.kmToMeters;
+    }
 
-        const E = PhysicsUtils.solveKeplersEquation(M, e);
-
-        const trueAnomaly = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
-
-        const r = a * (1 - e * e) / (1 + e * Math.cos(trueAnomaly));
-
-        const x = r * Math.cos(trueAnomaly);
-        const y = r * Math.sin(trueAnomaly);
-
-        const position = new THREE.Vector3(x, y, 0);
-        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
-        position.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
-        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
-        position.multiplyScalar(Constants.metersToKm * Constants.scale);
-
-        return position;
+    getApoapsisAltitude() {
+        const apoapsisDistance = this.apoapsisMesh.position.length();
+        return (apoapsisDistance / Constants.scale - Constants.earthRadius * Constants.metersToKm) * Constants.kmToMeters;
     }
 
     getMesh() {
         return this.mesh;
     }
 
+    // Setters
+    setColor(color) {
+        this.color = color;
+        this.mesh.material.color.set(color);
+        this.traceLine.material.color.set(color);
+        this.orbitLine.material.color.set(color);
+        this.groundTrace.material.color.set(color);
+    }
+
+    // Visibility methods
     setOrbitVisible(visible) {
         this.orbitLine.visible = visible;
         this.apoapsisMesh.visible = visible;
@@ -487,5 +471,52 @@ export class Satellite {
 
     setTraceVisible(visible) {
         this.traceLine.visible = visible;
+    }
+
+    setGroundTraceVisible(visible) {
+        this.groundTrace.visible = visible;
+    }
+
+    // Utility methods
+    handleLanding(position) {
+        this.landed = true;
+        this.body.position.copy(position);
+        this.body.velocity.set(0, 0, 0);
+        this.body.mass = 0;
+
+        this.world.removeBody(this.body);
+
+        this.earth.rotationGroup.add(this.mesh);
+
+        const scaleFactor = Constants.metersToKm * Constants.scale;
+        this.mesh.position.set(
+            position.x * scaleFactor,
+            position.y * scaleFactor,
+            position.z * scaleFactor
+        );
+
+        // Convert ECI to ground coordinates
+        const gmst = PhysicsUtils.calculateGMST(new Date());
+        const groundPosition = PhysicsUtils.eciToGroundPosition(position, gmst);
+        this.earth.addImpactPoint(groundPosition);
+    }
+
+    updatePositionRelativeToEarth() {
+        const earthPosition = this.earth.earthBody.position.clone();
+        const relativePosition = this.mesh.position.sub(earthPosition);
+
+        this.mesh.position.copy(relativePosition);
+    }
+
+    createMaterials(color) {
+        return {
+            satellite: new THREE.MeshBasicMaterial({ color }),
+            traceLine: new THREE.LineBasicMaterial({ color, linewidth: 1 }),
+            orbitLine: new THREE.LineBasicMaterial({ color, opacity: 0.2, transparent: true }),
+            periapsis: new THREE.PointsMaterial({ color: 0xff0000, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
+            apoapsis: new THREE.PointsMaterial({ color: 0x0000ff, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
+            maneuverNode: new THREE.PointsMaterial({ color: 0x00ff00, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
+            targetOrbitLine: new THREE.LineBasicMaterial({ color: 0xff00ff, opacity: 0.5, transparent: true })
+        };
     }
 }

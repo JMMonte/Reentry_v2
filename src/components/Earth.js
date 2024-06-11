@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { EarthSurface } from './EarthSurface.js';
 import { Constants } from '../utils/Constants.js';
+import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import atmosphereFragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
 import atmosphereVertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';
 import geojsonDataCities from '../config/ne_110m_populated_places.json';
@@ -68,16 +69,18 @@ export class Earth {
             transparent: true,
             opacity: 1.0,
             side: THREE.FrontSide,
+            blending: THREE.NormalBlending,
         });
 
         this.atmosphereMaterial = new THREE.ShaderMaterial({
             vertexShader: atmosphereVertexShader,
             fragmentShader: atmosphereFragmentShader,
-            side: THREE.FrontSide,
+            side: THREE.DoubleSide,
             transparent: true,
+            // opacity: 0.8,
             depthWrite: false,
             depthTest: true,
-            blending: THREE.AdditiveBlending,
+            blending: THREE.NormalBlending,
             uniforms: {
                 lightPosition: { value: new THREE.Vector3(1.0, 0.0, 0.0) },
                 lightIntensity: { value: 4.0 },
@@ -126,7 +129,6 @@ export class Earth {
         this.earthSurface.addPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
         this.earthSurface.addPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
     }
-    
 
     initializePhysics(world) {
         const earthBody = new CANNON.Body({
@@ -193,5 +195,27 @@ export class Earth {
     }
     setObservatoriesVisible(visible) {
         this.earthSurface.setObservatoriesVisible(visible);
+    }
+
+    addImpactPoint(position) {
+        const impactMaterial = new THREE.PointsMaterial({
+            color: 0xff0000,
+            size: 5,
+            opacity: 0.8,
+            transparent: true,
+        });
+
+        const impactGeometry = new THREE.BufferGeometry();
+        impactGeometry.setAttribute('position', new THREE.Float32BufferAttribute([position.x, position.y, position.z], 3));
+
+        const impactPoint = new THREE.Points(impactGeometry, impactMaterial);
+        this.rotationGroup.add(impactPoint);
+    }
+
+    convertEciToGround(positionECI) {
+        const gmst = PhysicsUtils.calculateGMST(Date.now());
+        const positionECEF = PhysicsUtils.eciToEcef(positionECI, gmst);
+        const intersection = PhysicsUtils.calculateIntersectionWithEarth(positionECEF);
+        return intersection;
     }
 }

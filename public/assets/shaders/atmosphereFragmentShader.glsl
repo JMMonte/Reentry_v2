@@ -66,7 +66,7 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
     const float ph_ray = 0.15;
     const float ph_mie = 0.05;
     const float ph_alpha = 0.25;
-    const vec3 k_ray = vec3(0.5, 1.5, 6.5);
+    const vec3 k_ray = vec3(0.1, 1.3, 5.5);
     const vec3 k_mie = vec3(21.0);
     const float k_mie_ex = 1.1;
     const float k_alpha = 2.0;

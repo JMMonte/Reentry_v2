@@ -89,6 +89,17 @@ function stepPhysics(data) {
         const distanceToEarth = satellitePosition.distanceTo(new CANNON.Vec3(earthPosition.x, earthPosition.y, earthPosition.z));
         const altitude = distanceToEarth - earthRadius;
 
+        if (altitude < 0 && !satellite.landed) {
+            satellite.landed = true;
+            self.postMessage({
+                type: 'landed',
+                data: {
+                    id: satellite.id,
+                    position: satellitePosition
+                }
+            });
+        }
+
         self.postMessage({
             type: 'stepComplete',
             data: {
@@ -225,17 +236,6 @@ function calculateDragForce(altitude, satellite) {
     const dragForce = dragDirection.scale(dragMagnitude);
 
     return dragForce;
-}
-
-function manuallyManageSatellite(satellite, altitude, earthRadius) {
-    satellite.altitude = altitude;
-    satellite.position = satellite.body.position.clone();
-    manuallyManagedSatellites.push(satellite);
-}
-
-function removeSatelliteFromPhysicsWorld(satellite) {
-    world.removeBody(satellite.body);
-    satellites = satellites.filter(sat => sat.id !== satellite.id);
 }
 
 function updateManuallyManagedSatellite(satellite, earthPosition, warpedDeltaTime) {
