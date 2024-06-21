@@ -7,20 +7,58 @@ export class TimeUtils {
         this.lastTime = 0;
         this.deltaTime = 0;
         this.simulatedTime = new Date(settings.simulatedTime); // Ensure this is in UTC
+        this.validateAndFixSimulatedTime();
+        this.updateDerivedTimes();
+        this.AU = Constants.AU;
+        this.isInitialized = false;
+    }
+
+    validateAndFixSimulatedTime() {
+        if (isNaN(this.simulatedTime.getTime())) {
+            console.warn("Invalid simulated time detected. Current value:", this.simulatedTime);
+            console.warn("Settings simulatedTime:", this.settings.simulatedTime);
+            this.simulatedTime = new Date();
+            this.settings.simulatedTime = this.simulatedTime.toISOString();
+        }
+    }
+
+    updateDerivedTimes() {
         this.dayOfYear = this.getDayOfYear(this.simulatedTime);
         this.fractionOfDay = this.getFractionOfDay();
-        this.AU = Constants.AU;
     }
 
     update(timestamp) {
+        if (!this.isInitialized) {
+            this.lastTime = timestamp * 0.001;
+            this.isInitialized = true;
+            return;
+        }
+
         const now = timestamp * 0.001;
         this.deltaTime = (now - this.lastTime) * this.settings.timeWarp;
+        
+        if (isNaN(this.deltaTime) || this.deltaTime <= 0) {
+            console.warn("Invalid deltaTime:", this.deltaTime);
+            this.deltaTime = 0;
+        }
+
         this.lastTime = now;
         const msToAdd = this.deltaTime * 1000;
-        this.simulatedTime = new Date(this.simulatedTime.getTime() + msToAdd);
-        this.settings.simulatedTime = this.simulatedTime.toISOString();
-        this.dayOfYear = this.getDayOfYear(this.simulatedTime);
-        this.fractionOfDay = this.getFractionOfDay();
+        
+        
+        try {
+            const newTime = this.simulatedTime.getTime() + msToAdd;
+            this.simulatedTime = new Date(newTime);
+            
+            this.validateAndFixSimulatedTime();
+            this.settings.simulatedTime = this.simulatedTime.toISOString();
+            this.updateDerivedTimes();
+        } catch (error) {
+            console.error("Error updating simulated time:", error);
+            console.error("Current simulatedTime:", this.simulatedTime);
+            console.error("Current settings:", this.settings);
+            this.validateAndFixSimulatedTime();
+        }
     }
 
     setTimeWarp(warpFactor) {
@@ -63,10 +101,6 @@ export class TimeUtils {
 
     getDeltaTime() {
         return this.deltaTime;
-    }
-
-    getSimulatedTime() {
-        return this.simulatedTime;
     }
 
     getJulianDate() {

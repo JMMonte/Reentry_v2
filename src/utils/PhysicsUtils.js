@@ -367,6 +367,27 @@ export class PhysicsUtils {
         return new THREE.Vector3(x, y, z);
     }
 
+    static ecefToGeodetic(x, y, z) {
+        const a = Constants.earthRadius;
+        const b = Constants.earthPolarRadius;
+        const e2 = 1 - (b * b) / (a * a);
+        const p = Math.sqrt(x * x + y * y);
+        const theta = Math.atan2(z * a, p * b);
+        const lon = Math.atan2(y, x);
+        const lat = Math.atan2(
+            z + e2 * b * Math.pow(Math.sin(theta), 3),
+            p - e2 * a * Math.pow(Math.cos(theta), 3)
+        );
+        const N = a / Math.sqrt(1 - e2 * Math.sin(lat) * Math.sin(lat));
+        const alt = p / Math.cos(lat) - N;
+
+        return {
+            latitude: THREE.MathUtils.radToDeg(lat),
+            longitude: THREE.MathUtils.radToDeg(lon),
+            altitude: alt
+        };
+    }
+
     // Maneuvering Methods //
     // ------------------- //
 
@@ -454,5 +475,15 @@ export class PhysicsUtils {
         position.multiplyScalar(Constants.metersToKm * Constants.scale);
 
         return position;
+    }
+
+    static cartesianToGeodetic(x, y, z) {
+        const r = Math.sqrt(x*x + y*y + z*z);
+        const latitude = Math.asin(y / r);
+        const longitude = Math.atan2(x, z);
+        return {
+            latitude: THREE.MathUtils.radToDeg(latitude),
+            longitude: THREE.MathUtils.radToDeg(longitude)
+        };
     }
 }

@@ -7,15 +7,22 @@ import PhysicsWorkerURL from 'url:../workers/physicsWorker.js';
 
 class ManeuverNode {
     constructor(time, direction, deltaV) {
-        this.time = time; // Exact time in the simulation when the maneuver should occur
-        this.direction = direction; // THREE.Vector3 representing the direction of the thrust
-        this.deltaV = deltaV; // The amount of delta-v (change in velocity) necessary
+        this.time = time;
+        this.direction = direction;
+        this.deltaV = deltaV;
     }
 }
 
 export class Satellite {
     constructor(scene, world, earth, moon, position, velocity, id, color) {
-        // Properties
+        this.initializeProperties(scene, world, earth, moon, id, color);
+        this.initializePhysics(position, velocity);
+        this.initializeVisuals();
+        this.initializeWorker();
+    }
+
+    // Initialization methods
+    initializeProperties(scene, world, earth, moon, id, color) {
         this.scene = scene;
         this.world = world;
         this.earth = earth;
@@ -25,26 +32,13 @@ export class Satellite {
         this.initialized = false;
         this.updateBuffer = [];
         this.landed = false;
-
         this.materials = this.createMaterials(color);
-
-        if (!position || !velocity) {
-            throw new Error("Position and velocity must be defined");
-        }
-
-        this.initProperties(position, velocity);
-        this.initWorker();
-        this.initVisualElements();
-
         this.maneuverNodes = [];
         this.maneuverCalculator = new ManeuverCalculator();
-
-        // Dummy controllers for properties, to avoid undefined errors
-        this.initDummyControllers();
+        this.initializeDummyControllers();
     }
 
-    // Initialization methods
-    initProperties(position, velocity) {
+    initializePhysics(position, velocity) {
         const material = new CANNON.Material({ friction: 0.0, restitution: 0.3 });
         const size = new CANNON.Vec3(Constants.satelliteRadius, Constants.satelliteRadius, Constants.satelliteRadius * 2);
         const shape = new CANNON.Box(size);
@@ -57,33 +51,57 @@ export class Satellite {
         this.body.position.copy(position);
         this.body.velocity.copy(velocity);
 
+        this.gravityVector = new CANNON.Vec3();
+        this.moonGravityVector = new CANNON.Vec3();
+        this.dragForce = new CANNON.Vec3();
+    }
+
+    initializeVisuals() {
         const geometry = new THREE.ConeGeometry(Constants.satelliteRadius, Constants.satelliteRadius * 2, 3, 1);
         this.mesh = new THREE.Mesh(geometry, this.materials.satellite);
         this.scene.add(this.mesh);
 
-        this.gravityVector = new CANNON.Vec3();
-        this.moonGravityVector = new CANNON.Vec3();
-        this.dragForce = new CANNON.Vec3();
         this.dynamicPositions = [];
         this.creationTimes = [];
         this.maxTracePoints = 10000;
         this.groundTracePoints = [];
+
+        this.initializeTraceLine();
+        this.initializeOrbitLine();
+        this.initializeTargetOrbitLine();
+        this.initializeApsides();
+        this.initializeGroundTrace();
     }
 
-    initWorker() {
+    initializeWorker() {
         this.worker = new Worker(PhysicsWorkerURL);
-        this.worker.onmessage = (event) => {
-            const { type, data } = event.data;
-            if (type === 'initComplete') {
-                this.initialized = true;
-                this.world.addBody(this.body);
-            } else if (type === 'stepComplete' && data.id === this.id) {
-                this.updateBuffer.push(data);
-            } else if (type === 'landed' && data.id === this.id) {
-                this.handleLanding(data.position);
-            }
-        };
+        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+        this.sendWorkerInitMessage();
+    }
 
+    initializeDummyControllers() {
+        const dummyController = { setValue: () => this, updateDisplay: () => {} };
+        this.altitudeController = dummyController;
+        this.velocityController = dummyController;
+        this.earthGravityForceController = dummyController;
+        this.moonGravityForceController = dummyController;
+        this.dragController = dummyController;
+    }
+
+    // Worker communication methods
+    handleWorkerMessage(event) {
+        const { type, data } = event.data;
+        if (type === 'initComplete') {
+            this.initialized = true;
+            this.world.addBody(this.body);
+        } else if (type === 'stepComplete' && data.id === this.id) {
+            this.updateBuffer.push(data);
+        } else if (type === 'landed' && data.id === this.id) {
+            this.handleLanding(data.position);
+        }
+    }
+
+    sendWorkerInitMessage() {
         this.worker.postMessage({
             type: 'init',
             data: {
@@ -100,72 +118,28 @@ export class Satellite {
         });
     }
 
-    initVisualElements() {
-        this.initTraceLine();
-        this.initOrbitLine();
-        this.initTargetOrbitLine();
-        this.initApsides();
-        this.initGroundTrace(); // Initialize ground trace
+    // Update methods
+    updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
+        if (!this.initialized) return;
+
+        const utcCurrentTime = new Date(currentTime).toISOString();
+
+        if (!this.landed) {
+            this.executeManeuvers(currentTime);
+            this.sendWorkerStepMessage(utcCurrentTime, realDeltaTime, warpedDeltaTime);
+            this.updateMeshPosition();
+            this.updateGroundTrace();
+        } else {
+            this.updatePositionRelativeToEarth();
+        }
     }
 
-    initTraceLine() {
-        const traceLineGeometry = new THREE.BufferGeometry();
-        traceLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
-        this.traceLine = new THREE.Line(traceLineGeometry, this.materials.traceLine);
-        this.traceLine.frustumCulled = false;
-        this.scene.add(this.traceLine);
-    }
-
-    initOrbitLine() {
-        const orbitLineGeometry = new THREE.BufferGeometry();
-        this.orbitLine = new THREE.Line(orbitLineGeometry, this.materials.orbitLine);
-        this.orbitLine.frustumCulled = false;
-        this.scene.add(this.orbitLine);
-    }
-
-    initTargetOrbitLine() {
-        const targetOrbitLineGeometry = new THREE.BufferGeometry();
-        this.targetOrbitLine = new THREE.Line(targetOrbitLineGeometry, this.materials.targetOrbitLine);
-        this.targetOrbitLine.frustumCulled = false;
-        this.scene.add(this.targetOrbitLine);
-    }
-
-    initApsides() {
-        const sphereGeometry = new THREE.BufferGeometry();
-        sphereGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
-
-        this.periapsisMesh = new THREE.Points(sphereGeometry, this.materials.periapsis);
-        this.apoapsisMesh = new THREE.Points(sphereGeometry, this.materials.apoapsis);
-
-        this.scene.add(this.periapsisMesh);
-        this.scene.add(this.apoapsisMesh);
-    }
-
-    initGroundTrace() {
-        const groundTraceGeometry = new THREE.BufferGeometry();
-        groundTraceGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
-        this.groundTrace = new THREE.Line(groundTraceGeometry, this.materials.traceLine);
-        this.groundTrace.frustumCulled = false;
-        this.scene.add(this.groundTrace); // Add to the scene initially
-    }
-
-    initDummyControllers() {
-        this.altitudeController = { setValue: () => this, updateDisplay: () => {} };
-        this.velocityController = { setValue: () => this, updateDisplay: () => {} };
-        this.earthGravityForceController = { setValue: () => this, updateDisplay: () => {} };
-        this.moonGravityForceController = { setValue: () => this, updateDisplay: () => {} };
-        this.dragController = { setValue: () => this, updateDisplay: () => {} };
-    }
-
-    // Serialization methods
-    serialize() {
-        return {
-            id: this.id,
-            mass: this.body.mass,
-            position: { x: this.body.position.x, y: this.body.position.y, z: this.body.position.z },
-            velocity: { x: this.body.velocity.x, y: this.body.velocity.y, z: this.body.velocity.z },
-            size: Constants.satelliteRadius,
-        };
+    applyBufferedUpdates() {
+        if (this.updateBuffer.length > 0) {
+            const data = this.updateBuffer.shift();
+            this.updateFromSerialized(data);
+            this.updateTraceLine(Date.now());
+        }
     }
 
     updateFromSerialized(data) {
@@ -178,43 +152,6 @@ export class Satellite {
 
         this.updateMeshPosition();
         this.updateOrbitalElements();
-    }
-
-    // Update methods
-    updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
-        if (!this.initialized) return;
-
-        const utcCurrentTime = new Date(currentTime).toISOString();
-
-        if (!this.landed) {
-            this.executeManeuvers(currentTime);
-
-            this.worker.postMessage({
-                type: 'step',
-                data: {
-                    currentTime: utcCurrentTime,
-                    realDeltaTime,
-                    warpedDeltaTime,
-                    earthPosition: this.earth.earthBody.position,
-                    moonPosition: this.moon.moonBody.position,
-                    earthRadius: Constants.earthRadius,
-                    id: this.id
-                }
-            });
-
-            this.updateMeshPosition();
-            this.updateGroundTrace(); // Add this line
-        } else {
-            this.updatePositionRelativeToEarth();
-        }
-    }
-
-    applyBufferedUpdates() {
-        if (this.updateBuffer.length > 0) {
-            const data = this.updateBuffer.shift();
-            this.updateFromSerialized(data);
-            this.updateTraceLine(Date.now());
-        }
     }
 
     updateMeshPosition() {
@@ -248,45 +185,38 @@ export class Satellite {
     }
 
     updateGroundTrace() {
-        const currentPosition = this.mesh.position.clone();
-        const earthPosition = this.earth.earthMesh.position.clone();
-    
-        // Calculate relative position to Earth
-        const relativePosition = currentPosition.sub(earthPosition);
-    
-        // Normalize the relative position and scale by Earth's radius to project onto the surface
-        const radius = Constants.earthRadius * Constants.metersToKm * Constants.scale;
-        const normalizedPosition = relativePosition.normalize();
-        const surfacePosition = normalizedPosition.multiplyScalar(radius);
-    
-        // Convert the projected position to latitude and longitude
-        const lat = Math.asin(surfacePosition.z / radius);
-        const lon = Math.atan2(surfacePosition.y, surfacePosition.x);
-    
-        // Convert latitude and longitude back to ECI coordinates
-        const groundPoint = new THREE.Vector3(
-            radius * Math.cos(lat) * Math.cos(lon),
-            radius * Math.cos(lat) * Math.sin(lon),
-            radius * Math.sin(lat)
-        );
-    
-        // Store the point in the ground trace points array
+        const earthCenter = this.earth.earthMesh.position;
+        const satellitePosition = this.mesh.position.clone().sub(earthCenter);
+        const earthInverseMatrix = this.earth.rotationGroup.matrixWorld.clone().invert();
+        const localSatellitePosition = satellitePosition.applyMatrix4(earthInverseMatrix);
+        const groundPoint = localSatellitePosition.normalize().multiplyScalar(this.earth.EARTH_RADIUS);
+
         this.groundTracePoints.push(groundPoint);
-    
-        // Remove the oldest point if we exceed the maximum number of points
+
         if (this.groundTracePoints.length > this.maxTracePoints) {
             this.groundTracePoints.shift();
         }
-    
-        // Update the ground trace line geometry
+
+        this.updateGroundTraceLine();
+    }
+
+    updateGroundTraceLine() {
+        if (!this.groundTraceLine) {
+            const lineGeometry = new THREE.BufferGeometry();
+            const lineMaterial = new THREE.LineBasicMaterial({ color: this.color });
+            this.groundTraceLine = new THREE.Line(lineGeometry, lineMaterial);
+            this.earth.rotationGroup.add(this.groundTraceLine);
+        }
+
         const positions = new Float32Array(this.groundTracePoints.length * 3);
-        this.groundTracePoints.forEach((pos, i) => {
-            positions.set([pos.x, pos.y, pos.z], i * 3);
+        this.groundTracePoints.forEach((point, index) => {
+            positions[index * 3] = point.x;
+            positions[index * 3 + 1] = point.y;
+            positions[index * 3 + 2] = point.z;
         });
-    
-        this.groundTrace.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        this.groundTrace.geometry.attributes.position.needsUpdate = true;
-        this.groundTrace.geometry.setDrawRange(0, this.groundTracePoints.length);
+
+        this.groundTraceLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        this.groundTraceLine.geometry.attributes.position.needsUpdate = true;
     }
 
     updateOrbitalElements() {
@@ -401,19 +331,13 @@ export class Satellite {
     }
 
     updateOrbitLine(orbitPoints) {
-        const positions = [];
-        for (const point of orbitPoints) {
-            positions.push(point.x, point.y, point.z);
-        }
+        const positions = orbitPoints.flatMap(point => [point.x, point.y, point.z]);
         this.orbitLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         this.orbitLine.geometry.attributes.position.needsUpdate = true;
     }
 
     updateTargetOrbitLine(orbitPoints) {
-        const positions = [];
-        for (const point of orbitPoints) {
-            positions.push(point.x, point.y, point.z);
-        }
+        const positions = orbitPoints.flatMap(point => [point.x, point.y, point.z]);
         this.targetOrbitLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         this.targetOrbitLine.geometry.attributes.position.needsUpdate = true;
     }
@@ -474,7 +398,7 @@ export class Satellite {
     }
 
     setGroundTraceVisible(visible) {
-        this.groundTrace.visible = visible;
+        this.groundTraceLine.visible = visible;
     }
 
     // Utility methods
@@ -518,5 +442,99 @@ export class Satellite {
             maneuverNode: new THREE.PointsMaterial({ color: 0x00ff00, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
             targetOrbitLine: new THREE.LineBasicMaterial({ color: 0xff00ff, opacity: 0.5, transparent: true })
         };
+    }
+
+    // Serialization methods
+    serialize() {
+        return {
+            id: this.id,
+            mass: this.body.mass,
+            position: { x: this.body.position.x, y: this.body.position.y, z: this.body.position.z },
+            velocity: { x: this.body.velocity.x, y: this.body.velocity.y, z: this.body.velocity.z },
+            size: Constants.satelliteRadius,
+        };
+    }
+
+    // Helper methods for initialization
+    initializeTraceLine() {
+        const traceLineGeometry = new THREE.BufferGeometry();
+        traceLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxTracePoints * 3), 3));
+        this.traceLine = new THREE.Line(traceLineGeometry, this.materials.traceLine);
+        this.traceLine.frustumCulled = false;
+        this.scene.add(this.traceLine);
+    }
+
+    initializeOrbitLine() {
+        const orbitLineGeometry = new THREE.BufferGeometry();
+        this.orbitLine = new THREE.Line(orbitLineGeometry, this.materials.orbitLine);
+        this.orbitLine.frustumCulled = false;
+        this.scene.add(this.orbitLine);
+    }
+
+    initializeTargetOrbitLine() {
+        const targetOrbitLineGeometry = new THREE.BufferGeometry();
+        this.targetOrbitLine = new THREE.Line(targetOrbitLineGeometry, this.materials.targetOrbitLine);
+        this.targetOrbitLine.frustumCulled = false;
+        this.scene.add(this.targetOrbitLine);
+    }
+
+    initializeApsides() {
+        const sphereGeometry = new THREE.BufferGeometry();
+        sphereGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+
+        this.periapsisMesh = new THREE.Points(sphereGeometry, this.materials.periapsis);
+        this.apoapsisMesh = new THREE.Points(sphereGeometry, this.materials.apoapsis);
+
+        this.scene.add(this.periapsisMesh);
+        this.scene.add(this.apoapsisMesh);
+    }
+
+    initializeGroundTrace() {
+        const groundTraceGeometry = new THREE.BufferGeometry();
+        const lineMaterial = new THREE.LineBasicMaterial({ color: this.color });
+        this.groundTraceLine = new THREE.Line(groundTraceGeometry, lineMaterial);
+        this.groundTraceLine.frustumCulled = false;
+        this.earth.rotationGroup.add(this.groundTraceLine);
+    }
+
+    // Helper methods for updates
+    sendWorkerStepMessage(utcCurrentTime, realDeltaTime, warpedDeltaTime) {
+        this.worker.postMessage({
+            type: 'step',
+            data: {
+                currentTime: utcCurrentTime,
+                realDeltaTime,
+                warpedDeltaTime,
+                earthPosition: this.earth.earthBody.position,
+                moonPosition: this.moon.moonBody.position,
+                earthRadius: Constants.earthRadius,
+                id: this.id
+            }
+        });
+    }
+
+    // Cleanup method
+    deleteSatellite() {
+        this.scene.remove(this.mesh);
+        this.scene.remove(this.traceLine);
+        this.scene.remove(this.orbitLine);
+        this.scene.remove(this.periapsisMesh);
+        this.scene.remove(this.apoapsisMesh);
+        this.earth.rotationGroup.remove(this.groundTraceLine);
+    }
+
+    // Coordinate transformation methods
+    eciToEcef(positionECI, rotationAngle) {
+        const x = positionECI.x * Math.cos(rotationAngle) + positionECI.y * Math.sin(rotationAngle);
+        const y = -positionECI.x * Math.sin(rotationAngle) + positionECI.y * Math.cos(rotationAngle);
+        const z = positionECI.z;
+        return new THREE.Vector3(x, y, z);
+    }
+
+    ecefToEci(positionECEF, rotationAngle) {
+        const x = positionECEF.x * Math.cos(rotationAngle) - positionECEF.y * Math.sin(rotationAngle);
+        const y = positionECEF.x * Math.sin(rotationAngle) + positionECEF.y * Math.cos(rotationAngle);
+        const z = positionECEF.z;
+        return new THREE.Vector3(x, y, z);
     }
 }
