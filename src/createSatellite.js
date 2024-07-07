@@ -28,8 +28,12 @@ export function createSatellite(scene, world, earth, moon, satellites, vectors, 
         updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors);
     }
 
+    // Dispatch satellite added event
+    document.dispatchEvent(new CustomEvent('satelliteAdded'));
+
     return newSatellite;
 }
+
 
 export function createSatelliteFromLatLon(scene, world, earth, moon, satellites, vectors, gui, guiManager, latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
@@ -195,6 +199,10 @@ function removeSatellite(satellite, satellites, vectors, gui, guiManager) {
             data: { id: satellite.id }
         });
 
+        // Dispatch satellite removed event
+        document.dispatchEvent(new CustomEvent('satelliteRemoved'));
+
         guiManager.updateBodySelector(); 
     }
 }
+

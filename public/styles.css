@@ -185,7 +185,10 @@ canvas {
 #display-options-window.visible {
     display: block;
 }
-
+#logo {
+    padding-right: 10px;
+    padding-left: 10px;
+}
 .option-toggle {
     display: flex;
     align-items: center;

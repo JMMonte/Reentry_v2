@@ -40,7 +40,9 @@ class CameraControls {
                 this.targetPosition.copy(targetPosition);
 
                 if (this.needsSmoothTransition) {
-                    // this.controls.target.lerp(this.targetPosition, 0.05);
+                    const smoothFactor = 0.1; // Adjust this value for smoother transitions
+                    this.controls.target.lerp(this.targetPosition, smoothFactor);
+
                     if (this.controls.target.distanceTo(this.targetPosition) < 0.01) {
                         this.controls.target.copy(this.targetPosition);
                         this.needsSmoothTransition = false;

@@ -5,6 +5,7 @@ import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
 import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
 import { TextureManager } from './managers/TextureManager.js';
+import { CameraControls } from './managers/CameraControls.js'; // Import CameraControls
 import {
     createSatelliteFromLatLon,
     createSatelliteFromOrbitalElements,
@@ -34,6 +35,7 @@ class App {
         this.composers = {};
         this.stats = new Stats();
         this.physicsWorker = new Worker(PhysicsWorkerURL);
+        this.cameraControls = new CameraControls(this.camera, this.controls); // Instantiate CameraControls
     }
 
     async init() {
@@ -52,6 +54,7 @@ class App {
             satellites: this.satellites,
             vectors: this.vectors
         }); // Initialize display controls
+        this.initBodySelector(); // Initialize the body selector
         this.applyStatsStyle();
         this.animate();
 
@@ -66,6 +69,58 @@ class App {
             this.satellites, this.vectors, this.settings, this.timeUtils,
             this.cannonDebugger, this.physicsWorker, this.camera, this.controls
         );
+    }
+
+    initBodySelector() {
+        const bodySelector = document.getElementById('body-selector');
+    
+        const updateSelectorOptions = () => {
+            while (bodySelector.firstChild) {
+                bodySelector.removeChild(bodySelector.firstChild);
+            }
+    
+            const defaultOptions = [
+                { value: 'none', text: 'None' },
+                { value: 'earth', text: 'Earth' },
+                { value: 'moon', text: 'Moon' }
+            ];
+    
+            defaultOptions.forEach(option => {
+                const opt = document.createElement('option');
+                opt.value = option.value;
+                opt.text = option.text;
+                bodySelector.appendChild(opt);
+            });
+    
+            this.satellites.forEach((satellite, index) => {
+                const opt = document.createElement('option');
+                opt.value = `satellite-${index}`;
+                opt.text = `Satellite ${index + 1}`;
+                bodySelector.appendChild(opt);
+            });
+        };
+    
+        updateSelectorOptions();
+    
+        bodySelector.addEventListener('change', () => {
+            const value = bodySelector.value;
+            if (value === 'none') {
+                this.cameraControls.clearCameraTarget();
+            } else if (value === 'earth') {
+                this.cameraControls.updateCameraTarget(this.earth);
+            } else if (value === 'moon') {
+                this.cameraControls.updateCameraTarget(this.moon);
+            } else if (value.startsWith('satellite-')) {
+                const index = parseInt(value.split('-')[1]);
+                if (this.satellites[index]) {
+                    this.cameraControls.updateCameraTarget(this.satellites[index]);
+                }
+            }
+        });
+    
+        // Update the selector options whenever a satellite is added or removed
+        document.addEventListener('satelliteAdded', updateSelectorOptions);
+        document.addEventListener('satelliteRemoved', updateSelectorOptions);
     }
 
     animate = (timestamp) => {
@@ -141,9 +196,7 @@ class App {
             this.cannonDebugger.update();
         }
 
-        if (this.guiManager) {
-            this.guiManager.updateCamera();
-        }
+        this.cameraControls.updateCameraPosition(); // Ensure the camera controls are updated
     }
 
     render() {
@@ -169,6 +222,9 @@ class App {
             this.vectors, this.guiManager.gui, this.guiManager,
             latitude, longitude, altitude, velocity, azimuth, angleOfAttack
         );
+
+        // Dispatch satellite added event
+        document.dispatchEvent(new CustomEvent('satelliteAdded'));
     }
 
     handleCreateSatelliteFromOrbitalElements = (data) => {
@@ -179,6 +235,9 @@ class App {
             this.vectors, this.guiManager.gui, this.guiManager,
             semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly
         );
+
+        // Dispatch satellite added event
+        document.dispatchEvent(new CustomEvent('satelliteAdded'));
     }
 
     handleCreateSatelliteFromLatLonCircular = (data) => {
@@ -189,6 +248,9 @@ class App {
             this.vectors, this.guiManager.gui, this.guiManager,
             latitude, longitude, altitude, azimuth
         );
+
+        // Dispatch satellite added event
+        document.dispatchEvent(new CustomEvent('satelliteAdded'));
     }
 
     applyStatsStyle() {
