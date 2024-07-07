@@ -36,15 +36,12 @@ class GUIManager {
         this.satelliteFolders = {};
         this.maneuverNodes = [];
         this.addGridHelper();
-        this.satelliteControls = new SatelliteControls(this.gui, this.settings, this, this.satellites, this.scene, this.world, this.earth, this.moon, this.vectors);
+        // this.satelliteControls = new SatelliteControls(this.gui, this.settings, this, this.satellites, this.scene, this.world, this.earth, this.moon, this.vectors);
     }
 
     initGUI() {
         if (this.gui) {
-            // new TimeControls(this.gui, this.settings, this.timeUtils, this.world);
             this.maneuverControls = new ManeuverControls(this.gui, this.settings, this, this.satellites, this);
-            new DebugOptions(this.gui, this.settings, this.worldDebugger);
-            this.bodySelector = new BodySelector(this.gui, this, this.satellites, this.earth, this.moon);
         }
     }
 

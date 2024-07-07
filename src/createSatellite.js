@@ -94,13 +94,13 @@ export function createSatelliteFromOrbitalElements(scene, world, earth, moon, sa
 }
 
 function setupDummyControllers(newSatellite) {
-    newSatellite.altitudeController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.velocityController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.earthGravityForceController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.moonGravityForceController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.dragController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.periapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => {} };
-    newSatellite.apoapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => {} };
+    newSatellite.altitudeController = { setValue: () => newSatellite, updateDisplay: () => { } };
+    newSatellite.velocityController = { setValue: () => newSatellite, updateDisplay: () => { } };
+    newSatellite.earthGravityForceController = { setValue: () => newSatellite, updateDisplay: () => { } };
+    newSatellite.moonGravityForceController = { setValue: () => newSatellite, updateDisplay: () => { } };
+    newSatellite.dragController = { setValue: () => newSatellite, updateDisplay: () => { } };
+    newSatellite.periapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => { } };
+    newSatellite.apoapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => { } };
 }
 
 function updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors) {
@@ -146,37 +146,37 @@ function updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors) 
     guiManager.satelliteFolders[newSatellite.id] = satelliteFolder;
     satelliteFolder.open();
 
-    newSatellite.updateAltitude = function(value) {
+    newSatellite.updateAltitude = function (value) {
         altitudeObj.altitude = parseFloat(value).toFixed(4);
         altitudeController.updateDisplay();
     };
 
-    newSatellite.updateVelocity = function(value) {
+    newSatellite.updateVelocity = function (value) {
         velocityObj.velocity = parseFloat(value).toFixed(4);
         velocityController.updateDisplay();
     };
 
-    newSatellite.updateEarthGravityForce = function(value) {
+    newSatellite.updateEarthGravityForce = function (value) {
         earthGravityForceObj.earthGravityForce = parseFloat(value).toFixed(4);
         earthGravityForceController.updateDisplay();
     };
 
-    newSatellite.updateMoonGravityForce = function(value) {
+    newSatellite.updateMoonGravityForce = function (value) {
         moonGravityForceObj.moonGravityForce = parseFloat(value).toFixed(4);
         moonGravityForceController.updateDisplay();
     };
 
-    newSatellite.updateDrag = function(value) {
+    newSatellite.updateDrag = function (value) {
         dragObj.drag = parseFloat(value).toFixed(4);
         dragController.updateDisplay();
     };
 
-    newSatellite.updatePeriapsisAltitude = function(value) {
+    newSatellite.updatePeriapsisAltitude = function (value) {
         periapsisAltitudeObj.periapsisAltitude = parseFloat(value).toFixed(4);
         periapsisAltitudeController.updateDisplay();
     };
 
-    newSatellite.updateApoapsisAltitude = function(value) {
+    newSatellite.updateApoapsisAltitude = function (value) {
         apoapsisAltitudeObj.apoapsisAltitude = parseFloat(value).toFixed(4);
         apoapsisAltitudeController.updateDisplay();
     };
@@ -187,7 +187,7 @@ function removeSatellite(satellite, satellites, vectors, gui, guiManager) {
     if (index !== -1) {
         satellites.splice(index, 1);
         satellite.deleteSatellite();
-        vectors.removeSatellite(satellite); 
+        vectors.removeSatellite(satellite);
         const folder = guiManager.satelliteFolders[satellite.id];
         if (folder) {
             gui.removeFolder(folder);
@@ -202,7 +202,7 @@ function removeSatellite(satellite, satellites, vectors, gui, guiManager) {
         // Dispatch satellite removed event
         document.dispatchEvent(new CustomEvent('satelliteRemoved'));
 
-        guiManager.updateBodySelector(); 
+        guiManager.updateBodySelector();
     }
 }
 

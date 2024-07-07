@@ -1,3 +1,4 @@
+// app.js
 import * as THREE from 'three';
 import Stats from 'stats.js';
 import { Constants } from './utils/Constants.js';
@@ -5,7 +6,6 @@ import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
 import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
 import { TextureManager } from './managers/TextureManager.js';
-import { CameraControls } from './managers/CameraControls.js'; // Import CameraControls
 import {
     createSatelliteFromLatLon,
     createSatelliteFromOrbitalElements,
@@ -35,7 +35,6 @@ class App {
         this.composers = {};
         this.stats = new Stats();
         this.physicsWorker = new Worker(PhysicsWorkerURL);
-        this.cameraControls = new CameraControls(this.camera, this.controls); // Instantiate CameraControls
     }
 
     async init() {
@@ -54,13 +53,162 @@ class App {
             satellites: this.satellites,
             vectors: this.vectors
         }); // Initialize display controls
-        this.initBodySelector(); // Initialize the body selector
         this.applyStatsStyle();
         this.animate();
 
         document.addEventListener('updateTimeWarp', (event) => {
             this.timeUtils.setTimeWarp(event.detail.value);
         });
+
+        this.setupSatelliteCreation();
+    }
+
+    setupSatelliteCreation() {
+        const toggleSatelliteCreationBtn = document.getElementById('toggle-satellite-creation');
+        const satelliteCreationPanel = document.getElementById('satellite-creation-panel');
+        const createSatelliteLatLonBtn = document.getElementById('create-satellite-latlon');
+        const createSatelliteLatLonCircBtn = document.getElementById('create-satellite-latlon-circular');
+        const createSatelliteOrbitalBtn = document.getElementById('create-satellite-orbital');
+
+        toggleSatelliteCreationBtn.addEventListener('click', () => {
+            satelliteCreationPanel.classList.toggle('hidden');
+        });
+
+        createSatelliteLatLonBtn.addEventListener('click', () => {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+            const alt = parseFloat(document.getElementById('alt').value);
+            const velocity = parseFloat(document.getElementById('velocity').value);
+            const azimuth = parseFloat(document.getElementById('azimuth').value);
+            const angleOfAttack = parseFloat(document.getElementById('angleOfAttack').value);
+
+            const isValid = this.validateLatLonInputs(lat, lon, alt, velocity, azimuth, angleOfAttack);
+            if (isValid) {
+                createSatelliteFromLatLon(this.scene, this.world, this.earth, this.moon, this.satellites, this.vectors, this.guiManager.gui, this.guiManager, lat, lon, alt, velocity, azimuth, angleOfAttack);
+            }
+        });
+
+        createSatelliteLatLonCircBtn.addEventListener('click', () => {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+            const alt = parseFloat(document.getElementById('alt').value);
+            const azimuth = parseFloat(document.getElementById('azimuth').value);
+
+            const isValid = this.validateLatLonInputs(lat, lon, alt, 0, azimuth, 0);
+            if (isValid) {
+                createSatelliteFromLatLonCircular(this.scene, this.world, this.earth, this.moon, this.satellites, this.vectors, this.guiManager.gui, this.guiManager, lat, lon, alt, azimuth);
+            }
+        });
+
+        createSatelliteOrbitalBtn.addEventListener('click', () => {
+            const sma = parseFloat(document.getElementById('sma').value);
+            const ecc = parseFloat(document.getElementById('ecc').value);
+            const inc = parseFloat(document.getElementById('inc').value);
+            const raan = parseFloat(document.getElementById('raan').value);
+            const aop = parseFloat(document.getElementById('aop').value);
+            const ta = parseFloat(document.getElementById('ta').value);
+
+            const isValid = this.validateOrbitalInputs(sma, ecc, inc, raan, aop, ta);
+            if (isValid) {
+                createSatelliteFromOrbitalElements(this.scene, this.world, this.earth, this.moon, this.satellites, this.vectors, this.guiManager.gui, this.guiManager, sma, ecc, inc, raan, aop, ta);
+            }
+        });
+    }
+
+    validateLatLonInputs(lat, lon, alt, velocity, azimuth, angleOfAttack) {
+        let isValid = true;
+
+        if (lat < -90 || lat > 90) {
+            document.getElementById('lat-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('lat-error').classList.add('hidden');
+        }
+
+        if (lon < -180 || lon > 180) {
+            document.getElementById('lon-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('lon-error').classList.add('hidden');
+        }
+
+        if (alt < 200 || alt > 36000) {
+            document.getElementById('alt-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('alt-error').classList.add('hidden');
+        }
+
+        if (velocity < 0) {
+            document.getElementById('velocity-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('velocity-error').classList.add('hidden');
+        }
+
+        if (azimuth < 0 || azimuth > 360) {
+            document.getElementById('azimuth-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('azimuth-error').classList.add('hidden');
+        }
+
+        if (angleOfAttack < 0 || angleOfAttack > 90) {
+            document.getElementById('angleOfAttack-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('angleOfAttack-error').classList.add('hidden');
+        }
+
+        return isValid;
+    }
+
+    validateOrbitalInputs(sma, ecc, inc, raan, aop, ta) {
+        let isValid = true;
+
+        if (sma < 7000 || sma > 42164) {
+            document.getElementById('sma-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('sma-error').classList.add('hidden');
+        }
+
+        if (ecc < 0 || ecc > 1) {
+            document.getElementById('ecc-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('ecc-error').classList.add('hidden');
+        }
+
+        if (inc < 0 || inc > 180) {
+            document.getElementById('inc-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('inc-error').classList.add('hidden');
+        }
+
+        if (raan < 0 || raan > 360) {
+            document.getElementById('raan-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('raan-error').classList.add('hidden');
+        }
+
+        if (aop < 0 || aop > 360) {
+            document.getElementById('aop-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('aop-error').classList.add('hidden');
+        }
+
+        if (ta < 0 || ta > 360) {
+            document.getElementById('ta-error').classList.remove('hidden');
+            isValid = false;
+        } else {
+            document.getElementById('ta-error').classList.add('hidden');
+        }
+
+        return isValid;
     }
 
     setupGUI() {
@@ -71,58 +219,6 @@ class App {
         );
     }
 
-    initBodySelector() {
-        const bodySelector = document.getElementById('body-selector');
-    
-        const updateSelectorOptions = () => {
-            while (bodySelector.firstChild) {
-                bodySelector.removeChild(bodySelector.firstChild);
-            }
-    
-            const defaultOptions = [
-                { value: 'none', text: 'None' },
-                { value: 'earth', text: 'Earth' },
-                { value: 'moon', text: 'Moon' }
-            ];
-    
-            defaultOptions.forEach(option => {
-                const opt = document.createElement('option');
-                opt.value = option.value;
-                opt.text = option.text;
-                bodySelector.appendChild(opt);
-            });
-    
-            this.satellites.forEach((satellite, index) => {
-                const opt = document.createElement('option');
-                opt.value = `satellite-${index}`;
-                opt.text = `Satellite ${index + 1}`;
-                bodySelector.appendChild(opt);
-            });
-        };
-    
-        updateSelectorOptions();
-    
-        bodySelector.addEventListener('change', () => {
-            const value = bodySelector.value;
-            if (value === 'none') {
-                this.cameraControls.clearCameraTarget();
-            } else if (value === 'earth') {
-                this.cameraControls.updateCameraTarget(this.earth);
-            } else if (value === 'moon') {
-                this.cameraControls.updateCameraTarget(this.moon);
-            } else if (value.startsWith('satellite-')) {
-                const index = parseInt(value.split('-')[1]);
-                if (this.satellites[index]) {
-                    this.cameraControls.updateCameraTarget(this.satellites[index]);
-                }
-            }
-        });
-    
-        // Update the selector options whenever a satellite is added or removed
-        document.addEventListener('satelliteAdded', updateSelectorOptions);
-        document.addEventListener('satelliteRemoved', updateSelectorOptions);
-    }
-
     animate = (timestamp) => {
         this.stats.begin();
 
@@ -131,7 +227,6 @@ class App {
         const warpedDeltaTime = realDeltaTime;
         const currentTime = this.timeUtils.getSimulatedTime();
 
-        // Dispatch time update event
         document.dispatchEvent(new CustomEvent('timeUpdate', { detail: { simulatedTime: currentTime } }));
 
         this.updatePhysics(warpedDeltaTime);
@@ -196,7 +291,9 @@ class App {
             this.cannonDebugger.update();
         }
 
-        this.cameraControls.updateCameraPosition(); // Ensure the camera controls are updated
+        if (this.guiManager) {
+            this.guiManager.updateCamera();
+        }
     }
 
     render() {
@@ -222,9 +319,6 @@ class App {
             this.vectors, this.guiManager.gui, this.guiManager,
             latitude, longitude, altitude, velocity, azimuth, angleOfAttack
         );
-
-        // Dispatch satellite added event
-        document.dispatchEvent(new CustomEvent('satelliteAdded'));
     }
 
     handleCreateSatelliteFromOrbitalElements = (data) => {
@@ -235,9 +329,6 @@ class App {
             this.vectors, this.guiManager.gui, this.guiManager,
             semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly
         );
-
-        // Dispatch satellite added event
-        document.dispatchEvent(new CustomEvent('satelliteAdded'));
     }
 
     handleCreateSatelliteFromLatLonCircular = (data) => {
@@ -248,9 +339,6 @@ class App {
             this.vectors, this.guiManager.gui, this.guiManager,
             latitude, longitude, altitude, azimuth
         );
-
-        // Dispatch satellite added event
-        document.dispatchEvent(new CustomEvent('satelliteAdded'));
     }
 
     applyStatsStyle() {

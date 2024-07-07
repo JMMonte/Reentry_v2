@@ -196,7 +196,7 @@ export class PhysicsUtils {
         return { positionECEF: position, velocityECEF: velocityECEF };
     }
 
-    static calculatePositionAndVelocityFromOrbitalElements(semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly) {
+    static calculatePositionAndVelocityFromOrbitalElements(semiMajorAxis, eccentricity, inclination, argumentOfPeriapsis, raan, trueAnomaly) {
         // Constants
         const mu = Constants.earthGravitationalParameter;
     

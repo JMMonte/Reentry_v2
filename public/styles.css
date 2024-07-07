@@ -183,7 +183,7 @@ canvas {
 }
 #display-options-window {
     position: absolute;
-    top: 60px;
+    top: 50px;
     left: 10px;
     width: 250px;
     background: rgba(31, 41, 55, 0.9);
@@ -194,6 +194,18 @@ canvas {
 }
 #display-options-window.visible {
     display: block;
+}
+#satellite-creation-panel {
+    position: absolute;
+    top: 50px;
+    overflow: scroll;
+    left: 10px;
+    width: 250px;
+    height: calc(100% - 50px);
+    background: rgba(31, 41, 55, 0.9);
+    border-radius: 5px;
+    padding: 10px;
+    z-index: 99;
 }
 #logo {
     padding-right: 10px;
