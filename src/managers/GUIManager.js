@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { TimeControls } from './gui/TimeControls.js';
-import { DisplayOptions } from './gui/DisplayOptions.js';
 import { SatelliteControls } from './gui/SatelliteControls.js';
 import { ManeuverControls } from './gui/ManeuverControls.js';
 import { DebugOptions } from './gui/DebugOptions.js';
@@ -43,12 +41,10 @@ class GUIManager {
 
     initGUI() {
         if (this.gui) {
-            new TimeControls(this.gui, this.settings, this.timeUtils, this.world);
-            this.displayOptions = new DisplayOptions(this.gui, this.settings, this); // Store instance for later use
+            // new TimeControls(this.gui, this.settings, this.timeUtils, this.world);
             this.maneuverControls = new ManeuverControls(this.gui, this.settings, this, this.satellites, this);
             new DebugOptions(this.gui, this.settings, this.worldDebugger);
             this.bodySelector = new BodySelector(this.gui, this, this.satellites, this.earth, this.moon);
-            this.displayOptions.applyInitialSettings(); // Apply initial settings after GUI initialization
         }
     }
 

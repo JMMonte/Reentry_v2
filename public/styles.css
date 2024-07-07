@@ -185,6 +185,7 @@ canvas {
 #display-options-window.visible {
     display: block;
 }
+
 .option-toggle {
     display: flex;
     align-items: center;

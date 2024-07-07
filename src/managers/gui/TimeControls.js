@@ -1,3 +1,4 @@
+//TimeControls.js
 import { Constants } from '../../utils/Constants.js';
 
 class TimeControls {
@@ -7,6 +8,9 @@ class TimeControls {
         this.timeUtils = timeUtils;
         this.world = world;
         this.currentTimeWarpIndex = Constants.timeWarpOptions.indexOf(1); // Start at 1x
+
+        this.updateSimulatedTime();
+        setInterval(() => this.updateSimulatedTime(), 1);
 
         this.addTimeControls();
         this.addSimulationDisplay();
@@ -78,6 +82,16 @@ class TimeControls {
         const currentValue = Constants.timeWarpOptions[this.currentTimeWarpIndex];
         document.getElementById('current-time-warp').textContent = currentValue + 'x';
         this.settings.timeWarp = currentValue;
+    }
+    
+    updateSimulatedTime() {
+        const simulatedTime = this.timeUtils.getSimulatedTime();
+        this.settings.simulatedTime = simulatedTime.toISOString();
+        
+        // Emit a custom event with the updated time
+        document.dispatchEvent(new CustomEvent('timeUpdate', {
+            detail: { simulatedTime: simulatedTime.toISOString() }
+        }));
     }
 }
 
