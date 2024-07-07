@@ -128,6 +128,7 @@ class App {
         this.setupPhysicsWorker();
         this.setupGUI();
         this.setupSocketListeners();
+        this.applyStatsStyle()
         this.animate();
     }
 
@@ -346,6 +347,10 @@ class App {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
         this.composers.bloom.setSize(window.innerWidth, window.innerHeight);
         this.composers.final.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    applyStatsStyle() {
+        this.stats.dom.style.cssText = 'position:absolute;bottom:0px;right:0px;';
     }
 }
 

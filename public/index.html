@@ -3,130 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Earth Visualization</title>
+    <title>Reenter v2 - Space defense</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <!-- Include marked.js -->
-    <style>
-        :root {
-            --toggle-button-height: 40px; /* Define the height of the toggle button here */
-        }
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background-color: #000; /* Optional: sets a universal background color */
-        }
-        canvas { 
-            width: 100%; /* Ensures it takes up all available width */
-            height: 100vh; /* Use the full height of the viewport */
-            display: block; /* Removes bottom margin/gap */
-        }
-        #info-card {
-            position: absolute;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-        }
-        #toggle-chat-button {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: #1f2937;
-            color: white;
-            padding: 10px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            z-index: 100;
-            height: var(--toggle-button-height); /* Use the variable here */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        #chat-sidebar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            height: 100%;
-            width: 250px;
-            background: rgba(20, 20, 20, 0.8); /* Slightly transparent background */
-            color: white;
-            padding: 10px;
-            overflow: hidden; /* Ensure content does not overflow */
-            z-index: 10;
-            transition: transform 0.3s ease;
-            transform: translateX(-100%);
-        }
-        #chat-sidebar.visible {
-            transform: translateX(0);
-        }
-        .user-message, .assistant-message {
-            padding: 5px 10px; /* Reduced padding */
-            margin: 5px 0;
-            border-radius: 5px;
-            /* max-width: calc(100% - 20px); /* Ensure messages don't overflow */
-            word-wrap: break-word; /* Ensure long words break */
-            display: block; /* Ensure each message bubble is on its own line */
-            font-size: 0.7rem; /* Adjust font size */
-        }
-        .user-message {
-            background-color: rgba(90, 90, 90, 0.8);
-            color: white;
-        }
-        .assistant-message {
-            background-color: rgba(50, 50, 50, 0.8);
-            color: white;
-        }
-        #chat-box {
-            margin-top: calc(var(--toggle-button-height) + 10px); /* Use the variable and add 10px for spacing */
-            height: calc(100% - var(--toggle-button-height) - 50px); /* Adjusted to account for the height of the input field and additional spacing */
-            overflow-y: auto;
-        }
-        #chat-form {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            padding: 10px;
-            background-color: rgba(20, 20, 20, 0.8);
-            display: flex;
-            align-items: center;
-        }
-        #chat-input {
-            background-color: rgba(50, 50, 50, 0.8);
-            border: none;
-            padding: 10px;
-            color: white;
-            border-radius: 5px;
-            flex: 1; /* Make the input field take up the remaining space */
-            margin-right: 10px; /* Add some space between the input field and the button */
-        }
-        #chat-submit {
-            padding: 10px;
-            background-color: #1f2937;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.7/dist/katex.min.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <button id="toggle-chat-button" class="text-sm"><i class='bx bx-sidebar text-lg'></i> Astro AI</button> <!-- Use Tailwind class for font size -->
+    <div id="top-left-controls">
+        <button id="toggle-chat-button" class="text-sm"><i class='bx bx-sidebar text-lg'></i></button>
+        <button id="toggle-display-options" class="text-sm"><i class='bx bx-show text-lg'></i></button>
+        <button id="decrease-time-warp"><i class='bx bx-chevron-left'></i></button>
+        <button id="increase-time-warp"><i class='bx bx-chevron-right'></i></button>
+        <button id="reset-time-warp"><i class='bx bx-reset'></i></button>
+        <span id="current-time-warp">1x</span>
+        <span id="current-time"></span>
+    </div>
+    <div id="display-options-window">
+        <h3 class="text-white mb-2">Display Options</h3>
+        <!-- Options will be dynamically added here -->
+    </div>
     <div class="flex h-screen">
         <!-- Sidebar -->
-        <div id="chat-sidebar" class="text-sm"> <!-- Apply font size to sidebar content -->
+        <div id="chat-sidebar" class="text-sm">
             <div id="chat-box" class="flex-1 overflow-y-auto mb-4 p-2 rounded">
                 <!-- Chat messages will go here -->
             </div>
             <form id="chat-form">
-                <input id="chat-input" type="text" placeholder="Type a message..." class="text-white text-sm" /> <!-- Apply font size to input -->
-                <button type="submit" id="chat-submit" class="text-lg"><i class='bx bx-send'></i></button> <!-- Apply font size to button -->
+                <input id="chat-input" type="text" placeholder="Type a message..." class="text-white text-sm" />
+                <button type="submit" id="chat-submit" class="text-lg"><i class='bx bx-send'></i></button>
             </form>
+            
+            <div id="resize-handle"></div>
         </div>
 
         <!-- Main content (Three.js canvas) -->
@@ -137,25 +45,6 @@
     </div>
     <script type="module" src="../src/app.js"></script>
     <script type="module" src="../src/chatbot.js"></script>
-    <script>
-        document.getElementById('toggle-chat-button').addEventListener('click', () => {
-            const chatSidebar = document.getElementById('chat-sidebar');
-            chatSidebar.classList.toggle('visible');
-        });
-
-        document.getElementById('chat-form').addEventListener('submit', (event) => {
-            event.preventDefault();
-            const chatInput = document.getElementById('chat-input');
-            const chatBox = document.getElementById('chat-box');
-            const markdownText = chatInput.value;
-
-            if (markdownText.trim() !== '') {
-                const userMessageHtml = `<div class="user-message">${marked(markdownText)}</div>`;
-                chatBox.insertAdjacentHTML('beforeend', userMessageHtml);
-                chatInput.value = '';
-                chatBox.scrollTop = chatBox.scrollHeight; // Scroll to the bottom
-            }
-        });
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.7/dist/katex.min.js"></script>
 </body>
 </html>

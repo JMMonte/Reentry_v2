@@ -46,4 +46,7 @@ export class Constants {
     static inclination = 5.145 * (Math.PI / 180); // Inclination in radians
     static ascendingNode = -11.26064 * (Math.PI / 180); // Longitude of ascending node in radians
     static argumentOfPeriapsis = 318.15 * (Math.PI / 180); // Argument of periapsis in radians
+    // Time controls
+    static timeWarpOptions = [0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
+
 }

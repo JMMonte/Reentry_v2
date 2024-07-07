@@ -1,18 +1,23 @@
 precision highp float;
-uniform vec3 lightPosition;
-uniform float ambientIntensity; // New uniform for ambient light intensity
-uniform float lightIntensity;
-varying float fov;
-uniform float surfaceRadius;
-uniform float atmoRadius;
-varying vec4 vWorldPosition;
-varying vec3 viewRay; // View space ray direction
 
-// math const
+// Uniform variables for customization
+uniform vec3 lightPosition;     // Position of the light source
+uniform float ambientIntensity; // Intensity of ambient light
+uniform float lightIntensity;   // Intensity of the main light source
+uniform float surfaceRadius;    // Radius of the planet's surface
+uniform float atmoRadius;       // Radius of the atmosphere
+
+// Varying variables passed from vertex shader
+varying float fov;              // Field of view
+varying vec4 vWorldPosition;    // World space position
+varying vec3 viewRay;           // View space ray direction
+
+// Mathematical constants
 const float PI = 3.14159265359;
 const float MAX = 10000.0;
 
-// Ray intersects sphere
+// Ray-sphere intersection function
+// Returns the near and far intersection distances
 vec2 ray_vs_sphere(vec3 p, vec3 dir, float r) {
     float b = dot(p, dir);
     float c = dot(p, p) - r * r;
@@ -22,7 +27,8 @@ vec2 ray_vs_sphere(vec3 p, vec3 dir, float r) {
     return vec2(-b - d, -b + d);
 }
 
-// Mie phase function
+// Mie scattering phase function
+// g: anisotropy factor, c: cosine of scattering angle
 float phase_mie(float g, float c, float cc) {
     float gg = g * g;
     float a = (1.0 - gg) * (1.0 + cc);
@@ -32,37 +38,41 @@ float phase_mie(float g, float c, float cc) {
     return (3.0 / 8.0 / PI) * a / b;
 }
 
-// Rayleigh phase function
+// Rayleigh scattering phase function
+// cc: squared cosine of scattering angle
 float phase_ray(float cc) {
     return (3.0 / 16.0 / PI) * (1.0 + cc);
 }
 
+// Constants for scattering calculations
 const int NUM_OUT_SCATTER = 4;
 const int NUM_IN_SCATTER = 8;
 
+// Atmospheric density function
+// p: position, ph: phase (ray or mie)
 float density(vec3 p, float ph) {
-    float actualScaleHeight = 8500.0; // The scale height on Earth in meters
-    float scale = (atmoRadius - surfaceRadius) / actualScaleHeight; // Scaling factor based on the gap
+    float actualScaleHeight = 8500.0; // Earth's scale height in meters
+    float scale = (atmoRadius - surfaceRadius) / actualScaleHeight;
     float altitude = length(p) - surfaceRadius;
-    float rho_0 = 1.225; // Earth's air density at sea level is approximately 1.225 kg/m^3
-    rho_0 *= 0.08125; // Tuning value
-    float rho = rho_0 * exp(-max(altitude, 0.0) / (actualScaleHeight * scale));
-    return rho * ph;
+    float rho_0 = 1.225 * 0.08125; // Scaled sea level density
+    return rho_0 * exp(-max(altitude, 0.0) / (actualScaleHeight * scale)) * ph;
 }
 
+// Optical depth calculation
 float optic(vec3 p, vec3 q, float ph) {
-    vec3 s = (q - p) / float(NUM_OUT_SCATTER);
-    vec3 v = p + s * 0.5;
+    vec3 step = (q - p) / float(NUM_OUT_SCATTER);
+    vec3 v = p + step * 0.5;
     float sum = 0.0;
     for (int i = 0; i < NUM_OUT_SCATTER; i++) {
         sum += density(v, ph);
-        v += s;
+        v += step;
     }
-    sum *= length(s);
-    return sum;
+    return sum * length(step);
 }
 
+// In-scattering calculation
 vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
+    // Scattering coefficients
     const float ph_ray = 0.15;
     const float ph_mie = 0.05;
     const float ph_alpha = 0.25;
@@ -77,23 +87,24 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
     float n_ray0 = 0.0;
     float n_mie0 = 0.01;
 
+    // Ray marching
     float len = (e.y - e.x) / float(NUM_IN_SCATTER);
-    vec3 s = dir * len;
-    vec3 v = o + dir * (e.x + len * 0.5);
+    vec3 step = dir * len;
+    vec3 p = o + dir * (e.x + len * 0.5);
 
-    for (int i = 0; i < NUM_IN_SCATTER; i++, v += s) {
-        float d_ray = density(v, ph_ray) * len;
-        float d_mie = density(v, ph_mie) * len;
-        float d_alpha = density(v, ph_alpha) * len;
+    for (int i = 0; i < NUM_IN_SCATTER; i++, p += step) {
+        float d_ray = density(p, ph_ray) * len;
+        float d_mie = density(p, ph_mie) * len;
+        float d_alpha = density(p, ph_alpha) * len;
 
         n_ray0 += d_ray;
         n_mie0 += d_mie;
 
-        vec2 f = ray_vs_sphere(v, l, atmoRadius);
-        vec3 u = v + l * f.y;
+        vec2 f = ray_vs_sphere(p, l, atmoRadius);
+        vec3 q = p + l * f.y;
 
-        float n_ray1 = optic(v, u, ph_ray);
-        float n_mie1 = optic(v, u, ph_mie);
+        float n_ray1 = optic(p, q, ph_ray);
+        float n_mie1 = optic(p, q, ph_mie);
 
         vec3 att = exp(-(n_ray0 + n_ray1) * k_ray - (n_mie0 + n_mie1) * k_mie * k_mie_ex);
 
@@ -102,6 +113,7 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
         sum_alpha += d_alpha;
     }
 
+    // Calculate scattering
     float c = dot(dir, -l);
     float cc = c * c;
     vec3 scatter = sum_ray * k_ray * phase_ray(cc) + sum_mie * k_mie * phase_mie(-0.78, c, cc);
@@ -109,35 +121,34 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
     return vec4(scatter * l_intensity, alpha);
 }
 
-// ray direction
-vec3 ray_dir(float fov, vec2 size, vec2 pos) {
-    vec2 xy = pos - size * 0.5;
-    float cot_half_fov = tan(radians(90.0 - fov * 0.5));
-    float z = size.y * 0.5 * cot_half_fov;
-    return normalize(vec3(xy, -z));
-}
-
 void main() {
+    // Transform view ray to world space
     vec4 worldRay = inverse(viewMatrix) * vec4(viewRay, 0.0);
     vec3 dir = normalize(worldRay.xyz);
     vec3 eye = vWorldPosition.xyz;
     vec3 l = normalize(lightPosition - vWorldPosition.xyz);
 
+    // Calculate atmosphere intersection
     vec2 e = ray_vs_sphere(eye, dir, atmoRadius);
     if (e.x > e.y) {
         gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
         return;
     }
 
+    // Limit the ray to the first hit with the planet surface
     vec2 f = ray_vs_sphere(eye, dir, surfaceRadius);
     e.y = min(e.y, f.x);
 
+    // Calculate in-scattering
     vec4 I = in_scatter(eye, dir, e, l, lightIntensity);
+
+    // Apply gamma correction
     vec4 I_gamma = pow(I, vec4(1.0 / 2.2));
 
-    // Add ambient light to the final color
+    // Add ambient light
     vec3 ambientLight = vec3(ambientIntensity);
     I_gamma.rgb += ambientLight;
 
+    // Set final color
     gl_FragColor = I_gamma;
 }
