@@ -70,7 +70,7 @@ canvas {
     padding: 5px;
     z-index: 100;
 }
-#top-left-controls button {
+#top-left-controls button, #top-left-controls select {
     background: #374151;
     color: white;
     border: none;
@@ -81,6 +81,9 @@ canvas {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+#top-left-controls button:hover, #top-left-controls select:hover {
+    background: #475569; /* Slightly lighter shade for hover effect */
 }
 #current-time-warp, #current-time {
     color: white;
@@ -145,6 +148,10 @@ canvas {
     flex: 1;
     margin-right: 10px;
 }
+#chat-input:focus {
+    outline: none;
+    background-color: rgba(70, 70, 70, 0.8);
+}
 #chat-submit {
     padding: 10px;
     background-color: #1f2937;
@@ -155,6 +162,9 @@ canvas {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+#chat-submit:hover {
+    background-color: #374151;
 }
 #resize-handle {
     position: absolute;
