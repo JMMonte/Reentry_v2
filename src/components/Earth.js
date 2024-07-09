@@ -85,7 +85,7 @@ export class Earth {
                 lightPosition: { value: new THREE.Vector3(1.0, 0.0, 0.0) },
                 lightIntensity: { value: 4.0 },
                 surfaceRadius: { value: this.EARTH_RADIUS },
-                atmoRadius: { value: this.ATMOSPHERE_RADIUS },
+                atmoRadius: { value: this.EARTH_RADIUS + 3 },
                 ambientIntensity: { value: 0.0 }
             }
         });

@@ -1,8 +1,5 @@
 import * as THREE from 'three';
-import { SatelliteControls } from './gui/SatelliteControls.js';
 import { ManeuverControls } from './gui/ManeuverControls.js';
-import { DebugOptions } from './gui/DebugOptions.js';
-import { BodySelector } from './gui/BodySelector.js';
 import { CameraControls } from './CameraControls.js';
 
 let GUI;

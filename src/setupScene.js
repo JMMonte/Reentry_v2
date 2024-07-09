@@ -9,7 +9,6 @@ import { BackgroundStars } from './components/Background.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-//import { DisplayManager } from './managers/DisplayManager.js';
 
 import {
     earthTexture,

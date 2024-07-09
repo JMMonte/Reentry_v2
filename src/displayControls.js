@@ -64,7 +64,6 @@ const displayControls = {
         if (scene) {
             this.gridHelper = scene.getObjectByName('gridHelper');
             if (!this.gridHelper) {
-                console.warn('DisplayManager: gridHelper not found in scene. Creating a new one.');
                 this.gridHelper = new THREE.PolarGridHelper(40000, 100, 100, 64, 0x888888, 0x444444);
                 this.gridHelper.name = 'gridHelper';
                 this.gridHelper.visible = settings.showGrid;
@@ -181,7 +180,6 @@ const displayControls = {
 
 export function initDisplayControls(params) {
     ({ scene, earth, moon, satellites, vectors } = params);
-    console.log("Initializing display controls...");
 
     window.displayControls = displayControls; // Ensure displayControls is globally accessible
 
@@ -201,12 +199,8 @@ export function initDisplayControls(params) {
         return;
     }
 
-    console.log("Attaching event listener to toggle button...");
     toggleDisplayOptionsBtn.addEventListener('click', () => {
-        console.log('Toggle Display Options Button Clicked');
         displayOptionsWindow.classList.toggle('visible');
-        console.log('Class List After Toggling:', displayOptionsWindow.classList);
-        console.log('Display Property:', window.getComputedStyle(displayOptionsWindow).display);
     });
 
     displayOptions.forEach(option => {

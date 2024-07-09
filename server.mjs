@@ -224,6 +224,25 @@ class EventHandler extends EventEmitter {
     }
 }
 
+io.on('connection', (socket) => {
+    console.log('A client connected');
+    
+    socket.on('threejs-app-started', () => {
+        console.log('Three.js app started');
+        // Initialize or reset session
+        threadId = null; // Reset the threadId to start a new session
+    });
+
+    socket.on('threejs-app-stopped', () => {
+        console.log('Three.js app stopped');
+        // Clean up session if needed
+    });
+
+    socket.on('disconnect', () => {
+        console.log('A client disconnected');
+    });
+});
+
 server.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
