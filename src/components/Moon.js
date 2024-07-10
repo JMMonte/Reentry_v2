@@ -320,5 +320,30 @@ export class Moon {
                 console.error('Error loading contour lines:', error);
             });
     }
-}
 
+    getCurrentOrbitalParameters(currentTime) {
+        const jd = JulianDay(new Date(currentTime));
+        const { x, y, z } = this.getMoonPosition(jd);
+
+        const position = new THREE.Vector3(x, y, z);
+        const velocity = new THREE.Vector3(
+            this.moonBody.velocity.x,
+            this.moonBody.velocity.y,
+            this.moonBody.velocity.z
+        );
+
+        const mu = Constants.G * Constants.earthMass;
+        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
+
+        return {
+            position: { x, y, z },
+            velocity: velocity.toArray(),
+            semiMajorAxis: orbitalElements.a,
+            eccentricity: orbitalElements.e,
+            inclination: orbitalElements.i,
+            ascendingNode: orbitalElements.omega,
+            argumentOfPeriapsis: orbitalElements.w,
+            trueAnomaly: orbitalElements.trueAnomaly
+        };
+    }
+}

@@ -1,4 +1,3 @@
-// displayControls.js
 import * as THREE from 'three';
 
 let scene, earth, moon, satellites, vectors;
@@ -20,7 +19,8 @@ const displayOptions = [
     { key: 'showStates', name: 'States', icon: 'bx-map' },
     { key: 'showMoonOrbit', name: 'Moon Orbit', icon: 'bx-moon' },
     { key: 'showMoonTraces', name: 'Moon Trace Lines', icon: 'bx-line-chart' },
-    { key: 'showMoonSurfaceLines', name: 'Moon Surface Lines', icon: 'bx-landscape' }
+    { key: 'showMoonSurfaceLines', name: 'Moon Surface Lines', icon: 'bx-landscape' },
+    { key: 'showSatConnections', name: 'Sat Connections', icon: 'bx-link-alt' } // New option for satellite connections
 ];
 
 let settings = {
@@ -41,6 +41,7 @@ let settings = {
     showMoonOrbit: false,
     showMoonTraces: false,
     showMoonSurfaceLines: false,
+    showSatConnections: true // Default value for satellite connections
 };
 
 function updateSetting(key, value) {
@@ -73,7 +74,7 @@ const displayControls = {
             }
         }
     },
-    
+
     toggleGridVisibility(value) {
         const gridHelper = scene.getObjectByName('gridHelper');
         if (gridHelper) {
@@ -175,6 +176,13 @@ const displayControls = {
         if (moon) {
             moon.setSurfaceDetailsVisible(value);
         }
+    },
+
+    // New method to toggle satellite connections visibility
+    toggleSatConnectionsVisibility(value) {
+        if (satellites) {
+            satellites.forEach(satellite => satellite.setConnectionsVisible(value));
+        }
     }
 };
 
@@ -199,8 +207,19 @@ export function initDisplayControls(params) {
         return;
     }
 
+    // Clear existing content to prevent duplicates
+    displayOptionsWindow.innerHTML = '';
+
     toggleDisplayOptionsBtn.addEventListener('click', () => {
-        displayOptionsWindow.classList.toggle('visible');
+        console.log('Toggle button clicked');
+        if (displayOptionsWindow.classList.contains('hidden')) {
+            displayOptionsWindow.classList.remove('hidden');
+            displayOptionsWindow.classList.add('visible');
+        } else {
+            displayOptionsWindow.classList.remove('visible');
+            displayOptionsWindow.classList.add('hidden');
+        }
+        console.log('displayOptionsWindow classList:', displayOptionsWindow.classList);
     });
 
     displayOptions.forEach(option => {

@@ -6,7 +6,7 @@ import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
 import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
 import { TextureManager } from './managers/TextureManager.js';
-import { CameraControls } from './managers/CameraControls.js'; // Import CameraControls
+import { CameraControls } from './managers/CameraControls.js';
 
 import {
     createSatelliteFromLatLon,
@@ -21,9 +21,9 @@ import { setupEventListeners, setupSocketListeners } from './setupListeners.js';
 import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setupComponents.js';
 import { loadTextures, setupScene, setupPostProcessing, addEarthPoints } from './setupScene.js';
 import { initTimeControls } from './timeControls.js';
-import { initDisplayControls } from './displayControls.js'; // Import display controls
-import { initializeSatelliteCreationPanel } from './createSatelliteControls.js'; // Import satellite controls
-import { initializeBodySelector } from './bodySelectorControls.js'; // Import body selector controls
+import { initDisplayControls } from './displayControls.js';
+import { initializeSatelliteCreationPanel } from './createSatelliteControls.js';
+import { initializeBodySelector } from './bodySelectorControls.js';
 
 class App {
     constructor() {
@@ -39,7 +39,7 @@ class App {
         this.composers = {};
         this.stats = new Stats();
         this.physicsWorker = new Worker(PhysicsWorkerURL);
-        this.cameraControls = new CameraControls(this.camera, this.controls); // Instantiate CameraControls
+        this.cameraControls = new CameraControls(this.camera, this.controls);
         this.workerInitialized = false;
     }
 
@@ -58,8 +58,8 @@ class App {
             moon: this.moon,
             satellites: this.satellites,
             vectors: this.vectors
-        }); // Initialize display controls
-        initializeBodySelector(this); // Initialize the body selector
+        });
+        initializeBodySelector(this);
         this.applyStatsStyle();
         this.animate();
 
@@ -67,7 +67,7 @@ class App {
             this.timeUtils.setTimeWarp(event.detail.value);
         });
 
-        initializeSatelliteCreationPanel(this); // Initialize satellite creation controls
+        initializeSatelliteCreationPanel(this);
 
         document.addEventListener('createSatelliteFromLatLon', (event) => {
             this.handleCreateSatelliteFromLatLon(event.detail);
@@ -79,6 +79,10 @@ class App {
 
         document.addEventListener('createSatelliteFromOrbitalElements', (event) => {
             this.handleCreateSatelliteFromOrbitalElements(event.detail);
+        });
+
+        socket.on('getMoonOrbit', () => {
+            this.handleGetMoonOrbit();
         });
 
         socket.emit('threejs-app-started');
@@ -187,7 +191,7 @@ class App {
             this.guiManager.updateCamera();
         }
 
-        this.cameraControls.updateCameraPosition(); // Ensure the camera controls are updated
+        this.cameraControls.updateCameraPosition();
     }
 
     render() {
@@ -233,6 +237,12 @@ class App {
             this.vectors, this.guiManager.gui, this.guiManager,
             latitude, longitude, altitude, azimuth
         );
+    }
+
+    handleGetMoonOrbit() {
+        const currentTime = this.timeUtils.getSimulatedTime();
+        const moonOrbitParameters = this.moon.getCurrentOrbitalParameters(currentTime);
+        socket.emit('moonOrbitParameters', moonOrbitParameters);
     }
 
     applyStatsStyle() {
