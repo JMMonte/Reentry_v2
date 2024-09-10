@@ -31,52 +31,143 @@
         <h3 class="text-white mb-1 text-sm">Display Options</h3>
         <!-- Options will be dynamically added here -->
     </div>
-    <div id="satellite-creation-panel" class="hidden absolute w-64 bg-gray-800 text-white p-2 rounded shadow-lg z-50 text-xs">
-        <h3 class="text-white mb-1 text-sm">Create Satellite</h3>
+    <div id="satellite-creation-panel" class="hidden absolute w-96 bg-gray-800 text-white p-4 rounded shadow-lg z-50 text-sm">
+        <h3 class="text-white mb-4 text-lg font-bold">Create Satellite</h3>
+        
         <div class="mb-4">
-            <h4 class="text-white">From Lat/Lon</h4>
-            <label for="lat">Latitude</label>
-            <input type="number" id="lat" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 90">
-            <span id="lat-error" class="text-red-500 text-xs hidden">Invalid latitude</span>
-            <label for="lon">Longitude</label>
-            <input type="number" id="lon" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 180">
-            <span id="lon-error" class="text-red-500 text-xs hidden">Invalid longitude</span>
-            <label for="alt">Altitude</label>
-            <input type="number" id="alt" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 200 to 36000">
-            <span id="alt-error" class="text-red-500 text-xs hidden">Invalid altitude</span>
-            <label for="velocity">Velocity</label>
-            <input type="number" id="velocity" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to Inf">
-            <span id="velocity-error" class="text-red-500 text-xs hidden">Invalid velocity</span>
-            <label for="azimuth">Azimuth</label>
-            <input type="number" id="azimuth" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 360">
-            <span id="azimuth-error" class="text-red-500 text-xs hidden">Invalid azimuth</span>
-            <label for="angleOfAttack">Angle of Attack</label>
-            <input type="number" id="angleOfAttack" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 90">
-            <span id="angleOfAttack-error" class="text-red-500 text-xs hidden">Invalid angle of attack</span>
-            <button id="create-satellite-latlon" class="w-full bg-gray-500 hover:bg-gray-700 text-white py-1 px-2 rounded text-xs">Create Satellite</button>
-            <button id="create-satellite-latlon-circular" class="w-full bg-gray-500 hover:bg-gray-700 text-white py-1 px-2 rounded text-xs mt-1">Create circular orbit</button>
-        </div>
-        <div>
-            <h4 class="text-white">From Orbital Elements</h4>
-            <label for="sma">Semi-major Axis</label>
-            <input type="number" id="sma" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 7000 to 42164">
-            <span id="sma-error" class="text-red-500 text-xs hidden">Invalid semi-major axis</span>
-            <label for="ecc">Eccentricity</label>
-            <input type="number" id="ecc" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 1">
-            <span id="ecc-error" class="text-red-500 text-xs hidden">Invalid eccentricity</span>
-            <label for="inc">Inclination</label>
-            <input type="number" id="inc" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 180">
-            <span id="inc-error" class="text-red-500 text-xs hidden">Invalid inclination</span>
-            <label for="raan">RAAN</label>
-            <input type="number" id="raan" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 360">
-            <span id="raan-error" class="text-red-500 text-xs hidden">Invalid RAAN</span>
-            <label for="aop">Argument of Periapsis</label>
-            <input type="number" id="aop" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 360">
-            <span id="aop-error" class="text-red-500 text-xs hidden">Invalid argument of periapsis</span>
-            <label for="ta">True Anomaly</label>
-            <input type="number" id="ta" class="w-full mb-3 p-0.5 bg-gray-700 text-white rounded text-xs" placeholder="e.g. 0 to 360">
-            <span id="ta-error" class="text-red-500 text-xs hidden">Invalid true anomaly</span>
-            <button id="create-satellite-orbital" class="w-full bg-gray-500 hover:bg-gray-700 text-white py-1 px-2 rounded text-xs">Create Satellite</button>
+            <div class="flex justify-center space-x-4 mb-4">
+                <button id="latlon-tab" class="px-4 py-2 bg-blue-600 rounded">Lat/Lon</button>
+                <button id="orbital-tab" class="px-4 py-2 bg-gray-600 rounded">Orbital Elements</button>
+            </div>
+    
+            <div id="latlon-form">
+                <div class="mb-4">
+                    <label for="lat" class="block mb-1">Latitude (°)</label>
+                    <input type="range" id="lat-range" min="-90" max="90" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>-90°</span>
+                        <input type="number" id="lat" value="0" class="w-16 text-center bg-gray-700 rounded">
+                        <span>90°</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="lon" class="block mb-1">Longitude (°)</label>
+                    <input type="range" id="lon-range" min="-180" max="180" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>-180°</span>
+                        <input type="number" id="lon" value="0" class="w-16 text-center bg-gray-700 rounded">
+                        <span>180°</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="alt" class="block mb-1">Altitude (km)</label>
+                    <input type="range" id="alt-range" min="200" max="36000" value="1000" class="w-full">
+                    <div class="flex justify-between">
+                        <span>200 km</span>
+                        <input type="number" id="alt" value="1000" class="w-16 text-center bg-gray-700 rounded">
+                        <span>36000 km</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="velocity" class="block mb-1">Velocity (m/s)</label>
+                    <input type="range" id="velocity-range" min="0" max="20000" step="10" value="7500" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0 m/s</span>
+                        <input type="number" id="velocity" value="7500" step="10" class="w-20 text-center bg-gray-700 rounded">
+                        <span>20000 m/s</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="azimuth" class="block mb-1">Azimuth (°)</label>
+                    <input type="range" id="azimuth-range" min="0" max="360" value="90" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0°</span>
+                        <input type="number" id="azimuth" value="90" class="w-16 text-center bg-gray-700 rounded">
+                        <span>360°</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="angleOfAttack" class="block mb-1">Angle of Attack (°)</label>
+                    <input type="range" id="angleOfAttack-range" min="0" max="90" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0°</span>
+                        <input type="number" id="angleOfAttack" value="0" class="w-16 text-center bg-gray-700 rounded">
+                        <span>90°</span>
+                    </div>
+                </div>
+    
+                <button id="create-satellite-latlon" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded mb-2">Create Satellite</button>
+                <button id="create-satellite-latlon-circular" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded">Create Circular Orbit</button>
+            </div>
+    
+            <div id="orbital-form" class="hidden">
+                <div class="mb-4">
+                    <label for="sma" class="block mb-1">Semi-major Axis (km)</label>
+                    <input type="range" id="sma-range" min="6371" max="42164" value="7000" class="w-full">
+                    <div class="flex justify-between">
+                        <span>6371 km</span>
+                        <input type="number" id="sma" value="7000" class="w-16 text-center bg-gray-700 rounded">
+                        <span>42164 km</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="ecc" class="block mb-1">Eccentricity</label>
+                    <input type="range" id="ecc-range" min="0" max="1" step="0.01" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0</span>
+                        <input type="number" id="ecc" value="0" step="0.01" class="w-16 text-center bg-gray-700 rounded">
+                        <span>1</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="inc" class="block mb-1">Inclination (°)</label>
+                    <input type="range" id="inc-range" min="0" max="180" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0°</span>
+                        <input type="number" id="inc" value="0" class="w-16 text-center bg-gray-700 rounded">
+                        <span>180°</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="raan" class="block mb-1">RAAN (°)</label>
+                    <input type="range" id="raan-range" min="0" max="360" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0°</span>
+                        <input type="number" id="raan" value="0" class="w-16 text-center bg-gray-700 rounded">
+                        <span>360°</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="aop" class="block mb-1">Arg. of Periapsis (°)</label>
+                    <input type="range" id="aop-range" min="0" max="360" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0°</span>
+                        <input type="number" id="aop" value="0" class="w-16 text-center bg-gray-700 rounded">
+                        <span>360°</span>
+                    </div>
+                </div>
+    
+                <div class="mb-4">
+                    <label for="ta" class="block mb-1">True Anomaly (°)</label>
+                    <input type="range" id="ta-range" min="0" max="360" value="0" class="w-full">
+                    <div class="flex justify-between">
+                        <span>0°</span>
+                        <input type="number" id="ta" value="0" class="w-16 text-center bg-gray-700 rounded">
+                        <span>360°</span>
+                    </div>
+                </div>
+    
+                <button id="create-satellite-orbital" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded">Create Satellite</button>
+            </div>
         </div>
     </div>
     <div class="flex h-screen">
@@ -99,7 +190,54 @@
         </div>
     </div>
     <script type="module" src="../src/app.js"></script>
-    <script type="module" src="../src/chatbot.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.7/dist/katex.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Tab switching
+            document.getElementById('latlon-tab').addEventListener('click', function() {
+                document.getElementById('latlon-form').classList.remove('hidden');
+                document.getElementById('orbital-form').classList.add('hidden');
+                this.classList.add('bg-blue-600');
+                this.classList.remove('bg-gray-600');
+                document.getElementById('orbital-tab').classList.add('bg-gray-600');
+                document.getElementById('orbital-tab').classList.remove('bg-blue-600');
+            });
+        
+            document.getElementById('orbital-tab').addEventListener('click', function() {
+                document.getElementById('orbital-form').classList.remove('hidden');
+                document.getElementById('latlon-form').classList.add('hidden');
+                this.classList.add('bg-blue-600');
+                this.classList.remove('bg-gray-600');
+                document.getElementById('latlon-tab').classList.add('bg-gray-600');
+                document.getElementById('latlon-tab').classList.remove('bg-blue-600');
+            });
+        
+            // Sync range and number inputs
+            function syncInputs(rangeId, numberId) {
+                const range = document.getElementById(rangeId);
+                const number = document.getElementById(numberId);
+                range.addEventListener('input', function() {
+                    number.value = this.value;
+                });
+                number.addEventListener('input', function() {
+                    range.value = this.value;
+                });
+            }
+        
+            // Apply to all input pairs
+            syncInputs('lat-range', 'lat');
+            syncInputs('lon-range', 'lon');
+            syncInputs('alt-range', 'alt');
+            syncInputs('velocity-range', 'velocity');
+            syncInputs('azimuth-range', 'azimuth');
+            syncInputs('angleOfAttack-range', 'angleOfAttack');
+            syncInputs('sma-range', 'sma');
+            syncInputs('ecc-range', 'ecc');
+            syncInputs('inc-range', 'inc');
+            syncInputs('raan-range', 'raan');
+            syncInputs('aop-range', 'aop');
+            syncInputs('ta-range', 'ta');
+        });
+    </script>
 </body>
 </html>
