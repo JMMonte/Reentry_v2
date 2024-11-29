@@ -1,11 +1,11 @@
 // setupScene.js
 import * as THREE from 'three';
-import { Earth } from './components/Earth.js';
-import { Sun } from './components/Sun.js';
-import { Moon } from './components/Moon.js';
-import { Vectors } from './utils/Vectors.js';
+import { Earth } from '../components/Earth.js';
+import { Sun } from '../components/Sun.js';
+import { Moon } from '../components/Moon.js';
+import { Vectors } from '../utils/Vectors.js';
 import CannonDebugger from 'cannon-es-debugger';
-import { BackgroundStars } from './components/Background.js';
+import { BackgroundStars } from '../components/Background.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -17,7 +17,7 @@ import {
     cloudTexture,
     moonTexture,
     moonBump
-} from './config/textures.js';
+} from '../config/textures.js';
 
 import {
     geojsonDataCities,
@@ -25,7 +25,7 @@ import {
     geojsonDataSpaceports,
     geojsonDataGroundStations,
     geojsonDataObservatories
-} from './config/geojsonData.js';
+} from '../config/geojsonData.js';
 
 export async function loadTextures(textureManager) {
     const textureList = [

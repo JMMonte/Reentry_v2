@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Constants } from './utils/Constants.js';
+import { Constants } from '../utils/Constants.js';
 
 export function setupCamera() {
     const camera = new THREE.PerspectiveCamera(
@@ -51,24 +51,6 @@ export function setupSettings() {
     return {
         timeWarp: 1,
         startTime: new Date().toISOString(),
-        simulatedTime: new Date().toISOString(),
-        showGrid: false,
-        showVectors: false,
-        showSatVectors: true,
-        showDebugger: false,
-        showSurfaceLines: false,
-        showOrbits: true,
-        showTraces: true,
-        showGroundTraces: true,
-        showCities: false,
-        showAirports: false,
-        showSpaceports: false,
-        showObservatories: false,
-        showGroundStations: false,
-        showCountryBorders: false,
-        showStates: false,
-        showMoonOrbit: false,
-        showMoonTraces: false,
-        showMoonSurfaceLines: false,
+        simulatedTime: new Date().toISOString()
     };
 }
