@@ -1,43 +1,11 @@
 // bodySelectorControls.js
 
 export function initializeBodySelector(app) {
-    const bodySelector = document.getElementById('body-selector');
-
-    if (!bodySelector) {
-        console.error('Body selector element not found in the DOM.');
-        return;
-    }
-
-    const updateSelectorOptions = () => {
-        while (bodySelector.firstChild) {
-            bodySelector.removeChild(bodySelector.firstChild);
-        }
-
-        const defaultOptions = [
-            { value: 'none', text: 'None' },
-            { value: 'earth', text: 'Earth' },
-            { value: 'moon', text: 'Moon' }
-        ];
-
-        defaultOptions.forEach(option => {
-            const opt = document.createElement('option');
-            opt.value = option.value;
-            opt.text = option.text;
-            bodySelector.appendChild(opt);
-        });
-
-        app.satellites.forEach((satellite, index) => {
-            const opt = document.createElement('option');
-            opt.value = `satellite-${index}`;
-            opt.text = `Satellite ${index + 1}`;
-            bodySelector.appendChild(opt);
-        });
-    };
-
-    updateSelectorOptions();
-
-    bodySelector.addEventListener('change', () => {
-        const value = bodySelector.value;
+    // Instead of manipulating the DOM directly, we'll use the app's event system
+    // to communicate with the React components
+    
+    document.addEventListener('bodySelected', (event) => {
+        const value = event.detail.body;
         if (value === 'none') {
             app.cameraControls.clearCameraTarget();
         } else if (value === 'earth') {
@@ -52,7 +20,26 @@ export function initializeBodySelector(app) {
         }
     });
 
-    // Update the selector options whenever a satellite is added or removed
-    document.addEventListener('satelliteAdded', updateSelectorOptions);
-    document.addEventListener('satelliteRemoved', updateSelectorOptions);
+    // Listen for satellite changes to update the UI
+    document.addEventListener('satelliteAdded', () => {
+        document.dispatchEvent(new CustomEvent('updateBodyOptions', {
+            detail: {
+                satellites: app.satellites.map((_, index) => ({
+                    value: `satellite-${index}`,
+                    text: `Satellite ${index + 1}`
+                }))
+            }
+        }));
+    });
+
+    document.addEventListener('satelliteRemoved', () => {
+        document.dispatchEvent(new CustomEvent('updateBodyOptions', {
+            detail: {
+                satellites: app.satellites.map((_, index) => ({
+                    value: `satellite-${index}`,
+                    text: `Satellite ${index + 1}`
+                }))
+            }
+        }));
+    });
 }

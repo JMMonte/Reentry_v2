@@ -280,7 +280,18 @@ class App3D {
 
     updateSelectedBody(value) {
         if (this.cameraControls) {
-            this.cameraControls.updateTarget(value);
+            if (value === 'none') {
+                this.cameraControls.clearCameraTarget();
+            } else if (value === 'earth') {
+                this.cameraControls.updateCameraTarget(this.earth);
+            } else if (value === 'moon') {
+                this.cameraControls.updateCameraTarget(this.moon);
+            } else if (value.startsWith('satellite-')) {
+                const index = parseInt(value.split('-')[1]);
+                if (this.satellites[index]) {
+                    this.cameraControls.updateCameraTarget(this.satellites[index]);
+                }
+            }
         }
     }
 

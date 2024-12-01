@@ -57,6 +57,24 @@ export function Navbar({
   simulatedTime,
   onSimulatedTimeChange
 }) {
+  const [satelliteOptions, setSatelliteOptions] = React.useState([]);
+
+  React.useEffect(() => {
+    const handleBodyOptionsUpdate = (event) => {
+      setSatelliteOptions(event.detail.satellites);
+    };
+
+    document.addEventListener('updateBodyOptions', handleBodyOptionsUpdate);
+    return () => document.removeEventListener('updateBodyOptions', handleBodyOptionsUpdate);
+  }, []);
+
+  const handleBodyChange = (value) => {
+    onBodyChange(value);
+    document.dispatchEvent(new CustomEvent('bodySelected', {
+      detail: { body: value }
+    }));
+  };
+
   return (
     <div className="fixed top-0 left-0 right-0 h-[72px] flex items-center justify-between z-20 bg-gradient-to-b from-background/90 to-transparent backdrop-blur-sm px-4">
       <div className="flex items-center space-x-4">
@@ -76,13 +94,17 @@ export function Navbar({
         <Separator orientation="vertical" className="h-8" />
 
         {/* Body Selection */}
-        <Select value={selectedBody} onValueChange={onBodyChange}>
+        <Select id="body-selector" value={selectedBody} onValueChange={handleBodyChange}>
           <SelectTrigger className="w-[120px]">
             <SelectValue placeholder="Select body" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="none">None</SelectItem>
             <SelectItem value="earth">Earth</SelectItem>
             <SelectItem value="moon">Moon</SelectItem>
+            {satelliteOptions.map(({ value, text }) => (
+              <SelectItem key={value} value={value}>{text}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
