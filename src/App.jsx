@@ -16,6 +16,7 @@ function App() {
   const [isSatelliteCreationVisible, setIsSatelliteCreationVisible] = useState(false);
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
+  const [simulatedTime, setSimulatedTime] = useState(new Date().toISOString());
   const [displaySettings, setDisplaySettings] = useState(defaultSettings);
   const app3DRef = useRef(null);
   const gridHelperRef = useRef(null);
@@ -60,7 +61,6 @@ function App() {
 
     // Apply initial display settings
     Object.entries(displaySettings).forEach(([key, value]) => {
-      console.log(`[App] Initializing setting ${key}=${value}`);
       app.updateDisplaySetting(key, value);
     });
 
@@ -77,52 +77,50 @@ function App() {
 
     // Apply display settings changes
     Object.entries(displaySettings).forEach(([key, value]) => {
-      console.log(`[App] Applying setting ${key}=${value}`);
       app3d.updateDisplaySetting(key, value);
     });
   }, [displaySettings]);
 
-  const handleDisplaySettingChange = (key, value) => {
-    console.log(`[App] Display setting change: ${key}=${value}`);
-    setDisplaySettings(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
+  useEffect(() => {
+    // Listen for time updates from the simulation
+    const handleTimeUpdate = (event) => {
+      const { simulatedTime, timeWarp } = event.detail;
+      setSimulatedTime(simulatedTime);
+      setTimeWarp(timeWarp);
+    };
 
-  const handleTimeWarpChange = (action) => {
-    switch (action) {
-      case 'increase':
-        setTimeWarp(prev => {
-          const newValue = prev * 2;
-          if (app3DRef.current) {
-            app3DRef.current.timeUtils?.setTimeWarp(newValue);
-          }
-          return newValue;
-        });
-        break;
-      case 'decrease':
-        setTimeWarp(prev => {
-          const newValue = prev / 2;
-          if (app3DRef.current) {
-            app3DRef.current.timeUtils?.setTimeWarp(newValue);
-          }
-          return newValue;
-        });
-        break;
-      case 'reset':
-        setTimeWarp(1);
-        if (app3DRef.current) {
-          app3DRef.current.timeUtils?.setTimeWarp(1);
-        }
-        break;
+    document.addEventListener('timeUpdate', handleTimeUpdate);
+    return () => document.removeEventListener('timeUpdate', handleTimeUpdate);
+  }, []);
+
+  useEffect(() => {
+    document.dispatchEvent(new CustomEvent('updateTimeWarp', {
+      detail: { value: timeWarp }
+    }));
+  }, [timeWarp]);
+
+  const getNextTimeWarp = (current, increase) => {
+    const timeWarpSteps = [0.25, 0.5, 1, 2, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000];
+    const currentIndex = timeWarpSteps.findIndex(step => step >= current);
+    
+    if (increase) {
+      // Going up
+      if (currentIndex < timeWarpSteps.length - 1) {
+        return timeWarpSteps[currentIndex + 1];
+      }
+      return timeWarpSteps[timeWarpSteps.length - 1]; // Max value
+    } else {
+      // Going down
+      if (currentIndex > 0) {
+        return timeWarpSteps[currentIndex - 1];
+      }
+      return timeWarpSteps[0]; // Min value
     }
   };
 
-  const handleBodyChange = (body) => {
-    setSelectedBody(body);
-    if (app3DRef.current) {
-      app3DRef.current.cameraControls?.setTarget(body);
+  const handleSimulatedTimeChange = (newTime) => {
+    if (app3DRef.current?.timeUtils) {
+      app3DRef.current.timeUtils.setSimulatedTime(newTime);
     }
   };
 
@@ -130,17 +128,17 @@ function App() {
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <div className="relative w-screen h-screen">
         <canvas id="three-canvas" className="absolute inset-0 z-0" />
-        <Navbar
-          displaySettings={displaySettings}
-          onDisplaySettingChange={handleDisplaySettingChange}
+        <Navbar 
           onToggleChat={() => setIsChatVisible(!isChatVisible)}
           selectedBody={selectedBody}
-          onBodyChange={handleBodyChange}
+          onBodyChange={setSelectedBody}
           timeWarp={timeWarp}
-          onDecreaseTimeWarp={() => handleTimeWarpChange('decrease')}
-          onIncreaseTimeWarp={() => handleTimeWarpChange('increase')}
-          onResetTimeWarp={() => handleTimeWarpChange('reset')}
-          onCreateSatellite={() => setIsSatelliteCreationVisible(true)}
+          onDecreaseTimeWarp={() => setTimeWarp(current => getNextTimeWarp(current, false))}
+          onIncreaseTimeWarp={() => setTimeWarp(current => getNextTimeWarp(current, true))}
+          onResetTimeWarp={() => setTimeWarp(1)}
+          onCreateSatellite={() => setIsSatelliteCreationVisible(!isSatelliteCreationVisible)}
+          simulatedTime={simulatedTime}
+          onSimulatedTimeChange={handleSimulatedTimeChange}
         />
 
         <DisplayOptions />

@@ -103,10 +103,8 @@ class App3D {
         await new Promise(resolve => setTimeout(resolve, 100));
         
         // Apply initial display settings
-        console.log('Applying initial display settings:', this.displaySettings);
         Object.entries(this.displaySettings).forEach(([key, value]) => {
             if (typeof value === 'boolean') {
-                console.log(`Setting ${key} to ${value}`);
                 this.updateDisplaySetting(key, value);
             }
         });
@@ -164,10 +162,12 @@ class App3D {
             // Start performance monitoring
             this.stats.begin();
 
-            // Update time
+            // Update time with timestamp
+            const timestamp = performance.now();
+            this.timeUtils.update(timestamp);
             const currentTime = this.timeUtils.getSimulatedTime();
             const realDeltaTime = this.timeUtils.getDeltaTime();
-            const warpedDeltaTime = realDeltaTime;
+            const warpedDeltaTime = realDeltaTime * this.timeUtils.timeWarp;
 
             // Single controls update
             if (this.controls) {
@@ -290,8 +290,6 @@ class App3D {
 
     updateDisplaySetting(key, value) {
         if (!(key in this.displaySettings) || typeof value !== 'boolean') return;
-        
-        console.log(`Updating display setting ${key} to ${value}`);
         this.displaySettings[key] = value;
         
         // Update visibility based on setting
@@ -299,19 +297,16 @@ class App3D {
             case 'showGrid':
                 const gridHelper = this.scene.getObjectByName('gridHelper');
                 if (gridHelper) {
-                    console.log('Setting grid visibility:', value);
                     gridHelper.visible = value;
                 }
                 break;
             case 'showVectors':
                 if (this.vectors) {
-                    console.log('Setting vectors visibility:', value);
                     this.vectors.setVisible(value);
                 }
                 break;
             case 'showSatVectors':
                 if (this.satellites) {
-                    console.log('Setting satellite vectors visibility:', value);
                     this.satellites.forEach(satellite => {
                         if (satellite.vectors) satellite.vectors.setVisible(value);
                     });
@@ -319,13 +314,11 @@ class App3D {
                 break;
             case 'showSurfaceLines':
                 if (this.earth) {
-                    console.log('Setting surface lines visibility:', value);
                     this.earth.setSurfaceLinesVisible(value);
                 }
                 break;
             case 'showOrbits':
                 if (this.satellites) {
-                    console.log('Setting orbits visibility:', value);
                     this.satellites.forEach(satellite => {
                         if (satellite.orbit) satellite.orbit.setVisible(value);
                     });
@@ -333,7 +326,6 @@ class App3D {
                 break;
             case 'showTraces':
                 if (this.satellites) {
-                    console.log('Setting traces visibility:', value);
                     this.satellites.forEach(satellite => {
                         if (satellite.trace) satellite.trace.setVisible(value);
                     });
@@ -341,7 +333,6 @@ class App3D {
                 break;
             case 'showGroundTraces':
                 if (this.satellites) {
-                    console.log('Setting ground traces visibility:', value);
                     this.satellites.forEach(satellite => {
                         if (satellite.groundTrace) satellite.groundTrace.setVisible(value);
                     });
@@ -349,67 +340,56 @@ class App3D {
                 break;
             case 'showCities':
                 if (this.earth) {
-                    console.log('Setting cities visibility:', value);
                     this.earth.setCitiesVisible(value);
                 }
                 break;
             case 'showAirports':
                 if (this.earth) {
-                    console.log('Setting airports visibility:', value);
                     this.earth.setAirportsVisible(value);
                 }
                 break;
             case 'showSpaceports':
                 if (this.earth) {
-                    console.log('Setting spaceports visibility:', value);
                     this.earth.setSpaceportsVisible(value);
                 }
                 break;
             case 'showObservatories':
                 if (this.earth) {
-                    console.log('Setting observatories visibility:', value);
                     this.earth.setObservatoriesVisible(value);
                 }
                 break;
             case 'showGroundStations':
                 if (this.earth) {
-                    console.log('Setting ground stations visibility:', value);
                     this.earth.setGroundStationsVisible(value);
                 }
                 break;
             case 'showCountryBorders':
                 if (this.earth) {
-                    console.log('Setting country borders visibility:', value);
                     this.earth.setCountryBordersVisible(value);
                 }
                 break;
             case 'showStates':
                 if (this.earth) {
-                    console.log('Setting states visibility:', value);
                     this.earth.setStatesVisible(value);
                 }
                 break;
             case 'showMoonOrbit':
                 if (this.moon) {
-                    console.log('Setting moon orbit visibility:', value);
                     this.moon.setOrbitVisible(value);
                 }
                 break;
             case 'showMoonTraces':
                 if (this.moon) {
-                    console.log('Setting moon traces visibility:', value);
                     this.moon.setTraceVisible(value);
                 }
                 break;
             case 'showMoonSurfaceLines':
                 if (this.moon) {
-                    console.log('Setting moon surface lines visibility:', value);
                     this.moon.setSurfaceDetailsVisible(value);
                 }
                 break;
             case 'showSatConnections':
                 if (this.satellites) {
-                    console.log('Setting satellite connections visibility:', value);
                     this.satellites.forEach(satellite => {
                         if (satellite.connections) satellite.connections.setVisible(value);
                     });

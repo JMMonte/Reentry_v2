@@ -7,6 +7,7 @@ export class TimeUtils {
         this.settings = settings;
         this.lastTime = 0;
         this.deltaTime = 0;
+        this.timeWarp = 1;
         this.simulatedTime = new Date(settings.simulatedTime); // Ensure this is in UTC
         this.validateAndFixSimulatedTime();
         this.updateDerivedTimes();
@@ -30,40 +31,53 @@ export class TimeUtils {
 
     update(timestamp) {
         if (!this.isInitialized) {
-            this.lastTime = timestamp * 0.001;
+            this.lastTime = timestamp;
             this.isInitialized = true;
             return;
         }
 
-        const now = timestamp * 0.001;
-        this.deltaTime = (now - this.lastTime) * this.settings.timeWarp;
-        
-        if (isNaN(this.deltaTime) || this.deltaTime <= 0) {
-            console.warn("Invalid deltaTime:", this.deltaTime);
-            this.deltaTime = 0;
-        }
+        // Calculate real-time delta in milliseconds
+        this.deltaTime = timestamp - this.lastTime;
+        this.lastTime = timestamp;
 
-        this.lastTime = now;
-        const msToAdd = this.deltaTime * 1000;
+        // Apply timewarp to the simulation time
+        const simulatedDelta = this.deltaTime * this.timeWarp;
+        this.simulatedTime = new Date(this.simulatedTime.getTime() + simulatedDelta);
         
-        
-        try {
-            const newTime = this.simulatedTime.getTime() + msToAdd;
-            this.simulatedTime = new Date(newTime);
-            
-            this.validateAndFixSimulatedTime();
-            this.settings.simulatedTime = this.simulatedTime.toISOString();
-            this.updateDerivedTimes();
-        } catch (error) {
-            console.error("Error updating simulated time:", error);
-            console.error("Current simulatedTime:", this.simulatedTime);
-            console.error("Current settings:", this.settings);
-            this.validateAndFixSimulatedTime();
-        }
+        // Update derived times
+        this.updateDerivedTimes();
+
+        // Dispatch time update event
+        document.dispatchEvent(new CustomEvent('timeUpdate', {
+            detail: { 
+                simulatedTime: this.simulatedTime.toISOString(),
+                timeWarp: this.timeWarp,
+                deltaTime: this.deltaTime
+            }
+        }));
     }
 
-    setTimeWarp(warpFactor) {
-        this.settings.timeWarp = warpFactor;
+    setTimeWarp(value) {
+        this.timeWarp = Number(value);
+        // Dispatch event to notify of timewarp change
+        document.dispatchEvent(new CustomEvent('timeWarpChanged', {
+            detail: { timeWarp: this.timeWarp }
+        }));
+    }
+
+    setSimulatedTime(newTime) {
+        this.simulatedTime = new Date(newTime);
+        this.validateAndFixSimulatedTime();
+        this.updateDerivedTimes();
+        
+        // Dispatch time update event
+        document.dispatchEvent(new CustomEvent('timeUpdate', {
+            detail: { 
+                simulatedTime: this.simulatedTime.toISOString(),
+                timeWarp: this.timeWarp,
+                deltaTime: this.deltaTime
+            }
+        }));
     }
     
     getSimulatedTime() {

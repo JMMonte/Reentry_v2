@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '../button';
 import { Separator } from '../separator';
+import { DateTimePicker } from '../datetime/DateTimePicker';
 import { 
   Globe2,
   Grid,
@@ -52,7 +53,9 @@ export function Navbar({
   onDecreaseTimeWarp,
   onIncreaseTimeWarp,
   onResetTimeWarp,
-  onCreateSatellite
+  onCreateSatellite,
+  simulatedTime,
+  onSimulatedTimeChange
 }) {
   return (
     <div className="fixed top-0 left-0 right-0 h-[72px] flex items-center justify-between z-20 bg-gradient-to-b from-background/90 to-transparent backdrop-blur-sm px-4">
@@ -61,6 +64,14 @@ export function Navbar({
         <Button variant="ghost" size="icon" onClick={onToggleChat}>
           <MessageSquare className="h-4 w-4" />
         </Button>
+
+        <Separator orientation="vertical" className="h-8" />
+
+        {/* DateTime Picker */}
+        <DateTimePicker 
+          date={simulatedTime} 
+          onDateTimeChange={onSimulatedTimeChange} 
+        />
 
         <Separator orientation="vertical" className="h-8" />
 
@@ -82,8 +93,8 @@ export function Navbar({
           <Button variant="ghost" size="icon" onClick={onDecreaseTimeWarp}>
             <Rewind className="h-4 w-4" />
           </Button>
-          <div className="w-16 text-center font-mono">
-            {timeWarp}x
+          <div className="w-24 text-center font-mono">
+            {timeWarp >= 1000 ? `${(timeWarp/1000).toLocaleString()}k` : timeWarp}x
           </div>
           <Button variant="ghost" size="icon" onClick={onIncreaseTimeWarp}>
             <FastForward className="h-4 w-4" />
