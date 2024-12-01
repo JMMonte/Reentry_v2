@@ -77,16 +77,19 @@ function initPhysics(data) {
 
 function stepPhysics(data) {
     const { currentTime, warpedDeltaTime, earthPosition, earthRadius, moonPosition } = data;
-    if (warpedDeltaTime <= 0) {
-        console.error('Invalid warpedDeltaTime:', warpedDeltaTime);
+    if (warpedDeltaTime <= 0 || satellites.length === 0) {
         return;
     }
 
+    // Convert positions to CANNON.Vec3 once
+    const earthVec = new CANNON.Vec3(earthPosition.x, earthPosition.y, earthPosition.z);
+    const moonVec = new CANNON.Vec3(moonPosition.x, moonPosition.y, moonPosition.z);
+
     // Update positions and velocities using Runge-Kutta
     satellites.forEach(satellite => {
-        rungeKuttaStep(satellite, warpedDeltaTime, earthPosition, moonPosition, earthMass, moonMass, earthRadius);
+        rungeKuttaStep(satellite, warpedDeltaTime, earthVec, moonVec, earthMass, moonMass, earthRadius);
         const satellitePosition = satellite.body.position;
-        const distanceToEarth = satellitePosition.distanceTo(new CANNON.Vec3(earthPosition.x, earthPosition.y, earthPosition.z));
+        const distanceToEarth = satellitePosition.distanceTo(earthVec);
         const altitude = distanceToEarth - earthRadius;
 
         if (altitude < 0 && !satellite.landed) {
@@ -107,31 +110,33 @@ function stepPhysics(data) {
                 position: satellitePosition,
                 velocity: satellite.body.velocity,
                 altitude: altitude,
-                earthGravity: calculateGravitationalForce(new CANNON.Vec3(earthPosition.x, earthPosition.y, earthPosition.z), satellitePosition, distanceToEarth, earthMass, satellite),
-                moonGravity: calculateGravitationalForce(new CANNON.Vec3(moonPosition.x, moonPosition.y, moonPosition.z), satellitePosition, satellitePosition.distanceTo(new CANNON.Vec3(moonPosition.x, moonPosition.y, moonPosition.z)), moonMass, satellite),
+                earthGravity: calculateGravitationalForce(earthVec, satellitePosition, distanceToEarth, earthMass, satellite),
+                moonGravity: calculateGravitationalForce(moonVec, satellitePosition, satellitePosition.distanceTo(moonVec), moonMass, satellite),
                 dragForce: calculateDragForce(altitude, satellite),
-                currentTime: currentTime  // Include current time for synchronization
+                currentTime: currentTime
             }
         });
     });
 
     // Update positions of manually managed satellites (if any)
-    manuallyManagedSatellites.forEach(managedSat => {
-        updateManuallyManagedSatellite(managedSat, earthPosition, warpedDeltaTime);
-        self.postMessage({
-            type: 'stepComplete',
-            data: {
-                id: managedSat.id,
-                position: managedSat.position,
-                velocity: new CANNON.Vec3(0, 0, 0),
-                altitude: managedSat.altitude,
-                earthGravity: new CANNON.Vec3(0, 0, 0),
-                moonGravity: new CANNON.Vec3(0, 0, 0),
-                dragForce: new CANNON.Vec3(0, 0, 0),
-                currentTime: currentTime  // Include current time for synchronization
-            }
+    if (manuallyManagedSatellites.length > 0) {
+        manuallyManagedSatellites.forEach(managedSat => {
+            updateManuallyManagedSatellite(managedSat, earthPosition, warpedDeltaTime);
+            self.postMessage({
+                type: 'stepComplete',
+                data: {
+                    id: managedSat.id,
+                    position: managedSat.position,
+                    velocity: new CANNON.Vec3(0, 0, 0),
+                    altitude: managedSat.altitude,
+                    earthGravity: new CANNON.Vec3(0, 0, 0),
+                    moonGravity: new CANNON.Vec3(0, 0, 0),
+                    dragForce: new CANNON.Vec3(0, 0, 0),
+                    currentTime: currentTime
+                }
+            });
         });
-    });
+    }
 }
 
 function setPrecision(data) {

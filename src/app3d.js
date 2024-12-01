@@ -5,7 +5,6 @@ import Stats from 'stats.js';
 import { Constants } from './utils/Constants.js';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { GUIManager } from './managers/GUIManager.js';
-import PhysicsWorkerURL from 'url:./workers/physicsWorker.js';
 import { TextureManager } from './managers/TextureManager.js';
 import { CameraControls } from './managers/CameraControls.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
@@ -46,7 +45,7 @@ class App3D {
         }
 
         // Initialize physics worker
-        this.physicsWorker = new Worker(PhysicsWorkerURL, { type: 'module' });
+        this.physicsWorker = new Worker(new URL('./workers/physicsWorker.js', import.meta.url), { type: 'module' });
         this.workerInitialized = false;
 
         // Initialize core components
@@ -225,7 +224,8 @@ class App3D {
     }
 
     updatePhysics(warpedDeltaTime) {
-        if (this.satellites.length > 0 && this.earth && this.moon) {
+        // Only send physics updates if we have satellites and the worker is initialized
+        if (this.workerInitialized && this.satellites.length > 0 && this.earth && this.moon) {
             this.physicsWorker.postMessage({
                 type: 'step',
                 data: {
