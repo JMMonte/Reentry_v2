@@ -117,6 +117,26 @@ export class PhysicsUtils {
         return rho0 * Math.exp(-altitude / H);
     }
 
+    static calculateAzimuthFromInclination(latitude, inclination, raan) {
+        // Convert degrees to radians
+        const latRad = THREE.MathUtils.degToRad(latitude);
+        const incRad = THREE.MathUtils.degToRad(inclination);
+        const raanRad = THREE.MathUtils.degToRad(raan);
+
+        // Calculate azimuth based on spherical trigonometry
+        // This formula gives the azimuth angle needed to achieve the desired inclination
+        // from the given latitude, considering the right ascension of ascending node (RAAN)
+        let azimuth = Math.asin(
+            Math.cos(incRad) / Math.cos(latRad)
+        );
+
+        // Adjust azimuth based on RAAN
+        azimuth = azimuth + raanRad;
+
+        // Convert back to degrees
+        return THREE.MathUtils.radToDeg(azimuth);
+    }
+
     static calculateEarthSurfaceVelocity(satellitePosition, earthRadius, earthRotationSpeed, earthInclination) {
         const earthSurfaceVelocity = new THREE.Vector3(
             -earthRotationSpeed * earthRadius * Math.sin(earthInclination * Math.PI / 180),

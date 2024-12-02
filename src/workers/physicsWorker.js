@@ -1,9 +1,11 @@
 import * as CANNON from 'cannon-es';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { Constants } from '../utils/Constants.js';
 
 let world, satellites = [], earthMass, moonMass;
 let manuallyManagedSatellites = []; // To store satellites managed manually
 let timeStep = 0.01; // Default time step for high precision
+let precision = 'high';
 
 self.onmessage = function (event) {
     let messageData;
@@ -20,6 +22,7 @@ self.onmessage = function (event) {
     }
 
     const { type, data } = messageData;
+
     switch (type) {
         case 'init':
             initPhysics(data);
@@ -31,7 +34,7 @@ self.onmessage = function (event) {
                 console.error('Physics world is not initialized. Please send an "init" message first.');
             }
             break;
-        case 'createSatellite':
+        case 'addSatellite':  
             addSatellite(data);
             break;
         case 'removeSatellite':
@@ -40,241 +43,158 @@ self.onmessage = function (event) {
         case 'setPrecision':
             setPrecision(data);
             break;
+        default:
+            console.error('Unknown message type:', type);
     }
 };
 
 function initPhysics(data) {
     world = new CANNON.World();
     world.gravity.set(0, 0, 0);
-    earthMass = data.earthMass;
-    moonMass = data.moonMass; // Initialize Moon's mass
-
-    satellites = data.satellites.map(satData => {
-        const satellite = {
-            id: satData.id,
-            body: new CANNON.Body({
-                mass: satData.mass,
-                position: new CANNON.Vec3(satData.position.x, satData.position.y, satData.position.z),
-                shape: new CANNON.Sphere(satData.size)
-            }),
-            velocity: new CANNON.Vec3(satData.velocity.x, satData.velocity.y, satData.velocity.z),
-            altitude: satData.altitude
-        };
-
-        satellite.body.linearDamping = 0;
-        satellite.body.angularDamping = 0;
-
-        satellite.body.velocity.copy(satellite.velocity);
-        world.addBody(satellite.body);
-        return satellite;
-    });
-
+    Object.assign(Constants, data);
+    satellites = [];
     // Notify that initialization is complete
     self.postMessage({
-        type: 'initComplete'
+        type: 'initialized'
     });
 }
 
 function stepPhysics(data) {
-    const { currentTime, warpedDeltaTime, earthPosition, earthRadius, moonPosition } = data;
+    const { realDeltaTime, earthPosition, earthRadius, moonPosition, timeWarp } = data;
+    const warpedDeltaTime = realDeltaTime * timeWarp;
+
     if (warpedDeltaTime <= 0 || satellites.length === 0) {
         return;
     }
 
-    // Convert positions to CANNON.Vec3 once
-    const earthVec = new CANNON.Vec3(earthPosition.x, earthPosition.y, earthPosition.z);
-    const moonVec = new CANNON.Vec3(moonPosition.x, moonPosition.y, moonPosition.z);
+    // Cap the maximum time step to prevent instability, but subdivide into smaller steps for high time warps
+    const maxTimeStep = 1.0; // 1 second
+    const numSteps = Math.ceil(warpedDeltaTime / maxTimeStep);
+    const subTimeStep = warpedDeltaTime / numSteps;
 
-    // Update positions and velocities using Runge-Kutta
-    satellites.forEach(satellite => {
-        rungeKuttaStep(satellite, warpedDeltaTime, earthVec, moonVec, earthMass, moonMass, earthRadius);
-        const satellitePosition = satellite.body.position;
-        const distanceToEarth = satellitePosition.distanceTo(earthVec);
-        const altitude = distanceToEarth - earthRadius;
+    // Run multiple smaller steps to maintain accuracy
+    for (let i = 0; i < numSteps; i++) {
+        satellites.forEach(satellite => {
+            // Calculate gravitational forces
+            const satPos = satellite.position;
+            
+            // Convert Earth and Moon positions from scaled km to meters
+            const earthPosMeters = {
+                x: earthPosition.x / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
+                y: earthPosition.y / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
+                z: earthPosition.z / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters
+            };
 
-        if (altitude < 0 && !satellite.landed) {
-            satellite.landed = true;
+            const moonPosMeters = {
+                x: moonPosition.x / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
+                y: moonPosition.y / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
+                z: moonPosition.z / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters
+            };
+            
+            // Force from Earth (all calculations in meters)
+            const earthForce = calculateGravitationalForce(
+                satellite.mass,
+                Constants.earthMass,
+                satPos,
+                earthPosMeters
+            );
+
+            // Force from Moon (all calculations in meters)
+            const moonForce = calculateGravitationalForce(
+                satellite.mass,
+                Constants.moonMass,
+                satPos,
+                moonPosMeters
+            );
+
+            // Total acceleration (F = ma, so a = F/m) in m/s²
+            const totalAccel = {
+                x: (earthForce.x + moonForce.x) / satellite.mass,
+                y: (earthForce.y + moonForce.y) / satellite.mass,
+                z: (earthForce.z + moonForce.z) / satellite.mass
+            };
+
+            // Update velocity (a * dt) in m/s
+            satellite.velocity[0] += totalAccel.x * subTimeStep;
+            satellite.velocity[1] += totalAccel.y * subTimeStep;
+            satellite.velocity[2] += totalAccel.z * subTimeStep;
+
+            // Update position (v * dt) in meters
+            satellite.position[0] += satellite.velocity[0] * subTimeStep;
+            satellite.position[1] += satellite.velocity[1] * subTimeStep;
+            satellite.position[2] += satellite.velocity[2] * subTimeStep;
+
+            // Send update to main thread (positions and velocities in meters)
             self.postMessage({
-                type: 'landed',
+                type: 'satelliteUpdate',
                 data: {
                     id: satellite.id,
-                    position: satellitePosition
-                }
-            });
-        }
-
-        self.postMessage({
-            type: 'stepComplete',
-            data: {
-                id: satellite.id,
-                position: satellitePosition,
-                velocity: satellite.body.velocity,
-                altitude: altitude,
-                earthGravity: calculateGravitationalForce(earthVec, satellitePosition, distanceToEarth, earthMass, satellite),
-                moonGravity: calculateGravitationalForce(moonVec, satellitePosition, satellitePosition.distanceTo(moonVec), moonMass, satellite),
-                dragForce: calculateDragForce(altitude, satellite),
-                currentTime: currentTime
-            }
-        });
-    });
-
-    // Update positions of manually managed satellites (if any)
-    if (manuallyManagedSatellites.length > 0) {
-        manuallyManagedSatellites.forEach(managedSat => {
-            updateManuallyManagedSatellite(managedSat, earthPosition, warpedDeltaTime);
-            self.postMessage({
-                type: 'stepComplete',
-                data: {
-                    id: managedSat.id,
-                    position: managedSat.position,
-                    velocity: new CANNON.Vec3(0, 0, 0),
-                    altitude: managedSat.altitude,
-                    earthGravity: new CANNON.Vec3(0, 0, 0),
-                    moonGravity: new CANNON.Vec3(0, 0, 0),
-                    dragForce: new CANNON.Vec3(0, 0, 0),
-                    currentTime: currentTime
+                    position: satellite.position,
+                    velocity: satellite.velocity
                 }
             });
         });
     }
+}
+
+function addSatellite(data) {
+    const { id, mass, size, position, velocity } = data;
+    
+    // Convert position and velocity to arrays if they're not already
+    const posArray = Array.isArray(position) ? position : 
+                    position.toArray ? position.toArray() : 
+                    [position.x, position.y, position.z];
+                    
+    const velArray = Array.isArray(velocity) ? velocity :
+                    velocity.toArray ? velocity.toArray() :
+                    [velocity.x, velocity.y, velocity.z];
+    
+    // Create satellite object
+    const satellite = {
+        id,
+        mass,
+        size,
+        position: posArray,
+        velocity: velArray
+    };
+    
+    satellites.push(satellite);
+
+    // Send confirmation
+    self.postMessage({
+        type: 'satelliteAdded',
+        data: { id }
+    });
+}
+
+function calculateGravitationalForce(mass1, mass2, pos1, pos2) {
+    const dx = pos2.x - pos1[0];
+    const dy = pos2.y - pos1[1];
+    const dz = pos2.z - pos1[2];
+    
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const forceMagnitude = (Constants.G * mass1 * mass2) / (distance * distance);
+    
+    // Unit vector components
+    const ux = dx / distance;
+    const uy = dy / distance;
+    const uz = dz / distance;
+    
+    return {
+        x: forceMagnitude * ux,
+        y: forceMagnitude * uy,
+        z: forceMagnitude * uz
+    };
 }
 
 function setPrecision(data) {
     timeStep = data.timeStep || 0.01; // Set the time step for desired precision
-}
-
-function rungeKuttaStep(satellite, dt, earthPosition, moonPosition, earthMass, moonMass, earthRadius) {
-    const k1 = calculateDerivatives(satellite, { position: satellite.body.position, velocity: satellite.body.velocity }, earthPosition, moonPosition, earthMass, moonMass, earthRadius);
-    const k2 = calculateDerivatives(satellite, { 
-        position: satellite.body.position.vadd(k1.position.scale(dt / 2)), 
-        velocity: satellite.body.velocity.vadd(k1.velocity.scale(dt / 2)) 
-    }, earthPosition, moonPosition, earthMass, moonMass, earthRadius);
-    const k3 = calculateDerivatives(satellite, { 
-        position: satellite.body.position.vadd(k2.position.scale(dt / 2)), 
-        velocity: satellite.body.velocity.vadd(k2.velocity.scale(dt / 2)) 
-    }, earthPosition, moonPosition, earthMass, moonMass, earthRadius);
-    const k4 = calculateDerivatives(satellite, { 
-        position: satellite.body.position.vadd(k3.position.scale(dt)), 
-        velocity: satellite.body.velocity.vadd(k3.velocity.scale(dt)) 
-    }, earthPosition, moonPosition, earthMass, moonMass, earthRadius);
-
-    const positionChange = k1.position.vadd(k2.position.scale(2)).vadd(k3.position.scale(2)).vadd(k4.position).scale(dt / 6);
-    const velocityChange = k1.velocity.vadd(k2.velocity.scale(2)).vadd(k3.velocity.scale(2)).vadd(k4.velocity).scale(dt / 6);
-
-    satellite.body.position.vadd(positionChange, satellite.body.position);
-    satellite.body.velocity.vadd(velocityChange, satellite.body.velocity);
-}
-
-function calculateDerivatives(satellite, state, earthPosition, moonPosition, earthMass, moonMass, earthRadius) {
-    const position = state.position;
-    const velocity = state.velocity;
-    const acceleration = calculateTotalAcceleration(satellite, position, earthPosition, moonPosition, earthMass, moonMass, earthRadius);
-
-    return {
-        position: velocity,
-        velocity: acceleration
-    };
-}
-
-function calculateTotalAcceleration(satellite, position, earthPosition, moonPosition, earthMass, moonMass, earthRadius) {
-    const earthPos = new CANNON.Vec3(earthPosition.x, earthPosition.y, earthPosition.z);
-    const moonPos = new CANNON.Vec3(moonPosition.x, moonPosition.y, moonPosition.z);
-
-    const distanceToEarth = position.distanceTo(earthPos);
-    const distanceToMoon = position.distanceTo(moonPos);
-
-    const gravitationalForceEarth = calculateGravitationalForce(earthPos, position, distanceToEarth, earthMass, satellite);
-    const gravitationalForceMoon = calculateGravitationalForce(moonPos, position, distanceToMoon, moonMass, satellite);
-
-    const totalGravitationalForce = gravitationalForceEarth.vadd(gravitationalForceMoon);
-    const dragForce = calculateDragForce(distanceToEarth - earthRadius, satellite);
-
-    const totalForce = totalGravitationalForce.vadd(dragForce);
-    const acceleration = totalForce.scale(1 / satellite.body.mass);
-
-    return acceleration;
-}
-
-function calculateGravitationalForce(bodyPosition, satellitePosition, distance, bodyMass, satellite) {
-    if (distance <= 0) {
-        console.error('Invalid distance:', distance);
-        return new CANNON.Vec3(0, 0, 0);
-    }
-
-    const forceDirection = new CANNON.Vec3(
-        bodyPosition.x - satellitePosition.x,
-        bodyPosition.y - satellitePosition.y,
-        bodyPosition.z - satellitePosition.z
-    );
-    forceDirection.normalize();
-
-    const forceMagnitude = PhysicsUtils.calculateGravitationalForce(bodyMass, satellite.body.mass, distance);
-    if (isNaN(forceMagnitude) || forceMagnitude <= 0) {
-        console.error('Invalid forceMagnitude:', forceMagnitude);
-        return new CANNON.Vec3(0, 0, 0);
-    }
-    const gravitationalForce = forceDirection.scale(forceMagnitude);
-    return gravitationalForce;
-}
-
-function calculateDragForce(altitude, satellite) {
-    if (altitude < 0) {
-        console.error('Invalid altitude:', altitude);
-        return new CANNON.Vec3(0, 0, 0);
-    }
-    if (altitude > 4000000) {
-        return new CANNON.Vec3(0, 0, 0); // Ignore drag force if altitude is over 400km
-    }
-    const Cd = 2.2;
-    const A = Math.PI * Math.pow(satellite.body.shapes[0].radius, 2);
-    const rho = PhysicsUtils.calculateAtmosphericDensity(altitude);
-    const v = satellite.body.velocity.length();
-
-    const dragMagnitude = PhysicsUtils.calculateDragForce(v, Cd, A, rho);
-
-    const dragDirection = new CANNON.Vec3(
-        satellite.body.velocity.x * -1,
-        satellite.body.velocity.y * -1,
-        satellite.body.velocity.z * -1
-    );
-    dragDirection.normalize();
-    const dragForce = dragDirection.scale(dragMagnitude);
-
-    return dragForce;
-}
-
-function updateManuallyManagedSatellite(satellite, earthPosition, warpedDeltaTime) {
-    // Update the satellite's position based on Earth's rotation
-    const earthRotationSpeed = 7.2921150e-5; // radians per second
-    const earthRotationAngle = earthRotationSpeed * warpedDeltaTime;
-    const rotationQuaternion = new CANNON.Quaternion().setFromAxisAngle(new CANNON.Vec3(0, 1, 0), earthRotationAngle);
-    satellite.position.applyQuaternion(rotationQuaternion);
-}
-
-function addSatellite(satData) {
-    const satellite = {
-        id: satData.id,
-        body: new CANNON.Body({
-            mass: satData.mass,
-            position: new CANNON.Vec3(satData.position.x, satData.position.y, satData.position.z),
-            shape: new CANNON.Sphere(satData.size)
-        }),
-        velocity: new CANNON.Vec3(satData.velocity.x, satData.velocity.y, satData.velocity.z),
-        altitude: satData.altitude
-    };
-
-    satellite.body.linearDamping = 0;
-    satellite.body.angularDamping = 0;
-
-    satellite.body.velocity.copy(satellite.velocity);
-    world.addBody(satellite.body);
-    satellites.push(satellite);
+    precision = data.precision || 'high';
 }
 
 function removeSatellite(id) {
     const index = satellites.findIndex(sat => sat.id === id);
     if (index !== -1) {
-        world.removeBody(satellites[index].body);
         satellites.splice(index, 1);
     }
 

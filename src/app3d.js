@@ -19,13 +19,22 @@ import { setupEventListeners, setupSocketListeners } from './setup/setupListener
 import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setup/setupComponents.js';
 import { loadTextures, setupScene, setupPostProcessing } from './setup/setupScene.js';
 import { initTimeControls } from './timeControls.js';
-import { initializeSatelliteCreationPanel } from './createSatelliteControls.js';
 import { initializeBodySelector } from './bodySelectorControls.js';
 
 class App3D {
     constructor() {
         // Make instance available globally
+        console.log('App3D: Initializing...');
         window.app3d = this;
+
+        // Initialize event listeners
+        document.addEventListener('createSatelliteFromLatLon', (event) => {
+            const satellite = createSatelliteFromLatLon(this, event.detail);
+        });
+
+        document.addEventListener('createSatelliteFromOrbital', (event) => {
+            const satellite = createSatelliteFromOrbitalElements(this, event.detail);
+        });
 
         // Initialize the Socket.IO client
         this.socket = io('http://localhost:3000');
@@ -45,8 +54,7 @@ class App3D {
         }
 
         // Initialize physics worker
-        this.physicsWorker = new Worker(new URL('./workers/physicsWorker.js', import.meta.url), { type: 'module' });
-        this.workerInitialized = false;
+        this.initPhysicsWorker();
 
         // Initialize core components
         this.scene = new THREE.Scene();
@@ -92,11 +100,7 @@ class App3D {
 
         // Initialize interface components
         initializeBodySelector(this);
-        initializeSatelliteCreationPanel(this);
         this.applyStatsStyle();
-
-        // Initialize physics worker
-        this.initializeWorker();
 
         // Wait a frame to ensure all objects are properly initialized
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -118,39 +122,65 @@ class App3D {
         this.socket.emit('threejs-app-started');
     }
 
-    initializeWorker() {
+    initPhysicsWorker() {
+        console.log('Initializing physics worker...');
+        this.physicsWorker = new Worker(new URL('./workers/physicsWorker.js', import.meta.url), { type: 'module' });
+        
+        this.physicsWorker.onmessage = (event) => {
+            const { type, data } = event.data;
+            
+            switch (type) {
+                case 'satelliteUpdate':
+                    const satellite = this.satellites.find(s => s.id === data.id);
+                    if (satellite) {
+                        satellite.updateBuffer.push(data);
+                    }
+                    break;
+                case 'initialized':
+                    console.log('Physics worker initialized successfully');
+                    this.workerInitialized = true;
+                    break;
+                case 'error':
+                    console.error('Physics worker error:', data);
+                    break;
+            }
+        };
+
+        // Initialize the physics worker
         this.physicsWorker.postMessage({
             type: 'init',
             data: {
                 earthMass: Constants.earthMass,
                 moonMass: Constants.moonMass,
-                satellites: []
+                G: Constants.G,
+                scale: Constants.scale
             }
         });
-
-        this.physicsWorker.onmessage = (event) => {
-            if (event.data.type === 'initComplete') {
-                this.workerInitialized = true;
-            }
-        };
     }
 
-    setupGUI() {
-        this.guiManager = new GUIManager(
-            this.scene,
-            this.world,
-            this.earth,
-            this.moon,
-            this.sun,
-            this.satellites,
-            this.vectors,
-            this.settings,
-            this.timeUtils,
-            this.cannonDebugger,
-            this.physicsWorker,
-            this.camera,
-            this.controls
-        );
+    updatePhysics(realDeltaTime) {
+        // Only send physics updates if we have satellites and the worker is initialized
+        if (this.workerInitialized && this.satellites.length > 0 && this.earth && this.moon) {
+            
+            this.physicsWorker.postMessage({
+                type: 'step',
+                data: {
+                    realDeltaTime,
+                    timeWarp: this.timeUtils.timeWarp,
+                    earthPosition: {
+                        x: this.earth.earthBody.position.x / (Constants.metersToKm * Constants.scale),
+                        y: this.earth.earthBody.position.y / (Constants.metersToKm * Constants.scale),
+                        z: this.earth.earthBody.position.z / (Constants.metersToKm * Constants.scale)
+                    },
+                    earthRadius: Constants.earthRadius,
+                    moonPosition: {
+                        x: this.moon.moonBody.position.x / (Constants.metersToKm * Constants.scale),
+                        y: this.moon.moonBody.position.y / (Constants.metersToKm * Constants.scale),
+                        z: this.moon.moonBody.position.z / (Constants.metersToKm * Constants.scale)
+                    }
+                }
+            });
+        }
     }
 
     animate = () => {
@@ -165,7 +195,8 @@ class App3D {
             const timestamp = performance.now();
             this.timeUtils.update(timestamp);
             const currentTime = this.timeUtils.getSimulatedTime();
-            const realDeltaTime = this.timeUtils.getDeltaTime();
+            const realDeltaTime = (timestamp - this.lastTime) / 1000; // Convert to seconds
+            this.lastTime = timestamp;
             const warpedDeltaTime = realDeltaTime * this.timeUtils.timeWarp;
 
             // Single controls update
@@ -175,7 +206,7 @@ class App3D {
 
             // Update components with error handling
             try {
-                this.updatePhysics(warpedDeltaTime);
+                this.updatePhysics(realDeltaTime);
             } catch (error) {
                 console.error('Error in physics update:', error);
             }
@@ -220,21 +251,6 @@ class App3D {
             if (this.animationFrameId) {
                 cancelAnimationFrame(this.animationFrameId);
             }
-        }
-    }
-
-    updatePhysics(warpedDeltaTime) {
-        // Only send physics updates if we have satellites and the worker is initialized
-        if (this.workerInitialized && this.satellites.length > 0 && this.earth && this.moon) {
-            this.physicsWorker.postMessage({
-                type: 'step',
-                data: {
-                    warpedDeltaTime,
-                    earthPosition: this.earth.earthBody.position,
-                    earthRadius: Constants.earthRadius,
-                    moonPosition: this.moon.moonBody.position
-                }
-            });
         }
     }
 
@@ -331,21 +347,22 @@ class App3D {
             case 'showOrbits':
                 if (this.satellites) {
                     this.satellites.forEach(satellite => {
-                        if (satellite.orbit) satellite.orbit.setVisible(value);
+                        if (satellite.orbitLine) satellite.orbitLine.visible = value;
+                        if (satellite.apsisVisualizer) satellite.apsisVisualizer.setVisible(value);
                     });
                 }
                 break;
             case 'showTraces':
                 if (this.satellites) {
                     this.satellites.forEach(satellite => {
-                        if (satellite.trace) satellite.trace.setVisible(value);
+                        if (satellite.traceLine) satellite.traceLine.visible = value;
                     });
                 }
                 break;
             case 'showGroundTraces':
                 if (this.satellites) {
                     this.satellites.forEach(satellite => {
-                        if (satellite.groundTrace) satellite.groundTrace.setVisible(value);
+                        if (satellite.groundTrack) satellite.groundTrack.setVisible(value);
                     });
                 }
                 break;
@@ -411,15 +428,54 @@ class App3D {
 
     // Methods for satellite creation
     createSatelliteLatLon(params) {
-        createSatelliteFromLatLon(this, params);
+        console.log('Creating satellite from lat/lon:', params);
+        const satellite = createSatelliteFromLatLon(this, params);
+        this.updateSatelliteList();
+        return satellite;
     }
 
     createSatelliteOrbital(params) {
-        createSatelliteFromOrbitalElements(this, params);
+        console.log('Creating satellite from orbital elements:', params);
+        const satellite = createSatelliteFromOrbitalElements(this, params);
+        this.updateSatelliteList();
+        return satellite;
     }
 
     createSatelliteCircular(params) {
-        createSatelliteFromLatLonCircular(this, params);
+        console.log('Creating satellite from circular orbit:', params);
+        const satellite = createSatelliteFromLatLonCircular(this, params);
+        this.updateSatelliteList();
+        return satellite;
+    }
+
+    removeSatellite(satelliteId) {
+        const index = this.satellites.findIndex(s => s.id === satelliteId);
+        if (index === -1) return;
+
+        // If this satellite is the current camera target, switch to none
+        if (this.cameraControls?.target === this.satellites[index]) {
+            this.updateSelectedBody('none');
+            document.dispatchEvent(new CustomEvent('bodySelected', {
+                detail: { body: 'none' }
+            }));
+        }
+
+        // Remove the satellite
+        this.satellites[index].dispose();
+        this.satellites.splice(index, 1);
+        
+        // Update the satellite list in the navbar
+        this.updateSatelliteList();
+    }
+
+    updateSatelliteList() {
+        const satellites = this.satellites.map(satellite => ({
+            value: `satellite-${satellite.id}`,
+            text: satellite.name || `Satellite ${satellite.id}`
+        }));
+        document.dispatchEvent(new CustomEvent('updateBodyOptions', {
+            detail: { satellites }
+        }));
     }
 
     // Socket event handlers for satellite creation

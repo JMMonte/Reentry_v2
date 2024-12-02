@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
 import { ThemeProvider } from './components/theme-provider';
-import { ChatSidebar } from './components/ui/chat/ChatSidebar';
 import { Navbar } from './components/ui/navbar/Navbar';
+import { ChatSidebar } from './components/ui/chat/ChatSidebar';
 import { SatelliteCreationPanel } from './components/ui/satellite/SatelliteCreationPanel';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
+import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 import App3D from './app3d.js';
 import './styles/globals.css';
 
@@ -14,6 +15,7 @@ function App() {
   const [socket, setSocket] = useState(null);
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isSatelliteCreationVisible, setIsSatelliteCreationVisible] = useState(false);
+  const [debugWindows, setDebugWindows] = useState([]);
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date().toISOString());
@@ -28,7 +30,6 @@ function App() {
     });
     
     newSocket.on('connect', () => {
-      console.log('Connected to server');
     });
 
     newSocket.on('connect_error', (error) => {
@@ -45,6 +46,22 @@ function App() {
   useEffect(() => {
     const app = new App3D();
     app3DRef.current = app;
+
+    // Add method to create debug windows
+    app.createDebugWindow = (satellite) => {
+      setDebugWindows(prev => {
+        // Check if window already exists for this satellite
+        if (prev.some(w => w.id === satellite.id)) {
+          return prev;
+        }
+        return [...prev, { id: satellite.id, satellite }];
+      });
+    };
+
+    // Add method to remove debug windows
+    app.removeDebugWindow = (satelliteId) => {
+      setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
+    };
 
     // Initialize grid helper
     const helper = app.scene.getObjectByName('gridHelper');
@@ -126,19 +143,17 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="relative w-screen h-screen">
+      <div className="flex flex-col min-h-screen">
         <canvas id="three-canvas" className="absolute inset-0 z-0" />
         <Navbar 
           onToggleChat={() => setIsChatVisible(!isChatVisible)}
+          onToggleSatelliteCreation={() => setIsSatelliteCreationVisible(!isSatelliteCreationVisible)}
           selectedBody={selectedBody}
-          onBodyChange={setSelectedBody}
+          onBodySelect={setSelectedBody}
           timeWarp={timeWarp}
-          onDecreaseTimeWarp={() => setTimeWarp(current => getNextTimeWarp(current, false))}
-          onIncreaseTimeWarp={() => setTimeWarp(current => getNextTimeWarp(current, true))}
-          onResetTimeWarp={() => setTimeWarp(1)}
-          onCreateSatellite={() => setIsSatelliteCreationVisible(!isSatelliteCreationVisible)}
+          onTimeWarpChange={setTimeWarp}
           simulatedTime={simulatedTime}
-          onSimulatedTimeChange={handleSimulatedTimeChange}
+          onSimulatedTimeChange={setSimulatedTime}
         />
 
         <DisplayOptions />
@@ -155,6 +170,18 @@ function App() {
             onClose={() => setIsSatelliteCreationVisible(false)}
           />
         )}
+
+        {/* Debug Windows */}
+        <div className="fixed bottom-4 right-4 space-y-2 z-10">
+          {debugWindows.map(window => (
+            <SatelliteDebugWindow
+              key={window.id}
+              satellite={window.satellite}
+              earth={app3DRef.current?.earth}
+              onClose={() => app3DRef.current?.removeDebugWindow(window.id)}
+            />
+          ))}
+        </div>
       </div>
     </ThemeProvider>
   );

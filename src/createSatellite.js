@@ -1,56 +1,166 @@
+import * as THREE from 'three';
 import { Satellite } from './components/Satellite.js';
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
 import { Constants } from './utils/Constants.js';
-import { numberToHexColor } from './utils/colorUtils.js';
-import { numberToHexColor } from './utils/colorUtils.js';
+import { createRoot } from 'react-dom/client';
+import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 
-export function createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, initialPosition, initialVelocity) {
+export function createSatellite(app, params) {
+    console.log('createSatellite called with params:', params);
+    const { scene, satellites, displaySettings } = app;
     let id = satellites.length;
     const existingSatellite = satellites.find(satellite => satellite.id === id);
     if (existingSatellite) {
         id = id + 1;
     }
 
-    const color = Math.random() * 0xffffff;
-    const newSatellite = new Satellite(scene, world, earth, moon, initialPosition, initialVelocity, id, color);
+    const brightColors = [
+        0xFF0000, 0xFF4D00, 0xFF9900, 0xFFCC00, 0xFFFF00,  // Bright primary
+        0x00FF00, 0x00FF99, 0x00FFFF, 0x00CCFF, 0x0099FF,  // Bright secondary
+        0x0000FF, 0x4D00FF, 0x9900FF, 0xFF00FF, 0xFF0099,  // Bright tertiary
+        0xFF1493, 0x00FF7F, 0xFF69B4, 0x7FFF00, 0x40E0D0,  // Bright neon
+        0xFF99CC, 0x99FF99, 0x99FFFF, 0x9999FF, 0xFF99FF   // Bright pastel
+    ];
+    
+    const color = brightColors[Math.floor(Math.random() * brightColors.length)];
+    const newSatellite = new Satellite({
+        scene,
+        position: params.position,
+        velocity: params.velocity,
+        id,
+        color,
+        mass: params.mass || 100, // kg
+        size: params.size || 1, // meters
+        app3d: app,
+        name: params.name
+    });
 
-    // Ensure dummy controllers are set
-    setupDummyControllers(newSatellite);
+    console.log('Creating satellite:', { 
+        position: newSatellite.position, 
+        velocity: newSatellite.velocity, 
+        id: newSatellite.id, 
+        name: newSatellite.name,
+        color: newSatellite.color, 
+        mass: newSatellite.mass, 
+        size: newSatellite.size 
+    });
 
-    satellites.push(newSatellite);
-    vectors.addSatellite(newSatellite);
-    vectors.setSatVisible(true);
+    console.log('Creating satellite:', { position: newSatellite.position, velocity: newSatellite.velocity, id: newSatellite.id, color: newSatellite.color, mass: newSatellite.mass, size: newSatellite.size });
 
-    if (gui && guiManager) {
-        updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors);
+    // Apply current display settings
+    newSatellite.orbitLine.visible = displaySettings.showOrbits.value;
+    newSatellite.traceLine.visible = displaySettings.showTraces.value;
+
+    // Create debug window
+    if (app.createDebugWindow) {
+        console.log('Creating debug window for satellite:', newSatellite.id);
+        app.createDebugWindow(newSatellite);
+    } else {
+        console.warn('createDebugWindow not found on app:', app);
     }
 
-    // Dispatch satellite added event
-    document.dispatchEvent(new CustomEvent('satelliteAdded'));
+    satellites.push(newSatellite);
+
+    // Notify physics worker
+    if (app.physicsWorker && app.workerInitialized) {
+        console.log('Notifying physics worker about new satellite:', newSatellite.id);
+        app.physicsWorker.postMessage({
+            type: 'addSatellite',
+            data: {
+                id: newSatellite.id,
+                position: {
+                    x: newSatellite.position.x / (Constants.metersToKm * Constants.scale),
+                    y: newSatellite.position.y / (Constants.metersToKm * Constants.scale),
+                    z: newSatellite.position.z / (Constants.metersToKm * Constants.scale)
+                },
+                velocity: {
+                    x: newSatellite.velocity.x / (Constants.metersToKm * Constants.scale),
+                    y: newSatellite.velocity.y / (Constants.metersToKm * Constants.scale),
+                    z: newSatellite.velocity.z / (Constants.metersToKm * Constants.scale)
+                },
+                mass: newSatellite.mass,
+                size: newSatellite.size
+            }
+        });
+    } else {
+        console.error('Physics worker not initialized when creating satellite:', newSatellite.id);
+    }
 
     return newSatellite;
 }
 
+export function createSatelliteFromLatLon(app, params) {
+    console.log('Creating satellite from lat/lon:', params);
+    const { earth, displaySettings } = app;
+    const {
+        latitude,
+        longitude,
+        altitude,
+        heading: azimuth,
+        speed: velocity,
+        mass,
+        size,
+        name
+    } = params;
 
-export function createSatelliteFromLatLon(scene, world, earth, moon, satellites, vectors, gui, guiManager, latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
     const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
+
+    // Assuming angle of attack is 0 for simplicity
+    const angleOfAttack = 0;
+
+    // Convert altitude from km to m for physics calculations
+    const altitudeMeters = altitude * Constants.kmToMeters;
+
+    // Convert velocity from km/s to m/s for physics calculations
+    const velocityMeters = velocity * Constants.kmToMeters;
 
     const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
         latitude,
         longitude,
-        altitude * Constants.kmToMeters,
-        velocity,
+        altitudeMeters,
+        velocityMeters,
         azimuth,
         angleOfAttack,
         earthQuaternion,
         tiltQuaternion
     );
 
-    return createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, positionECEF, velocityECEF);
+    // Scale for Three.js visualization (convert from meters to km, then apply scale)
+    const scaledPosition = new THREE.Vector3(
+        positionECEF.x * Constants.metersToKm * Constants.scale,
+        positionECEF.y * Constants.metersToKm * Constants.scale,
+        positionECEF.z * Constants.metersToKm * Constants.scale
+    );
+
+    const scaledVelocity = new THREE.Vector3(
+        velocityECEF.x * Constants.metersToKm * Constants.scale,
+        velocityECEF.y * Constants.metersToKm * Constants.scale,
+        velocityECEF.z * Constants.metersToKm * Constants.scale
+    );
+
+    return createSatellite(app, {
+        position: scaledPosition,
+        velocity: scaledVelocity,
+        mass,
+        size,
+        name
+    });
 }
 
-export function createSatelliteFromLatLonCircular(scene, world, earth, moon, satellites, vectors, gui, guiManager, latitude, longitude, altitude, azimuth) {
+export function createSatelliteFromLatLonCircular(app, params) {
+    console.log('Creating satellite from lat/lon circular:', params);
+    const { earth, displaySettings } = app;
+    const {
+        latitude,
+        longitude,
+        altitude,
+        inclination,
+        raan,
+        mass,
+        size
+    } = params;
+
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
     const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
 
@@ -59,6 +169,9 @@ export function createSatelliteFromLatLonCircular(scene, world, earth, moon, sat
 
     // Calculate the orbital velocity for a circular orbit
     const orbitalVelocity = PhysicsUtils.calculateOrbitalVelocity(Constants.earthMass, radius);
+
+    // Calculate azimuth based on inclination and RAAN
+    const azimuth = PhysicsUtils.calculateAzimuthFromInclination(latitude, inclination, raan);
 
     // Assuming angle of attack for a circular orbit is zero
     const angleOfAttack = 0;
@@ -74,132 +187,139 @@ export function createSatelliteFromLatLonCircular(scene, world, earth, moon, sat
         tiltQuaternion
     );
 
-    return createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, positionECEF, velocityECEF);
+    const scaledPosition = new THREE.Vector3(
+        positionECEF.x * Constants.metersToKm * Constants.scale,
+        positionECEF.y * Constants.metersToKm * Constants.scale,
+        positionECEF.z * Constants.metersToKm * Constants.scale
+    );
+
+    const scaledVelocity = new THREE.Vector3(
+        velocityECEF.x * Constants.metersToKm * Constants.scale,
+        velocityECEF.y * Constants.metersToKm * Constants.scale,
+        velocityECEF.z * Constants.metersToKm * Constants.scale
+    );
+
+    const satellite = new Satellite({
+        scene: app.scene,
+        position: scaledPosition,
+        velocity: scaledVelocity,
+        mass,
+        size,
+        id: app.satellites.length,
+        color: 0x00ff00,
+        app3d: app
+    });
+
+    console.log('Creating satellite:', { position: satellite.position, velocity: satellite.velocity, id: satellite.id, color: satellite.color, mass: satellite.mass, size: satellite.size });
+
+    // Apply current display settings
+    satellite.orbitLine.visible = displaySettings.showOrbits.value;
+    satellite.traceLine.visible = displaySettings.showTraces.value;
+
+    // Add to satellites array
+    app.satellites.push(satellite);
+
+    // Notify physics worker with unscaled values in meters
+    if (app.physicsWorker && app.workerInitialized) {
+        console.log('Notifying physics worker about new satellite:', satellite.id);
+        app.physicsWorker.postMessage({
+            type: 'addSatellite',
+            data: {
+                id: satellite.id,
+                mass: satellite.mass,
+                size: satellite.size,
+                position: positionECEF,  // Original position in meters
+                velocity: velocityECEF   // Original velocity in m/s
+            }
+        });
+    } else {
+        console.error('Physics worker not initialized when creating satellite:', satellite.id);
+    }
+
+    return satellite;
 }
 
-export function createSatelliteFromOrbitalElements(scene, world, earth, moon, satellites, vectors, gui, guiManager, semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly) {
-    const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
-        semiMajorAxis * Constants.kmToMeters,
+export function createSatelliteFromOrbitalElements(app, params) {
+    console.log('Creating satellite from orbital elements:', params);
+    const { displaySettings } = app;
+    const {
+        semiMajorAxis,
         eccentricity,
         inclination,
         raan,
         argumentOfPeriapsis,
-        trueAnomaly
+        trueAnomaly,
+        mass,
+        size
+    } = params;
+
+    const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
+        semiMajorAxis * Constants.kmToMeters,
+        eccentricity,
+        inclination * (Math.PI / 180), // Convert to radians
+        raan * (Math.PI / 180),
+        argumentOfPeriapsis * (Math.PI / 180),
+        trueAnomaly * (Math.PI / 180)
     );
 
-    return createSatellite(scene, world, earth, moon, satellites, vectors, gui, guiManager, positionECI, velocityECI);
-}
-
-function setupDummyControllers(newSatellite) {
-    newSatellite.altitudeController = { setValue: () => newSatellite, updateDisplay: () => { } };
-    newSatellite.velocityController = { setValue: () => newSatellite, updateDisplay: () => { } };
-    newSatellite.earthGravityForceController = { setValue: () => newSatellite, updateDisplay: () => { } };
-    newSatellite.moonGravityForceController = { setValue: () => newSatellite, updateDisplay: () => { } };
-    newSatellite.dragController = { setValue: () => newSatellite, updateDisplay: () => { } };
-    newSatellite.periapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => { } };
-    newSatellite.apoapsisAltitudeController = { setValue: () => newSatellite, updateDisplay: () => { } };
-}
-
-function updateSatelliteGUI(newSatellite, satellites, gui, guiManager, vectors) {
-    const satelliteFolder = gui.addFolder(`Satellite ${newSatellite.id}`);
-
-    const altitudeObj = { altitude: parseFloat(newSatellite.getCurrentAltitude()).toFixed(4) };
-    const velocityObj = { velocity: parseFloat(newSatellite.getCurrentVelocity()).toFixed(4) };
-    const earthGravityForceObj = { earthGravityForce: parseFloat(newSatellite.getCurrentEarthGravityForce()).toFixed(4) };
-    const moonGravityForceObj = { moonGravityForce: parseFloat(newSatellite.getCurrentMoonGravityForce()).toFixed(4) };
-    const dragObj = { drag: parseFloat(newSatellite.getCurrentDragForce()).toFixed(8) };
-    const periapsisAltitudeObj = { periapsisAltitude: parseFloat(newSatellite.getPeriapsisAltitude()).toFixed(4) };
-    const apoapsisAltitudeObj = { apoapsisAltitude: parseFloat(newSatellite.getApoapsisAltitude()).toFixed(4) };
-
-    const altitudeController = satelliteFolder.add(altitudeObj, 'altitude').name('Altitude (m)').listen();
-    const velocityController = satelliteFolder.add(velocityObj, 'velocity').name('Velocity (m/s)').listen();
-    const earthGravityForceController = satelliteFolder.add(earthGravityForceObj, 'earthGravityForce').name('Grav. Force (N)').listen();
-    const moonGravityForceController = satelliteFolder.add(moonGravityForceObj, 'moonGravityForce').name('Moon Force (N)').listen();
-    const dragController = satelliteFolder.add(dragObj, 'drag').name('Drag Force (N)').listen();
-    const periapsisAltitudeController = satelliteFolder.add(periapsisAltitudeObj, 'periapsisAltitude').name('Periapsis alt. (m)').listen();
-    const apoapsisAltitudeController = satelliteFolder.add(apoapsisAltitudeObj, 'apoapsisAltitude').name('Apoapsis alt. (m)').listen();
-
-    newSatellite.altitudeController = altitudeController;
-    newSatellite.velocityController = velocityController;
-    newSatellite.earthGravityForceController = earthGravityForceController;
-    newSatellite.moonGravityForceController = moonGravityForceController;
-    newSatellite.dragController = dragController;
-    newSatellite.periapsisAltitudeController = periapsisAltitudeController;
-    newSatellite.apoapsisAltitudeController = apoapsisAltitudeController;
-
-    const colorData = {
-        color: numberToHexColor(newSatellite.color)
-    };
-
-    satelliteFolder.addColor(colorData, 'color').name('Color').onChange(value => {
-        newSatellite.setColor(parseInt(value.replace(/^#/, ''), 16));
+    console.log('Calculated state vectors:', {
+        position: positionECI,
+        velocity: velocityECI
     });
 
-    satelliteFolder.add(newSatellite.mesh.scale, 'x', 0.1, 10, 0.1).name('Size').onChange(value => {
-        newSatellite.mesh.scale.set(value, value, value);
+    const scaledPosition = new THREE.Vector3(
+        positionECI.x * Constants.metersToKm * Constants.scale,
+        positionECI.y * Constants.metersToKm * Constants.scale,
+        positionECI.z * Constants.metersToKm * Constants.scale
+    );
+
+    const scaledVelocity = new THREE.Vector3(
+        velocityECI.x * Constants.metersToKm * Constants.scale,
+        velocityECI.y * Constants.metersToKm * Constants.scale,
+        velocityECI.z * Constants.metersToKm * Constants.scale
+    );
+
+    const satellite = new Satellite({
+        scene: app.scene,
+        position: scaledPosition,
+        velocity: scaledVelocity,
+        mass,
+        size,
+        id: app.satellites.length,
+        color: 0x00ff00,
+        app3d: app
     });
 
-    satelliteFolder.add({ remove: () => removeSatellite(newSatellite, satellites, vectors, gui, guiManager) }, 'remove').name('Remove Satellite');
-    guiManager.satelliteFolders[newSatellite.id] = satelliteFolder;
-    satelliteFolder.open();
+    console.log('Creating satellite:', { position: satellite.position, velocity: satellite.velocity, id: satellite.id, color: satellite.color, mass: satellite.mass, size: satellite.size });
 
-    newSatellite.updateAltitude = function (value) {
-        altitudeObj.altitude = parseFloat(value).toFixed(4);
-        altitudeController.updateDisplay();
-    };
+    // Apply current display settings
+    satellite.orbitLine.visible = displaySettings.showOrbits.value;
+    satellite.traceLine.visible = displaySettings.showTraces.value;
 
-    newSatellite.updateVelocity = function (value) {
-        velocityObj.velocity = parseFloat(value).toFixed(4);
-        velocityController.updateDisplay();
-    };
+    // Add to satellites array
+    app.satellites.push(satellite);
 
-    newSatellite.updateEarthGravityForce = function (value) {
-        earthGravityForceObj.earthGravityForce = parseFloat(value).toFixed(4);
-        earthGravityForceController.updateDisplay();
-    };
-
-    newSatellite.updateMoonGravityForce = function (value) {
-        moonGravityForceObj.moonGravityForce = parseFloat(value).toFixed(4);
-        moonGravityForceController.updateDisplay();
-    };
-
-    newSatellite.updateDrag = function (value) {
-        dragObj.drag = parseFloat(value).toFixed(4);
-        dragController.updateDisplay();
-    };
-
-    newSatellite.updatePeriapsisAltitude = function (value) {
-        periapsisAltitudeObj.periapsisAltitude = parseFloat(value).toFixed(4);
-        periapsisAltitudeController.updateDisplay();
-    };
-
-    newSatellite.updateApoapsisAltitude = function (value) {
-        apoapsisAltitudeObj.apoapsisAltitude = parseFloat(value).toFixed(4);
-        apoapsisAltitudeController.updateDisplay();
-    };
-}
-
-function removeSatellite(satellite, satellites, vectors, gui, guiManager) {
-    const index = satellites.indexOf(satellite);
-    if (index !== -1) {
-        satellites.splice(index, 1);
-        satellite.deleteSatellite();
-        vectors.removeSatellite(satellite);
-        const folder = guiManager.satelliteFolders[satellite.id];
-        if (folder) {
-            gui.removeFolder(folder);
-            delete guiManager.satelliteFolders[satellite.id];
-        }
-
-        guiManager.physicsWorker.postMessage({
-            type: 'removeSatellite',
-            data: { id: satellite.id }
+    // Notify physics worker with unscaled values in meters
+    if (app.physicsWorker && app.workerInitialized) {
+        console.log('Notifying physics worker about new satellite:', {
+            id: satellite.id,
+            position: positionECI,
+            velocity: velocityECI
         });
-
-        // Dispatch satellite removed event
-        document.dispatchEvent(new CustomEvent('satelliteRemoved'));
-
-        guiManager.updateBodySelector();
+        
+        app.physicsWorker.postMessage({
+            type: 'addSatellite',
+            data: {
+                id: satellite.id,
+                mass: satellite.mass,
+                size: satellite.size,
+                position: positionECI,
+                velocity: velocityECI
+            }
+        });
+    } else {
+        console.error('Physics worker not initialized when creating satellite:', satellite.id);
     }
-}
 
+    return satellite;
+}
