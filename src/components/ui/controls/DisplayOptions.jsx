@@ -29,7 +29,7 @@ export const defaultSettings = {
   showSurfaceLines: { value: true, name: 'Surface Lines', icon: Mountain },
   showOrbits: { value: true, name: 'Sat Orbits', icon: Circle },
   showTraces: { value: true, name: 'Sat Traces', icon: LineChart },
-  showGroundTraces: { value: true, name: 'Ground Traces', icon: MapPin },
+  showGroundTraces: { value: false, name: 'Ground Traces', icon: MapPin },
   showCities: { value: false, name: 'Cities', icon: Building2 },
   showAirports: { value: false, name: 'Airports', icon: Plane },
   showSpaceports: { value: false, name: 'Spaceports', icon: Rocket },
@@ -38,8 +38,8 @@ export const defaultSettings = {
   showCountryBorders: { value: false, name: 'Country Borders', icon: Map },
   showStates: { value: false, name: 'States', icon: Map },
   showMoonOrbit: { value: true, name: 'Moon Orbit', icon: Moon },
-  showMoonTraces: { value: true, name: 'Moon Traces', icon: LineChart },
-  showMoonSurfaceLines: { value: true, name: 'Moon Surface Lines', icon: Mountain },
+  showMoonTraces: { value: false, name: 'Moon Traces', icon: LineChart },
+  showMoonSurfaceLines: { value: false, name: 'Moon Surface Lines', icon: Mountain },
   showSatConnections: { value: false, name: 'Sat Connections', icon: Link },
   ambientLight: { value: 0.1, name: 'Ambient Light', icon: Settings2, type: 'range', min: 0, max: 1, step: 0.05 }
 };

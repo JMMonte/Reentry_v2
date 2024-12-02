@@ -98,21 +98,6 @@ function App() {
         setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
       };
 
-      // Initialize grid helper only after scene is ready
-      if (app.scene) {
-        const helper = app.scene.getObjectByName('gridHelper');
-        if (!helper) {
-          const newHelper = new THREE.GridHelper(1000000, 10);
-          newHelper.name = 'gridHelper';
-          newHelper.visible = displaySettings.showGrid;
-          app.scene.add(newHelper);
-          gridHelperRef.current = newHelper;
-        } else {
-          gridHelperRef.current = helper;
-          helper.visible = displaySettings.showGrid;
-        }
-      }
-
       // Apply initial display settings only after initialization
       if (app.scene && app.displaySettings) {
         Object.entries(displaySettings).forEach(([key, value]) => {

@@ -14,6 +14,7 @@ import { TextureManager } from './managers/TextureManager.js';
 import { CameraControls } from './managers/CameraControls.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { Satellite } from './components/Satellite/Satellite.js';
+import { RadialGrid } from './components/RadialGrid.js';
 import {
     createSatelliteFromLatLon,
     createSatelliteFromOrbitalElements,
@@ -38,6 +39,7 @@ class App3D extends EventTarget {
         this.scene = null;
         this.camera = null;
         this.renderer = null;
+        this.labelRenderer = null;  // Add CSS2D renderer
         this.controls = null;
         this.composers = {};
         this.satellites = {};
@@ -101,12 +103,22 @@ class App3D extends EventTarget {
             if (!this.camera) {
                 throw new Error('Failed to initialize camera');
             }
+            this.camera.layers.enable(1);  // Enable layer 1 for labels
             
             // Initialize renderer
             this.renderer = setupRenderer(this.canvas);
             if (!this.renderer) {
                 throw new Error('Failed to initialize renderer');
             }
+            
+            // Initialize CSS2D renderer for labels
+            this.labelRenderer = new CSS2DRenderer();
+            this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            this.labelRenderer.domElement.style.position = 'absolute';
+            this.labelRenderer.domElement.style.top = '0';
+            this.labelRenderer.domElement.style.pointerEvents = 'none';  // Disable pointer events on container
+            this.labelRenderer.domElement.style.zIndex = '1';  // Ensure labels are above 3D scene
+            document.body.appendChild(this.labelRenderer.domElement);
             
             // Create scene and initialize basic components
             this.scene = new THREE.Scene();
@@ -136,6 +148,10 @@ class App3D extends EventTarget {
             // Setup scene details after textures are loaded
             await setupSceneDetails(this);
             await setupPostProcessing(this);
+
+            // Initialize radial grid
+            this.radialGrid = new RadialGrid(this.scene);
+            this.radialGrid.setVisible(this.displaySettings.showGrid);
 
             // Apply initial display settings
             const simpleSettings = {};
@@ -217,13 +233,16 @@ class App3D extends EventTarget {
                 this.cameraControls.updateCameraPosition();
             }
 
-            // Render with composers if available
-            if (this.composers.final && this.composers.bloom) {
-                this.composers.bloom.render();
+            // Render the scene
+            if (this.composers.final) {
                 this.composers.final.render();
             } else {
-                // Fallback to regular rendering
                 this.renderer.render(this.scene, this.camera);
+            }
+
+            // Render labels
+            if (this.labelRenderer) {
+                this.labelRenderer.render(this.scene, this.camera);
             }
 
             if (this.stats) {
@@ -338,6 +357,10 @@ class App3D extends EventTarget {
                 this.composers.bloom.setSize(window.innerWidth, window.innerHeight);
                 this.composers.final.setSize(window.innerWidth, window.innerHeight);
             }
+
+            if (this.labelRenderer) {
+                this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            }
         }
     }
 
@@ -391,9 +414,8 @@ class App3D extends EventTarget {
                     }
                     break;
                 case 'showGrid':
-                    const gridHelper = this.scene?.getObjectByName('gridHelper');
-                    if (gridHelper) {
-                        gridHelper.visible = value;
+                    if (this.radialGrid) {
+                        this.radialGrid.setVisible(value);
                     }
                     break;
                 case 'showVectors':
