@@ -13,14 +13,31 @@ export class Satellite {
         this.color = color;
         this.mass = mass;
         this.size = size;
-        this.position = position;
-        this.velocity = velocity;
+        this.position = position.clone();
+        this.velocity = velocity.clone();
         this.initialized = false;
         this.updateBuffer = [];
         this.landed = false;
         this.maneuverNodes = [];
         this.maneuverCalculator = new ManeuverCalculator();
         this.app3d = app3d;
+        this.baseScale = 4;
+
+        // Performance optimization: Update counters
+        this.orbitUpdateCounter = 0;
+        this.orbitUpdateInterval = 30; // Update orbit every 30 frames
+        this.groundTrackUpdateCounter = 0;
+        this.groundTrackUpdateInterval = 10; // Update ground track every 10 frames
+        this.traceUpdateCounter = 0;
+        this.traceUpdateInterval = 5; // Update trace every 5 frames
+
+        // Initialize orientation quaternion
+        this.orientation = new THREE.Quaternion();
+        if (velocity) {
+            const upVector = new THREE.Vector3(0, 1, 0);
+            const velocityDir = velocity.clone().normalize();
+            this.orientation.setFromUnitVectors(upVector, velocityDir);
+        }
 
         // Create debug window
         if (this.app3d.createDebugWindow) {
@@ -28,18 +45,99 @@ export class Satellite {
         }
 
         this.initializeVisuals();
+
+        // Subscribe to display options changes
+        this.app3d.addEventListener('displaySettingChanged', (event) => {
+            const { key, value } = event.detail;
+            switch (key) {
+                case 'showOrbits':
+                    if (this.orbitLine) this.orbitLine.visible = value;
+                    if (this.apsisVisualizer) this.apsisVisualizer.visible = value;
+                    break;
+                case 'showTraces':
+                    if (this.traceLine) this.traceLine.visible = value;
+                    break;
+                case 'showGroundTraces':
+                    if (this.groundTrack) this.groundTrack.visible = value;
+                    break;
+                case 'showSatVectors':
+                    if (this.velocityVector) this.velocityVector.visible = value;
+                    if (this.orientationVector) this.orientationVector.visible = value;
+                    break;
+            }
+        });
     }
 
     initializeVisuals() {
-        const geometry = new THREE.ConeGeometry(Constants.satelliteRadius, Constants.satelliteRadius * 2, 3, 1);
-        const material = new THREE.MeshBasicMaterial({ color: this.color });
+        // Satellite mesh - pyramid shape (cone with 3 segments)
+        const geometry = new THREE.ConeGeometry(0.5, 2, 3); // radius: 0.5, height: 2, segments: 3 (minimum)
+        // Point along +Z axis (no rotation needed - ConeGeometry already points up)
+        const material = new THREE.MeshBasicMaterial({ 
+            color: this.color,
+            side: THREE.DoubleSide
+        });
         this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.scale.setScalar(Constants.satelliteRadius);
+
+        // Add to scene
         this.scene.add(this.mesh);
+        
+        // Add onBeforeRender callback to maintain relative size and orientation
+        const targetSize = 0.005;
+        this.mesh.onBeforeRender = (renderer, scene, camera) => {
+            // Only update scale and orientation if visible
+            if (this.mesh.visible) {
+                const distance = camera.position.distanceTo(this.mesh.position);
+                const scale = distance * targetSize;
+                this.mesh.scale.set(scale, scale, scale);
+                
+                // Update mesh orientation
+                this.mesh.quaternion.copy(this.orientation);
+                
+                // Scale vectors with camera distance - only if they exist and are visible
+                if (this.velocityVector && this.velocityVector.visible) {
+                    this.velocityVector.setLength(scale * 20);
+                }
+                if (this.orientationVector && this.orientationVector.visible) {
+                    this.orientationVector.setLength(scale * 20);
+                }
+            }
+        };
+
+        // Initialize vectors
+        // Velocity vector (red)
+        this.velocityVector = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            this.mesh.position,
+            this.baseScale * 3,
+            0xff0000
+        );
+        this.velocityVector.visible = false;
+        this.scene.add(this.velocityVector);
+
+        // Orientation vector (blue) - represents body frame z-axis
+        const bodyZAxis = new THREE.Vector3(0, 1, 0);
+        bodyZAxis.applyQuaternion(this.orientation);
+        this.orientationVector = new THREE.ArrowHelper(
+            bodyZAxis,
+            this.mesh.position,
+            this.baseScale * 3,
+            0x0000ff
+        );
+        this.orientationVector.visible = false;
+        this.scene.add(this.orientationVector);
 
         // Initialize trace line
         const traceGeometry = new THREE.BufferGeometry();
-        const traceMaterial = new THREE.LineBasicMaterial({ color: this.color });
+        const traceMaterial = new THREE.LineBasicMaterial({ 
+            color: this.color,
+            linewidth: 2,
+            transparent: true,
+            opacity: 0.5
+        });
         this.traceLine = new THREE.Line(traceGeometry, traceMaterial);
+        this.traceLine.frustumCulled = false;
+        this.traceLine.visible = false;
         this.scene.add(this.traceLine);
         this.tracePoints = [];
 
@@ -47,20 +145,27 @@ export class Satellite {
         const orbitGeometry = new THREE.BufferGeometry();
         const orbitMaterial = new THREE.LineBasicMaterial({ 
             color: this.color,
+            linewidth: 2,
             transparent: true,
-            opacity: 0.5
+            opacity: 0.7
         });
         this.orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
+        this.orbitLine.frustumCulled = false;
+        this.orbitLine.visible = false;
         this.scene.add(this.orbitLine);
 
         // Initialize ground track
         this.groundTrack = new GroundTrack(this.app3d.earth, this.color);
+        this.groundTrack.visible = false;
 
         // Initialize apsis visualizer
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
+        this.apsisVisualizer.visible = false;
 
         // Update initial position
-        this.updatePosition(this.position, this.velocity);
+        if (this.position && this.velocity) {
+            this.updatePosition(this.position, this.velocity);
+        }
     }
 
     updatePosition(position, velocity) {
@@ -78,31 +183,65 @@ export class Satellite {
         // Update satellite mesh position
         this.mesh.position.copy(scaledPosition);
 
-        // Update trace line
-        this.tracePoints.push(scaledPosition.clone());
-        if (this.tracePoints.length > 1000) {
-            this.tracePoints.shift();
+        // Update vectors only if they're visible
+        if (this.velocityVector && this.velocityVector.visible) {
+            const normalizedVelocity = this.velocity.clone().normalize();
+            this.velocityVector.position.copy(scaledPosition);
+            this.velocityVector.setDirection(normalizedVelocity);
         }
-        this.traceLine.geometry.setFromPoints(this.tracePoints);
 
-        // Update orbit line and apsides
-        if (!this.landed) {
-            this.updateOrbitLine(position, velocity);
-            // Update apsis visualizer with unscaled position and velocity (in meters)
-            const apsisData = this.apsisVisualizer.update(position, velocity);
-            if (apsisData) {
-                this.periapsisAltitude = apsisData.periapsisAltitude;
-                this.apoapsisAltitude = apsisData.apoapsisAltitude;
+        if (this.orientationVector && this.orientationVector.visible) {
+            const bodyZAxis = new THREE.Vector3(0, 1, 0);
+            bodyZAxis.applyQuaternion(this.orientation);
+            this.orientationVector.position.copy(scaledPosition);
+            this.orientationVector.setDirection(bodyZAxis);
+        }
+
+        // Update trace line
+        if (this.traceLine && this.traceLine.visible && this.tracePoints) {
+            this.traceUpdateCounter++;
+            if (this.traceUpdateCounter >= this.traceUpdateInterval) {
+                this.traceUpdateCounter = 0;
+                this.tracePoints.push(scaledPosition.clone());
+                if (this.tracePoints.length > 1000) {
+                    this.tracePoints.shift();
+                }
+                this.traceLine.geometry.setFromPoints(this.tracePoints);
+                this.traceLine.geometry.computeBoundingSphere();
             }
         }
 
-        // Update ground track
-        this.groundTrack.update(this.mesh.position);
+        // Update orbit line if needed
+        this.orbitUpdateCounter++;
+        if (this.orbitUpdateCounter >= this.orbitUpdateInterval) {
+            this.orbitUpdateCounter = 0;
+            if (this.orbitLine && this.orbitLine.visible) {
+                this.updateOrbitLine(position, velocity);
+            }
+        }
+
+        // Update ground track if needed
+        this.groundTrackUpdateCounter++;
+        if (this.groundTrackUpdateCounter >= this.groundTrackUpdateInterval) {
+            this.groundTrackUpdateCounter = 0;
+            if (this.groundTrack && this.groundTrack.visible) {
+                this.groundTrack.update(position, velocity);
+            }
+        }
+
+        // Update apsis visualizer if needed
+        if (this.apsisVisualizer && this.apsisVisualizer.visible) {
+            this.apsisVisualizer.update(position, velocity);
+        }
+
+        // Notify debug window about position update, but don't force it open
+        if (this.debugWindow?.onPositionUpdate) {
+            this.debugWindow.onPositionUpdate();
+        }
     }
 
     updateOrbitLine(position, velocity) {
-        // Calculate orbital elements
-        const mu = Constants.earthGravitationalParameter;
+        const mu = Constants.G * Constants.earthMass;
         const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
         
         if (!orbitalElements) {
@@ -110,9 +249,24 @@ export class Satellite {
             return;
         }
 
-        // Use the same orbital elements to compute the orbit points
-        const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu, 360);
-        this.orbitLine.geometry.setFromPoints(orbitPoints);
+        // Compute orbit points
+        const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu, 180);
+        
+        // Update orbit line geometry
+        if (orbitPoints && orbitPoints.length > 0) {
+            this.orbitLine.geometry.setFromPoints(orbitPoints);
+            this.orbitLine.geometry.computeBoundingSphere();
+        }
+        
+        // Update apsis visualizer
+        if (this.apsisVisualizer && this.apsisVisualizer.visible) {
+            this.apsisVisualizer.update(position, velocity);
+        }
+
+        // Force visibility update
+        if (this.orbitLine) {
+            this.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
+        }
     }
 
     updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
@@ -152,36 +306,147 @@ export class Satellite {
         this.apsisVisualizer.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
     }
 
+    setVectorsVisible(visible) {
+        if (this.velocityVector) {
+            this.velocityVector.visible = visible;
+        }
+        if (this.orientationVector) {
+            this.orientationVector.visible = visible;
+        }
+    }
+
+    getSpeed() {
+        return this.velocity ? this.velocity.length() : 0;
+    }
+
+    getRadialAltitude() {
+        return this.position ? (this.position.length() * Constants.metersToKm) : 0;
+    }
+
+    getSurfaceAltitude() {
+        if (!this.position) return 0;
+        return (this.position.length() - Constants.earthRadius) * Constants.metersToKm;
+    }
+
+    getOrbitalElements() {
+        if (!this.position || !this.velocity) return null;
+
+        const mu = Constants.G * Constants.earthMass;
+        const r = this.position.clone();
+        const v = this.velocity.clone();
+        
+        // Calculate specific angular momentum
+        const h = new THREE.Vector3().crossVectors(r, v);
+        const h_mag = h.length();
+        
+        // Calculate specific orbital energy
+        const v2 = v.lengthSq();
+        const r_mag = r.length();
+        const energy = (v2 / 2) - (mu / r_mag);
+        
+        // Calculate semi-major axis (in meters)
+        const sma = -mu / (2 * energy);
+        
+        // Calculate eccentricity vector
+        const ev = new THREE.Vector3()
+            .crossVectors(v, h)
+            .divideScalar(mu)
+            .sub(r.clone().divideScalar(r_mag));
+        
+        const ecc = ev.length();
+
+        // Calculate inclination
+        const inc = Math.acos(h.z / h_mag) * (180 / Math.PI);
+
+        // Calculate node vector (points to ascending node)
+        const n = new THREE.Vector3(0, 0, 1).cross(h);
+        const n_mag = n.length();
+
+        // Calculate longitude of ascending node (Ω)
+        let lan = Math.acos(n.x / n_mag) * (180 / Math.PI);
+        if (n.y < 0) lan = 360 - lan;
+
+        // Calculate argument of periapsis (ω)
+        let aop = Math.acos(n.dot(ev) / (n_mag * ecc)) * (180 / Math.PI);
+        if (ev.z < 0) aop = 360 - aop;
+
+        // Calculate true anomaly (ν)
+        let ta = Math.acos(ev.dot(r) / (ecc * r_mag)) * (180 / Math.PI);
+        if (r.dot(v) < 0) ta = 360 - ta;
+
+        // Calculate orbital period
+        const period = 2 * Math.PI * Math.sqrt(Math.pow(sma, 3) / mu);
+
+        // Calculate periapsis and apoapsis distances (in meters)
+        const periapsis = sma * (1 - ecc);
+        const apoapsis = sma * (1 + ecc);
+
+        return {
+            semiMajorAxis: sma * Constants.metersToKm,
+            eccentricity: ecc,
+            inclination: inc,
+            longitudeOfAscendingNode: lan,
+            argumentOfPeriapsis: aop,
+            trueAnomaly: ta,
+            period: period,
+            specificAngularMomentum: h_mag,
+            specificOrbitalEnergy: energy,
+            periapsisAltitude: (periapsis - Constants.earthRadius) * Constants.metersToKm,
+            apoapsisAltitude: (apoapsis - Constants.earthRadius) * Constants.metersToKm,
+            periapsisRadial: periapsis * Constants.metersToKm,
+            apoapsisRadial: apoapsis * Constants.metersToKm
+        };
+    }
+
     dispose() {
-        // Remove and dispose of all geometries and materials
+        // Reset cursor if this was the hovered object
+        if (this.mesh && window.app3d && window.app3d.hoveredObject === this.mesh) {
+            document.body.style.cursor = 'default';
+            window.app3d.hoveredObject = null;
+        }
+
+        // Remove from scene
         if (this.mesh) {
-            this.scene.remove(this.mesh);
+            this.mesh.removeFromParent();
             this.mesh.geometry.dispose();
             this.mesh.material.dispose();
         }
-
         if (this.traceLine) {
             this.scene.remove(this.traceLine);
             this.traceLine.geometry.dispose();
             this.traceLine.material.dispose();
         }
-
         if (this.orbitLine) {
             this.scene.remove(this.orbitLine);
             this.orbitLine.geometry.dispose();
             this.orbitLine.material.dispose();
         }
-
+        if (this.velocityVector) {
+            this.velocityVector.dispose();
+        }
+        if (this.orientationVector) {
+            this.orientationVector.dispose();
+        }
         if (this.groundTrack) {
             this.groundTrack.dispose();
         }
-
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
         }
 
-        // Clear arrays
-        this.tracePoints = [];
+        // Remove from app3d satellites list
+        if (this.app3d && this.app3d.satellites) {
+            delete this.app3d.satellites[this.id];
+            // Update satellite list in UI
+            if (this.app3d.updateSatelliteList) {
+                this.app3d.updateSatelliteList();
+            }
+        }
+    }
+
+    getAltitude(earth) {
+        if (!earth || !this.position) return 0;
+        return (this.position.length() - earth.radius) * Constants.metersToKm;
     }
 
     setColor(color) {
@@ -210,5 +475,24 @@ export class Satellite {
 
     setGroundTraceVisible(visible) {
         this.groundTrack.setVisible(visible);
+    }
+
+    updateVectors() {
+        const scaledPosition = this.mesh.position;
+        
+        if (this.velocityVector && this.velocityVector.visible) {
+            this.velocityVector.position.copy(scaledPosition);
+            const normalizedVelocity = this.velocity.clone().normalize();
+            this.velocityVector.setDirection(normalizedVelocity);
+            this.velocityVector.setLength(this.baseScale * 20);
+        }
+
+        if (this.orientationVector && this.orientationVector.visible) {
+            this.orientationVector.position.copy(scaledPosition);
+            const bodyZAxis = new THREE.Vector3(0, 1, 0);
+            bodyZAxis.applyQuaternion(this.orientation);
+            this.orientationVector.setDirection(bodyZAxis);
+            this.orientationVector.setLength(this.baseScale * 20);
+        }
     }
 }

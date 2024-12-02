@@ -110,7 +110,7 @@ export function SatelliteControls({ socket }) {
           <Satellite className="h-4 w-4" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="right">
+      <SheetContent side="right" className="p-4">
         <SheetHeader>
           <SheetTitle>Create Satellite</SheetTitle>
           <SheetDescription>

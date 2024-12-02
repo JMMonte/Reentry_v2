@@ -45,14 +45,43 @@ export async function loadTextures(textureManager) {
 }
 
 export function setupScene(app) {
-    new BackgroundStars(app.scene, app.camera);
-    app.earth = new Earth(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
-    app.sun = new Sun(app.scene, app.timeUtils);
-    app.moon = new Moon(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
-    app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);
-    app.cannonDebugger = new CannonDebugger(app.scene, app.world, { autoUpdate: false });
-    addEarthPoints(app);
-    //app.displayManager = new DisplayManager(app.scene, app.earth, app.moon, app.satellites, app.vectors);
+    if (!app.scene || !app.renderer) {
+        throw new Error('Scene or renderer not initialized');
+    }
+
+    try {
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.1); // soft white light
+        ambientLight.name = 'ambientLight';
+        app.scene.add(ambientLight);
+
+        app.cannonDebugger = new CannonDebugger(app.scene, app.world, { autoUpdate: false });
+        return app.scene;
+    } catch (error) {
+        console.error('Error setting up scene:', error);
+        throw error;
+    }
+}
+
+export async function setupSceneDetails(app) {
+    if (!app.textureManager) {
+        throw new Error('TextureManager not initialized');
+    }
+
+    try {
+        // Initialize components that require textures
+        new BackgroundStars(app.scene, app.camera);
+        app.earth = new Earth(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
+        app.sun = new Sun(app.scene, app.timeUtils);
+        app.moon = new Moon(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
+        app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);
+        
+        // Add earth points after Earth is initialized
+        addEarthPoints(app);
+    } catch (error) {
+        console.error('Error setting up scene details:', error);
+        throw error;
+    }
 }
 
 export function addEarthPoints(app) {

@@ -13,9 +13,10 @@ export function initializeBodySelector(app) {
         } else if (value === 'moon') {
             app.cameraControls.updateCameraTarget(app.moon);
         } else if (value.startsWith('satellite-')) {
-            const index = parseInt(value.split('-')[1]);
-            if (app.satellites[index]) {
-                app.cameraControls.updateCameraTarget(app.satellites[index]);
+            const satelliteId = parseInt(value.split('-')[1]);
+            const satellite = app.satellites.find(s => s.id === satelliteId);
+            if (satellite) {
+                app.cameraControls.updateCameraTarget(satellite);
             }
         }
     });
@@ -24,9 +25,9 @@ export function initializeBodySelector(app) {
     document.addEventListener('satelliteAdded', () => {
         document.dispatchEvent(new CustomEvent('updateBodyOptions', {
             detail: {
-                satellites: app.satellites.map((_, index) => ({
-                    value: `satellite-${index}`,
-                    text: `Satellite ${index + 1}`
+                satellites: app.satellites.map(s => ({
+                    value: `satellite-${s.id}`,
+                    text: `Satellite ${s.id}`
                 }))
             }
         }));
@@ -35,9 +36,9 @@ export function initializeBodySelector(app) {
     document.addEventListener('satelliteRemoved', () => {
         document.dispatchEvent(new CustomEvent('updateBodyOptions', {
             detail: {
-                satellites: app.satellites.map((_, index) => ({
-                    value: `satellite-${index}`,
-                    text: `Satellite ${index + 1}`
+                satellites: app.satellites.map(s => ({
+                    value: `satellite-${s.id}`,
+                    text: `Satellite ${s.id}`
                 }))
             }
         }));

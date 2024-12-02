@@ -5,6 +5,7 @@ import { ThemeProvider } from './components/theme-provider';
 import { Navbar } from './components/ui/navbar/Navbar';
 import { ChatSidebar } from './components/ui/chat/ChatSidebar';
 import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
+import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWindow';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
 import App3D from './app3d.js';
@@ -13,14 +14,27 @@ import './styles/globals.css';
 function App() {
   const [socket, setSocket] = useState(null);
   const [isChatVisible, setIsChatVisible] = useState(false);
+  const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
+  const [satellites, setSatellites] = useState([]);
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date().toISOString());
-  const [displaySettings, setDisplaySettings] = useState(defaultSettings);
-  const app3DRef = useRef(null);
+  const [displaySettings, setDisplaySettings] = useState(() => {
+    const initialSettings = {};
+    Object.entries(defaultSettings).forEach(([key, setting]) => {
+      initialSettings[key] = setting.value;
+    });
+    return initialSettings;
+  });
+  const [app3dInstance, setApp3dInstance] = useState(null);
+  const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
+  const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
+  const app3dRef = useRef(null);
   const gridHelperRef = useRef(null);
+  const initializingRef = useRef(false);
 
+  // Socket connection effect
   useEffect(() => {
     const newSocket = io('http://localhost:3000', {
       reconnectionDelayMax: 10000,
@@ -28,6 +42,7 @@ function App() {
     });
     
     newSocket.on('connect', () => {
+      console.log('Socket connected');
     });
 
     newSocket.on('connect_error', (error) => {
@@ -37,67 +52,100 @@ function App() {
     setSocket(newSocket);
 
     return () => {
-      newSocket.close();
+      if (newSocket) {
+        newSocket.close();
+      }
     };
   }, []);
 
+  // App3D initialization effect
   useEffect(() => {
-    const app = new App3D();
-    app3DRef.current = app;
-
-    // Add method to create debug windows
-    app.createDebugWindow = (satellite) => {
-      setDebugWindows(prev => {
-        // Check if window already exists for this satellite
-        if (prev.some(w => w.id === satellite.id)) {
-          return prev;
-        }
-        return [...prev, { id: satellite.id, satellite }];
-      });
-    };
-
-    // Add method to remove debug windows
-    app.removeDebugWindow = (satelliteId) => {
-      setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
-    };
-
-    // Initialize grid helper
-    const helper = app.scene.getObjectByName('gridHelper');
-    if (!helper) {
-      const newHelper = new THREE.GridHelper(1000000, 10);
-      newHelper.name = 'gridHelper';
-      newHelper.visible = displaySettings.showGrid;
-      app.scene.add(newHelper);
-      gridHelperRef.current = newHelper;
-    } else {
-      gridHelperRef.current = helper;
-      helper.visible = displaySettings.showGrid;
+    // Prevent double initialization in strict mode
+    if (initializingRef.current || app3dInstance) {
+      return;
     }
 
-    // Apply initial display settings
-    Object.entries(displaySettings).forEach(([key, value]) => {
-      app.updateDisplaySetting(key, value);
-    });
+    const canvas = document.getElementById('three-canvas');
+    if (!canvas) {
+      console.error('Canvas not found');
+      return;
+    }
+
+    initializingRef.current = true;
+
+    try {
+      const app = new App3D();
+      app3dRef.current = app;
+      setApp3dInstance(app);
+
+      // Add method to create debug windows
+      app.createDebugWindow = (satellite) => {
+        setDebugWindows(prev => {
+          if (prev.some(w => w.id === satellite.id)) {
+            return prev;
+          }
+          return [...prev, { id: satellite.id, satellite }];
+        });
+      };
+
+      // Add method to update satellites list
+      app.updateSatelliteList = () => {
+        setSatellites(app.satellites);
+      };
+
+      // Add method to remove debug windows
+      app.removeDebugWindow = (satelliteId) => {
+        setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
+      };
+
+      // Initialize grid helper only after scene is ready
+      if (app.scene) {
+        const helper = app.scene.getObjectByName('gridHelper');
+        if (!helper) {
+          const newHelper = new THREE.GridHelper(1000000, 10);
+          newHelper.name = 'gridHelper';
+          newHelper.visible = displaySettings.showGrid;
+          app.scene.add(newHelper);
+          gridHelperRef.current = newHelper;
+        } else {
+          gridHelperRef.current = helper;
+          helper.visible = displaySettings.showGrid;
+        }
+      }
+
+      // Apply initial display settings only after initialization
+      if (app.scene && app.displaySettings) {
+        Object.entries(displaySettings).forEach(([key, value]) => {
+          app.updateDisplaySetting(key, value);
+        });
+      }
+    } catch (error) {
+      console.error('Error initializing App3D:', error);
+    }
 
     return () => {
-      if (app) {
-        app.dispose();
+      if (app3dRef.current) {
+        console.log('Cleaning up App3D...');
+        app3dRef.current.dispose();
+        app3dRef.current = null;
+        setApp3dInstance(null);
       }
+      initializingRef.current = false;
     };
   }, []); // Empty dependency array since we only want to initialize once
 
+  // Display settings effect
   useEffect(() => {
-    if (!app3DRef.current) return;
-    const app3d = app3DRef.current;
+    const app = app3dRef.current;
+    if (!app) return;
 
-    // Apply display settings changes
     Object.entries(displaySettings).forEach(([key, value]) => {
-      app3d.updateDisplaySetting(key, value);
+      app.updateDisplaySetting(key, value);
     });
   }, [displaySettings]);
 
+  // Time update effect
   useEffect(() => {
-    // Listen for time updates from the simulation
     const handleTimeUpdate = (event) => {
       const { simulatedTime, timeWarp } = event.detail;
       setSimulatedTime(simulatedTime);
@@ -109,6 +157,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const app = app3dRef.current;
+    if (!app) return;
+
     document.dispatchEvent(new CustomEvent('updateTimeWarp', {
       detail: { value: timeWarp }
     }));
@@ -134,45 +185,62 @@ function App() {
   };
 
   const handleSimulatedTimeChange = (newTime) => {
-    if (app3DRef.current?.timeUtils) {
-      app3DRef.current.timeUtils.setSimulatedTime(newTime);
+    const app = app3dRef.current;
+    if (app?.timeUtils) {
+      app.timeUtils.setSimulatedTime(newTime);
     }
   };
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="flex flex-col min-h-screen">
+      <div className="h-screen w-screen overflow-hidden">
         <canvas id="three-canvas" className="absolute inset-0 z-0" />
         <Navbar 
-          onToggleChat={() => setIsChatVisible(!isChatVisible)}
+          onChatToggle={() => setIsChatVisible(!isChatVisible)}
+          onSatelliteListToggle={() => setIsSatelliteListVisible(!isSatelliteListVisible)}
+          onDisplayOptionsToggle={() => setIsDisplayOptionsOpen(!isDisplayOptionsOpen)}
+          onSatelliteCreatorToggle={() => setIsSatelliteModalOpen(!isSatelliteModalOpen)}
+          isChatVisible={isChatVisible}
+          isSatelliteListVisible={isSatelliteListVisible}
+          isDisplayOptionsOpen={isDisplayOptionsOpen}
+          isSatelliteModalOpen={isSatelliteModalOpen}
           selectedBody={selectedBody}
           onBodySelect={setSelectedBody}
           timeWarp={timeWarp}
           onTimeWarpChange={setTimeWarp}
           simulatedTime={simulatedTime}
-          onSimulatedTimeChange={setSimulatedTime}
+          onSimulatedTimeChange={handleSimulatedTimeChange}
+          app3DRef={app3dRef}
         />
-
-        <DisplayOptions />
-
-        {isChatVisible && (
-          <ChatSidebar
-            socket={socket}
-            onClose={() => setIsChatVisible(false)}
+        <ChatSidebar
+          socket={socket}
+          isVisible={isChatVisible}
+          setIsVisible={setIsChatVisible}
+        />
+        <DisplayOptions 
+          settings={displaySettings}
+          onSettingChange={(key, value) => {
+            if (app3dInstance) {
+              app3dInstance.updateDisplaySetting(key, value);
+              setDisplaySettings(prev => ({ ...prev, [key]: value }));
+            }
+          }}
+          isOpen={isDisplayOptionsOpen}
+          onOpenChange={setIsDisplayOptionsOpen}
+          app3DRef={app3dRef}
+        />
+        {debugWindows.map(({ id, satellite }) => (
+          <SatelliteDebugWindow
+            key={id}
+            satellite={satellite}
+            earth={app3dRef.current?.earth}
           />
-        )}
-
-        {/* Debug Windows */}
-        <div className="fixed bottom-4 right-4 space-y-2 z-10">
-          {debugWindows.map(window => (
-            <SatelliteDebugWindow
-              key={window.id}
-              satellite={window.satellite}
-              earth={app3DRef.current?.earth}
-              onClose={() => app3DRef.current?.removeDebugWindow(window.id)}
-            />
-          ))}
-        </div>
+        ))}
+        <SatelliteListWindow 
+          satellites={satellites} 
+          isOpen={isSatelliteListVisible}
+          setIsOpen={setIsSatelliteListVisible}
+        />
       </div>
     </ThemeProvider>
   );
