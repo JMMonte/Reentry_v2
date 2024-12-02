@@ -58,7 +58,7 @@ export class Satellite {
                     if (this.traceLine) this.traceLine.visible = value;
                     break;
                 case 'showGroundTraces':
-                    if (this.groundTrack) this.groundTrack.visible = value;
+                    if (this.groundTrack) this.groundTrack.setVisible(value);
                     break;
                 case 'showSatVectors':
                     if (this.velocityVector) this.velocityVector.visible = value;
@@ -155,12 +155,14 @@ export class Satellite {
         this.scene.add(this.orbitLine);
 
         // Initialize ground track
-        this.groundTrack = new GroundTrack(this.app3d.earth, this.color);
-        this.groundTrack.visible = false;
+        if (this.app3d.earth) {
+            this.groundTrack = new GroundTrack(this.app3d.earth, this.color);
+            this.groundTrack.setVisible(this.app3d.getDisplaySetting('showGroundTraces'));
+        }
 
         // Initialize apsis visualizer
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
-        this.apsisVisualizer.visible = false;
+        this.apsisVisualizer.setVisible(false);
 
         // Update initial position
         if (this.position && this.velocity) {
@@ -224,8 +226,8 @@ export class Satellite {
         this.groundTrackUpdateCounter++;
         if (this.groundTrackUpdateCounter >= this.groundTrackUpdateInterval) {
             this.groundTrackUpdateCounter = 0;
-            if (this.groundTrack && this.groundTrack.visible) {
-                this.groundTrack.update(position, velocity);
+            if (this.groundTrack && this.groundTrack.groundTraceLine.visible) {
+                this.groundTrack.update(scaledPosition);
             }
         }
 

@@ -523,6 +523,62 @@ export class Satellite {
         this.earth.rotationGroup.remove(this.groundTraceLine);
     }
 
+    dispose() {
+        // Remove from scene
+        if (this.satelliteBody) {
+            this.scene.remove(this.satelliteBody);
+        }
+        if (this.orbitLine) {
+            this.scene.remove(this.orbitLine);
+        }
+        if (this.traceLine) {
+            this.scene.remove(this.traceLine);
+        }
+        if (this.groundTrack) {
+            this.scene.remove(this.groundTrack);
+        }
+        if (this.velocityVector) {
+            this.scene.remove(this.velocityVector);
+        }
+        if (this.orientationVector) {
+            this.scene.remove(this.orientationVector);
+        }
+        if (this.apsisVisualizer) {
+            this.scene.remove(this.apsisVisualizer);
+        }
+        if (this.label) {
+            this.label.element.remove();
+        }
+
+        // Remove from app's satellites object
+        if (this.app3d && this.app3d.satellites) {
+            delete this.app3d.satellites[this.id];
+        }
+
+        // Close debug window if open
+        if (this.debugWindow) {
+            this.debugWindow.setIsOpen(false);
+        }
+
+        // Check if physics worker is still needed
+        if (this.app3d) {
+            this.app3d.checkPhysicsWorkerNeeded();
+        }
+
+        // Notify physics worker about removal
+        if (this.app3d?.physicsWorker) {
+            this.app3d.physicsWorker.postMessage({
+                type: 'removeSatellite',
+                data: { id: this.id }
+            });
+        }
+
+        // Update the satellite list
+        if (this.app3d?.updateSatelliteList) {
+            this.app3d.updateSatelliteList();
+        }
+    }
+
     // Coordinate transformation methods
     eciToEcef(positionECI, rotationAngle) {
         const x = positionECI.x * Math.cos(rotationAngle) + positionECI.y * Math.sin(rotationAngle);

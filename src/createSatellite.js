@@ -5,7 +5,7 @@ import { Constants } from './utils/Constants.js';
 import { createRoot } from 'react-dom/client';
 import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 
-export function createSatellite(app, params) {
+export async function createSatellite(app, params) {
     console.log('createSatellite called with params:', params);
     const { scene, satellites, displaySettings } = app;
     
@@ -95,7 +95,23 @@ export function createSatellite(app, params) {
     // Store satellite in app's satellites object
     satellites[newSatellite.id] = newSatellite;
 
-    // Notify physics worker
+    // Initialize physics worker if needed and wait for it
+    if (!app.physicsWorker || !app.workerInitialized) {
+        app.checkPhysicsWorkerNeeded();
+        // Wait for worker to be initialized
+        await new Promise((resolve) => {
+            const checkWorker = () => {
+                if (app.workerInitialized) {
+                    resolve();
+                } else {
+                    setTimeout(checkWorker, 50);
+                }
+            };
+            checkWorker();
+        });
+    }
+
+    // Now we can safely notify the physics worker
     if (app.physicsWorker && app.workerInitialized) {
         console.log('Notifying physics worker about new satellite:', newSatellite.id);
         app.physicsWorker.postMessage({

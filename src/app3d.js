@@ -81,9 +81,6 @@ class App3D extends EventTarget {
             throw new Error('Canvas element not found');
         }
 
-        // Initialize physics worker
-        this.initPhysicsWorker();
-
         // Initialize core components
         this.timeUtils = new TimeUtils({
             simulatedTime: new Date().toISOString() // Current time as default
@@ -251,6 +248,24 @@ class App3D extends EventTarget {
         } catch (error) {
             console.error('Error in animation loop:', error);
             // Don't rethrow to keep animation going
+        }
+    }
+
+    checkPhysicsWorkerNeeded() {
+        const satelliteCount = Object.keys(this.satellites).length;
+        if (satelliteCount > 0 && !this.physicsWorker) {
+            this.initPhysicsWorker();
+        } else if (satelliteCount === 0 && this.physicsWorker) {
+            this.cleanupPhysicsWorker();
+        }
+    }
+
+    cleanupPhysicsWorker() {
+        if (this.physicsWorker) {
+            console.log('Cleaning up physics worker...');
+            this.physicsWorker.terminate();
+            this.physicsWorker = null;
+            this.workerInitialized = false;
         }
     }
 
@@ -521,23 +536,26 @@ class App3D extends EventTarget {
     }
 
     // Methods for satellite creation
-    createSatelliteLatLon(params) {
-        const satellite = createSatelliteFromLatLon(this, params);
+    async createSatelliteLatLon(params) {
+        const satellite = await createSatelliteFromLatLon(this, params);
         this.satellites[satellite.id] = satellite;
+        this.checkPhysicsWorkerNeeded();
         this.dispatchEvent(new Event('satellitesChanged'));
         return satellite;
     }
 
-    createSatelliteOrbital(params) {
-        const satellite = createSatelliteFromOrbitalElements(this, params);
+    async createSatelliteOrbital(params) {
+        const satellite = await createSatelliteFromOrbitalElements(this, params);
         this.satellites[satellite.id] = satellite;
+        this.checkPhysicsWorkerNeeded();
         this.dispatchEvent(new Event('satellitesChanged'));
         return satellite;
     }
 
-    createSatelliteCircular(params) {
-        const satellite = createSatelliteFromLatLonCircular(this, params);
+    async createSatelliteCircular(params) {
+        const satellite = await createSatelliteFromLatLonCircular(this, params);
         this.satellites[satellite.id] = satellite;
+        this.checkPhysicsWorkerNeeded();
         this.dispatchEvent(new Event('satellitesChanged'));
         return satellite;
     }
@@ -559,6 +577,7 @@ class App3D extends EventTarget {
         
         // Update the satellite list in the navbar
         this.updateSatelliteList();
+        this.checkPhysicsWorkerNeeded();
     }
 
     updateSatelliteList() {

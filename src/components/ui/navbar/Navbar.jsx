@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../button';
 import { Switch } from '../switch';
 import { 
@@ -77,14 +77,14 @@ export function Navbar({
   onSimulatedTimeChange,
   app3DRef
 }) {
-  const [satelliteOptions, setSatelliteOptions] = React.useState([]);
+  const [satelliteOptions, setSatelliteOptions] = useState([]);
   const [satelliteModalPosition, setSatelliteModalPosition] = useState({ x: window.innerWidth - 420, y: 80 });
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleBodyOptionsUpdate = (event) => {
       if (event.detail?.satellites) {
         setSatelliteOptions(event.detail.satellites.map(satellite => ({
-          value: satellite.id,
+          value: `sat_${satellite.id}`,
           text: satellite.name || `Satellite ${satellite.id}`
         })));
       }
@@ -94,44 +94,53 @@ export function Navbar({
     return () => document.removeEventListener('updateBodyOptions', handleBodyOptionsUpdate);
   }, []);
 
-  // Update satellite options when app3DRef changes
-  React.useEffect(() => {
-    if (app3DRef?.current?.satellites) {
-      const updateSatelliteOptions = () => {
-        const satellites = app3DRef.current.satellites;
-        setSatelliteOptions(Object.values(satellites).map(satellite => ({
-          value: satellite.id,
-          text: satellite.name || `Satellite ${satellite.id}`
-        })));
-      };
-
-      // Initial update
-      updateSatelliteOptions();
-
-      // Listen for satellite changes
-      app3DRef.current.addEventListener('satellitesChanged', updateSatelliteOptions);
-      return () => {
-        if (app3DRef.current) {
-          app3DRef.current.removeEventListener('satellitesChanged', updateSatelliteOptions);
-        }
-      };
+  // Update satellite options when satellites change
+  useEffect(() => {
+    if (app3DRef.current) {
+      const satellites = app3DRef.current.satellites;
+      const options = Object.entries(satellites).map(([id, satellite]) => ({
+        value: `sat_${id}`,
+        text: satellite.name || `Satellite ${id}`
+      }));
+      setSatelliteOptions(options);
     }
-  }, [app3DRef?.current]);
+  }, [app3DRef.current?.satellites]);
 
   const handleBodyChange = (value) => {
-    onBodySelect(value);
+    const actualValue = value.startsWith('sat_') ? value.substring(4) : value;
+    onBodySelect(actualValue);
     
     // Focus camera on selected satellite
-    if (value !== 'none' && value !== 'earth' && value !== 'moon') {
-      const satellite = app3DRef?.current?.satellites[value];
+    if (actualValue !== 'none' && actualValue !== 'earth' && actualValue !== 'moon') {
+      const satellite = app3DRef?.current?.satellites[actualValue];
       if (satellite && window.app3d?.cameraControls) {
         window.app3d.cameraControls.updateCameraTarget(satellite);
       }
     }
     
     document.dispatchEvent(new CustomEvent('bodySelected', {
-      detail: { body: value }
+      detail: { body: actualValue }
     }));
+  };
+
+  const onCreateSatellite = async (params) => {
+    try {
+      let satellite;
+      if (params.mode === 'latlon') {
+        satellite = await app3DRef.current?.createSatelliteLatLon(params);
+      } else if (params.mode === 'orbital') {
+        satellite = await app3DRef.current?.createSatelliteOrbital(params);
+      } else if (params.mode === 'circular') {
+        satellite = await app3DRef.current?.createSatelliteCircular(params);
+      }
+      
+      if (satellite) {
+        handleBodyChange(`sat_${satellite.id}`);
+        onSatelliteCreatorToggle(false);
+      }
+    } catch (error) {
+      console.error('Error creating satellite:', error);
+    }
   };
 
   return (
@@ -158,7 +167,7 @@ export function Navbar({
               {selectedBody === 'none' ? 'None' : 
                selectedBody === 'earth' ? 'Earth' :
                selectedBody === 'moon' ? 'Moon' :
-               satelliteOptions.find(opt => opt.value.toString() === selectedBody)?.text || selectedBody}
+               satelliteOptions.find(opt => opt.value === selectedBody)?.text || selectedBody}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -169,7 +178,7 @@ export function Navbar({
               <>
                 <SelectSeparator />
                 {satelliteOptions.map(({ value, text }) => (
-                  <SelectItem key={value} value={value.toString()}>{text}</SelectItem>
+                  <SelectItem key={value} value={value}>{text}</SelectItem>
                 ))}
               </>
             )}
@@ -308,29 +317,7 @@ export function Navbar({
         className="w-[400px]"
       >
         <SatelliteCreator
-          onCreateSatellite={(data) => {
-            if (app3DRef.current) {
-              let newSatellite;
-              switch (data.mode) {
-                case 'latlon':
-                  newSatellite = app3DRef.current.createSatelliteLatLon(data);
-                  break;
-                case 'orbital':
-                  newSatellite = app3DRef.current.createSatelliteOrbital(data);
-                  break;
-                case 'circular':
-                  newSatellite = app3DRef.current.createSatelliteCircular(data);
-                  break;
-              }
-              // Trigger satellites changed event
-              app3DRef.current.dispatchEvent(new Event('satellitesChanged'));
-              // Auto-select the new satellite
-              if (newSatellite) {
-                handleBodyChange(newSatellite.id.toString());
-              }
-              onSatelliteCreatorToggle(false);
-            }
-          }}
+          onCreateSatellite={onCreateSatellite}
         />
       </DraggableModal>
     </div>

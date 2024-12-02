@@ -39,9 +39,17 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         }));
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        onCreateSatellite({ ...formData, mode });
+        try {
+            await onCreateSatellite({ ...formData, mode });
+            setFormData(prev => ({
+                ...prev,
+                name: ''  // Reset only the name field after successful creation
+            }));
+        } catch (error) {
+            console.error('Error creating satellite:', error);
+        }
     };
 
     const renderField = (name, label, type = "number", min = null, max = null, step = null, unit = null) => {
