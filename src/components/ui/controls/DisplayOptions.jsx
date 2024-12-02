@@ -16,7 +16,8 @@ import {
   Radio,
   Map,
   Moon,
-  Link
+  Link,
+  CheckSquare
 } from 'lucide-react';
 import { DraggableModal } from '../modal/DraggableModal';
 
@@ -55,6 +56,25 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
         className="w-[300px]"
         position={position}
         onPositionChange={setPosition}
+        rightElement={
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="w-8 h-8 mr-2" 
+            onClick={() => {
+              const allTrue = Object.entries(defaultSettings).every(([key, setting]) => 
+                setting.type === 'range' ? true : settings[key]
+              );
+              Object.entries(defaultSettings).forEach(([key, setting]) => {
+                if (setting.type !== 'range') {
+                  onSettingChange(key, !allTrue);
+                }
+              });
+            }}
+          >
+            <CheckSquare className="h-4 w-4" />
+          </Button>
+        }
       >
         <div className="space-y-0.5">
           {Object.entries(defaultSettings).map(([key, setting]) => (
