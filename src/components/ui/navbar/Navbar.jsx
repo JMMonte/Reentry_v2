@@ -54,29 +54,11 @@ export function Navbar({
   onBodySelect,
   timeWarp,
   onTimeWarpChange,
-  onCreateSatellite,
   simulatedTime,
   onSimulatedTimeChange
 }) {
   const [satelliteOptions, setSatelliteOptions] = React.useState([]);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = React.useState(false);
-
-  const handleCreateSatellite = (data) => {
-    // We'll implement this in app3d.js
-    if (window.app3d) {
-      switch (data.mode) {
-        case 'latlon':
-          window.app3d.createSatelliteLatLon(data);
-          break;
-        case 'orbital':
-          window.app3d.createSatelliteOrbital(data);
-          break;
-        case 'circular':
-          window.app3d.createSatelliteCircular(data);
-          break;
-      }
-    }
-  };
 
   React.useEffect(() => {
     const handleBodyOptionsUpdate = (event) => {
@@ -92,6 +74,23 @@ export function Navbar({
     document.dispatchEvent(new CustomEvent('bodySelected', {
       detail: { body: value }
     }));
+  };
+
+  const handleCreateSatellite = (data) => {
+    if (window.app3d) {
+      switch (data.mode) {
+        case 'latlon':
+          window.app3d.createSatelliteLatLon(data);
+          break;
+        case 'orbital':
+          window.app3d.createSatelliteOrbital(data);
+          break;
+        case 'circular':
+          window.app3d.createSatelliteCircular(data);
+          break;
+      }
+      setIsSatelliteModalOpen(false);
+    }
   };
 
   return (

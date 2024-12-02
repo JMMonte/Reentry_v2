@@ -4,17 +4,15 @@ import * as THREE from 'three';
 import { ThemeProvider } from './components/theme-provider';
 import { Navbar } from './components/ui/navbar/Navbar';
 import { ChatSidebar } from './components/ui/chat/ChatSidebar';
-import { SatelliteCreationPanel } from './components/ui/satellite/SatelliteCreationPanel';
+import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
-import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 import App3D from './app3d.js';
 import './styles/globals.css';
 
 function App() {
   const [socket, setSocket] = useState(null);
   const [isChatVisible, setIsChatVisible] = useState(false);
-  const [isSatelliteCreationVisible, setIsSatelliteCreationVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
@@ -147,7 +145,6 @@ function App() {
         <canvas id="three-canvas" className="absolute inset-0 z-0" />
         <Navbar 
           onToggleChat={() => setIsChatVisible(!isChatVisible)}
-          onToggleSatelliteCreation={() => setIsSatelliteCreationVisible(!isSatelliteCreationVisible)}
           selectedBody={selectedBody}
           onBodySelect={setSelectedBody}
           timeWarp={timeWarp}
@@ -162,12 +159,6 @@ function App() {
           <ChatSidebar
             socket={socket}
             onClose={() => setIsChatVisible(false)}
-          />
-        )}
-
-        {isSatelliteCreationVisible && (
-          <SatelliteCreationPanel
-            onClose={() => setIsSatelliteCreationVisible(false)}
           />
         )}
 
