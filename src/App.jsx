@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
 import { ThemeProvider } from './components/theme-provider';
@@ -16,10 +16,10 @@ function App() {
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
-  const [satellites, setSatellites] = useState([]);
+  const [satellites, setSatellites] = useState({});  // Initialize as empty object
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
-  const [simulatedTime, setSimulatedTime] = useState(new Date().toISOString());
+  const [simulatedTime, setSimulatedTime] = useState(new Date());
   const [displaySettings, setDisplaySettings] = useState(() => {
     const initialSettings = {};
     Object.entries(defaultSettings).forEach(([key, setting]) => {
@@ -56,6 +56,33 @@ function App() {
         newSocket.close();
       }
     };
+  }, []);
+
+  // Handle satellite list updates
+  useEffect(() => {
+    const handleSatelliteListUpdate = (event) => {
+      console.log('App: Received satellite list update:', event.detail);
+      if (event.detail?.satellites) {
+        // Convert satellites to array if needed
+        const satelliteArray = Array.isArray(event.detail.satellites) 
+          ? event.detail.satellites 
+          : Object.values(event.detail.satellites);
+        
+        // Filter out invalid satellites and ensure unique entries
+        const validSatellites = satelliteArray
+          .filter(sat => sat && sat.id != null && sat.name)
+          .reduce((acc, sat) => {
+            acc[sat.id] = sat;
+            return acc;
+          }, {});
+        
+        console.log('App: Setting satellites state with:', validSatellites);
+        setSatellites(validSatellites);
+      }
+    };
+
+    window.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+    return () => window.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
   }, []);
 
   // App3D initialization effect
@@ -176,6 +203,15 @@ function App() {
     }
   };
 
+  const handleBodySelect = (value) => {
+    setSelectedBody(value);
+  };
+
+  // Pass satellites to Navbar
+  const navbarSatellites = useMemo(() => {
+    return satellites;
+  }, [satellites]);
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <div className="h-screen w-screen overflow-hidden">
@@ -190,12 +226,13 @@ function App() {
           isDisplayOptionsOpen={isDisplayOptionsOpen}
           isSatelliteModalOpen={isSatelliteModalOpen}
           selectedBody={selectedBody}
-          onBodySelect={setSelectedBody}
+          onBodySelect={handleBodySelect}
           timeWarp={timeWarp}
           onTimeWarpChange={setTimeWarp}
           simulatedTime={simulatedTime}
           onSimulatedTimeChange={handleSimulatedTimeChange}
           app3DRef={app3dRef}
+          satellites={navbarSatellites}
         />
         <ChatSidebar
           socket={socket}

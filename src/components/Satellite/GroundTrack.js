@@ -11,6 +11,7 @@ export class GroundTrack {
         this.color = color;
         this.maxTracePoints = 1000; 
         this.groundTracePoints = [];
+        this.visible = false;
         
         this._relativePosition = new THREE.Vector3();
         this._localSatellitePosition = new THREE.Vector3();
@@ -38,6 +39,7 @@ export class GroundTrack {
         this.groundTraceLine = new THREE.Line(groundTraceGeometry, lineMaterial);
         this.groundTraceLine.renderOrder = 2;  
         this.groundTraceLine.frustumCulled = false;
+        this.groundTraceLine.visible = this.visible;
         this.earth.rotationGroup.add(this.groundTraceLine);
     }
 
@@ -45,10 +47,9 @@ export class GroundTrack {
         if (!this.earth || !this.groundTraceLine) return;
 
         const earthCenter = this.earth.earthMesh.position;
-        
         this._relativePosition.copy(satellitePosition).sub(earthCenter);
         this._localSatellitePosition.copy(this._relativePosition).applyMatrix4(this.earth.rotationGroup.matrixWorld.clone().invert());
-        this._groundPoint.copy(this._localSatellitePosition).normalize().multiplyScalar(Constants.earthRadius * Constants.metersToKm * Constants.scale);
+        this._groundPoint.copy(this._localSatellitePosition).normalize().multiplyScalar(Constants.earthRadius * Constants.metersToKm);
 
         const currentLength = this.groundTracePoints.length;
         if (currentLength >= this.maxTracePoints) {
@@ -57,11 +58,11 @@ export class GroundTrack {
         }
 
         const idx = this.groundTracePoints.length * 3;
-        this._positions[idx] = this._groundPoint.x;
-        this._positions[idx + 1] = this._groundPoint.y;
-        this._positions[idx + 2] = this._groundPoint.z;
+        this._positions[idx] = this._groundPoint.x * Constants.scale;
+        this._positions[idx + 1] = this._groundPoint.y * Constants.scale;
+        this._positions[idx + 2] = this._groundPoint.z * Constants.scale;
         
-        this.groundTracePoints.push(this._groundPoint.clone()); 
+        this.groundTracePoints.push(this._groundPoint.clone().multiplyScalar(Constants.scale)); 
         
         const geometry = this.groundTraceLine.geometry;
         geometry.attributes.position.needsUpdate = true;
@@ -69,6 +70,7 @@ export class GroundTrack {
     }
 
     setVisible(visible) {
+        this.visible = visible;
         if (this.groundTraceLine) {
             this.groundTraceLine.visible = visible;
         }

@@ -75,52 +75,67 @@ export function Navbar({
   onTimeWarpChange,
   simulatedTime,
   onSimulatedTimeChange,
-  app3DRef
+  app3DRef,
+  satellites
 }) {
   const [satelliteOptions, setSatelliteOptions] = useState([]);
   const [satelliteModalPosition, setSatelliteModalPosition] = useState({ x: window.innerWidth - 420, y: 80 });
 
+  // Update satellite options when satellites prop changes
   useEffect(() => {
-    const handleBodyOptionsUpdate = (event) => {
-      if (event.detail?.satellites) {
-        setSatelliteOptions(event.detail.satellites.map(satellite => ({
-          value: `sat_${satellite.id}`,
-          text: satellite.name || `Satellite ${satellite.id}`
-        })));
-      }
-    };
-
-    document.addEventListener('updateBodyOptions', handleBodyOptionsUpdate);
-    return () => document.removeEventListener('updateBodyOptions', handleBodyOptionsUpdate);
-  }, []);
-
-  // Update satellite options when satellites change
-  useEffect(() => {
-    if (app3DRef.current) {
-      const satellites = app3DRef.current.satellites;
-      const options = Object.entries(satellites).map(([id, satellite]) => ({
-        value: `sat_${id}`,
-        text: satellite.name || `Satellite ${id}`
-      }));
+    const satelliteArray = Object.values(satellites);
+    
+    if (satelliteArray.length > 0) {
+      const options = satelliteArray
+        .filter(satellite => satellite && satellite.id != null && satellite.name)
+        .map(satellite => ({
+          value: satellite.id.toString(),
+          text: satellite.name
+        }));
       setSatelliteOptions(options);
+    } else {
+      setSatelliteOptions([]);
     }
-  }, [app3DRef.current?.satellites]);
+  }, [satellites]);
+
+  // Helper function to get the display value
+  const getDisplayValue = (value) => {
+    if (!value) return 'None';
+    if (value === 'none') return 'None';
+    if (value === 'earth') return 'Earth';
+    if (value === 'moon') return 'Moon';
+    
+    // Try to find the satellite in options first
+    const option = satelliteOptions.find(opt => opt.value === value.toString());
+    if (option) {
+      return option.text;
+    }
+    
+    // Try to find in satellites object
+    const satellite = satellites[value];
+    if (satellite && satellite.name) {
+      return satellite.name;
+    }
+    
+    return `Satellite ${value}`;
+  };
 
   const handleBodyChange = (value) => {
-    const actualValue = value.startsWith('sat_') ? value.substring(4) : value;
-    onBodySelect(actualValue);
-    
-    // Focus camera on selected satellite
-    if (actualValue !== 'none' && actualValue !== 'earth' && actualValue !== 'moon') {
-      const satellite = app3DRef?.current?.satellites[actualValue];
-      if (satellite && window.app3d?.cameraControls) {
-        window.app3d.cameraControls.updateCameraTarget(satellite);
+    // For non-satellite values, pass them directly
+    if (!value || value === 'none' || value === 'earth' || value === 'moon') {
+      onBodySelect(value);
+    } else {
+      // For satellites, pass the ID directly
+      onBodySelect(value);
+      
+      // Focus camera on selected satellite
+      if (app3DRef?.current?.satellites) {
+        const satellite = app3DRef.current.satellites[value];
+        if (satellite && window.app3d?.cameraControls) {
+          window.app3d.cameraControls.updateCameraTarget(satellite);
+        }
       }
     }
-    
-    document.dispatchEvent(new CustomEvent('bodySelected', {
-      detail: { body: actualValue }
-    }));
   };
 
   const onCreateSatellite = async (params) => {
@@ -135,7 +150,7 @@ export function Navbar({
       }
       
       if (satellite) {
-        handleBodyChange(`sat_${satellite.id}`);
+        handleBodyChange(satellite.id.toString());
         onSatelliteCreatorToggle(false);
       }
     } catch (error) {
@@ -163,11 +178,8 @@ export function Navbar({
         {/* Body Selection */}
         <Select value={selectedBody} onValueChange={handleBodyChange}>
           <SelectTrigger className="w-[100px]">
-            <SelectValue>
-              {selectedBody === 'none' ? 'None' : 
-               selectedBody === 'earth' ? 'Earth' :
-               selectedBody === 'moon' ? 'Moon' :
-               satelliteOptions.find(opt => opt.value === selectedBody)?.text || selectedBody}
+            <SelectValue placeholder="Select body">
+              {getDisplayValue(selectedBody)}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>

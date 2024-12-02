@@ -6,7 +6,6 @@ import { createRoot } from 'react-dom/client';
 import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 
 export async function createSatellite(app, params) {
-    console.log('createSatellite called with params:', params);
     const { scene, satellites, displaySettings } = app;
     
     // Generate new unique ID
@@ -35,19 +34,6 @@ export async function createSatellite(app, params) {
         app3d: app,
         name: params.name
     });
-
-    console.log('Creating satellite:', { 
-        position: newSatellite.position, 
-        velocity: newSatellite.velocity, 
-        id: newSatellite.id, 
-        name: newSatellite.name,
-        color: newSatellite.color, 
-        mass: newSatellite.mass, 
-        size: newSatellite.size 
-    });
-
-    console.log('Creating satellite:', { position: newSatellite.position, velocity: newSatellite.velocity, id: newSatellite.id, color: newSatellite.color, mass: newSatellite.mass, size: newSatellite.size });
-
     // Apply display settings after creation
     const showOrbits = displaySettings.showOrbits;
     const showTraces = displaySettings.showTraces;
@@ -86,14 +72,18 @@ export async function createSatellite(app, params) {
 
     // Create debug window
     if (app.createDebugWindow) {
-        console.log('Creating debug window for satellite:', newSatellite.id);
         app.createDebugWindow(newSatellite);
-    } else {
-        console.warn('createDebugWindow not found on app:', app);
     }
 
-    // Store satellite in app's satellites object
-    satellites[newSatellite.id] = newSatellite;
+    // Add satellite to app.satellites
+    app.satellites = { ...app.satellites, [newSatellite.id]: newSatellite };
+
+    // Call updateSatelliteList explicitly
+    if (app.updateSatelliteList) {
+        app.updateSatelliteList();
+    } else {
+        console.warn('updateSatelliteList not found on app');
+    }
 
     // Initialize physics worker if needed and wait for it
     if (!app.physicsWorker || !app.workerInitialized) {
@@ -113,7 +103,6 @@ export async function createSatellite(app, params) {
 
     // Now we can safely notify the physics worker
     if (app.physicsWorker && app.workerInitialized) {
-        console.log('Notifying physics worker about new satellite:', newSatellite.id);
         app.physicsWorker.postMessage({
             type: 'addSatellite',
             data: {
@@ -128,23 +117,17 @@ export async function createSatellite(app, params) {
                     y: newSatellite.velocity.y / (Constants.metersToKm * Constants.scale),
                     z: newSatellite.velocity.z / (Constants.metersToKm * Constants.scale)
                 },
-                mass: newSatellite.mass,
-                size: newSatellite.size
+                mass: newSatellite.mass
             }
         });
     } else {
         console.error('Physics worker not initialized when creating satellite:', newSatellite.id);
     }
 
-    if (app.updateSatelliteList) {
-        app.updateSatelliteList();
-    }
-
     return newSatellite;
 }
 
 export function createSatelliteFromLatLon(app, params) {
-    console.log('Creating satellite from lat/lon:', params);
     const { earth, displaySettings } = app;
     const {
         latitude,
@@ -209,7 +192,6 @@ export function createSatelliteFromLatLon(app, params) {
 }
 
 export function createSatelliteFromLatLonCircular(app, params) {
-    console.log('Creating satellite from lat/lon circular:', params);
     const { earth, displaySettings } = app;
     const {
         latitude,
@@ -276,7 +258,6 @@ export function createSatelliteFromLatLonCircular(app, params) {
 }
 
 export function createSatelliteFromOrbitalElements(app, params) {
-    console.log('Creating satellite from orbital elements:', params);
     const { displaySettings } = app;
     const {
         semiMajorAxis,
@@ -298,11 +279,6 @@ export function createSatelliteFromOrbitalElements(app, params) {
         argumentOfPeriapsis * (Math.PI / 180),
         trueAnomaly * (Math.PI / 180)
     );
-
-    console.log('Calculated state vectors:', {
-        position: positionECI,
-        velocity: velocityECI
-    });
 
     const scaledPosition = new THREE.Vector3(
         positionECI.x * Constants.metersToKm * Constants.scale,

@@ -1,11 +1,6 @@
 // app3d.js
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
-import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer';
 import Stats from 'stats.js';
 import { Constants } from './utils/Constants.js';
@@ -13,7 +8,6 @@ import { TimeUtils } from './utils/TimeUtils.js';
 import { TextureManager } from './managers/TextureManager.js';
 import { CameraControls } from './managers/CameraControls.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
-import { Satellite } from './components/Satellite/Satellite.js';
 import { RadialGrid } from './components/RadialGrid.js';
 import {
     createSatelliteFromLatLon,
@@ -42,9 +36,20 @@ class App3D extends EventTarget {
         this.labelRenderer = null;  // Add CSS2D renderer
         this.controls = null;
         this.composers = {};
-        this.satellites = {};
+        this._satellites = {};
         this.lastTime = performance.now();
         this.animationFrameId = null;
+
+        // Add satellites getter/setter
+        Object.defineProperty(this, 'satellites', {
+            get: function() {
+                return this._satellites;
+            },
+            set: function(value) {
+                this._satellites = value;
+                this.updateSatelliteList();
+            }
+        });
 
         // Initialize display settings from defaults
         this.displaySettings = {};
@@ -218,7 +223,7 @@ class App3D extends EventTarget {
 
             // Update physics and objects
             this.updatePhysics(realDeltaTime);
-            Object.values(this.satellites).forEach(satellite => {
+            Object.values(this._satellites).forEach(satellite => {
                 if (satellite.updateSatellite) {
                     satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
                 }
@@ -252,7 +257,7 @@ class App3D extends EventTarget {
     }
 
     checkPhysicsWorkerNeeded() {
-        const satelliteCount = Object.keys(this.satellites).length;
+        const satelliteCount = Object.keys(this._satellites).length;
         if (satelliteCount > 0 && !this.physicsWorker) {
             this.initPhysicsWorker();
         } else if (satelliteCount === 0 && this.physicsWorker) {
@@ -278,7 +283,7 @@ class App3D extends EventTarget {
             
             switch (type) {
                 case 'satelliteUpdate':
-                    const satellite = this.satellites[data.id];
+                    const satellite = this._satellites[data.id];
                     if (satellite) {
                         satellite.updateBuffer.push(data);
                     }
@@ -307,9 +312,9 @@ class App3D extends EventTarget {
 
     updatePhysics(realDeltaTime) {
         // Only send physics updates if we have satellites and the worker is initialized
-        if (this.workerInitialized && Object.keys(this.satellites).length > 0 && this.earth && this.moon) {
+        if (this.workerInitialized && Object.keys(this._satellites).length > 0 && this.earth && this.moon) {
             const satelliteData = {};
-            Object.entries(this.satellites).forEach(([id, satellite]) => {
+            Object.entries(this._satellites).forEach(([id, satellite]) => {
                 satelliteData[id] = {
                     id: satellite.id,
                     position: {
@@ -404,7 +409,7 @@ class App3D extends EventTarget {
                 this.cameraControls.updateCameraTarget(this.moon);
             } else if (value.startsWith('satellite-')) {
                 const satelliteId = parseInt(value.split('-')[1]);
-                const satellite = this.satellites[satelliteId];
+                const satellite = this._satellites[satelliteId];
                 if (satellite) {
                     this.cameraControls.updateCameraTarget(satellite);
                 }
@@ -439,7 +444,7 @@ class App3D extends EventTarget {
                     }
                     break;
                 case 'showSatVectors':
-                    Object.values(this.satellites).forEach(satellite => {
+                    Object.values(this._satellites).forEach(satellite => {
                         if (satellite.setVectorsVisible) {
                             satellite.setVectorsVisible(value);
                         }
@@ -451,7 +456,7 @@ class App3D extends EventTarget {
                     }
                     break;
                 case 'showOrbits':
-                    Object.values(this.satellites).forEach(satellite => {
+                    Object.values(this._satellites).forEach(satellite => {
                         if (satellite.orbitLine) {
                             satellite.orbitLine.visible = value;
                         }
@@ -461,14 +466,14 @@ class App3D extends EventTarget {
                     });
                     break;
                 case 'showTraces':
-                    Object.values(this.satellites).forEach(satellite => {
+                    Object.values(this._satellites).forEach(satellite => {
                         if (satellite.traceLine) {
                             satellite.traceLine.visible = value;
                         }
                     });
                     break;
                 case 'showGroundTraces':
-                    Object.values(this.satellites).forEach(satellite => {
+                    Object.values(this._satellites).forEach(satellite => {
                         if (satellite.groundTrack?.setVisible) {
                             satellite.groundTrack.setVisible(value);
                         }
@@ -525,7 +530,7 @@ class App3D extends EventTarget {
                     }
                     break;
                 case 'showSatConnections':
-                    Object.values(this.satellites).forEach(satellite => {
+                    Object.values(this._satellites).forEach(satellite => {
                         if (satellite.connections?.setVisible) {
                             satellite.connections.setVisible(value);
                         }
@@ -535,36 +540,52 @@ class App3D extends EventTarget {
         }
     }
 
+    updateSatelliteList() {
+        console.log('app3d: Updating satellite list with:', this._satellites);
+        
+        // Dispatch event with the satellite object
+        const event = new CustomEvent('satelliteListUpdated', {
+            detail: { satellites: { ...this._satellites } }
+        });
+        
+        window.dispatchEvent(event);
+        
+        // Update the window.app3d reference
+        if (window.app3d) {
+            window.app3d.satellites = { ...this._satellites };
+        }
+    }
+
     // Methods for satellite creation
     async createSatelliteLatLon(params) {
         const satellite = await createSatelliteFromLatLon(this, params);
-        this.satellites[satellite.id] = satellite;
+        this._satellites[satellite.id] = satellite;
         this.checkPhysicsWorkerNeeded();
-        this.dispatchEvent(new Event('satellitesChanged'));
+        this.updateSatelliteList();
         return satellite;
     }
 
     async createSatelliteOrbital(params) {
         const satellite = await createSatelliteFromOrbitalElements(this, params);
-        this.satellites[satellite.id] = satellite;
+        this._satellites[satellite.id] = satellite;
         this.checkPhysicsWorkerNeeded();
-        this.dispatchEvent(new Event('satellitesChanged'));
+        this.updateSatelliteList();
         return satellite;
     }
 
     async createSatelliteCircular(params) {
         const satellite = await createSatelliteFromLatLonCircular(this, params);
-        this.satellites[satellite.id] = satellite;
+        this._satellites[satellite.id] = satellite;
         this.checkPhysicsWorkerNeeded();
-        this.dispatchEvent(new Event('satellitesChanged'));
+        this.updateSatelliteList();
         return satellite;
     }
 
     removeSatellite(satelliteId) {
-        if (!this.satellites[satelliteId]) return;
+        if (!this._satellites[satelliteId]) return;
 
         // If this satellite is the current camera target, switch to none
-        if (this.cameraControls?.target === this.satellites[satelliteId]) {
+        if (this.cameraControls?.target === this._satellites[satelliteId]) {
             this.updateSelectedBody('none');
             document.dispatchEvent(new CustomEvent('bodySelected', {
                 detail: { body: 'none' }
@@ -572,22 +593,12 @@ class App3D extends EventTarget {
         }
 
         // Remove the satellite
-        this.satellites[satelliteId].dispose();
-        delete this.satellites[satelliteId];
+        this._satellites[satelliteId].dispose();
+        delete this._satellites[satelliteId];
         
         // Update the satellite list in the navbar
         this.updateSatelliteList();
         this.checkPhysicsWorkerNeeded();
-    }
-
-    updateSatelliteList() {
-        const satellites = Object.values(this.satellites).map(satellite => ({
-            value: `satellite-${satellite.id}`,
-            text: satellite.name || `Satellite ${satellite.id}`
-        }));
-        document.dispatchEvent(new CustomEvent('updateBodyOptions', {
-            detail: { satellites }
-        }));
     }
 
     // Socket event handlers for satellite creation
@@ -649,7 +660,7 @@ class App3D extends EventTarget {
             }
 
             // Clean up satellites
-            Object.values(this.satellites).forEach(satellite => {
+            Object.values(this._satellites).forEach(satellite => {
                 if (satellite.dispose) {
                     satellite.dispose();
                 }
