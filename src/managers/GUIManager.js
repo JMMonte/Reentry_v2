@@ -1,11 +1,7 @@
 import * as THREE from 'three';
 import { ManeuverControls } from './gui/ManeuverControls.js';
 import { CameraControls } from './CameraControls.js';
-
-let GUI;
-if (typeof window !== 'undefined') {
-    GUI = require('dat.gui').GUI; // Import `dat.gui` only in client-side environment
-}
+import { GUI } from 'dat.gui';
 
 class GUIManager {
     constructor(scene, world, earth, moon, sun, satellites, vectors, settings, timeUtils, worldDebugger, physicsWorker, camera, controls) {

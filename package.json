@@ -4,12 +4,12 @@
   "description": "A space simulation for orbital mechanics, interplanetary travel, and reentry vehicles using Three.js and Cannon.js.",
   "type": "module",
   "scripts": {
-    "start": "parcel src/index.html",
-    "build": "parcel build src/index.html",
-    "postbuild": "cp -R public/assets dist/",
-    "clean": "rm -rf .parcel-cache dist node_modules",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist node_modules",
     "clean-install": "npm run clean && npm install",
-    "clean-start": "npm run clean-install && npm run build && npm start"
+    "clean-start": "npm run clean-install && npm run build && npm run dev"
   },
   "keywords": [],
   "author": "",
@@ -72,30 +72,11 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@parcel/config-default": "^2.13.2",
-    "@parcel/transformer-glsl": "^2.12.0",
-    "@parcel/transformer-js": "^2.13.2",
-    "@parcel/transformer-postcss": "^2.13.2",
-    "assert": "^2.1.0",
+    "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.20",
-    "browserify-zlib": "^0.2.0",
-    "buffer": "^6.0.3",
-    "constants-browserify": "^1.0.0",
-    "crypto-browserify": "^3.12.0",
-    "os-browserify": "^0.3.0",
-    "parcel": "^2.13.2",
-    "path-browserify": "^1.0.1",
     "postcss": "^8.4.49",
-    "process": "^0.11.10",
-    "querystring-es3": "^0.2.1",
-    "serve": "^14.2.3",
-    "stream-browserify": "^3.0.0",
-    "stream-http": "^3.2.0",
-    "string_decoder": "^1.3.0",
     "tailwindcss": "^3.4.15",
-    "timers-browserify": "^2.0.12",
-    "url": "^0.11.4",
-    "util": "^0.12.5",
-    "vm-browserify": "^1.1.2"
+    "vite": "^5.1.0",
+    "vite-plugin-glsl": "^1.3.1"
   }
 }
