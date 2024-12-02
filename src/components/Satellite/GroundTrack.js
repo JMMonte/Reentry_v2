@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants';
+import { Constants } from '../../utils/Constants';
 
 export class GroundTrack {
     constructor(earth, color) {

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants.js';
+import { Constants } from '../../utils/Constants.js';
 import { ManeuverCalculator } from './ManeuverCalculator.js';
 import { GroundTrack } from './GroundTrack.js';
-import { ApsisVisualizer } from './ApsisVisualizer.js';
-import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { ApsisVisualizer } from '../ApsisVisualizer.js';
+import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 
 export class Satellite {
     constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name }) {

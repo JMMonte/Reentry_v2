@@ -23,6 +23,16 @@ const ColorPicker = ({ color, onChange }) => {
     '#FF99CC', '#99FF99', '#99FFFF', '#9999FF', '#FF99FF'
   ];
 
+  // Convert numeric color to hex if needed
+  const getHexColor = (inputColor) => {
+    if (typeof inputColor === 'number') {
+      return '#' + inputColor.toString(16).padStart(6, '0').toUpperCase();
+    }
+    return inputColor;
+  };
+
+  const displayColor = getHexColor(color);
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -31,7 +41,7 @@ const ColorPicker = ({ color, onChange }) => {
           size="icon"
           className="h-5 w-5 p-0 border border-border"
           style={{ 
-            backgroundColor: color,
+            backgroundColor: displayColor,
             minWidth: '20px',
             minHeight: '20px'
           }}
@@ -50,7 +60,7 @@ const ColorPicker = ({ color, onChange }) => {
                 minWidth: '24px',
                 minHeight: '24px'
               }}
-              onClick={() => onChange(c)}
+              onClick={() => onChange(parseInt(c.slice(1), 16))}
             />
           ))}
         </div>
@@ -68,7 +78,14 @@ export function SatelliteDebugWindow({ satellite, earth }) {
   const [velocity, setVelocity] = useState({ x: 0, y: 0, z: 0 });
   const [altitude, setAltitude] = useState(0);
   const [speed, setSpeed] = useState(0);
+  const [currentColor, setCurrentColor] = useState(satellite?.color || '#FFFFFF');
   const popupRef = useRef(null);
+
+  useEffect(() => {
+    if (satellite?.color) {
+      setCurrentColor(satellite.color);
+    }
+  }, [satellite?.color]);
 
   useEffect(() => {
     const updatePosition = () => {
@@ -179,6 +196,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
   const handleColorChange = (color) => {
     if (satellite) {
       satellite.setColor(color);
+      setCurrentColor(color);
     }
   };
 
@@ -215,7 +233,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <ColorPicker color={satellite.color} onChange={handleColorChange} />
+          <ColorPicker color={currentColor} onChange={handleColorChange} />
           <Button
             variant="ghost"
             size="icon"

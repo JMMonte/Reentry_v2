@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Satellite } from './components/Satellite.js';
+import { Satellite } from './components/Satellite/Satellite.js';
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
 import { Constants } from './utils/Constants.js';
 import { createRoot } from 'react-dom/client';

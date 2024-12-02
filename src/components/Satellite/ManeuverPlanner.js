@@ -1,5 +1,5 @@
-import { Constants } from '../utils/Constants.js';
-import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { Constants } from '../../utils/Constants.js';
+import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { Maneuver } from '../utils/Maneuver.js';
 
 export class ManeuverPlanner {
