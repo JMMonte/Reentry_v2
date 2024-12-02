@@ -21,9 +21,12 @@ export class GroundTrack {
         const lineMaterial = new THREE.LineBasicMaterial({ 
             color: this.color,
             transparent: true,
-            opacity: 0.5
+            opacity: 0.5,
+            depthWrite: false,
+            depthTest: true
         });
         this.groundTraceLine = new THREE.Line(groundTraceGeometry, lineMaterial);
+        this.groundTraceLine.renderOrder = 2;  // Render after atmosphere (-1), Earth (0), and clouds (1)
         this.groundTraceLine.frustumCulled = false;
         this.earth.rotationGroup.add(this.groundTraceLine);
     }

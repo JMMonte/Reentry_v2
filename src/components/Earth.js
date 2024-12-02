@@ -59,7 +59,8 @@ export class Earth {
             normalMap: this.textureManager.getTexture('earthNormalTexture'),
             normalScale: new THREE.Vector2(5.0, 5.0),
             lightMap: this.cloudTexture,
-            lightMapIntensity: -2.0
+            lightMapIntensity: -2.0,
+            depthWrite: true
         });
 
         this.cloudMaterial = new THREE.MeshPhongMaterial({
@@ -69,7 +70,12 @@ export class Earth {
             transparent: true,
             opacity: 1.0,
             side: THREE.FrontSide,
-            blending: THREE.NormalBlending,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor,
+            depthWrite: false,
+            depthTest: true
         });
 
         this.atmosphereMaterial = new THREE.ShaderMaterial({
@@ -77,10 +83,12 @@ export class Earth {
             fragmentShader: atmosphereFragmentShader,
             side: THREE.DoubleSide,
             transparent: true,
-            // opacity: 0.8,
             depthWrite: false,
             depthTest: true,
-            blending: THREE.NormalBlending,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor,
             uniforms: {
                 lightPosition: { value: new THREE.Vector3(1.0, 0.0, 0.0) },
                 lightIntensity: { value: 4.0 },
@@ -96,24 +104,24 @@ export class Earth {
         const scaledRadius = this.EARTH_RADIUS * (1 - oblateness);
         this.earthGeometry = new THREE.SphereGeometry(scaledRadius, this.MESH_RES, this.MESH_RES);
         this.earthMesh = new THREE.Mesh(this.earthGeometry, this.earthMaterial);
-        this.rotationGroup.add(this.earthMesh);
-        this.earthMesh.rotateY(1.5 * Math.PI);
-        this.earthMesh.renderOrder = 1;
-        this.earthMesh.castShadow = true;
-        this.earthMesh.receiveShadow = true;
-
+        
         const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS, this.MESH_RES, this.MESH_RES);
         this.atmosphereMesh = new THREE.Mesh(atmosphereGeometry, this.atmosphereMaterial);
-        this.rotationGroup.add(this.atmosphereMesh);
-        this.atmosphereMesh.renderOrder = 2;
-        this.atmosphereMesh.castShadow = true;
-        this.atmosphereMesh.receiveShadow = true;
-
+        
         const cloudRadius = this.EARTH_RADIUS + 0.1;
         const cloudGeometry = new THREE.SphereGeometry(cloudRadius, this.MESH_RES, this.MESH_RES);
         this.cloudMesh = new THREE.Mesh(cloudGeometry, this.cloudMaterial);
+
+        // Set render order
+        this.atmosphereMesh.renderOrder = -1;  // Render atmosphere first
+        this.earthMesh.renderOrder = 0;        // Then Earth
+        this.cloudMesh.renderOrder = 1;        // Then clouds
+
+        this.rotationGroup.add(this.atmosphereMesh);
+        this.rotationGroup.add(this.earthMesh);
         this.rotationGroup.add(this.cloudMesh);
-        this.cloudMesh.renderOrder = 3;
+        
+        this.earthMesh.rotateY(1.5 * Math.PI);
         this.cloudMesh.rotateY(1.5 * Math.PI);
     }
 
