@@ -58,15 +58,14 @@ export class Earth {
             shininess: 40.0,
             normalMap: this.textureManager.getTexture('earthNormalTexture'),
             normalScale: new THREE.Vector2(5.0, 5.0),
+            normalMapType: THREE.TangentSpaceNormalMap,
             lightMap: this.cloudTexture,
-            lightMapIntensity: -2.0,
+            lightMapIntensity: -1.0,
             depthWrite: true
         });
 
         this.cloudMaterial = new THREE.MeshPhongMaterial({
             alphaMap: this.cloudTexture,
-            bumpMap: this.cloudTexture,
-            bumpScale: 0.05,
             transparent: true,
             opacity: 1.0,
             side: THREE.FrontSide,
@@ -150,9 +149,9 @@ export class Earth {
     }
 
     addLightSource() {
-        const light = new THREE.PointLight(0x87ceeb, 1e8, Constants.moonOrbitRadius * 2); // Sky blue light, intensity 1, distance twice the Moon's orbit radius
+        const light = new THREE.PointLight(0x87ceeb, 1e8, Constants.moonOrbitRadius * 1); // Sky blue light, intensity 1, distance twice the Moon's orbit radius
         light.position.set(0, 0, 0); // Center of the Earth
-        light.decay = 2; // Physical decay factor
+        light.decay = 1.9; // Physical decay factor
 
         this.earthMesh.add(light);
 

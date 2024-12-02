@@ -9,8 +9,15 @@ export class GroundTrack {
         }
         this.earth = earth;
         this.color = color;
-        this.maxTracePoints = 10000;
+        this.maxTracePoints = 1000; 
         this.groundTracePoints = [];
+        
+        this._relativePosition = new THREE.Vector3();
+        this._localSatellitePosition = new THREE.Vector3();
+        this._groundPoint = new THREE.Vector3();
+        
+        this._positions = new Float32Array(this.maxTracePoints * 3);
+        
         this.initializeGroundTrace();
     }
 
@@ -18,6 +25,9 @@ export class GroundTrack {
         if (!this.earth || !this.earth.rotationGroup) return;
         
         const groundTraceGeometry = new THREE.BufferGeometry();
+        groundTraceGeometry.setAttribute('position', new THREE.BufferAttribute(this._positions, 3));
+        groundTraceGeometry.setDrawRange(0, 0); 
+        
         const lineMaterial = new THREE.LineBasicMaterial({ 
             color: this.color,
             transparent: true,
@@ -26,7 +36,7 @@ export class GroundTrack {
             depthTest: true
         });
         this.groundTraceLine = new THREE.Line(groundTraceGeometry, lineMaterial);
-        this.groundTraceLine.renderOrder = 2;  // Render after atmosphere (-1), Earth (0), and clouds (1)
+        this.groundTraceLine.renderOrder = 2;  
         this.groundTraceLine.frustumCulled = false;
         this.earth.rotationGroup.add(this.groundTraceLine);
     }
@@ -35,34 +45,27 @@ export class GroundTrack {
         if (!this.earth || !this.groundTraceLine) return;
 
         const earthCenter = this.earth.earthMesh.position;
-        const relativePosition = satellitePosition.clone().sub(earthCenter);
-        const earthInverseMatrix = this.earth.rotationGroup.matrixWorld.clone().invert();
-        const localSatellitePosition = relativePosition.applyMatrix4(earthInverseMatrix);
         
-        // Use the correct Earth radius from Constants
-        const groundPoint = localSatellitePosition.normalize().multiplyScalar(Constants.earthRadius * Constants.metersToKm * Constants.scale);
+        this._relativePosition.copy(satellitePosition).sub(earthCenter);
+        this._localSatellitePosition.copy(this._relativePosition).applyMatrix4(this.earth.rotationGroup.matrixWorld.clone().invert());
+        this._groundPoint.copy(this._localSatellitePosition).normalize().multiplyScalar(Constants.earthRadius * Constants.metersToKm * Constants.scale);
 
-        this.groundTracePoints.push(groundPoint);
-
-        if (this.groundTracePoints.length > this.maxTracePoints) {
+        const currentLength = this.groundTracePoints.length;
+        if (currentLength >= this.maxTracePoints) {
+            this._positions.copyWithin(0, 3, this.maxTracePoints * 3);
             this.groundTracePoints.shift();
         }
 
-        this.updateGroundTraceLine();
-    }
-
-    updateGroundTraceLine() {
-        if (!this.groundTraceLine) return;
-
-        const positions = new Float32Array(this.groundTracePoints.length * 3);
-        this.groundTracePoints.forEach((point, index) => {
-            positions[index * 3] = point.x;
-            positions[index * 3 + 1] = point.y;
-            positions[index * 3 + 2] = point.z;
-        });
-
-        this.groundTraceLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        this.groundTraceLine.geometry.attributes.position.needsUpdate = true;
+        const idx = this.groundTracePoints.length * 3;
+        this._positions[idx] = this._groundPoint.x;
+        this._positions[idx + 1] = this._groundPoint.y;
+        this._positions[idx + 2] = this._groundPoint.z;
+        
+        this.groundTracePoints.push(this._groundPoint.clone()); 
+        
+        const geometry = this.groundTraceLine.geometry;
+        geometry.attributes.position.needsUpdate = true;
+        geometry.setDrawRange(0, this.groundTracePoints.length);
     }
 
     setVisible(visible) {

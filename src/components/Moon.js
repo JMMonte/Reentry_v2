@@ -60,7 +60,13 @@ export class Moon {
         this.addPeriapsisApoapsisPoints();
 
         // Add Moon surface contours
-        this.loadContourLines();
+        this.moonSurface = new MoonSurface(this.moonMesh, Constants.moonRadius * Constants.metersToKm * Constants.scale);
+        this.moonSurface.setVisibility(true);
+
+        // Make moonSurface accessible to UI
+        window.moonSurface = this.moonSurface;  // Temporary for UI controls
+
+        this.moonSurface.setVisibility(true);
     }
 
     initTraceLine() {
@@ -307,18 +313,6 @@ export class Moon {
 
     setTraceVisible(visible) {
         this.traceLine.visible = visible;
-    }
-
-    loadContourLines() {
-        this.moonSurface = new MoonSurface(this.moonMesh, Constants.moonRadius * Constants.metersToKm * Constants.scale);
-        fetch('../config/moon_contours.svg')
-            .then(response => response.text())
-            .then(svgText => {
-                this.moonSurface.addContourLinesFromSVG(svgText);
-            })
-            .catch(error => {
-                console.error('Error loading contour lines:', error);
-            });
     }
 
     getCurrentOrbitalParameters(currentTime) {

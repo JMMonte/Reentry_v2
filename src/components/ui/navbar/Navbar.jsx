@@ -78,6 +78,7 @@ export function Navbar({
   app3DRef
 }) {
   const [satelliteOptions, setSatelliteOptions] = React.useState([]);
+  const [satelliteModalPosition, setSatelliteModalPosition] = useState({ x: window.innerWidth - 420, y: 80 });
 
   React.useEffect(() => {
     const handleBodyOptionsUpdate = (event) => {
@@ -116,8 +117,6 @@ export function Navbar({
       };
     }
   }, [app3DRef?.current]);
-
-  const [satelliteModalPosition, setSatelliteModalPosition] = useState({ x: window.innerWidth - 420, y: 80 });
 
   const handleBodyChange = (value) => {
     onBodySelect(value);

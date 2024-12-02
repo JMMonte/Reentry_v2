@@ -45,8 +45,8 @@ float phase_ray(float cc) {
 }
 
 // Constants for scattering calculations
-const int NUM_OUT_SCATTER = 8;  // Increased for better accuracy
-const int NUM_IN_SCATTER = 12;  // Increased for better accuracy
+const int NUM_OUT_SCATTER = 4;  // Reduced from 8
+const int NUM_IN_SCATTER = 6;   // Reduced from 12
 
 // Calculate the horizon line gradient
 float calculateHorizonGradient(vec3 position, vec3 rayDir) {
@@ -56,53 +56,44 @@ float calculateHorizonGradient(vec3 position, vec3 rayDir) {
     float c = dot(position, position) - surfaceRadius * surfaceRadius;
     float discriminant = b * b - 4.0 * a * c;
     
-    if (discriminant < 0.0) {
-        // Ray doesn't intersect Earth - we're looking at space
-        return 1.0;
-    }
+    if (discriminant < 0.0) return 1.0;
     
-    // Calculate distance to horizon
     float horizonDist = (-b - sqrt(discriminant)) / (2.0 * a);
-    
-    // Calculate gradient based on distance to horizon
-    float gradientWidth = (atmoRadius - surfaceRadius) * 0.2; // Adjust gradient width
+    float gradientWidth = (atmoRadius - surfaceRadius) * 0.2;
     return smoothstep(0.0, gradientWidth, horizonDist);
 }
 
-// Enhanced atmospheric density function with smoother transition
+// Optimized atmospheric density function
 float density(vec3 p, float ph) {
-    float actualScaleHeight = 8500.0; // Earth's scale height in meters
+    float actualScaleHeight = 8500.0;
     float scale = (atmoRadius - surfaceRadius) / actualScaleHeight;
     float altitude = length(p) - surfaceRadius;
     float h = altitude / (actualScaleHeight * scale);
     
-    // Enhanced density calculation with smoother falloff
     float density = exp(-h);
-    
-    // Add altitude-dependent density variation for more realistic look
     float densityVariation = 1.0 - smoothstep(0.0, 0.15, h);
     
-    // Add horizon enhancement
-    float horizonFactor = smoothstep(0.0, 0.1, h) * (1.0 - smoothstep(0.1, 0.3, h));
-    density *= 1.0 + horizonFactor * 0.5;
+    // Simplified horizon enhancement
+    float horizonFactor = h * (1.0 - h * 3.33); // Optimized version of previous calculation
+    horizonFactor = max(0.0, horizonFactor);
     
-    return density * densityVariation * ph;
+    return density * densityVariation * (1.0 + horizonFactor * 0.5) * ph;
 }
 
-// Improved optical depth calculation with better sampling
+// Optimized optical depth calculation
 float optic(vec3 p, vec3 q, float ph) {
     vec3 step = (q - p) / float(NUM_OUT_SCATTER);
     vec3 v = p + step * 0.5;
     float sum = 0.0;
+    float stepLength = length(step);
     
     for (int i = 0; i < NUM_OUT_SCATTER; i++) {
         float h = length(v) - surfaceRadius;
-        float d = density(v, ph);
-        sum += d * exp(-h * 0.25); // Add height-dependent extinction
+        sum += density(v, ph) * exp(-h * 0.25);
         v += step;
     }
     
-    return sum * length(step);
+    return sum * stepLength;
 }
 
 // Enhanced in-scattering calculation
