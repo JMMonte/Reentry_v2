@@ -92,10 +92,10 @@ export function SatelliteDebugWindow({ satellite, earth }) {
     const unit = isVelocity ? 'm/s' : 'km';
     return (
       <div className="grid grid-cols-4 gap-0.5">
-        <span className="text-[10px] text-muted-foreground">{label}:</span>
-        <span className="text-[10px]">{formatNumber(vector.x * scale)} {unit}</span>
-        <span className="text-[10px]">{formatNumber(vector.y * scale)} {unit}</span>
-        <span className="text-[10px]">{formatNumber(vector.z * scale)} {unit}</span>
+        <span className="text-[10px] font-mono text-muted-foreground">{label}:</span>
+        <span className="text-[10px] font-mono">{formatNumber(vector.x * scale)} {unit}</span>
+        <span className="text-[10px] font-mono">{formatNumber(vector.y * scale)} {unit}</span>
+        <span className="text-[10px] font-mono">{formatNumber(vector.z * scale)} {unit}</span>
       </div>
     );
   };
@@ -140,19 +140,19 @@ export function SatelliteDebugWindow({ satellite, earth }) {
             {renderVector(satellite.acceleration, "Acceleration", true)}
             
             <div className="grid grid-cols-4 gap-0.5">
-              <span className="text-[10px] text-muted-foreground">Speed:</span>
-              <span className="col-span-3 text-[10px]">{formatNumber(satellite.velocity.length())} m/s</span>
+              <span className="text-[10px] font-mono text-muted-foreground">Speed:</span>
+              <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.velocity.length())} m/s</span>
             </div>
 
             <div className="space-y-0.5">
               <div className="text-[10px] font-semibold">Current Altitude</div>
               <div className="grid grid-cols-4 gap-0.5">
-                <span className="text-[10px] text-muted-foreground">Radial:</span>
-                <span className="col-span-3 text-[10px]">{formatNumber(satellite.getRadialAltitude())} km</span>
+                <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
+                <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.getRadialAltitude())} km</span>
               </div>
               <div className="grid grid-cols-4 gap-0.5">
-                <span className="text-[10px] text-muted-foreground">Surface:</span>
-                <span className="col-span-3 text-[10px]">{formatNumber(satellite.getSurfaceAltitude(earth))} km</span>
+                <span className="text-[10px] font-mono text-muted-foreground">Surface:</span>
+                <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.getSurfaceAltitude(earth))} km</span>
               </div>
             </div>
 
@@ -160,58 +160,58 @@ export function SatelliteDebugWindow({ satellite, earth }) {
               <div className="space-y-0.5">
                 <div className="text-[10px] font-semibold">Orbit</div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">SMA:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.semiMajorAxis)} km</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">SMA:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.semiMajorAxis)} km</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">Ecc:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.eccentricity)}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Ecc:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.eccentricity)}</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">Inc:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.inclination)}°</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Inc:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.inclination)}°</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">LAN:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.longitudeOfAscendingNode)}°</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">LAN:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.longitudeOfAscendingNode)}°</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">AoP:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.argumentOfPeriapsis)}°</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">AoP:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.argumentOfPeriapsis)}°</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">TA:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.trueAnomaly)}°</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">TA:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.trueAnomaly)}°</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">Period:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.period)} s</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Period:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.period)} s</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">h:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.specificAngularMomentum)} m²/s</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">h:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.specificAngularMomentum)} m²/s</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">ε:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.specificOrbitalEnergy)} m²/s²</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">ε:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.specificOrbitalEnergy)} m²/s²</span>
                 </div>
                 <div className="text-[10px] font-semibold mt-1">Periapsis</div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">Radial:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.periapsisRadial)} km</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.periapsisRadial)} km</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">Altitude:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.periapsisAltitude)} km</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Altitude:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.periapsisAltitude)} km</span>
                 </div>
                 <div className="text-[10px] font-semibold mt-1">Apoapsis</div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">Radial:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.apoapsisRadial)} km</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.apoapsisRadial)} km</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">Altitude:</span>
-                  <span className="col-span-3 text-[10px]">{formatNumber(orbitalElements.apoapsisAltitude)} km</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Altitude:</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.apoapsisAltitude)} km</span>
                 </div>
               </div>
             )}
