@@ -2,103 +2,78 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import { OpenAI } from 'openai';
 import { assistantService } from './assistantService.js';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
 const app = express();
 const server = createServer(app);
+
+// Configure CORS
+app.use(cors({
+  origin: process.env.CLIENT_URL || 'http://localhost:1234',
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// Initialize Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:1234', 'http://localhost:3000'],
+    origin: process.env.CLIENT_URL || 'http://localhost:1234',
     methods: ['GET', 'POST'],
     credentials: true
   }
 });
 
-// Initialize the assistant service with io instance
-const assistant = assistantService(io);
+// Initialize AssistantService
+const assistant = assistantService(openai);
 
-// Add Content Security Policy headers
-app.use((req, res, next) => {
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self' http://localhost:3000 http://localhost:1234; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; " +
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; " +
-    "img-src 'self' data: blob: https:; " +
-    "connect-src 'self' http://localhost:3000 http://localhost:1234 ws://localhost:* wss://localhost:*;"
-  );
-  next();
+// Initialize the assistant when the server starts
+assistant.initialize().catch(error => {
+  console.error('Failed to initialize assistant:', error);
+  process.exit(1);
 });
 
-// CORS middleware
-app.use(cors({
-  origin: ['http://localhost:1234', 'http://localhost:3000'],
-  methods: ['GET', 'POST'],
-  credentials: true
-}));
+io.on('connection', (socket) => {
+  console.log('Client connected');
 
-// Socket.IO connection handling
-io.on('connection', async (socket) => {
-  console.log('Client connected:', socket.id);
-
-  try {
-    // Initialize the assistant service for this socket
-    await assistant.initialize();
-    
-    // Handle chat messages
-    socket.on('chat message', async (message) => {
-      try {
-        const response = await assistant.sendMessage(socket.id, message);
-        socket.emit('response', response);
-      } catch (error) {
-        console.error('Error processing message:', error);
-        socket.emit('error', error.message);
+  socket.on('chat message', async (message) => {
+    try {
+      if (typeof message !== 'string') {
+        throw new Error('Message must be a string');
       }
-    });
 
-    // Handle function call responses from client
-    socket.on('function_result', async (data) => {
-      try {
-        const { name, result } = data;
-        console.log(`Received function result for ${name}:`, result);
-        // The result will be used in the next assistant message
-      } catch (error) {
-        console.error('Error handling function result:', error);
-      }
-    });
+      console.log('Received message:', message);
+      
+      // Emit user message back to client
+      socket.emit('message', {
+        role: 'user',
+        content: message,
+        status: 'completed'
+      });
 
-    // Handle disconnection
-    socket.on('disconnect', async () => {
-      try {
-        console.log('Client disconnected:', socket.id);
-        await assistant.cleanupThread(socket.id);
-      } catch (error) {
-        console.error('Error cleaning up thread:', error);
-      }
-    });
+      // Get assistant response
+      await assistant.sendMessage(socket, message);
+      
+    } catch (error) {
+      console.error('Error handling message:', error);
+      socket.emit('error', error.message);
+    }
+  });
 
-    // Handle errors
-    socket.on('error', (error) => {
-      console.error('Socket error:', error);
-      socket.emit('error', 'An unexpected error occurred');
-    });
-
-  } catch (error) {
-    console.error('Error initializing assistant:', error);
-    socket.emit('error', 'Failed to initialize chat assistant');
-  }
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+const port = process.env.PORT || 3000;
+server.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });

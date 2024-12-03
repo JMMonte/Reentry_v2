@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import * as THREE from 'three';
 import { ThemeProvider } from './components/theme-provider';
 import { Navbar } from './components/ui/navbar/Navbar';
-import { ChatSidebar } from './components/ui/chat/ChatSidebar';
+import { ChatModal } from './components/ui/chat/ChatModal';
 import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWindow';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
@@ -92,12 +92,6 @@ function App() {
       return;
     }
 
-    const canvas = document.getElementById('three-canvas');
-    if (!canvas) {
-      console.error('Canvas not found');
-      return;
-    }
-
     initializingRef.current = true;
 
     try {
@@ -125,10 +119,12 @@ function App() {
         setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
       };
 
-      // Apply initial display settings only after initialization
-      if (app.scene && app.displaySettings) {
+      // Initialize display settings
+      if (app.scene) {
         Object.entries(displaySettings).forEach(([key, value]) => {
-          app.updateDisplaySetting(key, value);
+          if (typeof app.updateDisplaySetting === 'function') {
+            app.updateDisplaySetting(key, value);
+          }
         });
       }
     } catch (error) {
@@ -149,7 +145,7 @@ function App() {
   // Display settings effect
   useEffect(() => {
     const app = app3dRef.current;
-    if (!app) return;
+    if (!app || typeof app.updateDisplaySetting !== 'function') return;
 
     Object.entries(displaySettings).forEach(([key, value]) => {
       app.updateDisplaySetting(key, value);
@@ -213,10 +209,10 @@ function App() {
   }, [satellites]);
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="h-screen w-screen overflow-hidden">
-        <canvas id="three-canvas" className="absolute inset-0 z-0" />
-        <Navbar 
+    <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
+      <div className="relative h-screen w-screen overflow-hidden">
+        <canvas id="three-canvas" ref={app3dRef} className="absolute inset-0 z-0" />
+        <Navbar
           onChatToggle={() => setIsChatVisible(!isChatVisible)}
           onSatelliteListToggle={() => setIsSatelliteListVisible(!isSatelliteListVisible)}
           onDisplayOptionsToggle={() => setIsDisplayOptionsOpen(!isDisplayOptionsOpen)}
@@ -234,10 +230,11 @@ function App() {
           app3DRef={app3dRef}
           satellites={navbarSatellites}
         />
-        <ChatSidebar
+
+        <ChatModal
+          isOpen={isChatVisible}
+          onClose={() => setIsChatVisible(false)}
           socket={socket}
-          isVisible={isChatVisible}
-          setIsVisible={setIsChatVisible}
         />
         <DisplayOptions 
           settings={displaySettings}
