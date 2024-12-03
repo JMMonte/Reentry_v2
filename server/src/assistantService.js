@@ -25,16 +25,28 @@ const ASSISTANT_TOOLS = [
             type: "number",
             description: "Altitude in kilometers above Earth's surface",
           },
-          velocity: {
+          speed: {
             type: "number",
             description: "Initial velocity in km/s",
           },
-          azimuth: {
+          heading: {
             type: "number",
             description: "Azimuth angle in degrees (0-North, 90-East, 180-South, 270-West)",
+          },
+          mass: {
+            type: "number",
+            description: "Mass of the satellite in kg",
+          },
+          size: {
+            type: "number",
+            description: "Size of the satellite in meters",
+          },
+          name: {
+            type: "string",
+            description: "Name of the satellite",
           }
         },
-        required: ["latitude", "longitude", "altitude", "velocity", "azimuth"],
+        required: ["latitude", "longitude", "altitude", "speed", "heading"],
       },
     },
   },
@@ -69,6 +81,18 @@ const ASSISTANT_TOOLS = [
           trueAnomaly: {
             type: "number",
             description: "True anomaly in degrees",
+          },
+          mass: {
+            type: "number",
+            description: "Mass of the satellite in kg",
+          },
+          size: {
+            type: "number",
+            description: "Size of the satellite in meters",
+          },
+          name: {
+            type: "string",
+            description: "Name of the satellite",
           }
         },
         required: ["semiMajorAxis", "eccentricity", "inclination", "raan", "argumentOfPeriapsis", "trueAnomaly"],
@@ -95,12 +119,28 @@ const ASSISTANT_TOOLS = [
             type: "number",
             description: "Altitude in kilometers above Earth's surface",
           },
-          azimuth: {
+          inclination: {
             type: "number",
-            description: "Azimuth angle in degrees (0-North, 90-East, 180-South, 270-West)",
+            description: "Orbital inclination in degrees",
+          },
+          raan: {
+            type: "number",
+            description: "Right Ascension of the Ascending Node (RAAN) in degrees",
+          },
+          mass: {
+            type: "number",
+            description: "Mass of the satellite in kg",
+          },
+          size: {
+            type: "number",
+            description: "Size of the satellite in meters",
+          },
+          name: {
+            type: "string",
+            description: "Name of the satellite",
           }
         },
-        required: ["latitude", "longitude", "altitude", "azimuth"],
+        required: ["latitude", "longitude", "altitude", "inclination", "raan"],
       },
     },
   },

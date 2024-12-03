@@ -141,8 +141,6 @@ export function ChatModal({ isOpen, onClose, socket }) {
 
     const isUser = message.role === 'user';
     
-    // Debug log to see what we're receiving
-    
     // Get the message content directly, it's already a string
     const content = message.content;
 
