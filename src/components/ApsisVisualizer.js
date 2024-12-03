@@ -45,12 +45,10 @@ export class ApsisVisualizer {
             this.apoapsisMesh.scale.set(scale, scale, scale);
         };
 
-        // Add to scene
+        // Add periapsis to scene
         this.scene.add(this.periapsisMesh);
-        this.scene.add(this.apoapsisMesh);
-
-        // Initially show them
-        this.setVisible(true);
+        
+        // Don't set initial visibility - let it be controlled by display options
     }
 
     update(position, velocity) {
@@ -81,9 +79,16 @@ export class ApsisVisualizer {
             const apoapsisVector = new THREE.Vector3(-rApoapsis * scaleFactor, 0, 0);
             this.rotateVector(apoapsisVector, i, omega, w);
             this.apoapsisMesh.position.copy(apoapsisVector);
-            this.apoapsisMesh.visible = true;
+            
+            // Add apoapsis to scene only for elliptical orbits
+            if (!this.apoapsisMesh.parent) {
+                this.scene.add(this.apoapsisMesh);
+            }
         } else {
-            this.apoapsisMesh.visible = false;
+            // Remove apoapsis from scene for non-elliptical orbits
+            if (this.apoapsisMesh.parent) {
+                this.scene.remove(this.apoapsisMesh);
+            }
         }
 
         // Return altitudes in kilometers
@@ -106,12 +111,16 @@ export class ApsisVisualizer {
 
     setVisible(visible) {
         this.periapsisMesh.visible = visible;
-        this.apoapsisMesh.visible = visible && this.apoapsisMesh.visible;
+        if (this.apoapsisMesh.parent) {
+            this.apoapsisMesh.visible = visible;
+        }
     }
 
     dispose() {
         this.scene.remove(this.periapsisMesh);
-        this.scene.remove(this.apoapsisMesh);
+        if (this.apoapsisMesh.parent) {
+            this.scene.remove(this.apoapsisMesh);
+        }
         this.periapsisMaterial.dispose();
         this.apoapsisMaterial.dispose();
         this.periapsisMesh.geometry.dispose();

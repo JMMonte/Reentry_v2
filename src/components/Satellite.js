@@ -3,6 +3,7 @@ import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { ManeuverCalculator } from './ManeuverCalculator.js';
+import { ApsisVisualizer } from './ApsisVisualizer.js';
 import PhysicsWorkerURL from 'url:../workers/physicsWorker.js';
 
 class ManeuverNode {
@@ -58,7 +59,11 @@ export class Satellite {
     }
 
     initializeVisuals() {
-        const geometry = new THREE.ConeGeometry(Constants.satelliteRadius, Constants.satelliteRadius * 2, 3, 1);
+        const geometry = new THREE.BoxGeometry(
+            Constants.satelliteRadius * 2,
+            Constants.satelliteRadius * 2,
+            Constants.satelliteRadius * 4
+        );
         this.mesh = new THREE.Mesh(geometry, this.materials.satellite);
         this.scene.add(this.mesh);
 
@@ -70,7 +75,7 @@ export class Satellite {
         this.initializeTraceLine();
         this.initializeOrbitLine();
         this.initializeTargetOrbitLine();
-        this.initializeApsides();
+        this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
         this.initializeGroundTrace();
     }
 
@@ -242,29 +247,8 @@ export class Satellite {
     }
 
     updateApsides(orbitalElements) {
-        const { h, e, i, omega, w } = orbitalElements;
-        const mu = Constants.G * Constants.earthMass;
-
-        const rPeriapsis = h * h / (mu * (1 + e));
-        const rApoapsis = h * h / (mu * (1 - e));
-
-        const periapsisVector = new THREE.Vector3(rPeriapsis, 0, 0);
-        const apoapsisVector = new THREE.Vector3(-rApoapsis, 0, 0);
-
-        periapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
-        apoapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
-
-        periapsisVector.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
-        apoapsisVector.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
-
-        periapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
-        apoapsisVector.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
-
-        periapsisVector.multiplyScalar(Constants.metersToKm * Constants.scale);
-        apoapsisVector.multiplyScalar(Constants.metersToKm * Constants.scale);
-
-        this.periapsisMesh.position.copy(periapsisVector);
-        this.apoapsisMesh.position.copy(apoapsisVector);
+        if (!this.apsisVisualizer) return;
+        this.apsisVisualizer.update(this.body.position, this.body.velocity);
     }
 
     // Maneuver methods
@@ -365,13 +349,11 @@ export class Satellite {
     }
 
     getPeriapsisAltitude() {
-        const periapsisDistance = this.periapsisMesh.position.length();
-        return (periapsisDistance / Constants.scale - Constants.earthRadius * Constants.metersToKm) * Constants.kmToMeters;
+        return this.apsisVisualizer.getPeriapsisAltitude();
     }
 
     getApoapsisAltitude() {
-        const apoapsisDistance = this.apoapsisMesh.position.length();
-        return (apoapsisDistance / Constants.scale - Constants.earthRadius * Constants.metersToKm) * Constants.kmToMeters;
+        return this.apsisVisualizer.getApoapsisAltitude();
     }
 
     getMesh() {
@@ -390,8 +372,9 @@ export class Satellite {
     // Visibility methods
     setOrbitVisible(visible) {
         this.orbitLine.visible = visible;
-        this.apoapsisMesh.visible = visible;
-        this.periapsisMesh.visible = visible;
+        if (this.apsisVisualizer) {
+            this.apsisVisualizer.setVisible(visible);
+        }
     }
 
     setTraceVisible(visible) {
@@ -435,11 +418,9 @@ export class Satellite {
 
     createMaterials(color) {
         return {
-            satellite: new THREE.MeshBasicMaterial({ color }),
+            satellite: new THREE.MeshPhongMaterial({ color }),
             traceLine: new THREE.LineBasicMaterial({ color, linewidth: 1 }),
             orbitLine: new THREE.LineBasicMaterial({ color, opacity: 0.2, transparent: true }),
-            periapsis: new THREE.PointsMaterial({ color: 0xff0000, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
-            apoapsis: new THREE.PointsMaterial({ color: 0x0000ff, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
             maneuverNode: new THREE.PointsMaterial({ color: 0x00ff00, size: 5, opacity: 0.5, transparent: true, sizeAttenuation: false }),
             targetOrbitLine: new THREE.LineBasicMaterial({ color: 0xff00ff, opacity: 0.5, transparent: true })
         };
@@ -479,17 +460,6 @@ export class Satellite {
         this.scene.add(this.targetOrbitLine);
     }
 
-    initializeApsides() {
-        const sphereGeometry = new THREE.BufferGeometry();
-        sphereGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
-
-        this.periapsisMesh = new THREE.Points(sphereGeometry, this.materials.periapsis);
-        this.apoapsisMesh = new THREE.Points(sphereGeometry, this.materials.apoapsis);
-
-        this.scene.add(this.periapsisMesh);
-        this.scene.add(this.apoapsisMesh);
-    }
-
     initializeGroundTrace() {
         const groundTraceGeometry = new THREE.BufferGeometry();
         const lineMaterial = new THREE.LineBasicMaterial({ color: this.color });
@@ -515,15 +485,6 @@ export class Satellite {
     }
 
     // Cleanup method
-    deleteSatellite() {
-        this.scene.remove(this.mesh);
-        this.scene.remove(this.traceLine);
-        this.scene.remove(this.orbitLine);
-        this.scene.remove(this.periapsisMesh);
-        this.scene.remove(this.apoapsisMesh);
-        this.earth.rotationGroup.remove(this.groundTraceLine);
-    }
-
     dispose() {
         console.log('Satellite.dispose: Starting disposal of satellite:', { id: this.id, name: this.name });
         
@@ -534,67 +495,38 @@ export class Satellite {
                 name: this.name
             }
         }));
-        console.log('Satellite.dispose: Dispatched satelliteDeleted event');
 
-        // Remove from app's satellites object
-        if (this.app3d && this.app3d.satellites) {
-            delete this.app3d.satellites[this.id];
-            console.log('Satellite.dispose: Removed from app3d.satellites');
+        if (this.worker) {
+            this.worker.terminate();
         }
 
-        // Remove from scene
-        if (this.satelliteBody) {
-            this.scene.remove(this.satelliteBody);
-        }
-        if (this.orbitLine) {
-            this.scene.remove(this.orbitLine);
-        }
-        if (this.traceLine) {
-            this.scene.remove(this.traceLine);
-        }
-        if (this.groundTrack) {
-            this.scene.remove(this.groundTrack);
-        }
-        if (this.velocityVector) {
-            this.scene.remove(this.velocityVector);
-        }
-        if (this.orientationVector) {
-            this.scene.remove(this.orientationVector);
-        }
+        // Remove meshes and lines
+        this.scene.remove(this.mesh);
+        this.scene.remove(this.traceLine);
+        this.scene.remove(this.orbitLine);
         if (this.apsisVisualizer) {
-            this.scene.remove(this.apsisVisualizer);
+            this.apsisVisualizer.dispose();
         }
-        if (this.label) {
-            this.label.element.remove();
-        }
-        console.log('Satellite.dispose: Removed all visual elements');
+        this.earth.rotationGroup.remove(this.groundTraceLine);
 
-        // Close debug window if open
-        if (this.debugWindow) {
-            this.debugWindow.setIsOpen(false);
-        }
+        // Dispose of materials and geometries
+        this.materials.satellite.dispose();
+        this.materials.traceLine.dispose();
+        this.materials.orbitLine.dispose();
+        this.mesh.geometry.dispose();
+        this.traceLine.geometry.dispose();
+        this.orbitLine.geometry.dispose();
 
-        // Check if physics worker is still needed
-        if (this.app3d) {
-            this.app3d.checkPhysicsWorkerNeeded();
-        }
-
-        // Notify physics worker about removal
-        if (this.app3d?.physicsWorker) {
-            this.app3d.physicsWorker.postMessage({
-                type: 'removeSatellite',
-                data: { id: this.id }
-            });
-            console.log('Satellite.dispose: Notified physics worker');
+        if (this.groundTraceLine) {
+            this.groundTraceLine.geometry.dispose();
+            this.groundTraceLine.material.dispose();
         }
 
-        // Update the satellite list
-        if (this.app3d?.updateSatelliteList) {
-            this.app3d.updateSatelliteList();
-            console.log('Satellite.dispose: Called updateSatelliteList');
+        if (this.world && this.body) {
+            this.world.removeBody(this.body);
         }
-        
-        console.log('Satellite.dispose: Disposal complete');
+
+        console.log('Satellite.dispose: Finished disposal of satellite:', { id: this.id, name: this.name });
     }
 
     // Coordinate transformation methods
