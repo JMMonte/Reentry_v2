@@ -7,13 +7,17 @@ dotenv.config();
 
 // Event Handler for managing tool calls
 class EventHandler extends EventEmitter {
-  constructor(client, socket) {
+  constructor(client, socket, assistantService) {
     super();
     this.client = client;
     this.socket = socket;
+    this.assistantService = assistantService;
     this.pendingToolCalls = new Map();
     this.currentMessageId = null;
     this.streamContent = '';
+    this.currentRunId = null;
+    this.currentThreadId = null;
+    this.toolCallsCount = 0;
   }
 
   async onEvent(event) {
@@ -54,16 +58,41 @@ class EventHandler extends EventEmitter {
           });
           break;
 
+        case 'thread.run.created':
+          this.currentRunId = event.data.id;
+          this.currentThreadId = event.data.thread_id;
+          this.toolCallsCount = 0;
+          break;
+
         case 'thread.run.requires_action':
-          await this.handleRequiresAction(
-            event.data,
-            event.data.id,
-            event.data.thread_id
-          );
+          await this.handleRequiresAction(event.data);
+          break;
+
+        case 'thread.run.completed':
+          // Clean up when run completes
+          if (event.data.thread_id && this.assistantService?.activeRuns) {
+            this.assistantService.activeRuns.delete(event.data.thread_id);
+          }
+          this.currentRunId = null;
+          this.currentThreadId = null;
+          this.toolCallsCount = 0;
+          break;
+
+        case 'thread.run.failed':
+          console.error('Run failed:', event.data.last_error);
+          if (event.data.thread_id && this.assistantService?.activeRuns) {
+            this.assistantService.activeRuns.delete(event.data.thread_id);
+          }
+          this.socket.emit('error', { 
+            message: 'Assistant run failed: ' + (event.data.last_error?.message || 'Unknown error')
+          });
           break;
 
         case 'error':
           console.error('Stream error:', event.data);
+          if (this.currentThreadId && this.assistantService?.activeRuns) {
+            this.assistantService.activeRuns.delete(this.currentThreadId);
+          }
           this.socket.emit('error', { message: 'Error in assistant stream' });
           break;
       }
@@ -73,16 +102,19 @@ class EventHandler extends EventEmitter {
     }
   }
 
-  async handleRequiresAction(data, runId, threadId) {
+  async handleRequiresAction(data) {
     try {
       const toolCalls = data.required_action.submit_tool_outputs.tool_calls;
       console.log('Tool calls received:', toolCalls);
 
-      // Store the tool calls we're waiting for
+      this.toolCallsCount = toolCalls.length;
+      const responses = new Map();
+
+      // Set up the tool calls tracking
       toolCalls.forEach(toolCall => {
         this.pendingToolCalls.set(toolCall.id, {
-          runId,
-          threadId,
+          runId: data.id,
+          threadId: data.thread_id,
           toolCall,
           received: false,
           output: null
@@ -97,59 +129,40 @@ class EventHandler extends EventEmitter {
       });
 
       // Set up one-time listener for tool responses
-      this.socket.once('tool_response', this.handleToolResponse.bind(this));
+      const handleResponse = (response) => {
+        responses.set(response.toolCallId, response);
+        
+        // Check if we have all responses
+        if (responses.size === this.toolCallsCount) {
+          // Process responses in the order of tool calls
+          const orderedOutputs = toolCalls.map(toolCall => {
+            const response = responses.get(toolCall.id);
+            return {
+              tool_call_id: toolCall.id,
+              output: JSON.stringify(response.output)
+            };
+          });
+
+          // Submit all outputs at once
+          this.submitToolOutputs(orderedOutputs, data.id, data.thread_id);
+        } else {
+          // Continue listening for more responses
+          this.socket.once('tool_response', handleResponse);
+        }
+      };
+
+      // Start listening for responses
+      this.socket.once('tool_response', handleResponse);
     } catch (error) {
       console.error('Error processing required action:', error);
       this.socket.emit('error', { message: 'Error processing tool calls' });
     }
   }
 
-  async handleToolResponse(response) {
-    try {
-      const { toolCallId, output } = response;
-      console.log('Tool response received:', toolCallId, output);
-
-      const pendingCall = this.pendingToolCalls.get(toolCallId);
-      if (!pendingCall) {
-        console.warn('Received response for unknown tool call:', toolCallId);
-        return;
-      }
-
-      // Mark this tool call as received and store the output
-      pendingCall.received = true;
-      pendingCall.output = output;
-
-      // Check if all tool calls for this run have been received
-      const { runId, threadId } = pendingCall;
-      const allToolCallsReceived = Array.from(this.pendingToolCalls.values())
-        .filter(call => call.runId === runId)
-        .every(call => call.received);
-
-      if (allToolCallsReceived) {
-        // Prepare and submit all tool outputs for this run
-        const toolOutputs = Array.from(this.pendingToolCalls.values())
-          .filter(call => call.runId === runId)
-          .map(call => ({
-            tool_call_id: call.toolCall.id,
-            output: call.output
-          }));
-
-        await this.submitToolOutputs(toolOutputs, runId, threadId);
-
-        // Clean up the pending tool calls for this run
-        Array.from(this.pendingToolCalls.entries())
-          .filter(([_, call]) => call.runId === runId)
-          .forEach(([id, _]) => this.pendingToolCalls.delete(id));
-      }
-    } catch (error) {
-      console.error('Error handling tool response:', error);
-      this.socket.emit('error', { message: 'Error handling tool response' });
-    }
-  }
-
   async submitToolOutputs(toolOutputs, runId, threadId) {
     try {
       console.log('Submitting tool outputs:', toolOutputs);
+      
       const stream = await this.client.beta.threads.runs.submitToolOutputsStream(
         threadId,
         runId,
@@ -162,6 +175,10 @@ class EventHandler extends EventEmitter {
     } catch (error) {
       console.error('Error submitting tool outputs:', error);
       this.socket.emit('error', { message: 'Error submitting tool outputs' });
+      
+      if (this.assistantService?.activeRuns) {
+        this.assistantService.activeRuns.delete(threadId);
+      }
     }
   }
 }
@@ -173,6 +190,7 @@ class AssistantService {
     }
     this.openai = openai;
     this.assistant = null;
+    this.activeRuns = new Map(); // Track active runs by threadId
   }
 
   async initialize() {
@@ -222,6 +240,28 @@ class AssistantService {
       let thread;
       if (threadId) {
         thread = await this.openai.beta.threads.retrieve(threadId);
+        
+        // Check if there's an active run for this thread
+        if (this.activeRuns.has(thread.id)) {
+          const activeRun = this.activeRuns.get(thread.id);
+          try {
+            const runStatus = await this.openai.beta.threads.runs.retrieve(
+              thread.id,
+              activeRun
+            );
+            
+            if (['in_progress', 'requires_action'].includes(runStatus.status)) {
+              socket.emit('error', { 
+                message: 'Please wait for the previous action to complete before sending a new message'
+              });
+              return;
+            }
+          } catch (error) {
+            // If we can't retrieve the run, assume it's no longer active
+            console.log('Could not retrieve run status, cleaning up:', error);
+            this.activeRuns.delete(thread.id);
+          }
+        }
       } else {
         thread = await this.openai.beta.threads.create();
         socket.emit('threadCreated', { threadId: thread.id });
@@ -232,8 +272,8 @@ class AssistantService {
         content: userMessage
       });
 
-      // Create event handler for this conversation
-      const eventHandler = new EventHandler(this.openai, socket);
+      // Create event handler for this conversation and pass 'this' as assistantService
+      const eventHandler = new EventHandler(this.openai, socket, this);
       eventHandler.on('event', eventHandler.onEvent.bind(eventHandler));
 
       // Start the run with streaming
@@ -245,10 +285,19 @@ class AssistantService {
         eventHandler
       );
 
+      // Store the active run
+      const runId = stream.runId;
+      this.activeRuns.set(thread.id, runId);
+      console.log(`Started run ${runId} for thread ${thread.id}`);
+
       // Process the stream
       for await (const event of stream) {
         eventHandler.emit('event', event);
       }
+
+      // Clean up completed run
+      this.activeRuns.delete(thread.id);
+      console.log(`Completed run ${runId} for thread ${thread.id}`);
 
     } catch (error) {
       console.error('Error in sendMessage:', error);
