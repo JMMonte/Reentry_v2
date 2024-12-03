@@ -55,36 +55,106 @@ marked.use({ renderer });
 
 export function ChatModal({ isOpen, onClose, socket }) {
   const [messages, setMessages] = useState([]);
-  const [inputValue, setInputValue] = useState('');
+  const [userMessage, setUserMessage] = useState('');
+  const [threadId, setThreadId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const [modalPosition, setModalPosition] = useState(() => {
     return { x: 20, y: 80 };
   });
 
+  // Handle initial socket state
   useEffect(() => {
-    if (!socket) return;
+    if (socket) {
+      setIsConnected(socket.connected);
+    }
+  }, [socket]);
 
-    const handleMessage = (message) => {
-      console.log('Received message:', message);
-      
-      if (!message || !message.role || !message.content) {
-        console.error('Invalid message format:', message);
-        return;
-      }
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
 
-      // Add message to the list if it's not already there
+    const handleMessage = (data) => {
+      console.log('Message received:', data);
       setMessages(prev => {
-        const messageExists = prev.some(m => 
-          m.role === message.role && 
-          m.content === message.content
-        );
-        return messageExists ? prev : [...prev, message];
+        const messageIndex = prev.findIndex(m => m.id === data.messageId);
+        if (messageIndex !== -1) {
+          const updatedMessages = [...prev];
+          updatedMessages[messageIndex] = {
+            ...updatedMessages[messageIndex],
+            content: data.content,
+            status: data.status
+          };
+          return updatedMessages;
+        } else {
+          return [...prev, {
+            id: data.messageId,
+            role: data.role,
+            content: data.content,
+            status: data.status
+          }];
+        }
       });
-      
-      if (message.role === 'assistant') {
+
+      // Set loading to false when message is completed
+      if (data.status === 'completed') {
         setIsLoading(false);
+      }
+    };
+
+    const handleToolCall = async (toolCall) => {
+      console.log('Tool call received:', toolCall);
+      const { toolCallId, name, arguments: args } = toolCall;
+
+      try {
+        let output;
+        switch (name) {
+          case 'createSatelliteFromLatLon':
+            output = await window.api.createSatellite({
+              ...args,
+              type: 'latlon'
+            });
+            break;
+
+          case 'createSatelliteFromOrbitalElements':
+            output = await window.api.createSatellite({
+              ...args,
+              type: 'orbital'
+            });
+            break;
+
+          case 'createSatelliteFromLatLonCircular':
+            output = await window.api.createSatellite({
+              ...args,
+              type: 'circular'
+            });
+            break;
+
+          case 'getMoonOrbit':
+            output = await window.api.getMoonOrbit();
+            break;
+
+          default:
+            throw new Error(`Unknown tool call: ${name}`);
+        }
+
+        if (socket?.connected) {
+          socket.emit('tool_response', {
+            toolCallId,
+            output: JSON.stringify(output)
+          });
+        }
+      } catch (error) {
+        console.error('Error executing tool call:', error);
+        if (socket?.connected) {
+          socket.emit('tool_response', {
+            toolCallId,
+            output: JSON.stringify({ error: error.message })
+          });
+        }
       }
     };
 
@@ -92,18 +162,50 @@ export function ChatModal({ isOpen, onClose, socket }) {
       console.error('Socket error:', error);
       setIsLoading(false);
       setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `Error: ${error}`,
+        id: Date.now(),
+        role: 'error',
+        content: error.message,
         status: 'completed'
       }]);
     };
 
+    const handleThreadCreated = (data) => {
+      console.log('Thread created:', data);
+      setThreadId(data.threadId);
+    };
+
+    const handleRunCompleted = (data) => {
+      console.log('Run completed:', data);
+      setIsLoading(false);
+    };
+
+    const handleConnect = () => {
+      console.log('Socket connected');
+      setIsConnected(true);
+    };
+
+    const handleDisconnect = () => {
+      console.log('Socket disconnected');
+      setIsConnected(false);
+      setIsLoading(false);
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
     socket.on('message', handleMessage);
+    socket.on('tool_call', handleToolCall);
     socket.on('error', handleError);
+    socket.on('threadCreated', handleThreadCreated);
+    socket.on('runCompleted', handleRunCompleted);
 
     return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
       socket.off('message', handleMessage);
+      socket.off('tool_call', handleToolCall);
       socket.off('error', handleError);
+      socket.off('threadCreated', handleThreadCreated);
+      socket.off('runCompleted', handleRunCompleted);
     };
   }, [socket]);
 
@@ -116,20 +218,41 @@ export function ChatModal({ isOpen, onClose, socket }) {
     }
   }, [messages]);
 
-  const handleSend = () => {
-    if (!inputValue.trim() || !socket || isLoading) return;
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!userMessage.trim() || !isConnected) return;
 
-    const messageContent = inputValue.trim();
-    setInputValue('');
     setIsLoading(true);
     
-    socket.emit('chat message', messageContent);
+    // Add user message immediately
+    setMessages(prev => [...prev, {
+      id: Date.now(),
+      role: 'user',
+      content: userMessage,
+      status: 'completed'
+    }]);
+
+    try {
+      // Send message with thread ID if it exists
+      socket.emit('chat message', userMessage, threadId);
+      
+      setUserMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setIsLoading(false);
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        role: 'error',
+        content: 'Failed to send message. Please try again.',
+        status: 'completed'
+      }]);
+    }
   };
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSubmit(e);
     }
   };
 
@@ -140,13 +263,12 @@ export function ChatModal({ isOpen, onClose, socket }) {
     }
 
     const isUser = message.role === 'user';
-    
-    // Get the message content directly, it's already a string
     const content = message.content;
+    const isStreaming = message.status === 'streaming';
 
     return (
       <div
-        key={index}
+        key={message.id}
         className={cn(
           'mb-2 flex', 
           isUser ? 'justify-end' : 'justify-start'
@@ -155,11 +277,15 @@ export function ChatModal({ isOpen, onClose, socket }) {
         <div
           className={cn(
             'rounded-lg px-3 py-1.5 max-w-[80%]', 
-            isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'
+            isUser ? 'bg-primary text-primary-foreground' : 'bg-muted',
+            isStreaming && 'animate-pulse'
           )}
         >
           <div className="text-xs leading-relaxed whitespace-pre-wrap break-words">
-            {content}
+            {content || ' '}
+            {isStreaming && (
+              <span className="inline-block w-1 h-4 ml-0.5 bg-current animate-blink" />
+            )}
           </div>
         </div>
       </div>
@@ -184,6 +310,13 @@ export function ChatModal({ isOpen, onClose, socket }) {
           className="flex-1 px-3 py-2" 
         >
           <div className="space-y-2"> 
+            {!isConnected && (
+              <div className="flex justify-center">
+                <div className="bg-destructive text-destructive-foreground rounded-lg px-4 py-2">
+                  Disconnected from server. Reconnecting...
+                </div>
+              </div>
+            )}
             {messages.map(renderMessage)}
             {isLoading && (
               <div className="flex justify-start mb-2">
@@ -199,18 +332,23 @@ export function ChatModal({ isOpen, onClose, socket }) {
           <div className="flex gap-2">
             <Input
               ref={inputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              value={userMessage}
+              onChange={(e) => setUserMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type a message..."
+              placeholder={isConnected ? "Type a message..." : "Connecting to server..."}
+              disabled={!isConnected || isLoading}
               className="flex-1 text-sm" 
             />
             <Button 
               size="sm" 
-              onClick={handleSend}
-              disabled={!inputValue.trim() || isLoading}
+              onClick={handleSubmit}
+              disabled={!userMessage.trim() || !isConnected || isLoading}
             >
-              <Send className="h-3 w-3" /> 
+              {isLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Send className="h-3 w-3" /> 
+              )}
             </Button>
           </div>
         </div>

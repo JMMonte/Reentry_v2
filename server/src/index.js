@@ -44,23 +44,17 @@ assistant.initialize().catch(error => {
 io.on('connection', (socket) => {
   console.log('Client connected');
 
-  socket.on('chat message', async (message) => {
+  socket.on('chat message', async (message, threadId) => {
+    console.log('Received message:', message, 'ThreadId:', threadId);
     try {
       if (typeof message !== 'string') {
         throw new Error('Message must be a string');
       }
 
-      console.log('Received message:', message);
-      
-      // Emit user message back to client
-      socket.emit('message', {
-        role: 'user',
-        content: message,
-        status: 'completed'
-      });
-
+      console.log('Getting assistant response...');
       // Get assistant response
-      await assistant.sendMessage(socket, message);
+      await assistant.sendMessage(socket, message, threadId);
+      console.log('Assistant response complete');
       
     } catch (error) {
       console.error('Error handling message:', error);

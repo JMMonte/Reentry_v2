@@ -10,6 +10,7 @@ import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
 import App3D from './app3d.js';
 import './styles/globals.css';
+import './styles/animations.css';
 
 function App() {
   const [socket, setSocket] = useState(null);
