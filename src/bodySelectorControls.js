@@ -1,6 +1,9 @@
 // bodySelectorControls.js
 
 export function initializeBodySelector(app) {
+    // Instead of manipulating the DOM directly, we'll use the app's event system
+    // to communicate with the React components
+    
     document.addEventListener('bodySelected', (event) => {
         const value = event.detail.body;
         if (value === 'none') {
@@ -9,9 +12,9 @@ export function initializeBodySelector(app) {
             app.cameraControls.updateCameraTarget(app.earth);
         } else if (value === 'moon') {
             app.cameraControls.updateCameraTarget(app.moon);
-        } else {
-            // For satellites, value is the satellite ID
-            const satellite = app.satellites[value];
+        } else if (value.startsWith('satellite-')) {
+            const satelliteId = parseInt(value.split('-')[1]);
+            const satellite = app.satellites.find(s => s.id === satelliteId);
             if (satellite) {
                 app.cameraControls.updateCameraTarget(satellite);
             }
@@ -22,9 +25,9 @@ export function initializeBodySelector(app) {
     document.addEventListener('satelliteAdded', () => {
         document.dispatchEvent(new CustomEvent('updateBodyOptions', {
             detail: {
-                satellites: Object.entries(app.satellites).map(([id, s]) => ({
-                    value: id,
-                    text: s.name || `Satellite ${id}`
+                satellites: app.satellites.map(s => ({
+                    value: `satellite-${s.id}`,
+                    text: `Satellite ${s.id}`
                 }))
             }
         }));
@@ -33,9 +36,9 @@ export function initializeBodySelector(app) {
     document.addEventListener('satelliteRemoved', () => {
         document.dispatchEvent(new CustomEvent('updateBodyOptions', {
             detail: {
-                satellites: Object.entries(app.satellites).map(([id, s]) => ({
-                    value: id,
-                    text: s.name || `Satellite ${id}`
+                satellites: app.satellites.map(s => ({
+                    value: `satellite-${s.id}`,
+                    text: `Satellite ${s.id}`
                 }))
             }
         }));

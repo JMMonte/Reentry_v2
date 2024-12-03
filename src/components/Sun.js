@@ -1,83 +1,73 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
-import { Lensflare, LensflareElement } from './Lensflare.js';
-import { createLensflareTextures } from '../utils/LensflareTextures.js';
+import { Lensflare, LensflareElement } from '../addons/Lensflare.js';
 
 export class Sun {
     constructor(scene, timeUtils) {
         this.scene = scene;
-        this.timeUtils = timeUtils;
-        this.radius = Constants.sunRadius * Constants.scale * Constants.metersToKm;
+        this.timeUtils = timeUtils;  // Inject TimeUtils instance directly into Sun
+        this.radius = Constants.sunRadius * Constants.scale * Constants.metersToKm;  // Scale down the Sun's radius
 
-        // Create a group to hold both the sun mesh and its corona
-        this.sunGroup = new THREE.Group();
-        this.scene.add(this.sunGroup);
-
-        // Main sun sphere with depth writing enabled
-        const geometry = new THREE.SphereGeometry(this.radius, 32, 32);
+        const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down
         const material = new THREE.MeshPhongMaterial({
-            color: 0xFFFFFF,
-            emissive: 0xFFFFFF,
-            emissiveIntensity: 80,
+            color: 0xFFFFFF,  // Sun's color
+            emissive: 0xFFFFFF,  // Glowing color
+            emissiveIntensity: 0.1,
             shininess: 100,
-            depthWrite: true,  // Enable depth writing
-            depthTest: true    // Enable depth testing
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false  // This allows the lens flare to show through
         });
 
         this.sun = new THREE.Mesh(geometry, material);
-        this.sunGroup.add(this.sun);
+        this.scene.add(this.sun);
 
-        // Add a slightly larger corona sphere
-        const coronaGeometry = new THREE.SphereGeometry(this.radius * 1.2, 32, 32);
-        const coronaMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffddaa,
-            transparent: true,
-            opacity: 0.3,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,  // Disable depth writing for transparency
-            side: THREE.BackSide
-        });
-
-        this.corona = new THREE.Mesh(coronaGeometry, coronaMaterial);
-        this.sunGroup.add(this.corona);
-
-        // Point light
         this.sunLight = new THREE.PointLight(0xffffff, 40000000.0, 0);
         this.sunLight.decay = 1;
         this.sunLight.position.copy(this.sun.position);
         this.sunLight.castShadow = true;
-        this.sunGroup.add(this.sunLight);
+        this.scene.add(this.sunLight);
 
-        // Add lens flare with improved settings
-        const { textureFlare0, textureFlare3 } = createLensflareTextures();
-
+        // Add lens flare
         const lensflare = new Lensflare();
-        
-        // Main flare (smaller size to reduce flickering)
-        lensflare.addElement(new LensflareElement(textureFlare0, 500, 0, new THREE.Color(0xffffff)));
-        
-        // Secondary flares with adjusted distances and sizes
-        lensflare.addElement(new LensflareElement(textureFlare3, 40, 0.4, new THREE.Color(0xff8800)));
-        lensflare.addElement(new LensflareElement(textureFlare3, 50, 0.6, new THREE.Color(0xff8800)));
-        lensflare.addElement(new LensflareElement(textureFlare3, 60, 0.8, new THREE.Color(0xff8800)));
-        lensflare.addElement(new LensflareElement(textureFlare3, 40, 1.0, new THREE.Color(0xff8800)));
-
         this.sunLight.add(lensflare);
+
+        // Load textures
+        const textureLoader = new THREE.TextureLoader();
+        const loadTexture = (url, size, distance, color) => {
+            textureLoader.load(url, (texture) => {
+                lensflare.addElement(new LensflareElement(texture, size, distance, color));
+            });
+        };
+
+        // Main flare
+        loadTexture(
+            '/textures/lensflare/lensflare0.png',
+            700,
+            0,
+            new THREE.Color(0xffffff).multiplyScalar(1.5)
+        );
+
+        // Secondary flares
+        loadTexture(
+            '/textures/lensflare/lensflare2.png',
+            512,
+            0.6,
+            new THREE.Color(0xffffff).multiplyScalar(1.5)
+        );
+
+        // Additional flares
+        const flare3Color = new THREE.Color(0xffffff).multiplyScalar(1.5);
+        loadTexture('/textures/lensflare/lensflare3.png', 60, 0.7, flare3Color);
+        loadTexture('/textures/lensflare/lensflare3.png', 70, 0.9, flare3Color);
+        loadTexture('/textures/lensflare/lensflare3.png', 120, 1.0, flare3Color);
+        loadTexture('/textures/lensflare/lensflare3.png', 70, 1.1, flare3Color);
     }
 
     updatePosition() {
-        const position = this.timeUtils.getSunPosition();
-        this.sunGroup.position.copy(position);
-    }
-
-    dispose() {
-        // Clean up materials and geometries
-        this.sun.geometry.dispose();
-        this.sun.material.dispose();
-        this.corona.geometry.dispose();
-        this.corona.material.dispose();
-        
-        // Remove from scene
-        this.scene.remove(this.sunGroup);
+        const position = this.timeUtils.getSunPosition();  // Use TimeUtils to get the current sun position
+        this.sun.position.copy(position);
+        this.sunLight.position.copy(position);
     }
 }

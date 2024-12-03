@@ -1,25 +1,42 @@
-import * as THREE from 'three';
+import {
+    AdditiveBlending,
+    Box2,
+    BufferGeometry,
+    Color,
+    FramebufferTexture,
+    InterleavedBuffer,
+    InterleavedBufferAttribute,
+    Mesh,
+    MeshBasicMaterial,
+    RawShaderMaterial,
+    UnsignedByteType,
+    Vector2,
+    Vector3,
+    Vector4
+} from 'three';
 
-export class Lensflare extends THREE.Mesh {
+class Lensflare extends Mesh {
     constructor() {
-        super(Lensflare.Geometry, new THREE.MeshBasicMaterial({ opacity: 0, transparent: true }));
+        super(Lensflare.Geometry, new MeshBasicMaterial({ opacity: 0, transparent: true }));
 
         this.isLensflare = true;
         this.type = 'Lensflare';
         this.frustumCulled = false;
         this.renderOrder = Infinity;
 
-        const positionScreen = new THREE.Vector3();
-        const positionView = new THREE.Vector3();
+        const positionScreen = new Vector3();
+        const positionView = new Vector3();
 
         // textures
-        const tempMap = new THREE.FramebufferTexture(16, 16, THREE.RGBAFormat);
-        const occlusionMap = new THREE.FramebufferTexture(16, 16, THREE.RGBAFormat);
+        const tempMap = new FramebufferTexture(16, 16);
+        const occlusionMap = new FramebufferTexture(16, 16);
+
+        let currentType = UnsignedByteType;
 
         // material
         const geometry = Lensflare.Geometry;
 
-        const material1a = new THREE.RawShaderMaterial({
+        const material1a = new RawShaderMaterial({
             uniforms: {
                 'scale': { value: null },
                 'screenPosition': { value: null }
@@ -42,7 +59,7 @@ export class Lensflare extends THREE.Mesh {
             transparent: false
         });
 
-        const material1b = new THREE.RawShaderMaterial({
+        const material1b = new RawShaderMaterial({
             uniforms: {
                 'map': { value: tempMap },
                 'scale': { value: null },
@@ -72,40 +89,51 @@ export class Lensflare extends THREE.Mesh {
         });
 
         // the following object is used for occlusionMap generation
-        const mesh1 = new THREE.Mesh(geometry, material1a);
+        const mesh1 = new Mesh(geometry, material1a);
 
         const elements = [];
 
         const shader = LensflareElement.Shader;
 
-        const material2 = new THREE.RawShaderMaterial({
+        const material2 = new RawShaderMaterial({
+            name: shader.name,
             uniforms: {
                 'map': { value: null },
                 'occlusionMap': { value: occlusionMap },
-                'color': { value: new THREE.Color(0xffffff) },
-                'scale': { value: new THREE.Vector2() },
-                'screenPosition': { value: new THREE.Vector3() }
+                'color': { value: new Color(0xffffff) },
+                'scale': { value: new Vector2() },
+                'screenPosition': { value: new Vector3() }
             },
             vertexShader: shader.vertexShader,
             fragmentShader: shader.fragmentShader,
-            blending: THREE.AdditiveBlending,
+            blending: AdditiveBlending,
             transparent: true,
             depthWrite: false
         });
 
-        const mesh2 = new THREE.Mesh(geometry, material2);
+        const mesh2 = new Mesh(geometry, material2);
 
         this.addElement = function(element) {
             elements.push(element);
         };
 
-        const scale = new THREE.Vector2();
-        const screenPositionPixels = new THREE.Vector2();
-        const validArea = new THREE.Box2();
-        const viewport = new THREE.Vector4();
+        const scale = new Vector2();
+        const screenPositionPixels = new Vector2();
+        const validArea = new Box2();
+        const viewport = new Vector4();
 
         this.onBeforeRender = function(renderer, scene, camera) {
             renderer.getCurrentViewport(viewport);
+
+            const renderTarget = renderer.getRenderTarget();
+            const type = (renderTarget !== null) ? renderTarget.texture.type : UnsignedByteType;
+
+            if (currentType !== type) {
+                tempMap.dispose();
+                occlusionMap.dispose();
+                tempMap.type = occlusionMap.type = type;
+                currentType = type;
+            }
 
             const invAspect = viewport.w / viewport.z;
             const halfViewportWidth = viewport.z / 2.0;
@@ -132,7 +160,7 @@ export class Lensflare extends THREE.Mesh {
             // screen cull
             if (validArea.containsPoint(screenPositionPixels)) {
                 // save current RGB to temp texture
-                renderer.copyFramebufferToTexture(screenPositionPixels, tempMap);
+                renderer.copyFramebufferToTexture(tempMap, screenPositionPixels);
 
                 // render pink quad
                 let uniforms = material1a.uniforms;
@@ -142,7 +170,7 @@ export class Lensflare extends THREE.Mesh {
                 renderer.renderBufferDirect(camera, null, geometry, material1a, mesh1, null);
 
                 // copy result to occlusionMap
-                renderer.copyFramebufferToTexture(screenPositionPixels, occlusionMap);
+                renderer.copyFramebufferToTexture(occlusionMap, screenPositionPixels);
 
                 // restore graphics
                 uniforms = material1b.uniforms;
@@ -191,8 +219,8 @@ export class Lensflare extends THREE.Mesh {
     }
 }
 
-export class LensflareElement {
-    constructor(texture, size = 1, distance = 0, color = new THREE.Color(0xffffff)) {
+class LensflareElement {
+    constructor(texture, size = 1, distance = 0, color = new Color(0xffffff)) {
         this.texture = texture;
         this.size = size;
         this.distance = distance;
@@ -201,6 +229,7 @@ export class LensflareElement {
 }
 
 LensflareElement.Shader = {
+    name: 'LensflareElementShader',
     uniforms: {
         'map': { value: null },
         'occlusionMap': { value: null },
@@ -208,7 +237,6 @@ LensflareElement.Shader = {
         'scale': { value: null },
         'screenPosition': { value: null }
     },
-
     vertexShader: /* glsl */`
         precision highp float;
         uniform vec3 screenPosition;
@@ -230,20 +258,20 @@ LensflareElement.Shader = {
             visibility += texture2D( occlusionMap, vec2( 0.1, 0.9 ) );
             visibility += texture2D( occlusionMap, vec2( 0.1, 0.5 ) );
             visibility += texture2D( occlusionMap, vec2( 0.5, 0.5 ) );
-            vVisibility =        visibility.r / 9.0;
+            vVisibility = visibility.r / 9.0;
             vVisibility *= 1.0 - visibility.g / 9.0;
-            vVisibility *=       visibility.b / 9.0;
+            vVisibility *= visibility.b / 9.0;
             gl_Position = vec4( ( pos * scale + screenPosition.xy ).xy, screenPosition.z, 1.0 );
         }`,
-
     fragmentShader: /* glsl */`
         precision highp float;
         uniform sampler2D map;
         uniform vec3 color;
         varying vec2 vUV;
         varying float vVisibility;
+
         void main() {
-            vec4 texture = texture2D( map, vUV );
+            vec4 texture = texture2D(map, vUV);
             texture.a *= vVisibility;
             gl_FragColor = texture;
             gl_FragColor.rgb *= color;
@@ -251,7 +279,7 @@ LensflareElement.Shader = {
 };
 
 Lensflare.Geometry = (function() {
-    const geometry = new THREE.BufferGeometry();
+    const geometry = new BufferGeometry();
 
     const float32Array = new Float32Array([
         -1, -1, 0, 0, 0,
@@ -260,11 +288,13 @@ Lensflare.Geometry = (function() {
         -1, 1, 0, 0, 1
     ]);
 
-    const interleavedBuffer = new THREE.InterleavedBuffer(float32Array, 5);
+    const interleavedBuffer = new InterleavedBuffer(float32Array, 5);
 
     geometry.setIndex([0, 1, 2, 0, 2, 3]);
-    geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
-    geometry.setAttribute('uv', new THREE.InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
+    geometry.setAttribute('position', new InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
+    geometry.setAttribute('uv', new InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
 
     return geometry;
 })();
+
+export { Lensflare, LensflareElement };

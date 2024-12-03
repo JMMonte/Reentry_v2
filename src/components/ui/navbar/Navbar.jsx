@@ -121,13 +121,21 @@ export function Navbar({
   };
 
   const handleBodyChange = (value) => {
-    // Update React state
-    onBodySelect(value);
-    
-    // Dispatch event for 3D scene
-    document.dispatchEvent(new CustomEvent('bodySelected', {
-      detail: { body: value }
-    }));
+    // For non-satellite values, pass them directly
+    if (!value || value === 'none' || value === 'earth' || value === 'moon') {
+      onBodySelect(value);
+    } else {
+      // For satellites, pass the ID directly
+      onBodySelect(value);
+      
+      // Focus camera on selected satellite
+      if (app3DRef?.current?.satellites) {
+        const satellite = app3DRef.current.satellites[value];
+        if (satellite && window.app3d?.cameraControls) {
+          window.app3d.cameraControls.updateCameraTarget(satellite);
+        }
+      }
+    }
   };
 
   const onCreateSatellite = async (params) => {
