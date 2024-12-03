@@ -35,22 +35,44 @@ class App3D extends EventTarget {
                     let satellite;
                     switch (params.mode) {
                         case 'latlon':
-                            satellite = this.createSatelliteLatLon(params);
+                            satellite = await this.createSatelliteLatLon(params);
                             break;
                         case 'orbital':
-                            satellite = this.createSatelliteOrbital(params);
+                            satellite = await this.createSatelliteOrbital(params);
                             break;
                         case 'circular':
-                            satellite = this.createSatelliteCircular(params);
+                            satellite = await this.createSatelliteCircular(params);
                             break;
                         default:
                             throw new Error(`Unknown satellite mode: ${params.mode}`);
                     }
                     
+                    if (!satellite) {
+                        throw new Error('Failed to create satellite');
+                    }
+
+                    // Wait for the satellite to be fully initialized
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
+                    // Generate default name if none provided
+                    const name = satellite.name || `Satellite ${satellite.id}`;
+                    satellite.name = name;
+                    
+                    // Dispatch an event to trigger state updates
+                    const updateEvent = new CustomEvent('satelliteCreated', {
+                        detail: {
+                            id: satellite.id,
+                            name: name,
+                            mode: params.mode,
+                            params: params
+                        }
+                    });
+                    document.dispatchEvent(updateEvent);
+                    
                     // Return only safe JSON data
                     return {
                         id: satellite.id,
-                        name: satellite.name,
+                        name: name,
                         mode: params.mode,
                         params: params,
                         success: true

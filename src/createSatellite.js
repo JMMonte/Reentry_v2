@@ -133,8 +133,9 @@ export function createSatelliteFromLatLon(app, params) {
         latitude,
         longitude,
         altitude,
-        heading: azimuth,
-        speed: velocity,
+        velocity,
+        azimuth,
+        angleOfAttack = 0,
         mass,
         size,
         name
@@ -143,27 +144,17 @@ export function createSatelliteFromLatLon(app, params) {
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
     const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
 
-    // Assuming angle of attack is 0 for simplicity
-    const angleOfAttack = 0;
-
-    // Convert altitude from km to m for physics calculations
-    const altitudeMeters = altitude * Constants.kmToMeters;
-
-    // Convert velocity from km/s to m/s for physics calculations
-    const velocityMeters = velocity * Constants.kmToMeters;
-
     const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
         latitude,
         longitude,
-        altitudeMeters,
-        velocityMeters,
+        altitude * Constants.kmToMeters,
+        velocity * Constants.kmToMeters,
         azimuth,
         angleOfAttack,
         earthQuaternion,
         tiltQuaternion
     );
 
-    // Scale for Three.js visualization (convert from meters to km, then apply scale)
     const scaledPosition = new THREE.Vector3(
         positionECEF.x * Constants.metersToKm * Constants.scale,
         positionECEF.y * Constants.metersToKm * Constants.scale,
@@ -197,8 +188,8 @@ export function createSatelliteFromLatLonCircular(app, params) {
         latitude,
         longitude,
         altitude,
-        inclination,
-        raan,
+        azimuth,
+        angleOfAttack = 0,
         mass,
         size,
         name
@@ -212,12 +203,6 @@ export function createSatelliteFromLatLonCircular(app, params) {
 
     // Calculate the orbital velocity for a circular orbit
     const orbitalVelocity = PhysicsUtils.calculateOrbitalVelocity(Constants.earthMass, radius);
-
-    // Calculate azimuth based on inclination and RAAN
-    const azimuth = PhysicsUtils.calculateAzimuthFromInclination(latitude, inclination, raan);
-
-    // Assuming angle of attack for a circular orbit is zero
-    const angleOfAttack = 0;
 
     const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
         latitude,

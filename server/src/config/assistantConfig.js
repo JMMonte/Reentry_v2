@@ -37,9 +37,10 @@ When suggesting orbits:
             altitude: { type: "number", description: "Altitude in kilometers above Earth's surface" },
             velocity: { type: "number", description: "Initial velocity in km/s" },
             azimuth: { type: "number", description: "Azimuth angle in degrees (0-North, 90-East, 180-South, 270-West)" },
-            mass: { type: "number", description: "Mass of the satellite in kg" },
-            size: { type: "number", description: "Size of the satellite in meters" },
-            name: { type: "string", description: "Name of the satellite" }
+            angleOfAttack: { type: "number", description: "Angle of attack in degrees (optional, defaults to 0). Positive angles point upward relative to the velocity vector." },
+            mass: { type: "number", description: "Mass of the satellite in kg (optional, defaults to 100 kg)" },
+            size: { type: "number", description: "Size of the satellite in meters (optional, defaults to 1 meter)" },
+            name: { type: "string", description: "Name of the satellite (optional, will be auto-generated if not provided)" }
           },
           required: ["latitude", "longitude", "altitude", "velocity", "azimuth"]
         }
@@ -71,20 +72,20 @@ When suggesting orbits:
       type: "function",
       function: {
         name: "createSatelliteFromLatLonCircular",
-        description: "Creates a satellite in a circular orbit based on latitude and longitude",
+        description: "Creates a satellite in a circular orbit based on latitude and longitude. The orbital velocity will be automatically calculated to maintain a circular orbit at the specified altitude.",
         parameters: {
           type: "object",
           properties: {
             latitude: { type: "number", description: "Latitude in degrees (-90 to 90)" },
             longitude: { type: "number", description: "Longitude in degrees (-180 to 180)" },
             altitude: { type: "number", description: "Altitude in kilometers above Earth's surface" },
-            inclination: { type: "number", description: "Orbital inclination in degrees" },
-            azimuth: { type: "number", description: "Azimuth angle in degrees (0-North, 90-East, 180-South, 270-West)" },
-            mass: { type: "number", description: "Mass of the satellite in kg" },
-            size: { type: "number", description: "Size of the satellite in meters" },
-            name: { type: "string", description: "Name of the satellite" }
+            azimuth: { type: "number", description: "Initial heading angle in degrees (0-North, 90-East, 180-South, 270-West)" },
+            angleOfAttack: { type: "number", description: "Angle of attack in degrees (optional, defaults to 0). Positive angles point upward relative to the velocity vector." },
+            mass: { type: "number", description: "Mass of the satellite in kg (optional, defaults to 100 kg)" },
+            size: { type: "number", description: "Size of the satellite in meters (optional, defaults to 1 meter)" },
+            name: { type: "string", description: "Name of the satellite (optional, will be auto-generated if not provided)" }
           },
-          required: ["latitude", "longitude", "altitude", "inclination", "azimuth"]
+          required: ["latitude", "longitude", "altitude", "azimuth"]
         }
       }
     },

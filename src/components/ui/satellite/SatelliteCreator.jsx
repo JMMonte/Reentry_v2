@@ -22,6 +22,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         raan: 0,
         argumentOfPeriapsis: 0,
         trueAnomaly: 0,
+        angleOfAttack: 0,
     });
 
     const handleInputChange = (e) => {
@@ -120,6 +121,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                         {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
                         {renderField("heading", "Head", "number", 0, 360, 0.1, "deg")}
                         {renderField("speed", "Speed", "number", null, null, 0.1, "km/s")}
+                        {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
                     </>
                 )}
 
@@ -138,9 +140,11 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                 {/* Circular Orbit Fields */}
                 {mode === 'circular' && (
                     <>
+                        {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
+                        {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
                         {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                        {renderField("inclination", "Inc", "number", 0, 180, 0.1, "deg")}
-                        {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
+                        {renderField("heading", "Azimuth", "number", 0, 360, 0.1, "deg")}
+                        {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
                     </>
                 )}
 

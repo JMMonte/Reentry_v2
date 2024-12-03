@@ -156,11 +156,10 @@ export function ChatModal({ isOpen, onClose, socket }) {
             break;
             
           case 'createSatelliteFromLatLonCircular':
-            // Validate required parameters
+            // Validate required parameters - only need lat, lon, altitude, and azimuth
             if (typeof parsedArgs.latitude !== 'number' || 
                 typeof parsedArgs.longitude !== 'number' || 
                 typeof parsedArgs.altitude !== 'number' || 
-                typeof parsedArgs.inclination !== 'number' || 
                 typeof parsedArgs.azimuth !== 'number') {
               throw new Error('Missing required parameters for createSatelliteFromLatLonCircular');
             }
