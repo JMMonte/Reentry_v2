@@ -216,54 +216,78 @@ export class PhysicsUtils {
         return { positionECEF: position, velocityECEF: velocityECEF };
     }
 
-    static calculatePositionAndVelocityFromOrbitalElements(semiMajorAxis, eccentricity, inclination, argumentOfPeriapsis, raan, trueAnomaly) {
+    static calculatePositionAndVelocityFromOrbitalElements(
+        semiMajorAxis,
+        eccentricity,
+        inclination,
+        argumentOfPeriapsis,
+        raan,
+        trueAnomaly
+    ) {
         // Constants
         const mu = Constants.earthGravitationalParameter;
-    
-        // Convert angles from degrees to radians
+
+        // Convert angles from degrees to radians if necessary
         const iRad = inclination;
         const raanRad = raan;
         const argPeriapsisRad = argumentOfPeriapsis;
         const trueAnomalyRad = trueAnomaly;
-    
+
+        // Earth's obliquity in radians (approximately 23.44 degrees)
+        const earthObliquity = THREE.MathUtils.degToRad(23.44);
+
         // Perifocal coordinates
         const p = semiMajorAxis * (1 - eccentricity * eccentricity);
         if (p <= 0) {
             console.error('Invalid value for p:', p);
-            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+            return {
+                positionECI: new CANNON.Vec3(),
+                velocityECI: new CANNON.Vec3(),
+            };
         }
-    
+
         const r = p / (1 + eccentricity * Math.cos(trueAnomalyRad));
         const xP = r * Math.cos(trueAnomalyRad);
         const yP = r * Math.sin(trueAnomalyRad);
         const zP = 0;
-    
+
         const positionPerifocal = new THREE.Vector3(xP, yP, zP);
-    
+
         // Velocity in perifocal coordinates
-        const h = Math.sqrt(mu * semiMajorAxis * (1 - eccentricity * eccentricity));
+        const h = Math.sqrt(
+            mu * semiMajorAxis * (1 - eccentricity * eccentricity)
+        );
         if (isNaN(h) || h <= 0) {
             console.error('Invalid value for h:', h);
-            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+            return {
+                positionECI: new CANNON.Vec3(),
+                velocityECI: new CANNON.Vec3(),
+            };
         }
-    
+
         const sqrtMuOverP = Math.sqrt(mu / p);
         if (isNaN(sqrtMuOverP) || sqrtMuOverP <= 0) {
             console.error('Invalid value for sqrtMuOverP:', sqrtMuOverP);
-            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+            return {
+                positionECI: new CANNON.Vec3(),
+                velocityECI: new CANNON.Vec3(),
+            };
         }
-    
+
         const vxP = -sqrtMuOverP * Math.sin(trueAnomalyRad);
         const vyP = sqrtMuOverP * (eccentricity + Math.cos(trueAnomalyRad));
         const vzP = 0;
-    
+
         const velocityPerifocal = new THREE.Vector3(vxP, vyP, vzP);
-    
+
         // Rotation matrices
         const R1 = new THREE.Matrix4().makeRotationZ(-raanRad);
         const R2 = new THREE.Matrix4().makeRotationX(-iRad);
         const R3 = new THREE.Matrix4().makeRotationZ(-argPeriapsisRad);
-    
+
+        // Earth's obliquity rotation matrix
+        const R_obliquity = new THREE.Matrix4().makeRotationX(earthObliquity);
+
         // Flip Y and Z coordinates to handle the Three.js coordinate system
         const flipYzMatrix = new THREE.Matrix4().set(
             1, 0, 0, 0,
@@ -271,24 +295,45 @@ export class PhysicsUtils {
             0, -1, 0, 0,
             0, 0, 0, 1
         );
-    
-        // Total rotation matrix with Y and Z flipped
-        const rotationMatrix = new THREE.Matrix4().multiplyMatrices(flipYzMatrix, R3).multiply(R2).multiply(R1);
-    
-        // Convert to ECI coordinates
+
+        // Total rotation matrix including Earth's obliquity
+        const rotationMatrix = new THREE.Matrix4()
+            .multiplyMatrices(flipYzMatrix, R_obliquity)
+            .multiply(R3)
+            .multiply(R2)
+            .multiply(R1);
+
+        // Convert to ECI coordinates with Earth's tilt
         const positionECI = positionPerifocal.applyMatrix4(rotationMatrix);
         const velocityECI = velocityPerifocal.applyMatrix4(rotationMatrix);
-    
-        if (isNaN(positionECI.x) || isNaN(positionECI.y) || isNaN(positionECI.z) ||
-            isNaN(velocityECI.x) || isNaN(velocityECI.y) || isNaN(velocityECI.z)) {
+
+        if (
+            isNaN(positionECI.x) ||
+            isNaN(positionECI.y) ||
+            isNaN(positionECI.z) ||
+            isNaN(velocityECI.x) ||
+            isNaN(velocityECI.y) ||
+            isNaN(velocityECI.z)
+        ) {
             console.error('Invalid ECI coordinates:', positionECI, velocityECI);
-            return { positionECI: new CANNON.Vec3(), velocityECI: new CANNON.Vec3() };
+            return {
+                positionECI: new CANNON.Vec3(),
+                velocityECI: new CANNON.Vec3(),
+            };
         }
-    
+
         // Return the position and velocity in ECI frame
-        return { 
-            positionECI: new CANNON.Vec3(positionECI.x, positionECI.y, positionECI.z),
-            velocityECI: new CANNON.Vec3(velocityECI.x, velocityECI.y, velocityECI.z) 
+        return {
+            positionECI: new CANNON.Vec3(
+                positionECI.x,
+                positionECI.y,
+                positionECI.z
+            ),
+            velocityECI: new CANNON.Vec3(
+                velocityECI.x,
+                velocityECI.y,
+                velocityECI.z
+            ),
         };
     }
 
@@ -321,8 +366,6 @@ export class PhysicsUtils {
         );
         return this.rotateToECI(position, i, omega, w);
     }
-
-    // New Methods
 
     static solveKeplersEquation(M, e, tol = 1e-6) {
         let E = M;

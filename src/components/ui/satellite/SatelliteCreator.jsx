@@ -172,7 +172,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                     <>
                         {renderField("semiMajorAxis", "SMA", "number", null, null, 0.1, "km")}
                         {renderField("eccentricity", "Ecc", "number", 0, 1, 0.01)}
-                        {renderField("inclination", "Inc", "number", 0, 180, 0.1, "deg")}
+                        {renderField("inclination", "Inc", "number", -180, 180, 0.1, "deg")}
                         {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
                         {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
                         {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
