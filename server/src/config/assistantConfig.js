@@ -35,13 +35,13 @@ When suggesting orbits:
             latitude: { type: "number", description: "Latitude in degrees (-90 to 90)" },
             longitude: { type: "number", description: "Longitude in degrees (-180 to 180)" },
             altitude: { type: "number", description: "Altitude in kilometers above Earth's surface" },
-            speed: { type: "number", description: "Initial velocity in km/s" },
-            heading: { type: "number", description: "Azimuth angle in degrees (0-North, 90-East, 180-South, 270-West)" },
+            velocity: { type: "number", description: "Initial velocity in km/s" },
+            azimuth: { type: "number", description: "Azimuth angle in degrees (0-North, 90-East, 180-South, 270-West)" },
             mass: { type: "number", description: "Mass of the satellite in kg" },
             size: { type: "number", description: "Size of the satellite in meters" },
             name: { type: "string", description: "Name of the satellite" }
           },
-          required: ["latitude", "longitude", "altitude", "speed", "heading"]
+          required: ["latitude", "longitude", "altitude", "velocity", "azimuth"]
         }
       }
     },
@@ -79,12 +79,12 @@ When suggesting orbits:
             longitude: { type: "number", description: "Longitude in degrees (-180 to 180)" },
             altitude: { type: "number", description: "Altitude in kilometers above Earth's surface" },
             inclination: { type: "number", description: "Orbital inclination in degrees" },
-            raan: { type: "number", description: "Right Ascension of the Ascending Node (RAAN) in degrees" },
+            azimuth: { type: "number", description: "Azimuth angle in degrees (0-North, 90-East, 180-South, 270-West)" },
             mass: { type: "number", description: "Mass of the satellite in kg" },
             size: { type: "number", description: "Size of the satellite in meters" },
             name: { type: "string", description: "Name of the satellite" }
           },
-          required: ["latitude", "longitude", "altitude", "inclination", "raan"]
+          required: ["latitude", "longitude", "altitude", "inclination", "azimuth"]
         }
       }
     },

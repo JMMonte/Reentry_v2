@@ -177,22 +177,31 @@ class AssistantService {
 
   async initialize() {
     try {
-      // Get the existing assistant or create a new one
-      const assistants = await this.openai.beta.assistants.list();
-      this.assistant = assistants.data.find(a => a.name === 'Astronavigator');
-
-      if (!this.assistant) {
+      this.assistant = await this.openai.beta.assistants.retrieve(ASSISTANT_CONFIG.assistant.id);
+      
+      // Update the assistant with the latest configuration
+      this.assistant = await this.openai.beta.assistants.update(
+        ASSISTANT_CONFIG.assistant.id,
+        {
+          name: ASSISTANT_CONFIG.assistant.assistantName,
+          instructions: ASSISTANT_CONFIG.assistant.instructions,
+          model: ASSISTANT_CONFIG.assistant.model,
+          tools: ASSISTANT_CONFIG.assistant.tools
+        }
+      );
+      return this.assistant;
+    } catch (error) {
+      if (error.status === 404) {
+        console.warn(`No assistant found with id '${ASSISTANT_CONFIG.assistant.id}'. Creating a new one.`);
         this.assistant = await this.openai.beta.assistants.create({
           name: ASSISTANT_CONFIG.assistant.assistantName,
           instructions: ASSISTANT_CONFIG.assistant.instructions,
           model: ASSISTANT_CONFIG.assistant.model,
           tools: ASSISTANT_CONFIG.assistant.tools
         });
+        console.log('New assistant created:', this.assistant.id);
+        return this.assistant;
       }
-
-      console.log('Assistant initialized:', this.assistant.id);
-      return this.assistant;
-    } catch (error) {
       console.error('Error initializing assistant:', error);
       throw error;
     }

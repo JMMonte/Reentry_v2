@@ -78,7 +78,6 @@ export function ChatModal({ isOpen, onClose, socket }) {
     }
 
     const handleMessage = (data) => {
-      console.log('Message received:', data);
       setMessages(prev => {
         const messageIndex = prev.findIndex(m => m.id === data.messageId);
         if (messageIndex !== -1) {
@@ -110,26 +109,64 @@ export function ChatModal({ isOpen, onClose, socket }) {
       const { toolCallId, name, arguments: args } = toolCall;
 
       try {
+        if (!window.api) {
+          throw new Error('API not initialized');
+        }
+
         let output;
+        const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+        
         switch (name) {
           case 'createSatelliteFromLatLon':
+            // Map velocity/azimuth to speed/heading if needed
+            const mappedArgs = {
+              ...parsedArgs,
+              speed: parsedArgs.speed || parsedArgs.velocity,
+              heading: parsedArgs.heading || parsedArgs.azimuth
+            };
+            
+            // Validate required parameters
+            if (typeof mappedArgs.latitude !== 'number' || 
+                typeof mappedArgs.longitude !== 'number' || 
+                typeof mappedArgs.altitude !== 'number' || 
+                typeof mappedArgs.speed !== 'number' || 
+                typeof mappedArgs.heading !== 'number') {
+              throw new Error('Missing required parameters for createSatelliteFromLatLon');
+            }
             output = await window.api.createSatellite({
-              ...args,
-              type: 'latlon'
+              ...mappedArgs,
+              mode: 'latlon'
             });
             break;
-
+            
           case 'createSatelliteFromOrbitalElements':
+            // Validate required parameters
+            if (typeof parsedArgs.semiMajorAxis !== 'number' || 
+                typeof parsedArgs.eccentricity !== 'number' || 
+                typeof parsedArgs.inclination !== 'number' || 
+                typeof parsedArgs.raan !== 'number' || 
+                typeof parsedArgs.argumentOfPeriapsis !== 'number' || 
+                typeof parsedArgs.trueAnomaly !== 'number') {
+              throw new Error('Missing required parameters for createSatelliteFromOrbitalElements');
+            }
             output = await window.api.createSatellite({
-              ...args,
-              type: 'orbital'
+              ...parsedArgs,
+              mode: 'orbital'
             });
             break;
-
+            
           case 'createSatelliteFromLatLonCircular':
+            // Validate required parameters
+            if (typeof parsedArgs.latitude !== 'number' || 
+                typeof parsedArgs.longitude !== 'number' || 
+                typeof parsedArgs.altitude !== 'number' || 
+                typeof parsedArgs.inclination !== 'number' || 
+                typeof parsedArgs.azimuth !== 'number') {
+              throw new Error('Missing required parameters for createSatelliteFromLatLonCircular');
+            }
             output = await window.api.createSatellite({
-              ...args,
-              type: 'circular'
+              ...parsedArgs,
+              mode: 'circular'
             });
             break;
 
@@ -141,19 +178,25 @@ export function ChatModal({ isOpen, onClose, socket }) {
             throw new Error(`Unknown tool call: ${name}`);
         }
 
+        const response = {
+          toolCallId,
+          output: JSON.stringify(output || {})
+        };
+        console.log('Sending tool response:', response);
+        
         if (socket?.connected) {
-          socket.emit('tool_response', {
-            toolCallId,
-            output: JSON.stringify(output)
-          });
+          socket.emit('tool_response', response);
         }
       } catch (error) {
         console.error('Error executing tool call:', error);
+        const errorResponse = {
+          toolCallId,
+          output: JSON.stringify({ error: error.message })
+        };
+        console.log('Sending error response:', errorResponse);
+        
         if (socket?.connected) {
-          socket.emit('tool_response', {
-            toolCallId,
-            output: JSON.stringify({ error: error.message })
-          });
+          socket.emit('tool_response', errorResponse);
         }
       }
     };
@@ -170,12 +213,10 @@ export function ChatModal({ isOpen, onClose, socket }) {
     };
 
     const handleThreadCreated = (data) => {
-      console.log('Thread created:', data);
       setThreadId(data.threadId);
     };
 
     const handleRunCompleted = (data) => {
-      console.log('Run completed:', data);
       setIsLoading(false);
     };
 

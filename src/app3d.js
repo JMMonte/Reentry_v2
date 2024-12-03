@@ -28,6 +28,50 @@ class App3D extends EventTarget {
         console.log('App3D: Initializing...');
         window.app3d = this;
 
+        // Initialize the API for external use
+        window.api = {
+            createSatellite: async (params) => {
+                try {
+                    let satellite;
+                    switch (params.mode) {
+                        case 'latlon':
+                            satellite = this.createSatelliteLatLon(params);
+                            break;
+                        case 'orbital':
+                            satellite = this.createSatelliteOrbital(params);
+                            break;
+                        case 'circular':
+                            satellite = this.createSatelliteCircular(params);
+                            break;
+                        default:
+                            throw new Error(`Unknown satellite mode: ${params.mode}`);
+                    }
+                    
+                    // Return only safe JSON data
+                    return {
+                        id: satellite.id,
+                        name: satellite.name,
+                        mode: params.mode,
+                        params: params,
+                        success: true
+                    };
+                } catch (error) {
+                    console.error('Error creating satellite:', error);
+                    return {
+                        success: false,
+                        error: error.message
+                    };
+                }
+            },
+            getMoonOrbit: async () => {
+                // TODO: Implement moon orbit retrieval
+                return {
+                    success: true,
+                    data: {}
+                };
+            }
+        };
+
         // Initialize properties
         this.isInitialized = false;
         this.scene = null;
