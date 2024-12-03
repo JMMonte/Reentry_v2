@@ -177,31 +177,37 @@ class AssistantService {
 
   async initialize() {
     try {
-      this.assistant = await this.openai.beta.assistants.retrieve(ASSISTANT_CONFIG.assistant.id);
-      
-      // Update the assistant with the latest configuration
-      this.assistant = await this.openai.beta.assistants.update(
-        ASSISTANT_CONFIG.assistant.id,
-        {
-          name: ASSISTANT_CONFIG.assistant.assistantName,
-          instructions: ASSISTANT_CONFIG.assistant.instructions,
-          model: ASSISTANT_CONFIG.assistant.model,
-          tools: ASSISTANT_CONFIG.assistant.tools
+      let assistantExists = true;
+      try {
+        this.assistant = await this.openai.beta.assistants.retrieve(ASSISTANT_CONFIG.assistant.id);
+      } catch (retrieveError) {
+        if (retrieveError.status === 404) {
+          assistantExists = false;
+        } else {
+          throw retrieveError;
         }
-      );
+      }
+
+      const assistantConfig = {
+        name: ASSISTANT_CONFIG.assistant.assistantName,
+        instructions: ASSISTANT_CONFIG.assistant.instructions,
+        model: ASSISTANT_CONFIG.assistant.model,
+        tools: ASSISTANT_CONFIG.assistant.tools
+      };
+
+      if (assistantExists) {
+        this.assistant = await this.openai.beta.assistants.update(
+          ASSISTANT_CONFIG.assistant.id,
+          assistantConfig
+        );
+        console.log('Assistant updated:', this.assistant.id);
+      } else {
+        this.assistant = await this.openai.beta.assistants.create(assistantConfig);
+        console.log('New assistant created:', this.assistant.id);
+      }
+
       return this.assistant;
     } catch (error) {
-      if (error.status === 404) {
-        console.warn(`No assistant found with id '${ASSISTANT_CONFIG.assistant.id}'. Creating a new one.`);
-        this.assistant = await this.openai.beta.assistants.create({
-          name: ASSISTANT_CONFIG.assistant.assistantName,
-          instructions: ASSISTANT_CONFIG.assistant.instructions,
-          model: ASSISTANT_CONFIG.assistant.model,
-          tools: ASSISTANT_CONFIG.assistant.tools
-        });
-        console.log('New assistant created:', this.assistant.id);
-        return this.assistant;
-      }
       console.error('Error initializing assistant:', error);
       throw error;
     }

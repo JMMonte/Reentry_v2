@@ -221,10 +221,10 @@ export class PhysicsUtils {
         const mu = Constants.earthGravitationalParameter;
     
         // Convert angles from degrees to radians
-        const iRad = THREE.MathUtils.degToRad(inclination);
-        const raanRad = THREE.MathUtils.degToRad(raan);
-        const argPeriapsisRad = THREE.MathUtils.degToRad(argumentOfPeriapsis);
-        const trueAnomalyRad = THREE.MathUtils.degToRad(trueAnomaly);
+        const iRad = inclination;
+        const raanRad = raan;
+        const argPeriapsisRad = argumentOfPeriapsis;
+        const trueAnomalyRad = trueAnomaly;
     
         // Perifocal coordinates
         const p = semiMajorAxis * (1 - eccentricity * eccentricity);

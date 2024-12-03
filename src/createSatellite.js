@@ -259,10 +259,10 @@ export function createSatelliteFromOrbitalElements(app, params) {
     const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
         semiMajorAxis * Constants.kmToMeters,
         eccentricity,
-        inclination * (Math.PI / 180), // Convert to radians
-        raan * (Math.PI / 180),
-        argumentOfPeriapsis * (Math.PI / 180),
-        trueAnomaly * (Math.PI / 180)
+        inclination * (-1), // Invert inclination
+        raan,
+        argumentOfPeriapsis,
+        trueAnomaly
     );
 
     const scaledPosition = new THREE.Vector3(

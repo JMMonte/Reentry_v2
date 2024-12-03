@@ -14,8 +14,8 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         latitude: 0,
         longitude: 0,
         altitude: 400,
-        heading: 0,
-        speed: 7.8,
+        azimuth: 0,
+        velocity: 7.8,
         semiMajorAxis: 6778,
         eccentricity: 0,
         inclination: 51.6,
@@ -43,7 +43,49 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            await onCreateSatellite({ ...formData, mode });
+            const params = { ...formData };
+            
+            // Map the parameters based on the mode
+            if (mode === 'latlon') {
+                await onCreateSatellite({
+                    mode,
+                    latitude: params.latitude,
+                    longitude: params.longitude,
+                    altitude: params.altitude,
+                    velocity: params.velocity,
+                    azimuth: params.azimuth,
+                    angleOfAttack: params.angleOfAttack,
+                    mass: params.mass,
+                    size: params.size,
+                    name: params.name || undefined
+                });
+            } else if (mode === 'orbital') {
+                await onCreateSatellite({
+                    mode,
+                    semiMajorAxis: params.semiMajorAxis,
+                    eccentricity: params.eccentricity,
+                    inclination: params.inclination,
+                    raan: params.raan,
+                    argumentOfPeriapsis: params.argumentOfPeriapsis,
+                    trueAnomaly: params.trueAnomaly,
+                    mass: params.mass,
+                    size: params.size,
+                    name: params.name || undefined
+                });
+            } else if (mode === 'circular') {
+                await onCreateSatellite({
+                    mode,
+                    latitude: params.latitude,
+                    longitude: params.longitude,
+                    altitude: params.altitude,
+                    azimuth: params.azimuth,
+                    angleOfAttack: params.angleOfAttack,
+                    mass: params.mass,
+                    size: params.size,
+                    name: params.name || undefined
+                });
+            }
+            
             setFormData(prev => ({
                 ...prev,
                 name: ''  // Reset only the name field after successful creation
@@ -119,8 +161,8 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                         {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
                         {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
                         {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                        {renderField("heading", "Head", "number", 0, 360, 0.1, "deg")}
-                        {renderField("speed", "Speed", "number", null, null, 0.1, "km/s")}
+                        {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
+                        {renderField("velocity", "Velocity", "number", null, null, 0.1, "km/s")}
                         {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
                     </>
                 )}
@@ -143,7 +185,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                         {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
                         {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
                         {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                        {renderField("heading", "Azimuth", "number", 0, 360, 0.1, "deg")}
+                        {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
                         {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
                     </>
                 )}

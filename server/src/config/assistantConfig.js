@@ -29,6 +29,7 @@ When suggesting orbits:
       function: {
         name: "createSatelliteFromLatLon",
         description: "Creates a satellite based on latitude and longitude coordinates relative to Earth",
+        strict: true,
         parameters: {
           type: "object",
           properties: {
@@ -42,7 +43,8 @@ When suggesting orbits:
             size: { type: "number", description: "Size of the satellite in meters (optional, defaults to 1 meter)" },
             name: { type: "string", description: "Name of the satellite (optional, will be auto-generated if not provided)" }
           },
-          required: ["latitude", "longitude", "altitude", "velocity", "azimuth"]
+          required: ["latitude", "longitude", "altitude", "velocity", "azimuth"],
+          additionalProperties: false
         }
       }
     },
@@ -51,6 +53,7 @@ When suggesting orbits:
       function: {
         name: "createSatelliteFromOrbitalElements",
         description: "Creates a satellite using Keplerian orbital elements",
+        strict: true,
         parameters: {
           type: "object",
           properties: {
@@ -64,7 +67,8 @@ When suggesting orbits:
             size: { type: "number", description: "Size of the satellite in meters" },
             name: { type: "string", description: "Name of the satellite" }
           },
-          required: ["semiMajorAxis", "eccentricity", "inclination", "raan", "argumentOfPeriapsis", "trueAnomaly"]
+          required: ["semiMajorAxis", "eccentricity", "inclination", "raan", "argumentOfPeriapsis", "trueAnomaly"],
+          additionalProperties: false
         }
       }
     },
@@ -73,6 +77,7 @@ When suggesting orbits:
       function: {
         name: "createSatelliteFromLatLonCircular",
         description: "Creates a satellite in a circular orbit based on latitude and longitude. The orbital velocity will be automatically calculated to maintain a circular orbit at the specified altitude.",
+        strict: true,
         parameters: {
           type: "object",
           properties: {
@@ -85,7 +90,8 @@ When suggesting orbits:
             size: { type: "number", description: "Size of the satellite in meters (optional, defaults to 1 meter)" },
             name: { type: "string", description: "Name of the satellite (optional, will be auto-generated if not provided)" }
           },
-          required: ["latitude", "longitude", "altitude", "azimuth"]
+          required: ["latitude", "longitude", "altitude", "azimuth"],
+          additionalProperties: false
         }
       }
     },
@@ -94,7 +100,13 @@ When suggesting orbits:
       function: {
         name: "getMoonOrbit",
         description: "Get current simulation data for the Moon's orbit",
-        parameters: { type: "object", properties: {}, required: [] }
+        strict: true,
+        parameters: { 
+          type: "object", 
+          properties: {}, 
+          required: [],
+          additionalProperties: false 
+        }
       }
     }
   ]
