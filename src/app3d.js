@@ -468,6 +468,8 @@ class App3D extends EventTarget {
     }
 
     updateSatelliteConnections(connections) {
+        console.log('Updating satellite connections:', connections);
+        
         // Clear existing connections
         while (this.satelliteConnections.children.length > 0) {
             const line = this.satelliteConnections.children[0];
@@ -478,9 +480,14 @@ class App3D extends EventTarget {
 
         // Create new connections if enabled
         if (this.displaySettings.showSatConnections) {
-            const material = new THREE.LineBasicMaterial({ color: 0x00ff00, opacity: 0.5, transparent: true });
-            
             connections.forEach(conn => {
+                console.log('Creating connection:', conn);
+                const material = new THREE.LineBasicMaterial({ 
+                    color: conn.color === 'red' ? 0xff0000 : 0x00ff00,
+                    opacity: conn.color === 'red' ? 0.8 : 0.5, // Make red lines more visible
+                    transparent: true 
+                });
+                
                 const geometry = new THREE.BufferGeometry();
                 const vertices = new Float32Array(conn.points.flat());
                 geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));

@@ -4,6 +4,7 @@ import { Constants } from '../utils/Constants.js';
 
 let satellites = [];
 const EARTH_RADIUS = Constants.earthRadius * Constants.metersToKm * Constants.scale; // Convert to simulation units
+const ATMOSPHERE_HEIGHT = 100 * Constants.scale; // Approximately 1000km atmosphere height for better visibility
 const SUN_RADIUS = Constants.sunRadius * Constants.metersToKm * Constants.scale;
 const MOON_RADIUS = Constants.moonRadius * Constants.metersToKm * Constants.scale;
 
@@ -42,11 +43,22 @@ function calculateLineOfSight() {
             const direction = new THREE.Vector3().subVectors(pos2, pos1);
             const distance = direction.length();
             
-            // Check intersection with Earth
+            // Check intersection with Earth and atmosphere
             const earthCenter = new THREE.Vector3(0, 0, 0);
             const intersectsEarth = checkSphereIntersection(pos1, direction.normalize(), earthCenter, EARTH_RADIUS, distance);
+            const intersectsAtmosphere = checkSphereIntersection(pos1, direction.normalize(), earthCenter, EARTH_RADIUS + ATMOSPHERE_HEIGHT, distance);
             
-            // If there's no intersection, add the connection
+            console.log(`Line from satellite ${sat1.id} to ${sat2.id}:`, {
+                intersectsEarth,
+                intersectsAtmosphere,
+                distance,
+                earthRadius: EARTH_RADIUS,
+                atmosphereRadius: EARTH_RADIUS + ATMOSPHERE_HEIGHT,
+                pos1: [pos1.x, pos1.y, pos1.z],
+                pos2: [pos2.x, pos2.y, pos2.z]
+            });
+            
+            // Add connection if it doesn't intersect Earth
             if (!intersectsEarth) {
                 connections.push({
                     from: sat1.id,
@@ -54,7 +66,8 @@ function calculateLineOfSight() {
                     points: [
                         [pos1.x, pos1.y, pos1.z],
                         [pos2.x, pos2.y, pos2.z]
-                    ]
+                    ],
+                    color: intersectsAtmosphere ? 'red' : 'green'
                 });
             }
         }
