@@ -204,6 +204,10 @@ export class Earth {
         this.earthSurface.setObservatoriesVisible(visible);
     }
 
+    getMesh() {
+        return this.earthMesh;
+    }
+
     addImpactPoint(position) {
         const impactMaterial = new THREE.PointsMaterial({
             color: 0xff0000,

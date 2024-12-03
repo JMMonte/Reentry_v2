@@ -92,6 +92,10 @@ export class Moon {
         this.scene.add(lightHelper);
     }
 
+    getMesh() {
+        return this.moonMesh;
+    }
+
     initOrbitLine() {
         const orbitPoints = [];
         const pointsCount = 1000; // Number of points to plot

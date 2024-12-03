@@ -201,6 +201,10 @@ function App() {
 
   const handleBodySelect = (value) => {
     setSelectedBody(value);
+    // Dispatch event to notify the 3D environment
+    document.dispatchEvent(new CustomEvent('bodySelected', {
+      detail: { body: value }
+    }));
   };
 
   // Pass satellites to Navbar

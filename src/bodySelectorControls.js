@@ -12,9 +12,9 @@ export function initializeBodySelector(app) {
             app.cameraControls.updateCameraTarget(app.earth);
         } else if (value === 'moon') {
             app.cameraControls.updateCameraTarget(app.moon);
-        } else if (value.startsWith('satellite-')) {
-            const satelliteId = parseInt(value.split('-')[1]);
-            const satellite = app.satellites.find(s => s.id === satelliteId);
+        } else {
+            // Handle satellite selection (value is the satellite ID)
+            const satellite = app.satellites[value];
             if (satellite) {
                 app.cameraControls.updateCameraTarget(satellite);
             }
@@ -22,25 +22,16 @@ export function initializeBodySelector(app) {
     });
 
     // Listen for satellite changes to update the UI
-    document.addEventListener('satelliteAdded', () => {
-        document.dispatchEvent(new CustomEvent('updateBodyOptions', {
-            detail: {
-                satellites: app.satellites.map(s => ({
-                    value: `satellite-${s.id}`,
-                    text: `Satellite ${s.id}`
-                }))
-            }
-        }));
-    });
-
-    document.addEventListener('satelliteRemoved', () => {
-        document.dispatchEvent(new CustomEvent('updateBodyOptions', {
-            detail: {
-                satellites: app.satellites.map(s => ({
-                    value: `satellite-${s.id}`,
-                    text: `Satellite ${s.id}`
-                }))
-            }
-        }));
+    document.addEventListener('satelliteListUpdated', (event) => {
+        if (event.detail?.satellites) {
+            document.dispatchEvent(new CustomEvent('updateBodyOptions', {
+                detail: {
+                    satellites: Object.values(event.detail.satellites).map(s => ({
+                        value: s.id.toString(),
+                        text: s.name || `Satellite ${s.id}`
+                    }))
+                }
+            }));
+        }
     });
 }
