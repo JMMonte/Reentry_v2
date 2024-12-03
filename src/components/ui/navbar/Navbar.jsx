@@ -1,22 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../button';
-import { Switch } from '../switch';
 import { 
   Settings2,
-  Grid,
-  Move,
-  Circle,
-  Mountain,
-  LineChart,
-  MapPin,
-  Building2,
-  Plane,
   Rocket,
-  Telescope,
-  Radio,
-  Map,
-  Moon,
-  Link,
   MessageSquare,
   Rewind,
   FastForward,
@@ -44,6 +30,7 @@ import { DraggableModal } from '../modal/DraggableModal';
 import SatelliteCreator from '../satellite/SatelliteCreator';
 import { cn } from "../../../lib/utils";
 import { DateTimePicker } from '../datetime/DateTimePicker';
+import { formatBodySelection, getBodyDisplayName, updateCameraTarget, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
 
 // Time warp options
 const timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
@@ -81,90 +68,62 @@ export function Navbar({
   const [satelliteOptions, setSatelliteOptions] = useState([]);
   const [satelliteModalPosition, setSatelliteModalPosition] = useState({ x: window.innerWidth - 420, y: 80 });
 
-  // Update satellite options when satellites prop changes or when a new satellite is created
-  useEffect(() => {
-    const satelliteArray = Object.values(satellites);
-    
-    if (satelliteArray.length > 0) {
-      const options = satelliteArray
-        .filter(satellite => satellite && satellite.id != null && satellite.name)
-        .map(satellite => ({
-          value: satellite.id.toString(),
-          text: satellite.name
-        }));
-      setSatelliteOptions(options);
-    } else {
-      setSatelliteOptions([]);
-    }
-  }, [satellites]);
-
-  // Listen for satellite creation events
-  useEffect(() => {
-    const handleSatelliteCreated = (event) => {
-      const { id, name, mode } = event.detail;
-      
-      // Validate that we have an id
-      if (typeof id === 'undefined') {
-        console.error('Invalid satellite data received:', event.detail);
-        return;
-      }
-
-      // Use a default name if none provided
-      const satelliteName = name || `Satellite ${id}`;
-
-      // Add the new satellite to the options
-      setSatelliteOptions(prev => [
-        ...prev,
-        {
-          value: id.toString(),
-          text: satelliteName
-        }
-      ]);
-
-      // Update the selected body without focusing the camera
-      handleBodyChange(id.toString(), false);
-    };
-
-    document.addEventListener('satelliteCreated', handleSatelliteCreated);
-    return () => document.removeEventListener('satelliteCreated', handleSatelliteCreated);
-  }, []);
-
   // Helper function to get the display value
   const getDisplayValue = (value) => {
-    if (!value) return 'None';
-    if (value === 'none') return 'None';
-    if (value === 'earth') return 'Earth';
-    if (value === 'moon') return 'Moon';
-    
-    // Try to find the satellite in options first
-    const option = satelliteOptions.find(opt => opt.value === value.toString());
-    if (option) {
-      return option.text;
-    }
-    
-    // Try to find in satellites object
-    const satellite = satellites[value];
-    if (satellite && satellite.name) {
-      return satellite.name;
-    }
-    
-    return `Satellite ${value}`;
+    return getBodyDisplayName(value, satellites);
   };
 
-  const handleBodyChange = (value, focusCamera = true) => {
-    // For non-satellite values, pass them directly
-    if (!value || value === 'none' || value === 'earth' || value === 'moon') {
-      onBodySelect(value);
+  // Update satellite options when satellites prop changes
+  useEffect(() => {
+    // Get satellite options using utility function
+    const options = getSatelliteOptions(satellites);
+    setSatelliteOptions(options);
+    
+    // If the currently selected satellite is not in the new options, reset selection
+    if (selectedBody && selectedBody !== 'none' && selectedBody !== 'earth' && selectedBody !== 'moon') {
+      const satellite = findSatellite(selectedBody, satellites);
+      if (!satellite) {
+        onBodySelect('none');
+      }
+    }
+  }, [satellites, selectedBody, onBodySelect]);
+
+  // Listen for satellite deletion events
+  useEffect(() => {
+    const handleSatelliteDeleted = (event) => {
+      const satellite = findSatellite(selectedBody, satellites);
+      if (satellite?.id === event.detail.id) {
+        onBodySelect('none');
+      }
+    };
+
+    document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
+    return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
+  }, [selectedBody, onBodySelect, satellites]);
+
+  const handleBodyChange = (eventOrValue) => {
+    // Handle both direct value calls and event calls
+    const value = typeof eventOrValue === 'object' ? eventOrValue.target.value : eventOrValue;
+    
+    if (!value || value === 'none') {
+      onBodySelect('none');
+      return;
+    }
+
+    // Find the satellite by name in the satellites array
+    const satellite = findSatellite(value, satellites);
+    if (satellite) {
+      // Format the satellite ID as expected by App3D and update camera
+      const formattedValue = formatBodySelection(satellite);
+      onBodySelect(formattedValue);
+      if (window.app3d) {
+        updateCameraTarget(formattedValue, window.app3d, false); // Don't dispatch event since we're already handling selection
+      }
     } else {
-      // For satellites, pass the ID directly
+      // For earth and moon, pass the value directly
       onBodySelect(value);
-      
-      // Focus camera on selected satellite only if focusCamera is true
-      if (focusCamera && app3DRef?.current?.satellites) {
-        const satellite = app3DRef.current.satellites[value];
-        if (satellite && window.app3d?.cameraControls) {
-          window.app3d.cameraControls.updateCameraTarget(satellite);
-        }
+      if (window.app3d) {
+        updateCameraTarget(value, window.app3d, false); // Don't dispatch event since we're already handling selection
       }
     }
   };
@@ -181,8 +140,6 @@ export function Navbar({
       }
       
       if (satellite) {
-        // For manual creation, always focus the camera
-        handleBodyChange(satellite.id.toString(), true);
         onSatelliteCreatorToggle(false);
       }
     } catch (error) {
@@ -367,3 +324,5 @@ export function Navbar({
     </div>
   );
 }
+
+export default Navbar;

@@ -14,7 +14,8 @@ class ManeuverNode {
 }
 
 export class Satellite {
-    constructor(scene, world, earth, moon, position, velocity, id, color) {
+    constructor(scene, world, earth, moon, position, velocity, id, color, name) {
+        this.name = name;
         this.initializeProperties(scene, world, earth, moon, id, color);
         this.initializePhysics(position, velocity);
         this.initializeVisuals();
@@ -524,6 +525,23 @@ export class Satellite {
     }
 
     dispose() {
+        console.log('Satellite.dispose: Starting disposal of satellite:', { id: this.id, name: this.name });
+        
+        // Dispatch satellite deleted event BEFORE removing from app3d.satellites
+        document.dispatchEvent(new CustomEvent('satelliteDeleted', {
+            detail: { 
+                id: this.id,
+                name: this.name
+            }
+        }));
+        console.log('Satellite.dispose: Dispatched satelliteDeleted event');
+
+        // Remove from app's satellites object
+        if (this.app3d && this.app3d.satellites) {
+            delete this.app3d.satellites[this.id];
+            console.log('Satellite.dispose: Removed from app3d.satellites');
+        }
+
         // Remove from scene
         if (this.satelliteBody) {
             this.scene.remove(this.satelliteBody);
@@ -549,11 +567,7 @@ export class Satellite {
         if (this.label) {
             this.label.element.remove();
         }
-
-        // Remove from app's satellites object
-        if (this.app3d && this.app3d.satellites) {
-            delete this.app3d.satellites[this.id];
-        }
+        console.log('Satellite.dispose: Removed all visual elements');
 
         // Close debug window if open
         if (this.debugWindow) {
@@ -571,12 +585,16 @@ export class Satellite {
                 type: 'removeSatellite',
                 data: { id: this.id }
             });
+            console.log('Satellite.dispose: Notified physics worker');
         }
 
         // Update the satellite list
         if (this.app3d?.updateSatelliteList) {
             this.app3d.updateSatelliteList();
+            console.log('Satellite.dispose: Called updateSatelliteList');
         }
+        
+        console.log('Satellite.dispose: Disposal complete');
     }
 
     // Coordinate transformation methods

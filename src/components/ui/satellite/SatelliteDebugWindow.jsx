@@ -6,6 +6,7 @@ import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2 } from "lucide-react";
 import { Constants } from "../../../utils/Constants";
 import { Popover, PopoverContent, PopoverTrigger } from "../popover";
+import { updateCameraTarget, formatBodySelection } from '../../../utils/BodySelectionUtils';
 
 export function SatelliteDebugWindow({ satellite, earth }) {
   const [isOpen, setIsOpen] = useState(true);
@@ -64,7 +65,15 @@ export function SatelliteDebugWindow({ satellite, earth }) {
 
   const handleFocus = () => {
     if (window.app3d && satellite) {
-      window.app3d.cameraControls.updateCameraTarget(satellite);
+      const formattedValue = formatBodySelection(satellite);
+      
+      // Dispatch body selected event
+      document.dispatchEvent(new CustomEvent('bodySelected', {
+        detail: { body: formattedValue }
+      }));
+      
+      // Update camera target without dispatching another event
+      updateCameraTarget(satellite, window.app3d, false);
     }
   };
 

@@ -467,13 +467,13 @@ class App3D extends EventTarget {
 
     updateSelectedBody(value) {
         if (this.cameraControls) {
-            if (value === 'none') {
+            if (!value || value === 'none') {
                 this.cameraControls.clearCameraTarget();
             } else if (value === 'earth') {
                 this.cameraControls.updateCameraTarget(this.earth);
             } else if (value === 'moon') {
                 this.cameraControls.updateCameraTarget(this.moon);
-            } else if (value.startsWith('satellite-')) {
+            } else if (typeof value === 'string' && value.startsWith('satellite-')) {
                 const satelliteId = parseInt(value.split('-')[1]);
                 const satellite = this._satellites[satelliteId];
                 if (satellite) {
@@ -607,18 +607,55 @@ class App3D extends EventTarget {
     }
 
     updateSatelliteList() {
-        console.log('app3d: Updating satellite list with:', this._satellites);
+        console.log('App3D.updateSatelliteList: Current satellites:', this._satellites);
         
-        // Dispatch event with the satellite object
-        const event = new CustomEvent('satelliteListUpdated', {
-            detail: { satellites: { ...this._satellites } }
-        });
+        // Create a clean object with only necessary satellite data
+        const satelliteData = Object.fromEntries(
+            Object.entries(this._satellites)
+                .filter(([_, sat]) => sat && sat.id != null && sat.name)
+                .map(([id, sat]) => [id, {
+                    id: sat.id,
+                    name: sat.name
+                }])
+        );
         
-        window.dispatchEvent(event);
+        // Dispatch an event to notify React components about the satellite list update
+        document.dispatchEvent(new CustomEvent('satelliteListUpdated', {
+            detail: {
+                satellites: satelliteData
+            }
+        }));
+        console.log('App3D.updateSatelliteList: Dispatched satelliteListUpdated event with data:', satelliteData);
         
         // Update the window.app3d reference
         if (window.app3d) {
-            window.app3d.satellites = { ...this._satellites };
+            window.app3d.satellites = this._satellites;
+            console.log('App3D.updateSatelliteList: Updated window.app3d.satellites reference');
+        }
+    }
+
+    removeSatellite(satelliteId) {
+        console.log('App3D: Removing satellite:', satelliteId);
+        const satellite = this._satellites[satelliteId];
+        if (satellite) {
+            // Store the satellite info before disposal
+            const satelliteInfo = {
+                id: satellite.id,
+                name: satellite.name
+            };
+            
+            // Dispose of the satellite
+            satellite.dispose();
+            delete this._satellites[satelliteId];
+            
+            // Dispatch satellite deleted event
+            document.dispatchEvent(new CustomEvent('satelliteDeleted', {
+                detail: satelliteInfo
+            }));
+            
+            // Update the satellite list
+            this.updateSatelliteList();
+            console.log('App3D: Satellite removed and list updated');
         }
     }
 
@@ -645,26 +682,6 @@ class App3D extends EventTarget {
         this.checkPhysicsWorkerNeeded();
         this.updateSatelliteList();
         return satellite;
-    }
-
-    removeSatellite(satelliteId) {
-        if (!this._satellites[satelliteId]) return;
-
-        // If this satellite is the current camera target, switch to none
-        if (this.cameraControls?.target === this._satellites[satelliteId]) {
-            this.updateSelectedBody('none');
-            document.dispatchEvent(new CustomEvent('bodySelected', {
-                detail: { body: 'none' }
-            }));
-        }
-
-        // Remove the satellite
-        this._satellites[satelliteId].dispose();
-        delete this._satellites[satelliteId];
-        
-        // Update the satellite list in the navbar
-        this.updateSatelliteList();
-        this.checkPhysicsWorkerNeeded();
     }
 
     // Socket event handlers for satellite creation

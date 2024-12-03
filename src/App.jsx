@@ -82,8 +82,23 @@ function App() {
       }
     };
 
-    window.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
-    return () => window.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+    document.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+    return () => document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+  }, []);
+
+  // Handle body selection events
+  useEffect(() => {
+    const handleBodySelected = (event) => {
+      if (event.detail?.body) {
+        // Set a flag to prevent re-dispatching the event
+        window.handlingBodySelectedEvent = true;
+        handleBodySelect(event.detail.body);
+        window.handlingBodySelectedEvent = false;
+      }
+    };
+
+    document.addEventListener('bodySelected', handleBodySelected);
+    return () => document.removeEventListener('bodySelected', handleBodySelected);
   }, []);
 
   // App3D initialization effect
@@ -202,10 +217,12 @@ function App() {
 
   const handleBodySelect = (value) => {
     setSelectedBody(value);
-    // Dispatch event to notify the 3D environment
-    document.dispatchEvent(new CustomEvent('bodySelected', {
-      detail: { body: value }
-    }));
+    // Only dispatch the event if it wasn't triggered by an event
+    if (!window.handlingBodySelectedEvent) {
+      document.dispatchEvent(new CustomEvent('bodySelected', {
+        detail: { body: value }
+      }));
+    }
   };
 
   // Pass satellites to Navbar

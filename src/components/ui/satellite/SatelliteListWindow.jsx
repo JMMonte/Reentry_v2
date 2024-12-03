@@ -3,6 +3,7 @@ import { DraggableModal } from "../modal/DraggableModal";
 import { Button } from "../button";
 import { Focus, MonitorX, MonitorCheck, Trash2 } from "lucide-react";
 import { ColorPicker } from "./ColorPicker";
+import { updateCameraTarget, formatBodySelection } from '../../../utils/BodySelectionUtils';
 
 export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
     // Open automatically when first satellite is created
@@ -13,8 +14,16 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
     }, [satellites.length, isOpen, setIsOpen]);
 
     const handleFocus = (satellite) => {
-        if (window.app3d?.cameraControls) {
-            window.app3d.cameraControls.updateCameraTarget(satellite);
+        if (window.app3d) {
+            const formattedValue = formatBodySelection(satellite);
+            
+            // Dispatch body selected event
+            document.dispatchEvent(new CustomEvent('bodySelected', {
+                detail: { body: formattedValue }
+            }));
+            
+            // Update camera target without dispatching another event
+            updateCameraTarget(satellite, window.app3d, false);
         }
     };
 
