@@ -78,6 +78,80 @@ export async function setupSceneDetails(app) {
         
         // Add earth points after Earth is initialized
         addEarthPoints(app);
+
+        // Apply initial display settings to components
+        console.log('Applying initial display settings to scene components');
+        if (app.displaySettings) {
+            Object.entries(app.displaySettings).forEach(([key, value]) => {
+                switch (key) {
+                    case 'showGrid':
+                        if (app.radialGrid) {
+                            app.radialGrid.setVisible(value);
+                        }
+                        break;
+                    case 'showVectors':
+                        if (app.vectors) {
+                            app.vectors.setVisible(value);
+                        }
+                        break;
+                    case 'showSurfaceLines':
+                        if (app.earth?.setSurfaceLinesVisible) {
+                            app.earth.setSurfaceLinesVisible(value);
+                        }
+                        break;
+                    case 'showCities':
+                        if (app.earth?.setCitiesVisible) {
+                            app.earth.setCitiesVisible(value);
+                        }
+                        break;
+                    case 'showAirports':
+                        if (app.earth?.setAirportsVisible) {
+                            app.earth.setAirportsVisible(value);
+                        }
+                        break;
+                    case 'showSpaceports':
+                        if (app.earth?.setSpaceportsVisible) {
+                            app.earth.setSpaceportsVisible(value);
+                        }
+                        break;
+                    case 'showObservatories':
+                        if (app.earth?.setObservatoriesVisible) {
+                            app.earth.setObservatoriesVisible(value);
+                        }
+                        break;
+                    case 'showGroundStations':
+                        if (app.earth?.setGroundStationsVisible) {
+                            app.earth.setGroundStationsVisible(value);
+                        }
+                        break;
+                    case 'showCountryBorders':
+                        if (app.earth?.setCountryBordersVisible) {
+                            app.earth.setCountryBordersVisible(value);
+                        }
+                        break;
+                    case 'showStates':
+                        if (app.earth?.setStatesVisible) {
+                            app.earth.setStatesVisible(value);
+                        }
+                        break;
+                    case 'showMoonOrbit':
+                        if (app.moon?.setOrbitVisible) {
+                            app.moon.setOrbitVisible(value);
+                        }
+                        break;
+                    case 'showMoonTraces':
+                        if (app.moon?.setTraceVisible) {
+                            app.moon.setTraceVisible(value);
+                        }
+                        break;
+                    case 'showMoonSurfaceLines':
+                        if (app.moon?.setSurfaceDetailsVisible) {
+                            app.moon.setSurfaceDetailsVisible(value);
+                        }
+                        break;
+                }
+            });
+        }
     } catch (error) {
         console.error('Error setting up scene details:', error);
         throw error;

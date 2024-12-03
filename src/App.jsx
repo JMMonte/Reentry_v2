@@ -135,14 +135,10 @@ function App() {
         setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
       };
 
-      // Initialize display settings
-      if (app.scene) {
-        Object.entries(displaySettings).forEach(([key, value]) => {
-          if (typeof app.updateDisplaySetting === 'function') {
-            app.updateDisplaySetting(key, value);
-          }
-        });
-      }
+      // Initialize display settings after scene is ready
+      app.addEventListener('sceneReady', () => {
+        console.log('Scene is ready');
+      });
     } catch (error) {
       console.error('Error initializing App3D:', error);
     }

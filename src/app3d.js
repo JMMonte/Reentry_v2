@@ -28,6 +28,35 @@ class App3D extends EventTarget {
         console.log('App3D: Initializing...');
         window.app3d = this;
 
+        // Initialize properties
+        this.isInitialized = false;
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.labelRenderer = null;  // Add CSS2D renderer
+        this.controls = null;
+        this.composers = {};
+        this._satellites = {};
+        this.lastTime = performance.now();
+        this.animationFrameId = null;
+        this.lineOfSightWorker = null;
+        this.satelliteConnections = new THREE.Group();
+
+        // Initialize display settings from defaults
+        this.displaySettings = {};
+        Object.entries(defaultSettings).forEach(([key, setting]) => {
+            this.displaySettings[key] = setting.value;
+        });
+
+        // Listen for display settings updates
+        document.addEventListener('displaySettingsUpdate', (event) => {
+            if (event.detail) {
+                Object.entries(event.detail).forEach(([key, value]) => {
+                    this.updateDisplaySetting(key, value);
+                });
+            }
+        });
+
         // Initialize the API for external use
         window.api = {
             createSatellite: async (params) => {
@@ -94,18 +123,6 @@ class App3D extends EventTarget {
             }
         };
 
-        // Initialize properties
-        this.isInitialized = false;
-        this.scene = null;
-        this.camera = null;
-        this.renderer = null;
-        this.labelRenderer = null;  // Add CSS2D renderer
-        this.controls = null;
-        this.composers = {};
-        this._satellites = {};
-        this.lastTime = performance.now();
-        this.animationFrameId = null;
-
         // Add satellites getter/setter
         Object.defineProperty(this, 'satellites', {
             get: function() {
@@ -115,12 +132,6 @@ class App3D extends EventTarget {
                 this._satellites = value;
                 this.updateSatelliteList();
             }
-        });
-
-        // Initialize display settings from defaults
-        this.displaySettings = {};
-        Object.entries(defaultSettings).forEach(([key, setting]) => {
-            this.displaySettings[key] = setting.value;
         });
 
         // Initialize managers
@@ -221,14 +232,8 @@ class App3D extends EventTarget {
             this.radialGrid = new RadialGrid(this.scene);
             this.radialGrid.setVisible(this.displaySettings.showGrid);
 
-            // Apply initial display settings
-            const simpleSettings = {};
-            Object.entries(defaultSettings).forEach(([key, setting]) => {
-                simpleSettings[key] = setting.value;
-            });
-            Object.entries(simpleSettings).forEach(([key, value]) => {
-                this.updateDisplaySetting(key, value);
-            });
+            // Add connections group
+            this.scene.add(this.satelliteConnections);
 
             // Initialize interface and controls
             setupEventListeners(this);
@@ -251,6 +256,10 @@ class App3D extends EventTarget {
             
             // Start animation loop
             this.animate();
+            
+            // Dispatch scene ready event
+            const sceneReadyEvent = new Event('sceneReady');
+            this.dispatchEvent(sceneReadyEvent);
             
             console.log('App initialization complete');
         } catch (error) {
@@ -285,6 +294,32 @@ class App3D extends EventTarget {
             // Update controls if available
             if (this.controls && typeof this.controls.update === 'function') {
                 this.controls.update();
+            }
+
+            // Update satellite positions in physics worker
+            if (Object.keys(this._satellites).length > 0 && this.physicsWorker && this.workerInitialized) {
+                this.physicsWorker.postMessage({
+                    type: 'step',
+                    data: {
+                        deltaTime: warpedDeltaTime,
+                        satellites: Object.values(this._satellites).map(sat => ({
+                            id: sat.id,
+                            position: sat.position,
+                            velocity: sat.velocity
+                        }))
+                    }
+                });
+            }
+
+            // Update line of sight connections if enabled
+            if (this.displaySettings.showSatConnections && this.lineOfSightWorker && Object.keys(this._satellites).length > 0) {
+                this.lineOfSightWorker.postMessage({
+                    type: 'UPDATE_SATELLITES',
+                    satellites: Object.values(this._satellites).map(sat => ({
+                        id: sat.id,
+                        position: sat.position
+                    }))
+                });
             }
 
             // Update physics and objects
@@ -432,6 +467,30 @@ class App3D extends EventTarget {
         if (this.vectors) this.vectors.updateVectors();
     }
 
+    updateSatelliteConnections(connections) {
+        // Clear existing connections
+        while (this.satelliteConnections.children.length > 0) {
+            const line = this.satelliteConnections.children[0];
+            line.geometry.dispose();
+            line.material.dispose();
+            this.satelliteConnections.remove(line);
+        }
+
+        // Create new connections if enabled
+        if (this.displaySettings.showSatConnections) {
+            const material = new THREE.LineBasicMaterial({ color: 0x00ff00, opacity: 0.5, transparent: true });
+            
+            connections.forEach(conn => {
+                const geometry = new THREE.BufferGeometry();
+                const vertices = new Float32Array(conn.points.flat());
+                geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                
+                const line = new THREE.Line(geometry, material);
+                this.satelliteConnections.add(line);
+            });
+        }
+    }
+
     onWindowResize = () => {
         if (this.camera && this.renderer) {
             this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -488,10 +547,9 @@ class App3D extends EventTarget {
     }
 
     updateDisplaySetting(key, value) {
-        if (this.displaySettings.hasOwnProperty(key)) {
+        if (this.displaySettings[key] !== value) {
             this.displaySettings[key] = value;
             
-            // Update visibility based on the setting
             switch (key) {
                 case 'ambientLight':
                     const ambientLight = this.scene?.getObjectByName('ambientLight');
@@ -596,11 +654,39 @@ class App3D extends EventTarget {
                     }
                     break;
                 case 'showSatConnections':
-                    Object.values(this._satellites).forEach(satellite => {
-                        if (satellite.connections?.setVisible) {
-                            satellite.connections.setVisible(value);
+                    if (value) {
+                        // Initialize worker when enabled
+                        if (!this.lineOfSightWorker) {
+                            console.log('Initializing line of sight worker');
+                            this.lineOfSightWorker = new Worker(new URL('./workers/lineOfSightWorker.js', import.meta.url), { type: 'module' });
+                            this.lineOfSightWorker.onmessage = (e) => {
+                                if (e.data.type === 'CONNECTIONS_UPDATED') {
+                                    this.updateSatelliteConnections(e.data.connections);
+                                }
+                            };
                         }
-                    });
+                        // Trigger initial connection update
+                        this.lineOfSightWorker.postMessage({
+                            type: 'UPDATE_SATELLITES',
+                            satellites: Object.values(this._satellites).map(sat => ({
+                                id: sat.id,
+                                position: sat.position
+                            }))
+                        });
+                    } else {
+                        // Clean up worker when disabled
+                        if (this.lineOfSightWorker) {
+                            this.lineOfSightWorker.terminate();
+                            this.lineOfSightWorker = null;
+                        }
+                        // Clear existing connections
+                        while (this.satelliteConnections.children.length > 0) {
+                            const line = this.satelliteConnections.children[0];
+                            line.geometry.dispose();
+                            line.material.dispose();
+                            this.satelliteConnections.remove(line);
+                        }
+                    }
                     break;
             }
         }
@@ -703,6 +789,10 @@ class App3D extends EventTarget {
     }
 
     dispose() {
+        if (this.lineOfSightWorker) {
+            this.lineOfSightWorker.terminate();
+            this.lineOfSightWorker = null;
+        }
         console.log('Disposing App3D...');
         this.isInitialized = false;
 
