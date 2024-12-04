@@ -14,18 +14,22 @@ export function DraggableModal({
   defaultCollapsed = false,
   minHeight,
   maxHeight,
+  minWidth = 200,
+  maxWidth,
   resizable = false,
   defaultHeight = 'auto',
+  defaultWidth = 600,
 }) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [position, setPosition] = useState(defaultPosition);
   const [height, setHeight] = useState(defaultHeight);
+  const [width, setWidth] = useState(defaultWidth);
   const modalRef = useRef(null);
   const contentRef = useRef(null);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0 });
-  const resizeRef = useRef({ isResizing: false, startY: 0, startHeight: 0 });
+  const resizeRef = useRef({ isResizing: false, startY: 0, startX: 0, startHeight: 0, startWidth: 0, direction: null });
 
-  // Update height based on content only for resizable modals
+  // Update dimensions based on content only for resizable modals
   useEffect(() => {
     if (resizable && !isCollapsed && contentRef.current && height === 'auto') {
       const contentHeight = contentRef.current.scrollHeight;
@@ -47,12 +51,15 @@ export function DraggableModal({
     };
   };
 
-  const startResizing = (e) => {
+  const startResizing = (e, direction) => {
     e.preventDefault();
     resizeRef.current = {
       isResizing: true,
       startY: e.clientY,
+      startX: e.clientX,
       startHeight: modalRef.current.offsetHeight,
+      startWidth: modalRef.current.offsetWidth,
+      direction,
     };
   };
 
@@ -63,15 +70,28 @@ export function DraggableModal({
       setPosition({ x: newX, y: newY });
     }
     if (resizeRef.current.isResizing) {
-      const deltaY = e.clientY - resizeRef.current.startY;
-      const newHeight = Math.max(
-        minHeight || 0,
-        Math.min(
-          resizeRef.current.startHeight + deltaY,
-          maxHeight || window.innerHeight * 0.9
-        )
-      );
-      setHeight(newHeight);
+      if (resizeRef.current.direction === 'vertical' || resizeRef.current.direction === 'both') {
+        const deltaY = e.clientY - resizeRef.current.startY;
+        const newHeight = Math.max(
+          minHeight || 0,
+          Math.min(
+            resizeRef.current.startHeight + deltaY,
+            maxHeight || window.innerHeight * 0.9
+          )
+        );
+        setHeight(newHeight);
+      }
+      if (resizeRef.current.direction === 'horizontal' || resizeRef.current.direction === 'both') {
+        const deltaX = e.clientX - resizeRef.current.startX;
+        const newWidth = Math.max(
+          minWidth,
+          Math.min(
+            resizeRef.current.startWidth + deltaX,
+            maxWidth || window.innerWidth * 0.9
+          )
+        );
+        setWidth(newWidth);
+      }
     }
   };
 
@@ -101,13 +121,17 @@ export function DraggableModal({
         left: position.x,
         top: position.y,
         height: isCollapsed ? 'auto' : (resizable ? height : 'auto'),
+        width: resizable ? width : 'auto',
         minHeight: isCollapsed ? 'auto' : minHeight,
+        minWidth,
         maxHeight: isCollapsed ? 'auto' : (resizable ? (maxHeight || window.innerHeight * 0.9) : 'none'),
+        maxWidth: resizable ? (maxWidth || window.innerWidth * 0.9) : 'none',
+        zIndex: 9999,
       }}
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between p-2 bg-secondary/50 cursor-move select-none"
+        className="flex items-center justify-between p-2 bg-secondary/50 cursor-move select-none rounded-t-lg"
         onMouseDown={startDragging}
       >
         <div className="flex items-center gap-2">
@@ -139,12 +163,25 @@ export function DraggableModal({
             {children}
           </div>
           {resizable && (
-            <div
-              className="absolute bottom-0 left-0 right-0 h-2 bg-secondary/50 cursor-ns-resize hover:bg-primary/50 flex items-center justify-center border-t"
-              onMouseDown={startResizing}
-            >
-              <GripHorizontal className="h-3 w-3 text-muted-foreground" />
-            </div>
+            <>
+              {/* Bottom resize handle */}
+              <div
+                className="absolute bottom-0 left-2 right-2 h-2 bg-secondary/50 cursor-ns-resize hover:bg-primary/50 flex items-center justify-center border-t rounded-b"
+                onMouseDown={(e) => startResizing(e, 'vertical')}
+              >
+                <GripHorizontal className="h-3 w-3 text-muted-foreground" />
+              </div>
+              {/* Right resize handle */}
+              <div
+                className="absolute top-2 bottom-2 right-0 w-2 bg-secondary/50 cursor-ew-resize hover:bg-primary/50"
+                onMouseDown={(e) => startResizing(e, 'horizontal')}
+              />
+              {/* Corner resize handle */}
+              <div
+                className="absolute bottom-0 right-0 w-4 h-4 bg-secondary/50 cursor-nwse-resize hover:bg-primary/50 rounded-bl"
+                onMouseDown={(e) => startResizing(e, 'both')}
+              />
+            </>
           )}
         </>
       )}

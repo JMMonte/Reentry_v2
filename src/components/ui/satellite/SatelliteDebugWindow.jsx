@@ -115,6 +115,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
       className="w-[300px]"
       defaultPosition={{ x: window.innerWidth - 320, y: 80 }}
       resizable={true}
+      defaultWidth={300}
       leftElement={
         <ColorPicker
           color={satellite.color}

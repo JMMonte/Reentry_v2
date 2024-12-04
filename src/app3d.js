@@ -468,7 +468,6 @@ class App3D extends EventTarget {
     }
 
     updateSatelliteConnections(connections) {
-        console.log('Updating satellite connections:', connections);
         
         // Clear existing connections
         while (this.satelliteConnections.children.length > 0) {
@@ -481,7 +480,6 @@ class App3D extends EventTarget {
         // Create new connections if enabled
         if (this.displaySettings.showSatConnections) {
             connections.forEach(conn => {
-                console.log('Creating connection:', conn);
                 const material = new THREE.LineBasicMaterial({ 
                     color: conn.color === 'red' ? 0xff0000 : 0x00ff00,
                     opacity: conn.color === 'red' ? 0.8 : 0.5, // Make red lines more visible
@@ -700,7 +698,6 @@ class App3D extends EventTarget {
     }
 
     updateSatelliteList() {
-        console.log('App3D.updateSatelliteList: Current satellites:', this._satellites);
         
         // Create a clean object with only necessary satellite data
         const satelliteData = Object.fromEntries(
@@ -718,17 +715,14 @@ class App3D extends EventTarget {
                 satellites: satelliteData
             }
         }));
-        console.log('App3D.updateSatelliteList: Dispatched satelliteListUpdated event with data:', satelliteData);
         
         // Update the window.app3d reference
         if (window.app3d) {
             window.app3d.satellites = this._satellites;
-            console.log('App3D.updateSatelliteList: Updated window.app3d.satellites reference');
         }
     }
 
     removeSatellite(satelliteId) {
-        console.log('App3D: Removing satellite:', satelliteId);
         const satellite = this._satellites[satelliteId];
         if (satellite) {
             // Store the satellite info before disposal
@@ -748,7 +742,6 @@ class App3D extends EventTarget {
             
             // Update the satellite list
             this.updateSatelliteList();
-            console.log('App3D: Satellite removed and list updated');
         }
     }
 
@@ -780,17 +773,14 @@ class App3D extends EventTarget {
     // Socket event handlers for satellite creation
     setupSatelliteAPI() {
         this.socket.on('createSatelliteFromLatLon', (params) => {
-            console.log('Received createSatelliteFromLatLon:', params);
             this.createSatelliteLatLon(params);
         });
 
         this.socket.on('createSatelliteFromOrbitalElements', (params) => {
-            console.log('Received createSatelliteFromOrbitalElements:', params);
             this.createSatelliteOrbital(params);
         });
 
         this.socket.on('createSatelliteFromLatLonCircular', (params) => {
-            console.log('Received createSatelliteFromLatLonCircular:', params);
             this.createSatelliteCircular(params);
         });
     }

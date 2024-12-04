@@ -45,13 +45,14 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
     return (
         <DraggableModal
             title="Satellites"
-            isOpen={true}
+            isOpen={isOpen}
             onClose={() => setIsOpen(false)}
             className="w-[250px]"
             defaultPosition={{ x: 20, y: 80 }}
-            minHeight={100}
             resizable={true}
-            defaultHeight="auto"
+            defaultWidth={300}
+            defaultHeight={500}
+            minHeight={100}
         >
             <div className="space-y-1 p-1">
                 {Object.values(satellites).map((satellite) => (

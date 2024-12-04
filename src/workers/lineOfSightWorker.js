@@ -48,16 +48,6 @@ function calculateLineOfSight() {
             const intersectsEarth = checkSphereIntersection(pos1, direction.normalize(), earthCenter, EARTH_RADIUS, distance);
             const intersectsAtmosphere = checkSphereIntersection(pos1, direction.normalize(), earthCenter, EARTH_RADIUS + ATMOSPHERE_HEIGHT, distance);
             
-            console.log(`Line from satellite ${sat1.id} to ${sat2.id}:`, {
-                intersectsEarth,
-                intersectsAtmosphere,
-                distance,
-                earthRadius: EARTH_RADIUS,
-                atmosphereRadius: EARTH_RADIUS + ATMOSPHERE_HEIGHT,
-                pos1: [pos1.x, pos1.y, pos1.z],
-                pos2: [pos2.x, pos2.y, pos2.z]
-            });
-            
             // Add connection if it doesn't intersect Earth
             if (!intersectsEarth) {
                 connections.push({
