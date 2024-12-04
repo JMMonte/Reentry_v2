@@ -228,10 +228,10 @@ export class PhysicsUtils {
         const mu = Constants.earthGravitationalParameter;
 
         // Convert angles from degrees to radians if necessary
-        const iRad = inclination;
-        const raanRad = raan;
-        const argPeriapsisRad = argumentOfPeriapsis;
-        const trueAnomalyRad = trueAnomaly;
+        const iRad = THREE.MathUtils.degToRad(inclination);
+        const raanRad = THREE.MathUtils.degToRad(raan);
+        const argPeriapsisRad = THREE.MathUtils.degToRad(argumentOfPeriapsis);
+        const trueAnomalyRad = THREE.MathUtils.degToRad(trueAnomaly);
 
         // Earth's obliquity in radians (approximately 23.44 degrees)
         const earthObliquity = THREE.MathUtils.degToRad(23.44);
