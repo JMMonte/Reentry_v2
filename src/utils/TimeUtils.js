@@ -1,3 +1,4 @@
+//TimeUtils.js
 import * as THREE from 'three';
 import { Constants } from './Constants.js';
 
@@ -6,25 +7,77 @@ export class TimeUtils {
         this.settings = settings;
         this.lastTime = 0;
         this.deltaTime = 0;
+        this.timeWarp = 1;
         this.simulatedTime = new Date(settings.simulatedTime); // Ensure this is in UTC
+        this.validateAndFixSimulatedTime();
+        this.updateDerivedTimes();
+        this.AU = Constants.AU;
+        this.isInitialized = false;
+    }
+
+    validateAndFixSimulatedTime() {
+        if (isNaN(this.simulatedTime.getTime())) {
+            console.warn("Invalid simulated time detected. Current value:", this.simulatedTime);
+            console.warn("Settings simulatedTime:", this.settings.simulatedTime);
+            this.simulatedTime = new Date();
+            this.settings.simulatedTime = this.simulatedTime.toISOString();
+        }
+    }
+
+    updateDerivedTimes() {
         this.dayOfYear = this.getDayOfYear(this.simulatedTime);
         this.fractionOfDay = this.getFractionOfDay();
-        this.AU = Constants.AU;
     }
 
     update(timestamp) {
-        const now = timestamp * 0.001;
-        this.deltaTime = (now - this.lastTime) * this.settings.timeWarp;
-        this.lastTime = now;
-        const msToAdd = this.deltaTime * 1000;
-        this.simulatedTime = new Date(this.simulatedTime.getTime() + msToAdd);
-        this.settings.simulatedTime = this.simulatedTime.toISOString();
-        this.dayOfYear = this.getDayOfYear(this.simulatedTime);
-        this.fractionOfDay = this.getFractionOfDay();
+        if (!this.isInitialized) {
+            this.lastTime = timestamp;
+            this.isInitialized = true;
+            return;
+        }
+
+        // Calculate real-time delta in milliseconds
+        this.deltaTime = timestamp - this.lastTime;
+        this.lastTime = timestamp;
+
+        // Apply timewarp to the simulation time
+        const simulatedDelta = this.deltaTime * this.timeWarp;
+        this.simulatedTime = new Date(this.simulatedTime.getTime() + simulatedDelta);
+        
+        // Update derived times
+        this.updateDerivedTimes();
+
+        // Dispatch time update event
+        document.dispatchEvent(new CustomEvent('timeUpdate', {
+            detail: { 
+                simulatedTime: this.simulatedTime.toISOString(),
+                timeWarp: this.timeWarp,
+                deltaTime: this.deltaTime
+            }
+        }));
     }
 
-    setTimeWarp(warpFactor) {
-        this.settings.timeWarp = warpFactor;
+    setTimeWarp(value) {
+        this.timeWarp = Number(value);
+        // Dispatch event to notify of timewarp change
+        document.dispatchEvent(new CustomEvent('timeWarpChanged', {
+            detail: { timeWarp: this.timeWarp }
+        }));
+    }
+
+    setSimulatedTime(newTime) {
+        this.simulatedTime = new Date(newTime);
+        this.validateAndFixSimulatedTime();
+        this.updateDerivedTimes();
+        
+        // Dispatch time update event
+        document.dispatchEvent(new CustomEvent('timeUpdate', {
+            detail: { 
+                simulatedTime: this.simulatedTime.toISOString(),
+                timeWarp: this.timeWarp,
+                deltaTime: this.deltaTime
+            }
+        }));
     }
     
     getSimulatedTime() {
@@ -63,10 +116,6 @@ export class TimeUtils {
 
     getDeltaTime() {
         return this.deltaTime;
-    }
-
-    getSimulatedTime() {
-        return this.simulatedTime;
     }
 
     getJulianDate() {

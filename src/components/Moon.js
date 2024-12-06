@@ -60,7 +60,13 @@ export class Moon {
         this.addPeriapsisApoapsisPoints();
 
         // Add Moon surface contours
-        this.loadContourLines();
+        this.moonSurface = new MoonSurface(this.moonMesh, Constants.moonRadius * Constants.metersToKm * Constants.scale);
+        this.moonSurface.setVisibility(true);
+
+        // Make moonSurface accessible to UI
+        window.moonSurface = this.moonSurface;  // Temporary for UI controls
+
+        this.moonSurface.setVisibility(true);
     }
 
     initTraceLine() {
@@ -84,6 +90,10 @@ export class Moon {
 
         const lightHelper = new THREE.PointLightHelper(light, 5); // Optional: visualize the light source position
         this.scene.add(lightHelper);
+    }
+
+    getMesh() {
+        return this.moonMesh;
     }
 
     initOrbitLine() {
@@ -309,16 +319,29 @@ export class Moon {
         this.traceLine.visible = visible;
     }
 
-    loadContourLines() {
-        this.moonSurface = new MoonSurface(this.moonMesh, Constants.moonRadius * Constants.metersToKm * Constants.scale);
-        fetch('../config/moon_contours.svg')
-            .then(response => response.text())
-            .then(svgText => {
-                this.moonSurface.addContourLinesFromSVG(svgText);
-            })
-            .catch(error => {
-                console.error('Error loading contour lines:', error);
-            });
+    getCurrentOrbitalParameters(currentTime) {
+        const jd = JulianDay(new Date(currentTime));
+        const { x, y, z } = this.getMoonPosition(jd);
+
+        const position = new THREE.Vector3(x, y, z);
+        const velocity = new THREE.Vector3(
+            this.moonBody.velocity.x,
+            this.moonBody.velocity.y,
+            this.moonBody.velocity.z
+        );
+
+        const mu = Constants.G * Constants.earthMass;
+        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
+
+        return {
+            position: { x, y, z },
+            velocity: velocity.toArray(),
+            semiMajorAxis: orbitalElements.a,
+            eccentricity: orbitalElements.e,
+            inclination: orbitalElements.i,
+            ascendingNode: orbitalElements.omega,
+            argumentOfPeriapsis: orbitalElements.w,
+            trueAnomaly: orbitalElements.trueAnomaly
+        };
     }
 }
-

@@ -1,57 +1,88 @@
 import * as THREE from 'three';
+import contourData from '../config/moon_map_contours_simplified.json';  
 
 class MoonSurface {
     constructor(mesh, moonRadius) {
         this.mesh = mesh;
         this.moonRadius = moonRadius;
-        this.heightOffset = -2;
+        this.heightOffset = 0.5;
         this.radius = this.moonRadius + this.heightOffset;
 
         this.materials = {
             contourLine: new THREE.LineBasicMaterial({
                 color: 0x00A5FF,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1
+                transparent: true,
+                depthWrite: false,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor
             })
         };
 
         this.surfaceLines = [];
+        this.adjustments = {
+            lonOffset: 90.48,
+            lonScale: 0.4068,
+            latScale: 0.4061,
+            flipLat: true,
+            flipLon: false
+        };
+        this.addContourLines();
     }
 
-    addContourLinesFromSVG(svgText) {
-        const parser = new DOMParser();
-        const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
-        const paths = svgDoc.querySelectorAll('path');
+    updateAdjustments(newAdjustments) {
+        this.adjustments = { ...this.adjustments, ...newAdjustments };
+        this.redrawContours();
+    }
 
-        paths.forEach(path => {
-            const d = path.getAttribute('d');
-            const points = this.parsePathData(d);
-            this.addLine(points);
+    clearContours() {
+        this.surfaceLines.forEach(line => {
+            this.mesh.remove(line);
+            line.geometry.dispose();
         });
+        this.surfaceLines = [];
     }
 
-    parsePathData(d) {
-        const commands = d.match(/[ML][^ML]*/g);
-        const points = [];
+    redrawContours() {
+        this.clearContours();
+        this.addContourLines();
+    }
 
-        commands.forEach(command => {
-            const coords = command.slice(1).trim().split(/[\s,]+/).map(Number);
-            for (let i = 0; i < coords.length; i += 2) {
-                const x = coords[i]; // Convert to 10km units
-                const y = -coords[i + 1]; // Convert to 10km units and invert y axis
-                points.push(new THREE.Vector3(x, y, 0));
+    addContourLines() {
+        const { lonOffset, lonScale, latScale, flipLat, flipLon } = this.adjustments;
+
+        contourData.features.forEach((feature) => {
+            const geometryType = feature.geometry.type;
+            let lines = [];
+
+            if (geometryType === 'LineString') {
+                lines = [feature.geometry.coordinates];
+            } else if (geometryType === 'MultiLineString') {
+                lines = feature.geometry.coordinates;
             }
+
+            lines.forEach(line => {
+                const points = line.map(([x, y]) => {
+                    // Convert from pixel coordinates to longitude/latitude
+                    let lon = x * lonScale - 180;
+                    let lat = 90 - (y * latScale);
+
+                    if (flipLon) lon = -lon;
+                    if (flipLat) lat = -lat;
+                    
+                    const phi = (90 - lat) * (Math.PI / 180);
+                    const theta = (lon + lonOffset) * (Math.PI / 180);
+                    return new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
+                });
+                
+                const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                const lineMesh = new THREE.Line(lineGeometry, this.materials.contourLine);
+                this.surfaceLines.push(lineMesh);
+                this.mesh.add(lineMesh);
+            });
         });
-
-        return points;
-    }
-
-    addLine(points) {
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(geometry, this.materials.contourLine);
-        this.surfaceLines.push(line);
-        this.mesh.add(line);
     }
 
     setVisibility(visible) {

@@ -47,10 +47,16 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
 3. Start the development server:
 
    ```bash
-   npm start
+   npm run start
    ```
 
-This will run the application on `http://localhost:3000`.
+4. Start the server
+   
+      ```bash
+      npm run server.mjs
+      ```
+
+This will run the application on `http://localhost:1234`.
 
 ## Usage
 

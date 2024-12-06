@@ -6,72 +6,108 @@ class EarthSurface {
     constructor(mesh, earthRadius) {
         this.scene = mesh;
         this.earthRadius = earthRadius;
-        this.heightOffset = -2;
+        this.heightOffset = 0.5;
         this.radius = this.earthRadius + this.heightOffset;
 
         // Centralize materials
         this.materials = {
             latitudeLineMajor: new THREE.LineBasicMaterial({
                 color: 0x00A5FF,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1
+                transparent: true,
+                depthWrite: false,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor
             }),
             latitudeLineMinor: new THREE.LineBasicMaterial({
                 color: 0x00A5FF,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1
+                transparent: true,
+                depthWrite: false,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor
             }),
             countryLine: new THREE.LineBasicMaterial({
                 color: 0x00A5FF,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1
+                transparent: true,
+                depthWrite: false,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor
             }),
             stateLine: new THREE.LineBasicMaterial({
                 color: 0x00FF00,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1
+                transparent: true,
+                depthWrite: false,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor
             }),
             cityPoint: new THREE.PointsMaterial({
                 color: 0x00A5FF,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1,
+                transparent: true,
+                depthWrite: true,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
                 size: 5
             }),
             airportPoint: new THREE.PointsMaterial({
                 color: 0xFF0000,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1,
+                transparent: true,
+                depthWrite: true,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
                 size: 5
             }),
             spaceportPoint: new THREE.PointsMaterial({
                 color: 0xFFD700,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1,
+                transparent: true,
+                depthWrite: true,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
                 size: 5
             }),
             groundStationPoint: new THREE.PointsMaterial({
                 color: 0x00FF00,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1,
+                transparent: true,
+                depthWrite: true,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
                 size: 5
             }),
             observatoryPoint: new THREE.PointsMaterial({
                 color: 0xFF00FF,
-                polygonOffset: true,
-                polygonOffsetFactor: 10,
-                polygonOffsetUnits: 1,
+                transparent: true,
+                depthWrite: true,
+                depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.SrcAlphaFactor,
+                blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
                 size: 5
             })
@@ -153,6 +189,7 @@ class EarthSurface {
 
         pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(pointPositions, 3));
         const points = new THREE.Points(pointGeometry, material);
+        points.renderOrder = 3;
         this.scene.add(points);
         this.points[category].push(points);
     }

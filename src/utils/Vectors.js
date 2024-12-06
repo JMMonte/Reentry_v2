@@ -27,7 +27,6 @@ export class Vectors {
             return;
         }
 
-        this.initVelocityVector();
         this.initNorthPoleVector();
         this.initSunDirection();
         this.initGreenwichVector();
@@ -71,21 +70,6 @@ export class Vectors {
         return sprite;
     }
 
-    initVelocityVector() {
-        const velocityDirection = new THREE.Vector3(1, 0, 0);
-        this.velocityVector = new THREE.ArrowHelper(
-            velocityDirection.normalize(), 
-            this.earth.earthMesh.position, 
-            this.scale, 
-            0xff0000
-        );
-        this.velocityVector.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);
-        this.scene.add(this.velocityVector);
-        this.velocityLabel = this.createLabel(
-            'Earth Orbital Velocity',
-            this.velocityVector.position.clone().add(velocityDirection.multiplyScalar(this.scale))
-        );
-    }
 
     initNorthPoleVector() {
         const northPoleDirection = new THREE.Vector3(0, 1, 0);
@@ -174,11 +158,6 @@ export class Vectors {
     }
 
     updateVectors() {
-        if (this.velocityVector) {
-            const velocityDirection = this.timeUtils.calculateEarthVelocity().normalize();
-            this.velocityVector.setDirection(velocityDirection);
-            this.velocityLabel.position.copy(this.velocityVector.position.clone().add(velocityDirection.multiplyScalar(this.scale)));
-        }
         if (this.northPoleVector) {
             const northPoleDirection = this.timeUtils.getEarthTilt();
             this.northPoleVector.setDirection(northPoleDirection);
