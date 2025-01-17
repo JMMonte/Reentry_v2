@@ -11,9 +11,23 @@ dotenv.config();
 const app = express();
 const server = createServer(app);
 
-// Configure CORS
+// CORS Configuration
+const getAllowedOrigins = () => {
+    const origins = process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',') : [];
+    
+    // Add development origins only in non-production
+    if (process.env.NODE_ENV !== 'production') {
+        origins.push('http://localhost:1234', 'http://localhost:4000');
+    }
+    
+    return origins;
+};
+
+const allowedOrigins = getAllowedOrigins();
+
+// Configure CORS for Express
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:1234',
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true
 }));
@@ -23,10 +37,22 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
 
-// Initialize Socket.IO
+// Initialize Socket.IO with explicit CORS config
 const io = new Server(server, {
     cors: {
-        origin: process.env.CLIENT_URL || 'http://localhost:1234',
+        origin: (origin, callback) => {
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin) return callback(null, true);
+            
+            const isAllowed = allowedOrigins.includes(origin);
+            console.log('Origin:', origin, 'Allowed:', isAllowed);
+            
+            if (isAllowed) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
         methods: ['GET', 'POST'],
         credentials: true
     }
