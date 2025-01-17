@@ -33,6 +33,7 @@ class App3D extends EventTarget {
         this.lastTime = performance.now();
         this.animationFrameId = null;
         this.canvas = document.getElementById('three-canvas');
+        this.satellites = {};
         
         if (!this.canvas) {
             throw new Error('Canvas element not found');
@@ -80,6 +81,9 @@ class App3D extends EventTarget {
 
             // Initialize label renderer
             this.initializeLabelRenderer();
+
+            // Initialize display settings before scene initialization
+            this.displayManager.initializeSettings();
 
             // Initialize scene and managers
             await this.sceneManager.initialize();

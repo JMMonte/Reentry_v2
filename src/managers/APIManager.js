@@ -1,3 +1,5 @@
+import { getMethodFromApiMode } from '../config/satelliteCreationMethods';
+
 export class APIManager {
     constructor(app) {
         this.app = app;
@@ -23,20 +25,12 @@ export class APIManager {
 
     async createSatellite(params) {
         try {
-            let satellite;
-            switch (params.mode) {
-                case 'latlon':
-                    satellite = await this.app.satelliteManager.createFromLatLon(params);
-                    break;
-                case 'orbital':
-                    satellite = await this.app.satelliteManager.createFromOrbital(params);
-                    break;
-                case 'circular':
-                    satellite = await this.app.satelliteManager.createFromLatLonCircular(params);
-                    break;
-                default:
-                    throw new Error(`Unknown satellite mode: ${params.mode}`);
+            const method = getMethodFromApiMode(params.mode);
+            if (!method) {
+                throw new Error(`Unknown satellite mode: ${params.mode}`);
             }
+
+            const satellite = await this.app.satelliteManager[method](params);
             
             if (!satellite) {
                 throw new Error('Failed to create satellite');

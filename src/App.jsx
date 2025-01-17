@@ -7,7 +7,6 @@ import { ChatModal } from './components/ui/chat/ChatModal';
 import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWindow';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
-import { defaultSettings } from './components/ui/controls/DisplayOptions';
 import App3D from './app3d.js';
 import './styles/globals.css';
 import './styles/animations.css';
@@ -21,13 +20,7 @@ function App() {
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date());
-  const [displaySettings, setDisplaySettings] = useState(() => {
-    const initialSettings = {};
-    Object.entries(defaultSettings).forEach(([key, setting]) => {
-      initialSettings[key] = setting.value;
-    });
-    return initialSettings;
-  });
+  const [displaySettings, setDisplaySettings] = useState({});
   const [app3dInstance, setApp3dInstance] = useState(null);
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
@@ -138,6 +131,17 @@ function App() {
       // Initialize display settings after scene is ready
       app.addEventListener('sceneReady', () => {
         console.log('Scene is ready');
+        // Initialize display settings from DisplayManager
+        if (app.displayManager) {
+          const props = app.displayManager.collectDisplayProperties();
+          const initialSettings = {};
+          Object.entries(props).forEach(([category, settings]) => {
+            Object.entries(settings).forEach(([key, setting]) => {
+              initialSettings[key] = setting.value;
+            });
+          });
+          setDisplaySettings(initialSettings);
+        }
       });
     } catch (error) {
       console.error('Error initializing App3D:', error);
@@ -257,8 +261,8 @@ function App() {
         <DisplayOptions 
           settings={displaySettings}
           onSettingChange={(key, value) => {
-            if (app3dInstance) {
-              app3dInstance.updateDisplaySetting(key, value);
+            if (app3dInstance?.displayManager) {
+              app3dInstance.displayManager.updateSetting(key, value);
               setDisplaySettings(prev => ({ ...prev, [key]: value }));
             }
           }}

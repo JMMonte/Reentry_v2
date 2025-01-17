@@ -63,7 +63,7 @@ export function SatelliteCreationPanel({ isVisible, onToggle }) {
   };
 
   const handleOrbitalSubmit = () => {
-    const event = new CustomEvent('createSatelliteFromOrbital', {
+    const event = new CustomEvent('createSatelliteFromOrbitalElements', {
       detail: {
         name: orbitalInputs.name,
         semiMajorAxis: parseFloat(orbitalInputs.sma),

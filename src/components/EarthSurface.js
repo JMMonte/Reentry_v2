@@ -190,6 +190,7 @@ class EarthSurface {
         pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(pointPositions, 3));
         const points = new THREE.Points(pointGeometry, material);
         points.renderOrder = 3;
+        points.visible = false;
         this.scene.add(points);
         this.points[category].push(points);
     }
@@ -226,6 +227,7 @@ class EarthSurface {
                     points.push(points[0]);
                     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
                     const lineMesh = new THREE.Line(lineGeometry, this.materials.countryLine);
+                    lineMesh.visible = false;
                     this.scene.add(lineMesh);
                     this.countryBorders.push(lineMesh);
                 });
@@ -254,6 +256,7 @@ class EarthSurface {
                     points.push(points[0]);
                     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
                     const lineMesh = new THREE.Line(lineGeometry, this.materials.stateLine);
+                    lineMesh.visible = false;
                     this.scene.add(lineMesh);
                     this.states.push(lineMesh);
                 });

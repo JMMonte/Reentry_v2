@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { SATELLITE_METHODS } from '../config/satelliteCreationMethods';
 
 export class SocketManager {
     constructor(app) {
@@ -19,16 +20,10 @@ export class SocketManager {
         });
 
         // Setup satellite creation events
-        this.socket.on('createSatelliteFromLatLon', (params) => {
-            this.app.satelliteManager.createFromLatLon(params);
-        });
-
-        this.socket.on('createSatelliteFromOrbitalElements', (params) => {
-            this.app.satelliteManager.createFromOrbital(params);
-        });
-
-        this.socket.on('createSatelliteFromLatLonCircular', (params) => {
-            this.app.satelliteManager.createFromLatLonCircular(params);
+        Object.entries(SATELLITE_METHODS).forEach(([method, config]) => {
+            this.socket.on(config.eventName, (params) => {
+                this.app.satelliteManager[method](params);
+            });
         });
     }
 

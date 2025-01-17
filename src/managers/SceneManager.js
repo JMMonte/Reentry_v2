@@ -3,6 +3,12 @@ import { RadialGrid } from '../components/RadialGrid.js';
 import { setupScene, setupSceneDetails, setupPostProcessing, loadTextures } from '../setup/setupScene.js';
 
 export class SceneManager {
+    // Define common display properties
+    static displayProperties = {
+        showGrid: { value: true, name: 'Grid', icon: 'Grid' },
+        ambientLight: { value: 0.1, name: 'Ambient Light', icon: 'Settings2', type: 'range', min: 0, max: 1, step: 0.05 }
+    };
+
     constructor(app) {
         this.app = app;
         this.scene = new THREE.Scene();
@@ -11,6 +17,34 @@ export class SceneManager {
         this.earth = null;
         this.moon = null;
         this.sun = null;
+
+        // Initialize display settings from static properties
+        this.displaySettings = {};
+        Object.entries(SceneManager.displayProperties).forEach(([key, prop]) => {
+            this.displaySettings[key] = prop.value;
+        });
+    }
+
+    // Method to get current display settings
+    getDisplaySettings() {
+        return this.displaySettings;
+    }
+
+    // Method to update a display setting
+    updateDisplaySetting(key, value) {
+        if (key in this.displaySettings) {
+            this.displaySettings[key] = value;
+            switch (key) {
+                case 'showGrid':
+                    if (this.radialGrid) {
+                        this.radialGrid.setVisible(value);
+                    }
+                    break;
+                case 'ambientLight':
+                    // Handle ambient light changes
+                    break;
+            }
+        }
     }
 
     async initialize() {
@@ -27,9 +61,7 @@ export class SceneManager {
 
             // Initialize radial grid
             this.radialGrid = new RadialGrid(this.scene);
-            if (this.app.displayManager?.settings) {
-                this.radialGrid.setVisible(this.app.displayManager.settings.showGrid);
-            }
+            this.radialGrid.setVisible(this.displaySettings.showGrid);
 
             // Store references to celestial bodies
             this.earth = this.app.earth;
@@ -56,76 +88,6 @@ export class SceneManager {
         }
         if (this.vectors) {
             this.vectors.updateVectors();
-        }
-    }
-
-    updateDisplaySetting(key, value) {
-        switch (key) {
-            case 'showGrid':
-                if (this.radialGrid) {
-                    this.radialGrid.setVisible(value);
-                }
-                break;
-            case 'showVectors':
-                if (this.vectors) {
-                    this.vectors.setVisible(value);
-                }
-                break;
-            case 'showSurfaceLines':
-                if (this.earth?.setSurfaceLinesVisible) {
-                    this.earth.setSurfaceLinesVisible(value);
-                }
-                break;
-            case 'showCities':
-                if (this.earth?.setCitiesVisible) {
-                    this.earth.setCitiesVisible(value);
-                }
-                break;
-            case 'showAirports':
-                if (this.earth?.setAirportsVisible) {
-                    this.earth.setAirportsVisible(value);
-                }
-                break;
-            case 'showSpaceports':
-                if (this.earth?.setSpaceportsVisible) {
-                    this.earth.setSpaceportsVisible(value);
-                }
-                break;
-            case 'showObservatories':
-                if (this.earth?.setObservatoriesVisible) {
-                    this.earth.setObservatoriesVisible(value);
-                }
-                break;
-            case 'showGroundStations':
-                if (this.earth?.setGroundStationsVisible) {
-                    this.earth.setGroundStationsVisible(value);
-                }
-                break;
-            case 'showCountryBorders':
-                if (this.earth?.setCountryBordersVisible) {
-                    this.earth.setCountryBordersVisible(value);
-                }
-                break;
-            case 'showStates':
-                if (this.earth?.setStatesVisible) {
-                    this.earth.setStatesVisible(value);
-                }
-                break;
-            case 'showMoonOrbit':
-                if (this.moon?.setOrbitVisible) {
-                    this.moon.setOrbitVisible(value);
-                }
-                break;
-            case 'showMoonTraces':
-                if (this.moon?.setTraceVisible) {
-                    this.moon.setTraceVisible(value);
-                }
-                break;
-            case 'showMoonSurfaceLines':
-                if (this.moon?.setSurfaceDetailsVisible) {
-                    this.moon.setSurfaceDetailsVisible(value);
-                }
-                break;
         }
     }
 

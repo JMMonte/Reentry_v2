@@ -4,32 +4,93 @@ import { Label } from '../label';
 import { Input } from '../input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import { Slider } from '../slider';
+import { Alert, AlertDescription } from '../alert/alert';
+import { Constants } from '../../../utils/Constants';
+
+const DEFAULT_VALUES = {
+    name: '',
+    mass: 100,         // kg
+    size: 1,          // meters
+    latitude: 0,       // degrees
+    longitude: 0,      // degrees
+    altitude: 400,     // km
+    azimuth: 0,       // degrees
+    velocity: 7.8,     // km/s
+    semiMajorAxis: 6778, // km (LEO default)
+    eccentricity: 0,
+    inclination: 51.6,   // degrees (ISS-like)
+    raan: 0,            // degrees
+    argumentOfPeriapsis: 0, // degrees
+    trueAnomaly: 0,     // degrees
+    angleOfAttack: 0,   // degrees
+};
+
+const validateParams = (params, mode) => {
+    // Common validations
+    if (params.mass <= 0) throw new Error('Mass must be positive');
+    if (params.size <= 0) throw new Error('Size must be positive');
+    
+    // Mode-specific validations
+    switch (mode) {
+        case 'latlon':
+            if (params.latitude < -90 || params.latitude > 90) 
+                throw new Error('Latitude must be between -90° and 90°');
+            if (params.longitude < -180 || params.longitude > 180) 
+                throw new Error('Longitude must be between -180° and 180°');
+            if (params.altitude <= 0) 
+                throw new Error('Altitude must be positive');
+            if (params.velocity <= 0) 
+                throw new Error('Velocity must be positive');
+            if (params.azimuth < 0 || params.azimuth >= 360) 
+                throw new Error('Azimuth must be between 0° and 360°');
+            if (params.angleOfAttack < -90 || params.angleOfAttack > 90) 
+                throw new Error('Angle of attack must be between -90° and 90°');
+            break;
+            
+        case 'orbital':
+            if (params.semiMajorAxis <= Constants.earthRadius / Constants.kmToMeters) 
+                throw new Error('Semi-major axis must be greater than Earth\'s radius');
+            if (params.eccentricity < 0 || params.eccentricity >= 1) 
+                throw new Error('Eccentricity must be between 0 and 1');
+            if (params.inclination < -180 || params.inclination > 180) 
+                throw new Error('Inclination must be between -180° and 180°');
+            if (params.raan < 0 || params.raan >= 360) 
+                throw new Error('RAAN must be between 0° and 360°');
+            if (params.argumentOfPeriapsis < 0 || params.argumentOfPeriapsis >= 360) 
+                throw new Error('Argument of periapsis must be between 0° and 360°');
+            if (params.trueAnomaly < 0 || params.trueAnomaly >= 360) 
+                throw new Error('True anomaly must be between 0° and 360°');
+            break;
+            
+        case 'circular':
+            if (params.latitude < -90 || params.latitude > 90) 
+                throw new Error('Latitude must be between -90° and 90°');
+            if (params.longitude < -180 || params.longitude > 180) 
+                throw new Error('Longitude must be between -180° and 180°');
+            if (params.altitude <= 0) 
+                throw new Error('Altitude must be positive');
+            if (params.azimuth < 0 || params.azimuth >= 360) 
+                throw new Error('Azimuth must be between 0° and 360°');
+            if (params.angleOfAttack < -90 || params.angleOfAttack > 90) 
+                throw new Error('Angle of attack must be between -90° and 90°');
+            break;
+    }
+};
 
 const SatelliteCreator = ({ onCreateSatellite }) => {
     const [mode, setMode] = useState('latlon');
-    const [formData, setFormData] = useState({
-        name: '',
-        mass: 100,
-        size: 1,
-        latitude: 0,
-        longitude: 0,
-        altitude: 400,
-        azimuth: 0,
-        velocity: 7.8,
-        semiMajorAxis: 6778,
-        eccentricity: 0,
-        inclination: 51.6,
-        raan: 0,
-        argumentOfPeriapsis: 0,
-        trueAnomaly: 0,
-        angleOfAttack: 0,
-    });
+    const [formData, setFormData] = useState(DEFAULT_VALUES);
+    const [error, setError] = useState(null);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
+        const numValue = parseFloat(value);
+        if (name !== 'name' && (isNaN(numValue) || !isFinite(numValue))) {
+            return; // Invalid numerical input
+        }
         setFormData(prev => ({
             ...prev,
-            [name]: parseFloat(value) || value,
+            [name]: name === 'name' ? value : numValue,
         }));
     };
 
@@ -42,8 +103,13 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError(null); // Clear any previous errors
+        
         try {
             const params = { ...formData };
+            
+            // Validate parameters before submission
+            validateParams(params, mode);
             
             // Map the parameters based on the mode
             if (mode === 'latlon') {
@@ -86,12 +152,14 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                 });
             }
             
+            // Reset only the name field after successful creation
             setFormData(prev => ({
                 ...prev,
-                name: ''  // Reset only the name field after successful creation
+                name: ''
             }));
         } catch (error) {
             console.error('Error creating satellite:', error);
+            setError(error.message);
         }
     };
 
@@ -135,6 +203,11 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
 
     return (
         <div className="space-y-1 text-[10px]">
+            {error && (
+                <Alert variant="destructive" className="py-2 mb-2">
+                    <AlertDescription>{error}</AlertDescription>
+                </Alert>
+            )}
             <div className="grid grid-cols-4 gap-0.5">
                 <Label className="text-muted-foreground">Mode:</Label>
                 <Select value={mode} onValueChange={setMode}>

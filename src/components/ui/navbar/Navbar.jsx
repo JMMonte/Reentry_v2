@@ -130,18 +130,17 @@ export function Navbar({
 
   const onCreateSatellite = async (params) => {
     try {
-      let satellite;
-      if (params.mode === 'latlon') {
-        satellite = await app3DRef.current?.createSatelliteLatLon(params);
-      } else if (params.mode === 'orbital') {
-        satellite = await app3DRef.current?.createSatelliteOrbital(params);
-      } else if (params.mode === 'circular') {
-        satellite = await app3DRef.current?.createSatelliteCircular(params);
-      }
+      const { mode } = params;
+      const eventName = mode === 'latlon' ? 'createSatelliteFromLatLon' :
+                       mode === 'orbital' ? 'createSatelliteFromOrbitalElements' :
+                       mode === 'circular' ? 'createSatelliteFromLatLonCircular' : null;
       
-      if (satellite) {
-        onSatelliteCreatorToggle(false);
+      if (!eventName) {
+        throw new Error(`Unknown satellite mode: ${mode}`);
       }
+
+      document.dispatchEvent(new CustomEvent(eventName, { detail: params }));
+      onSatelliteCreatorToggle(false);
     } catch (error) {
       console.error('Error creating satellite:', error);
     }

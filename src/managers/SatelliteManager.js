@@ -4,6 +4,15 @@ import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { Constants } from '../utils/Constants.js';
 
 export class SatelliteManager {
+    // Define display properties for satellites
+    static displayProperties = {
+        showSatVectors: { value: false, name: 'Sat Vectors', icon: 'Circle' },
+        showOrbits: { value: true, name: 'Sat Orbits', icon: 'Circle' },
+        showTraces: { value: true, name: 'Sat Traces', icon: 'LineChart' },
+        showGroundTraces: { value: false, name: 'Ground Traces', icon: 'MapPin' },
+        showSatConnections: { value: false, name: 'Sat Connections', icon: 'Link' }
+    };
+
     constructor(app) {
         this.app = app;
         this._satellites = {};
@@ -14,6 +23,29 @@ export class SatelliteManager {
             0xFF1493, 0x00FF7F, 0xFF69B4, 0x7FFF00, 0x40E0D0,  // Bright neon
             0xFF99CC, 0x99FF99, 0x99FFFF, 0x9999FF, 0xFF99FF   // Bright pastel
         ];
+
+        // Initialize display settings from static properties
+        this.displaySettings = {};
+        Object.entries(SatelliteManager.displayProperties).forEach(([key, prop]) => {
+            this.displaySettings[key] = prop.value;
+        });
+    }
+
+    // Method to get current display settings
+    getDisplaySettings() {
+        return this.displaySettings;
+    }
+
+    // Method to update a display setting
+    updateDisplaySetting(key, value) {
+        if (key in this.displaySettings) {
+            this.displaySettings[key] = value;
+            Object.values(this._satellites).forEach(satellite => {
+                if (satellite) {
+                    this.applyDisplaySettings(satellite, this.displaySettings);
+                }
+            });
+        }
     }
 
     get satellites() {
@@ -33,7 +65,7 @@ export class SatelliteManager {
     }
 
     async createSatellite(params) {
-        const { scene, displaySettings } = this.app;
+        const { scene } = this.app;
         const id = this.generateUniqueId();
         const color = this.getRandomColor();
 
@@ -49,11 +81,16 @@ export class SatelliteManager {
             name: params.name
         });
 
+        // Get display settings from DisplayManager
+        const displaySettings = this.app.displayManager?.settings || this.displaySettings;
+
         // Apply display settings
         this.applyDisplaySettings(newSatellite, displaySettings);
 
-        // Force initial updates
-        this.updateInitialState(newSatellite, params);
+        // Force initial updates only if orbit line is visible
+        if (displaySettings.showOrbits) {
+            this.updateInitialState(newSatellite, params);
+        }
 
         // Create debug window if needed
         if (this.app.createDebugWindow) {
@@ -139,6 +176,49 @@ export class SatelliteManager {
         });
     }
 
+    async createFromOrbitalElements(params) {
+        const {
+            semiMajorAxis,
+            eccentricity,
+            inclination,
+            raan,
+            argumentOfPeriapsis,
+            trueAnomaly,
+            mass,
+            size,
+            name
+        } = params;
+
+        const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
+            semiMajorAxis * Constants.kmToMeters,
+            eccentricity,
+            inclination * (-1), // Invert inclination
+            raan,
+            argumentOfPeriapsis,
+            trueAnomaly
+        );
+
+        const position = new THREE.Vector3(
+            positionECI.x * Constants.metersToKm * Constants.scale,
+            positionECI.y * Constants.metersToKm * Constants.scale,
+            positionECI.z * Constants.metersToKm * Constants.scale
+        );
+
+        const velocity = new THREE.Vector3(
+            velocityECI.x * Constants.metersToKm * Constants.scale,
+            velocityECI.y * Constants.metersToKm * Constants.scale,
+            velocityECI.z * Constants.metersToKm * Constants.scale
+        );
+
+        return this.createSatellite({
+            position,
+            velocity,
+            mass,
+            size,
+            name
+        });
+    }
+
     calculatePositionVelocity(earth, latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
         const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
         const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
@@ -204,41 +284,10 @@ export class SatelliteManager {
     }
 
     async initializePhysics(satellite) {
-        if (!this.app.physicsWorker || !this.app.workerInitialized) {
-            this.app.checkPhysicsWorkerNeeded();
-            await new Promise((resolve) => {
-                const checkWorker = () => {
-                    if (this.app.workerInitialized) {
-                        resolve();
-                    } else {
-                        setTimeout(checkWorker, 50);
-                    }
-                };
-                checkWorker();
-            });
-        }
-
-        if (this.app.physicsWorker && this.app.workerInitialized) {
-            this.app.physicsWorker.postMessage({
-                type: 'addSatellite',
-                data: {
-                    id: satellite.id,
-                    position: {
-                        x: satellite.position.x / (Constants.metersToKm * Constants.scale),
-                        y: satellite.position.y / (Constants.metersToKm * Constants.scale),
-                        z: satellite.position.z / (Constants.metersToKm * Constants.scale)
-                    },
-                    velocity: {
-                        x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
-                        y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
-                        z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
-                    },
-                    mass: satellite.mass
-                }
-            });
-        } else {
-            console.error('Physics worker not initialized when creating satellite:', satellite.id);
-        }
+        // Check if physics worker is needed and initialize it
+        this.app.physicsManager.checkWorkerNeeded();
+        await this.app.physicsManager.waitForInitialization();
+        await this.app.physicsManager.addSatellite(satellite);
     }
 
     updateSatelliteList() {

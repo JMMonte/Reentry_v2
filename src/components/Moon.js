@@ -8,11 +8,24 @@ import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { MoonSurface } from './MoonSurface.js';
 
 export class Moon {
+    // Define display properties for Moon
+    static displayProperties = {
+        showMoonOrbit: { value: true, name: 'Moon Orbit', icon: 'Moon' },
+        showMoonTraces: { value: false, name: 'Moon Traces', icon: 'LineChart' },
+        showMoonSurfaceLines: { value: false, name: 'Moon Surface Lines', icon: 'Mountain' }
+    };
+
     constructor(scene, world, renderer, timeUtils) {
         this.scene = scene;
         this.world = world;
         this.renderer = renderer;
         this.timeUtils = timeUtils;
+
+        // Initialize display settings from static properties
+        this.displaySettings = {};
+        Object.entries(Moon.displayProperties).forEach(([key, prop]) => {
+            this.displaySettings[key] = prop.value;
+        });
 
         const textureLoader = new THREE.TextureLoader();
         // Create the moon mesh
@@ -25,15 +38,13 @@ export class Moon {
             map: textureLoader.load(moonTexture),
             bumpMap: textureLoader.load(moonBump),
             bumpScale: 3.9,
-            // displacementMap: textureLoader.load(moonBump),
-            // displacementScale: 5.9,
         });
         this.moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
 
         this.moonMesh.castShadow = true;
         this.moonMesh.receiveShadow = true;
         scene.add(this.moonMesh);
-        this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.7); // Rotate 180 degrees around the y-axis
+        this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.7);
 
         // Create the moon body
         const moonShape = new CANNON.Sphere(Constants.moonRadius);
@@ -48,25 +59,37 @@ export class Moon {
         });
         world.addBody(this.moonBody);
 
-        // Initialize trace line
         this.initTraceLine();
-
-        // Add light source to simulate glare
         this.addLightSource();
-
-        // Initialize orbit line
         this.initOrbitLine();
-
         this.addPeriapsisApoapsisPoints();
 
         // Add Moon surface contours
         this.moonSurface = new MoonSurface(this.moonMesh, Constants.moonRadius * Constants.metersToKm * Constants.scale);
-        this.moonSurface.setVisibility(true);
+        this.moonSurface.setVisibility(this.displaySettings.showMoonSurfaceLines);
+    }
 
-        // Make moonSurface accessible to UI
-        window.moonSurface = this.moonSurface;  // Temporary for UI controls
+    // Method to get current display settings
+    getDisplaySettings() {
+        return this.displaySettings;
+    }
 
-        this.moonSurface.setVisibility(true);
+    // Method to update a display setting
+    updateDisplaySetting(key, value) {
+        if (key in this.displaySettings) {
+            this.displaySettings[key] = value;
+            switch (key) {
+                case 'showMoonOrbit':
+                    this.setOrbitVisible(value);
+                    break;
+                case 'showMoonTraces':
+                    this.setTraceVisible(value);
+                    break;
+                case 'showMoonSurfaceLines':
+                    this.setSurfaceDetailsVisible(value);
+                    break;
+            }
+        }
     }
 
     initTraceLine() {

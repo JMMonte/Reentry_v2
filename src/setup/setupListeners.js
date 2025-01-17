@@ -1,4 +1,6 @@
 // setupListeners.js
+import { SATELLITE_METHODS } from '../config/satelliteCreationMethods';
+
 export function setupEventListeners(app) {
     window.addEventListener('resize', app.onWindowResize.bind(app));
     document.body.appendChild(app.stats.dom);
@@ -18,16 +20,11 @@ export function setupEventListeners(app) {
         }));
     });
 
-    document.addEventListener('createSatelliteFromLatLon', (event) => {
-        app.createSatelliteLatLon(event.detail);
-    });
-
-    document.addEventListener('createSatelliteFromOrbitalElements', (event) => {
-        app.createSatelliteOrbital(event.detail);
-    });
-
-    document.addEventListener('createSatelliteFromLatLonCircular', (event) => {
-        app.createSatelliteCircular(event.detail);
+    // Setup satellite creation events
+    Object.entries(SATELLITE_METHODS).forEach(([method, config]) => {
+        document.addEventListener(config.eventName, (event) => {
+            app.satelliteManager[method](event.detail);
+        });
     });
 
     document.addEventListener('updateTimeWarp', (event) => {

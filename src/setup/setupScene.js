@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Earth } from '../components/Earth.js';
 import { Sun } from '../components/Sun.js';
 import { Moon } from '../components/Moon.js';
-import { Vectors } from '../utils/Vectors.js';
+import { Vectors } from '../components/Vectors.js';
 import CannonDebugger from 'cannon-es-debugger';
 import { BackgroundStars } from '../components/Background.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -81,7 +81,7 @@ export async function setupSceneDetails(app) {
 
         // Initialize components that require textures
         new BackgroundStars(app.scene, app.camera);
-        app.earth = new Earth(app.scene, world, app.renderer, app.timeUtils, app.textureManager);
+        app.earth = new Earth(app.scene, world, app.renderer, app.timeUtils, app.textureManager, app);
         app.sun = new Sun(app.scene, app.timeUtils);
         app.moon = new Moon(app.scene, world, app.renderer, app.timeUtils, app.textureManager);
         app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);

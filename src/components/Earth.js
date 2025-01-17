@@ -12,7 +12,20 @@ import geojsonDataGroundStations from '../config/ground_stations.json';
 import geojsonDataObservatories from '../config/observatories.json';
 
 export class Earth {
-    constructor(scene, world, renderer, timeManager, textureManager) {
+    // Define display properties for Earth
+    static displayProperties = {
+        showSurfaceLines: { value: true, name: 'Surface Lines', icon: 'Mountain' },
+        showCities: { value: false, name: 'Cities', icon: 'Building2' },
+        showAirports: { value: false, name: 'Airports', icon: 'Plane' },
+        showSpaceports: { value: false, name: 'Spaceports', icon: 'Rocket' },
+        showObservatories: { value: false, name: 'Observatories', icon: 'Telescope' },
+        showGroundStations: { value: false, name: 'Ground Stations', icon: 'Radio' },
+        showCountryBorders: { value: false, name: 'Country Borders', icon: 'Map' },
+        showStates: { value: false, name: 'States', icon: 'Map' },
+        showVectors: { value: false, name: 'Vectors', icon: 'Move' }
+    };
+
+    constructor(scene, world, renderer, timeManager, textureManager, app) {
         this.timeManager = timeManager;
         this.MESH_RES = 128;
         this.EARTH_RADIUS = Constants.earthRadius * Constants.scale * Constants.metersToKm;
@@ -23,13 +36,19 @@ export class Earth {
         this.renderer = renderer;
         this.scene = scene;
         this.textureManager = textureManager;
+        this.app = app;
+
+        // Initialize display settings from static properties
+        this.displaySettings = {};
+        Object.entries(Earth.displayProperties).forEach(([key, prop]) => {
+            this.displaySettings[key] = prop.value;
+        });
+
         this.initializeGroups(scene);
         this.initializeMaterials();
         this.initializeMeshes();
-        this.initializeSurfaceDetails(); // Modified method name
+        this.initializeSurfaceDetails();
         this.initializePhysics(world);
-
-        // Add light source to simulate Earth's illumination
         this.addLightSource();
     }
 
@@ -135,6 +154,16 @@ export class Earth {
         this.earthSurface.addPoints(geojsonDataSpaceports, this.earthSurface.materials.spaceportPoint, 'spaceports');
         this.earthSurface.addPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
         this.earthSurface.addPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
+
+        // Set initial visibility based on display settings
+        this.setSurfaceLinesVisible(this.displaySettings.showSurfaceLines);
+        this.setCitiesVisible(this.displaySettings.showCities);
+        this.setAirportsVisible(this.displaySettings.showAirports);
+        this.setSpaceportsVisible(this.displaySettings.showSpaceports);
+        this.setObservatoriesVisible(this.displaySettings.showObservatories);
+        this.setGroundStationsVisible(this.displaySettings.showGroundStations);
+        this.setCountryBordersVisible(this.displaySettings.showCountryBorders);
+        this.setStatesVisible(this.displaySettings.showStates);
     }
 
     initializePhysics(world) {
@@ -228,5 +257,48 @@ export class Earth {
         const positionECEF = PhysicsUtils.eciToEcef(positionECI, gmst);
         const intersection = PhysicsUtils.calculateIntersectionWithEarth(positionECEF);
         return intersection;
+    }
+
+    // Method to get current display settings
+    getDisplaySettings() {
+        return this.displaySettings;
+    }
+
+    // Method to update a display setting
+    updateDisplaySetting(key, value) {
+        if (key in this.displaySettings) {
+            this.displaySettings[key] = value;
+            switch (key) {
+                case 'showSurfaceLines':
+                    this.setSurfaceLinesVisible(value);
+                    break;
+                case 'showCities':
+                    this.setCitiesVisible(value);
+                    break;
+                case 'showAirports':
+                    this.setAirportsVisible(value);
+                    break;
+                case 'showSpaceports':
+                    this.setSpaceportsVisible(value);
+                    break;
+                case 'showObservatories':
+                    this.setObservatoriesVisible(value);
+                    break;
+                case 'showGroundStations':
+                    this.setGroundStationsVisible(value);
+                    break;
+                case 'showCountryBorders':
+                    this.setCountryBordersVisible(value);
+                    break;
+                case 'showStates':
+                    this.setStatesVisible(value);
+                    break;
+                case 'showVectors':
+                    if (this.app?.vectors) {
+                        this.app.vectors.setVisible(value);
+                    }
+                    break;
+            }
+        }
     }
 }
