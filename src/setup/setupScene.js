@@ -55,7 +55,12 @@ export function setupScene(app) {
         ambientLight.name = 'ambientLight';
         app.scene.add(ambientLight);
 
-        app.cannonDebugger = new CannonDebugger(app.scene, app.world, { autoUpdate: false });
+        const world = app.physicsManager.getWorld();
+        if (!world) {
+            throw new Error('Physics world not initialized');
+        }
+
+        app.cannonDebugger = new CannonDebugger(app.scene, world, { autoUpdate: false });
         return app.scene;
     } catch (error) {
         console.error('Error setting up scene:', error);
@@ -69,11 +74,16 @@ export async function setupSceneDetails(app) {
     }
 
     try {
+        const world = app.physicsManager.getWorld();
+        if (!world) {
+            throw new Error('Physics world not initialized');
+        }
+
         // Initialize components that require textures
         new BackgroundStars(app.scene, app.camera);
-        app.earth = new Earth(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
+        app.earth = new Earth(app.scene, world, app.renderer, app.timeUtils, app.textureManager);
         app.sun = new Sun(app.scene, app.timeUtils);
-        app.moon = new Moon(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
+        app.moon = new Moon(app.scene, world, app.renderer, app.timeUtils, app.textureManager);
         app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);
         
         // Add earth points after Earth is initialized
@@ -81,8 +91,8 @@ export async function setupSceneDetails(app) {
 
         // Apply initial display settings to components
         console.log('Applying initial display settings to scene components');
-        if (app.displaySettings) {
-            Object.entries(app.displaySettings).forEach(([key, value]) => {
+        if (app.displayManager?.settings) {
+            Object.entries(app.displayManager.settings).forEach(([key, value]) => {
                 switch (key) {
                     case 'showGrid':
                         if (app.radialGrid) {

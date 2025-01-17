@@ -28,16 +28,19 @@ export default defineConfig({
             './src/components/Satellite/ManeuverCalculator.js'
           ],
           'managers': [
-            './src/managers/GUIManager.js',
             './src/managers/CameraControls.js',
-            './src/managers/textureManager.js'
+            './src/managers/TextureManager.js',
+            './src/managers/SceneManager.js',
+            './src/managers/SatelliteManager.js',
+            './src/managers/PhysicsManager.js',
+            './src/managers/ConnectionManager.js'
           ]
         }
       }
     }
   },
   server: {
-    port: 1234, // Same as Parcel's default port
+    port: 1234,
   },
   resolve: {
     alias: {

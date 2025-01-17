@@ -32,4 +32,14 @@ export class TextureManager {
         const promises = textureList.map(texture => this.loadTexture(texture.url, texture.name));
         return Promise.all(promises);
     }
+
+    dispose() {
+        // Dispose of all textures
+        Object.values(this.textures).forEach(texture => {
+            if (texture.dispose) {
+                texture.dispose();
+            }
+        });
+        this.textures = {};
+    }
 }

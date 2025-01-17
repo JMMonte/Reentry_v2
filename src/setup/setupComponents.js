@@ -64,6 +64,10 @@ export function setupRenderer(canvas) {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+        // Use the new color management system
+        THREE.ColorManagement.enabled = true;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+
         return renderer;
     } catch (error) {
         console.error('Error creating WebGL renderer:', error);

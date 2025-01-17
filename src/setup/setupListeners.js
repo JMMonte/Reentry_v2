@@ -37,18 +37,27 @@ export function setupEventListeners(app) {
     document.addEventListener('bodySelected', (event) => {
         app.updateSelectedBody(event.detail.body);
     });
+
+    // Add any event listeners that don't belong to specific managers
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            app.cameraControls?.clearCameraTarget();
+        }
+    });
 }
 
 export function setupSocketListeners(app, socket) {
-    socket.on('createSatelliteFromLatLon', (params) => {
-        app.createSatelliteLatLon(params);
+    if (!socket) {
+        console.warn('Socket not initialized');
+        return;
+    }
+
+    // Add any socket listeners that don't belong to specific managers
+    socket.on('updateTimeWarp', (value) => {
+        app.updateTimeWarp(value);
     });
 
-    socket.on('createSatelliteFromOrbitalElements', (params) => {
-        app.createSatelliteOrbital(params);
-    });
-
-    socket.on('createSatelliteFromLatLonCircular', (params) => {
-        app.createSatelliteCircular(params);
+    socket.on('updateSelectedBody', (value) => {
+        app.updateSelectedBody(value);
     });
 }
