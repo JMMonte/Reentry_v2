@@ -262,7 +262,7 @@ export class SatelliteManager {
         }
         satellite.traceLine.visible = showTraces;
         if (satellite.groundTrack) {
-            satellite.groundTrack.visible = showGroundTraces;
+            satellite.groundTrack.setVisible(showGroundTraces);
         }
         if (satellite.velocityVector) {
             satellite.velocityVector.visible = showSatVectors;
