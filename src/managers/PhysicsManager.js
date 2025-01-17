@@ -104,9 +104,9 @@ export class PhysicsManager {
                         z: satellite.position.z / (Constants.metersToKm * Constants.scale)
                     },
                     velocity: {
-                        x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
-                        y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
-                        z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
+                        x: satellite.velocity.x,
+                        y: satellite.velocity.y,
+                        z: satellite.velocity.z
                     },
                     mass: satellite.mass
                 };
@@ -148,9 +148,9 @@ export class PhysicsManager {
                         z: satellite.position.z / (Constants.metersToKm * Constants.scale)
                     },
                     velocity: {
-                        x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
-                        y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
-                        z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
+                        x: satellite.velocity.x,
+                        y: satellite.velocity.y,
+                        z: satellite.velocity.z
                     },
                     mass: satellite.mass
                 }

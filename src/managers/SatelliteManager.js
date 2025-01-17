@@ -128,7 +128,8 @@ export class SatelliteManager {
             altitude,
             velocity,
             azimuth,
-            angleOfAttack
+            angleOfAttack,
+            false  // velocity is already in km/s
         );
 
         return this.createSatellite({
@@ -164,7 +165,8 @@ export class SatelliteManager {
             altitude,
             orbitalVelocity,
             azimuth,
-            angleOfAttack
+            angleOfAttack,
+            true  // velocity is in m/s
         );
 
         return this.createSatellite({
@@ -205,9 +207,9 @@ export class SatelliteManager {
         );
 
         const velocity = new THREE.Vector3(
-            velocityECI.x * Constants.metersToKm * Constants.scale,
-            velocityECI.y * Constants.metersToKm * Constants.scale,
-            velocityECI.z * Constants.metersToKm * Constants.scale
+            velocityECI.x,
+            velocityECI.y,
+            velocityECI.z
         );
 
         return this.createSatellite({
@@ -219,15 +221,18 @@ export class SatelliteManager {
         });
     }
 
-    calculatePositionVelocity(earth, latitude, longitude, altitude, velocity, azimuth, angleOfAttack) {
+    calculatePositionVelocity(earth, latitude, longitude, altitude, velocity, azimuth, angleOfAttack, isMetersPerSecond = false) {
         const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
         const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
+
+        // Convert to km/s if input is in m/s, otherwise keep as km/s
+        const velocityKmS = isMetersPerSecond ? velocity / Constants.kmToMeters : velocity;
 
         const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
             latitude,
             longitude,
             altitude * Constants.kmToMeters,
-            velocity * Constants.kmToMeters,
+            velocityKmS,  // Pass in km/s
             azimuth,
             angleOfAttack,
             earthQuaternion,
@@ -241,9 +246,9 @@ export class SatelliteManager {
                 positionECEF.z * Constants.metersToKm * Constants.scale
             ),
             velocity: new THREE.Vector3(
-                velocityECEF.x * Constants.metersToKm * Constants.scale,
-                velocityECEF.y * Constants.metersToKm * Constants.scale,
-                velocityECEF.z * Constants.metersToKm * Constants.scale
+                velocityECEF.x * Constants.kmToMeters,  // Convert back to m/s
+                velocityECEF.y * Constants.kmToMeters,
+                velocityECEF.z * Constants.kmToMeters
             )
         };
     }
