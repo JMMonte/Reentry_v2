@@ -34,17 +34,17 @@ class App3D extends EventTarget {
         this.animationFrameId = null;
         this.canvas = document.getElementById('three-canvas');
         this.satellites = {};
-        
+
         if (!this.canvas) {
             throw new Error('Canvas element not found');
         }
 
         // Initialize managers in dependency order
         this.textureManager = new TextureManager();
-        this.displayManager = new DisplayManager(this);
         this.physicsManager = new PhysicsManager(this);
         this.sceneManager = new SceneManager(this);
         this.satelliteManager = new SatelliteManager(this);
+        this.displayManager = new DisplayManager(this);
         this.connectionManager = new ConnectionManager(this);
         this.apiManager = new APIManager(this);
         this.socketManager = new SocketManager(this);
@@ -64,7 +64,7 @@ class App3D extends EventTarget {
 
     async init() {
         console.log('Initializing App...');
-        
+
         try {
             // Setup camera
             this.camera = setupCamera();
@@ -196,7 +196,7 @@ class App3D extends EventTarget {
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
             this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
-            
+
             if (this.composers.bloom && this.composers.final) {
                 this.composers.bloom.setSize(window.innerWidth, window.innerHeight);
                 this.composers.final.setSize(window.innerWidth, window.innerHeight);

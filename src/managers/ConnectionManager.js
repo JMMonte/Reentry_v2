@@ -59,6 +59,8 @@ export class ConnectionManager {
             
             if (enabled) {
                 this.initWorker();
+                // Force immediate update
+                this.updateConnections();
             } else {
                 this.cleanup();
             }

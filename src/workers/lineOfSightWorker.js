@@ -5,8 +5,6 @@ import { Constants } from '../utils/Constants.js';
 let satellites = [];
 const EARTH_RADIUS = Constants.earthRadius * Constants.metersToKm * Constants.scale; // Convert to simulation units
 const ATMOSPHERE_HEIGHT = 100 * Constants.scale; // Approximately 1000km atmosphere height for better visibility
-const SUN_RADIUS = Constants.sunRadius * Constants.metersToKm * Constants.scale;
-const MOON_RADIUS = Constants.moonRadius * Constants.metersToKm * Constants.scale;
 
 self.onmessage = function(e) {
     if (e.data.type === 'UPDATE_SATELLITES') {

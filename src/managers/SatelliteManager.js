@@ -254,7 +254,7 @@ export class SatelliteManager {
     }
 
     applyDisplaySettings(satellite, displaySettings) {
-        const { showOrbits, showTraces, showGroundTraces, showSatVectors } = displaySettings;
+        const { showOrbits, showTraces, showGroundTraces, showSatVectors, showSatConnections } = displaySettings;
 
         satellite.orbitLine.visible = showOrbits;
         if (satellite.apsisVisualizer) {
@@ -269,6 +269,11 @@ export class SatelliteManager {
         }
         if (satellite.orientationVector) {
             satellite.orientationVector.visible = showSatVectors;
+        }
+
+        // Update connection manager
+        if (this.app.connectionManager) {
+            this.app.connectionManager.setEnabled(showSatConnections);
         }
     }
 
@@ -304,7 +309,7 @@ export class SatelliteManager {
                     name: sat.name
                 }])
         );
-        
+
         document.dispatchEvent(new CustomEvent('satelliteListUpdated', {
             detail: {
                 satellites: satelliteData
@@ -319,14 +324,14 @@ export class SatelliteManager {
                 id: satellite.id,
                 name: satellite.name
             };
-            
+
             satellite.dispose();
             delete this._satellites[satelliteId];
-            
+
             document.dispatchEvent(new CustomEvent('satelliteDeleted', {
                 detail: satelliteInfo
             }));
-            
+
             this.updateSatelliteList();
         }
     }

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
-import { ThemeProvider } from './components/theme-provider';
 import { Navbar } from './components/ui/navbar/Navbar';
 import { ChatModal } from './components/ui/chat/ChatModal';
 import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
@@ -231,59 +230,57 @@ function App() {
   }, [satellites]);
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
-      <div className="relative h-screen w-screen overflow-hidden">
-        <canvas id="three-canvas" ref={app3dRef} className="absolute inset-0 z-0" />
-        <Navbar
-          onChatToggle={() => setIsChatVisible(!isChatVisible)}
-          onSatelliteListToggle={() => setIsSatelliteListVisible(!isSatelliteListVisible)}
-          onDisplayOptionsToggle={() => setIsDisplayOptionsOpen(!isDisplayOptionsOpen)}
-          onSatelliteCreatorToggle={() => setIsSatelliteModalOpen(!isSatelliteModalOpen)}
-          isChatVisible={isChatVisible}
-          isSatelliteListVisible={isSatelliteListVisible}
-          isDisplayOptionsOpen={isDisplayOptionsOpen}
-          isSatelliteModalOpen={isSatelliteModalOpen}
-          selectedBody={selectedBody}
-          onBodySelect={handleBodySelect}
-          timeWarp={timeWarp}
-          onTimeWarpChange={setTimeWarp}
-          simulatedTime={simulatedTime}
-          onSimulatedTimeChange={handleSimulatedTimeChange}
-          app3DRef={app3dRef}
-          satellites={navbarSatellites}
-        />
+    <div className="relative h-screen w-screen overflow-hidden">
+      <canvas id="three-canvas" ref={app3dRef} className="absolute inset-0 z-0" />
+      <Navbar
+        onChatToggle={() => setIsChatVisible(!isChatVisible)}
+        onSatelliteListToggle={() => setIsSatelliteListVisible(!isSatelliteListVisible)}
+        onDisplayOptionsToggle={() => setIsDisplayOptionsOpen(!isDisplayOptionsOpen)}
+        onSatelliteCreatorToggle={() => setIsSatelliteModalOpen(!isSatelliteModalOpen)}
+        isChatVisible={isChatVisible}
+        isSatelliteListVisible={isSatelliteListVisible}
+        isDisplayOptionsOpen={isDisplayOptionsOpen}
+        isSatelliteModalOpen={isSatelliteModalOpen}
+        selectedBody={selectedBody}
+        onBodySelect={handleBodySelect}
+        timeWarp={timeWarp}
+        onTimeWarpChange={setTimeWarp}
+        simulatedTime={simulatedTime}
+        onSimulatedTimeChange={handleSimulatedTimeChange}
+        app3DRef={app3dRef}
+        satellites={navbarSatellites}
+      />
 
-        <ChatModal
-          isOpen={isChatVisible}
-          onClose={() => setIsChatVisible(false)}
-          socket={socket}
+      <ChatModal
+        isOpen={isChatVisible}
+        onClose={() => setIsChatVisible(false)}
+        socket={socket}
+      />
+      <DisplayOptions 
+        settings={displaySettings}
+        onSettingChange={(key, value) => {
+          if (app3dInstance?.displayManager) {
+            app3dInstance.displayManager.updateSetting(key, value);
+            setDisplaySettings(prev => ({ ...prev, [key]: value }));
+          }
+        }}
+        isOpen={isDisplayOptionsOpen}
+        onOpenChange={setIsDisplayOptionsOpen}
+        app3DRef={app3dRef}
+      />
+      {debugWindows.map(({ id, satellite }) => (
+        <SatelliteDebugWindow
+          key={id}
+          satellite={satellite}
+          earth={app3dRef.current?.earth}
         />
-        <DisplayOptions 
-          settings={displaySettings}
-          onSettingChange={(key, value) => {
-            if (app3dInstance?.displayManager) {
-              app3dInstance.displayManager.updateSetting(key, value);
-              setDisplaySettings(prev => ({ ...prev, [key]: value }));
-            }
-          }}
-          isOpen={isDisplayOptionsOpen}
-          onOpenChange={setIsDisplayOptionsOpen}
-          app3DRef={app3dRef}
-        />
-        {debugWindows.map(({ id, satellite }) => (
-          <SatelliteDebugWindow
-            key={id}
-            satellite={satellite}
-            earth={app3dRef.current?.earth}
-          />
-        ))}
-        <SatelliteListWindow 
-          satellites={satellites} 
-          isOpen={isSatelliteListVisible}
-          setIsOpen={setIsSatelliteListVisible}
-        />
-      </div>
-    </ThemeProvider>
+      ))}
+      <SatelliteListWindow 
+        satellites={satellites} 
+        isOpen={isSatelliteListVisible}
+        setIsOpen={setIsSatelliteListVisible}
+      />
+    </div>
   );
 }
 

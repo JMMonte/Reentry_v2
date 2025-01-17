@@ -4,8 +4,6 @@ import { Constants } from '../utils/Constants.js';
 
 let world, satellites = [], earthMass, moonMass;
 let manuallyManagedSatellites = []; // To store satellites managed manually
-let timeStep = 0.01; // Default time step for high precision
-let precision = 'high';
 
 self.onmessage = function (event) {
     let messageData;
