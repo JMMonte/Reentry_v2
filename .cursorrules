@@ -1,0 +1,109 @@
+# TypeScript Migration Plan
+
+## Core Dependencies ✅
+
+- [x] Initial TypeScript setup
+- [x] tsconfig.json
+- [x] tsconfig.node.json
+- [x] vite.config.ts updates
+- [x] @babel/plugin-transform-typescript
+
+## Migration Order
+
+### 1. Core Types and Utils
+
+- [x] src/types/index.ts
+- [x] src/utils/Constants.ts
+- [x] src/utils/TimeUtils.ts
+- [x] src/lib/utils.ts
+
+### 2. Worker Files
+
+- [x] src/workers/lineOfSightWorker.ts
+- [x] src/workers/physicsWorker.ts
+
+### 3. Manager Classes
+
+- [x] src/managers/TextureManager.ts
+- [x] src/managers/SceneManager.ts
+- [x] src/managers/PhysicsManager.ts
+- [x] src/managers/SatelliteManager.ts
+- [x] src/managers/ConnectionManager.ts
+- [x] src/managers/DisplayManager.ts
+- [x] src/managers/APIManager.ts
+- [x] src/managers/SocketManager.ts
+
+### 4. Setup Files
+
+- [x] src/setup/setupComponents.ts
+- [x] src/setup/setupListeners.ts
+
+### 5. Control Files
+
+- [x] src/timeControls.ts
+- [x] src/bodySelectorControls.ts
+
+### 6. React Components
+
+Start with leaf components and move up:
+
+- [x] src/components/EarthSurface.ts
+- [x] src/components/MoonSurface.ts
+- [x] src/components/Sun.ts
+- [x] src/components/Moon.ts
+- [x] src/components/Earth.ts
+- [x] src/components/Satellite/Satellite.ts
+- [x] src/components/Background.ts
+- [x] src/components/vectors.ts
+- [ ] Basic UI components
+- [ ] Control components
+- [ ] App.tsx
+
+### 7. Main Application
+
+- [ ] src/app3d.ts
+- [ ] src/index.tsx
+
+## Migration Rules
+
+1. Type Definitions:
+
+   - Create interfaces for all component props
+   - Define types for all event handlers
+   - Use strict typing for all functions
+
+2. File Conversion:
+
+   - Rename .js/.jsx to .ts/.tsx
+   - Add type annotations
+   - Fix any type errors
+   - Add necessary imports
+
+3. React Components:
+
+   - Use functional components
+   - Define prop interfaces
+   - Use proper event types
+   - Add children types
+
+4. Special Cases:
+   - Workers need special TypeScript configuration
+   - Three.js types from @types/three
+   - Custom event types in types/index.ts
+
+## Dependencies Added
+
+- typescript
+- @types/react
+- @types/react-dom
+- @types/three
+- @types/node
+- @types/stats.js
+- @babel/plugin-transform-typescript
+
+## Notes
+
+- Keep existing functionality while adding types
+- Test after each file conversion
+- Update imports as files are converted
+- Handle circular dependencies carefully
