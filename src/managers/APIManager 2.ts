@@ -1,13 +1,14 @@
 import { getMethodFromApiMode } from '../config/satelliteCreationMethods';
-import type { App3D, Satellite } from '../types';
+import { Manager } from '../types';
+import { Satellite } from '../components/Satellite/Satellite';
 
 interface SatelliteCreationParams {
     mode: string;
-    [key: string]: any;
+    [key: string]: any; // Additional parameters depend on the mode
 }
 
 interface SatelliteCreationResponse {
-    id?: string;
+    id?: string | number;
     name?: string;
     mode?: string;
     params?: SatelliteCreationParams;
@@ -20,23 +21,37 @@ interface MoonOrbitResponse {
     data: Record<string, any>;
 }
 
-interface APIInterface {
+interface API {
     createSatellite: (params: SatelliteCreationParams) => Promise<SatelliteCreationResponse>;
     getMoonOrbit: () => Promise<MoonOrbitResponse>;
 }
 
+interface App3D {
+    satelliteManager: {
+        satellites: { [key: string | number]: Satellite };
+        _satellites: { [key: string | number]: Satellite };
+        updateSatelliteList: () => void;
+        [key: string]: any; // For dynamic method access
+    };
+}
+
 declare global {
     interface Window {
-        api?: APIInterface;
+        api?: API;
     }
 }
 
-export class APIManager {
+export class APIManager implements Manager {
     private app: App3D;
 
     constructor(app: App3D) {
         this.app = app;
         this.initializeAPI();
+    }
+
+    public async initialize(): Promise<void> {
+        // No additional initialization needed as it's done in constructor
+        return Promise.resolve();
     }
 
     private initializeAPI(): void {
@@ -47,13 +62,11 @@ export class APIManager {
 
         // Add satellites getter/setter
         Object.defineProperty(this.app, 'satellites', {
-            get: () => this.app.satelliteManager?.satellites || {},
-            set: (value: Record<string, Satellite>) => {
+            get: () => this.app.satelliteManager.satellites,
+            set: (value: { [key: string | number]: Satellite }) => {
                 console.warn('Direct satellite setting is deprecated. Use satelliteManager instead.');
-                if (this.app.satelliteManager) {
-                    Object.assign(this.app.satelliteManager.satellites, value);
-                    this.app.satelliteManager.updateSatelliteList?.();
-                }
+                Object.assign(this.app.satelliteManager._satellites, value);
+                this.app.satelliteManager.updateSatelliteList();
             }
         });
     }
@@ -65,11 +78,7 @@ export class APIManager {
                 throw new Error(`Unknown satellite mode: ${params.mode}`);
             }
 
-            if (!this.app.satelliteManager || !(method in this.app.satelliteManager)) {
-                throw new Error(`Method ${method} not found in satelliteManager`);
-            }
-
-            const satellite = await (this.app.satelliteManager as any)[method](params);
+            const satellite = await this.app.satelliteManager[method](params);
             
             if (!satellite) {
                 throw new Error('Failed to create satellite');
@@ -99,6 +108,6 @@ export class APIManager {
     }
 
     public dispose(): void {
-        delete window.api;
+        window.api = undefined;
     }
 } 

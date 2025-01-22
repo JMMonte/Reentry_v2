@@ -1,23 +1,37 @@
 import * as THREE from 'three';
-import type { App3D, Satellite, CelestialBody } from '../types';
+import { Manager } from '../types';
 
-interface ConnectionPoint {
-    id: string;
+interface App3D {
+    scene: THREE.Scene;
+    satellites: {
+        [key: string | number]: {
+            id: string | number;
+            position: THREE.Vector3;
+        };
+    };
+}
+
+interface SatelliteData {
+    id: string | number;
     position: THREE.Vector3;
 }
 
 interface Connection {
-    points: [number, number, number][];
     color: 'red' | 'green';
+    points: [number, number, number][];
 }
 
 interface WorkerMessage {
-    type: string;
-    satellites?: ConnectionPoint[];
-    connections?: Connection[];
+    type: 'UPDATE_SATELLITES';
+    satellites: SatelliteData[];
 }
 
-export class ConnectionManager {
+interface WorkerResponse {
+    type: 'CONNECTIONS_UPDATED';
+    connections: Connection[];
+}
+
+export class ConnectionManager implements Manager {
     private app: App3D;
     private lineOfSightWorker: Worker | null;
     private connectionsGroup: THREE.Group;
@@ -30,47 +44,21 @@ export class ConnectionManager {
         this.enabled = false;
     }
 
-    public initialize(): void {
+    public async initialize(): Promise<void> {
         // Add connections group to scene
         this.app.scene.add(this.connectionsGroup);
     }
 
-    private getSceneObjects(): ConnectionPoint[] {
-        const objects: ConnectionPoint[] = [];
-
-        // Get all satellites
-        if (this.app.satellites) {
-            Object.values(this.app.satellites).forEach(sat => {
-                objects.push({
+    public updateConnections(): void {
+        if (this.enabled && this.lineOfSightWorker && Object.keys(this.app.satellites).length > 0) {
+            const message: WorkerMessage = {
+                type: 'UPDATE_SATELLITES',
+                satellites: Object.values(this.app.satellites).map(sat => ({
                     id: sat.id,
                     position: sat.position
-                });
-            });
-        }
-
-        // Get all celestial bodies from the scene
-        this.app.scene.traverse((object: THREE.Object3D) => {
-            const celestialBody = object as unknown as CelestialBody;
-            if (celestialBody.name && celestialBody.position && celestialBody.mass) {
-                objects.push({
-                    id: celestialBody.name,
-                    position: celestialBody.position
-                });
-            }
-        });
-
-        return objects;
-    }
-
-    public updateConnections(): void {
-        if (this.enabled && this.lineOfSightWorker) {
-            const objects = this.getSceneObjects();
-            if (objects.length > 0) {
-                this.lineOfSightWorker.postMessage({
-                    type: 'UPDATE_SATELLITES',
-                    satellites: objects
-                });
-            }
+                }))
+            };
+            this.lineOfSightWorker.postMessage(message);
         }
     }
 
@@ -80,7 +68,7 @@ export class ConnectionManager {
             const line = this.connectionsGroup.children[0];
             if (line instanceof THREE.Line) {
                 line.geometry.dispose();
-                (line.material as THREE.Material).dispose();
+                line.material.dispose();
             }
             this.connectionsGroup.remove(line);
         }
@@ -110,6 +98,8 @@ export class ConnectionManager {
             
             if (enabled) {
                 this.initWorker();
+                // Force immediate update
+                this.updateConnections();
             } else {
                 this.cleanup();
             }
@@ -119,13 +109,9 @@ export class ConnectionManager {
     private initWorker(): void {
         if (!this.lineOfSightWorker) {
             console.log('Initializing line of sight worker');
-            this.lineOfSightWorker = new Worker(
-                new URL('../workers/lineOfSightWorker.js', import.meta.url),
-                { type: 'module' }
-            );
-
-            this.lineOfSightWorker.onmessage = (e: MessageEvent<WorkerMessage>) => {
-                if (e.data.type === 'CONNECTIONS_UPDATED' && e.data.connections) {
+            this.lineOfSightWorker = new Worker(new URL('../workers/lineOfSightWorker.ts', import.meta.url), { type: 'module' });
+            this.lineOfSightWorker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+                if (e.data.type === 'CONNECTIONS_UPDATED') {
                     this.updateConnectionVisuals(e.data.connections);
                 }
             };
@@ -147,7 +133,7 @@ export class ConnectionManager {
             const line = this.connectionsGroup.children[0];
             if (line instanceof THREE.Line) {
                 line.geometry.dispose();
-                (line.material as THREE.Material).dispose();
+                line.material.dispose();
             }
             this.connectionsGroup.remove(line);
         }

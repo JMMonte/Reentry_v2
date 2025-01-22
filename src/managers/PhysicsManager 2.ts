@@ -1,10 +1,8 @@
 import { Constants } from '../utils/Constants';
 import * as CANNON from 'cannon-es';
-import * as THREE from 'three';
-import type { Satellite, CelestialBody, CelestialBodyType, SatelliteWithMethods } from '../types';
-import App3D from '../app3d';
+import { Manager } from '../types';
 
-interface Vector3Data {
+interface Vector3 {
     x: number;
     y: number;
     z: number;
@@ -12,90 +10,74 @@ interface Vector3Data {
 
 interface SatelliteData {
     id: string;
-    position: Vector3Data;
-    velocity: Vector3Data;
+    position: Vector3;
+    velocity: Vector3;
     mass: number;
-}
-
-interface CelestialBodyData {
-    id: string;
-    name: string;
-    type: CelestialBodyType;
-    position: Vector3Data;
-    mass: number;
-    radius: number;
 }
 
 interface PhysicsWorkerMessage {
-    type: string;
+    type: 'satelliteUpdate' | 'initialized' | 'error';
     data: any;
 }
 
 interface PhysicsWorkerInitData {
+    earthMass: number;
+    moonMass: number;
     G: number;
     scale: number;
-    celestialBodies: CelestialBodyData[];
 }
 
-interface PhysicsWorkerStepData {
+interface PhysicsStepData {
     realDeltaTime: number;
     timeWarp: number;
-    satellites: Record<string, SatelliteData>;
-    celestialBodies: CelestialBodyData[];
+    satellites: { [key: string]: SatelliteData };
+    earthPosition: Vector3;
+    earthRadius: number;
+    moonPosition: Vector3;
 }
 
-export class PhysicsManager {
+interface App3D {
+    satellites: { [key: string]: Satellite };
+    earth: {
+        earthBody: CANNON.Body;
+    };
+    moon: {
+        moonBody: CANNON.Body;
+    };
+}
+
+interface Satellite {
+    id: string;
+    position: Vector3;
+    velocity: Vector3;
+    mass: number;
+    updateBuffer: any[];
+}
+
+export class PhysicsManager implements Manager {
     private app: App3D;
     private physicsWorker: Worker | null;
     private workerInitialized: boolean;
     private world: CANNON.World | null;
-    private celestialBodies: Map<string, CelestialBody>;
 
     constructor(app: App3D) {
         this.app = app;
         this.physicsWorker = null;
         this.workerInitialized = false;
         this.world = null;
-        this.celestialBodies = new Map();
         this.initPhysicsWorld();
     }
 
-    private findCelestialBodies(): void {
-        this.celestialBodies.clear();
-        this.app.scene.traverse((object: THREE.Object3D) => {
-            const celestialBody = object as unknown as CelestialBody;
-            if (celestialBody.name && celestialBody.mass && celestialBody.type) {
-                this.celestialBodies.set(celestialBody.name, celestialBody);
-            }
-        });
-    }
-
-    private getCelestialBodyData(): CelestialBodyData[] {
-        const bodyData: CelestialBodyData[] = [];
-        this.celestialBodies.forEach(body => {
-            const position = body.position;
-            bodyData.push({
-                id: body.name,
-                name: body.name,
-                type: body.type,
-                position: {
-                    x: position.x / (Constants.metersToKm * Constants.scale),
-                    y: position.y / (Constants.metersToKm * Constants.scale),
-                    z: position.z / (Constants.metersToKm * Constants.scale)
-                },
-                mass: body.mass,
-                radius: body.radius
-            });
-        });
-        return bodyData;
+    public async initialize(): Promise<void> {
+        // No additional initialization needed as it's done in constructor
+        return Promise.resolve();
     }
 
     private initPhysicsWorld(): void {
         this.world = new CANNON.World();
         this.world.gravity.set(0, 0, 0);
         this.world.broadphase = new CANNON.NaiveBroadphase();
-        this.world.solver.iterations = 10;
-        this.findCelestialBodies();
+        (this.world.solver as any).iterations = 10; // Type assertion needed for CANNON.js solver
     }
 
     public getWorld(): CANNON.World | null {
@@ -103,7 +85,7 @@ export class PhysicsManager {
     }
 
     public checkWorkerNeeded(): void {
-        const satelliteCount = Object.keys(this.app.satellites || {}).length;
+        const satelliteCount = Object.keys(this.app.satellites).length;
         if (satelliteCount > 0 && !this.physicsWorker) {
             this.initWorker();
         } else if (satelliteCount === 0 && this.physicsWorker) {
@@ -113,18 +95,15 @@ export class PhysicsManager {
 
     private initWorker(): void {
         console.log('Initializing physics worker...');
-        this.physicsWorker = new Worker(
-            new URL('../workers/physicsWorker.js', import.meta.url),
-            { type: 'module' }
-        );
+        this.physicsWorker = new Worker(new URL('../workers/physicsWorker.ts', import.meta.url), { type: 'module' });
         
         this.physicsWorker.onmessage = (event: MessageEvent<PhysicsWorkerMessage>) => {
             const { type, data } = event.data;
             
             switch (type) {
                 case 'satelliteUpdate':
-                    const satellite = this.app.satellites?.[data.id] as SatelliteWithMethods;
-                    if (satellite?.updateBuffer) {
+                    const satellite = this.app.satellites[data.id];
+                    if (satellite) {
                         satellite.updateBuffer.push(data);
                     }
                     break;
@@ -138,11 +117,12 @@ export class PhysicsManager {
             }
         };
 
-        // Initialize the physics worker with all celestial bodies
+        // Initialize the physics worker
         const initData: PhysicsWorkerInitData = {
+            earthMass: Constants.earthMass,
+            moonMass: Constants.moonMass,
             G: Constants.G,
-            scale: Constants.scale,
-            celestialBodies: this.getCelestialBodyData()
+            scale: Constants.scale
         };
 
         this.physicsWorker.postMessage({
@@ -158,7 +138,6 @@ export class PhysicsManager {
             this.physicsWorker = null;
             this.workerInitialized = false;
         }
-        this.celestialBodies.clear();
     }
 
     public async waitForInitialization(): Promise<void> {
@@ -179,12 +158,8 @@ export class PhysicsManager {
 
     public updatePhysics(realDeltaTime: number, timeWarp: number): void {
         // Only send physics updates if we have satellites and the worker is initialized
-        if (this.workerInitialized && 
-            this.app.satellites && 
-            Object.keys(this.app.satellites).length > 0 && 
-            this.celestialBodies.size > 0) {
-            
-            const satelliteData: Record<string, SatelliteData> = {};
+        if (this.workerInitialized && Object.keys(this.app.satellites).length > 0 && this.app.earth && this.app.moon) {
+            const satelliteData: { [key: string]: SatelliteData } = {};
             Object.entries(this.app.satellites).forEach(([id, satellite]) => {
                 satelliteData[id] = {
                     id: satellite.id,
@@ -193,22 +168,28 @@ export class PhysicsManager {
                         y: satellite.position.y / (Constants.metersToKm * Constants.scale),
                         z: satellite.position.z / (Constants.metersToKm * Constants.scale)
                     },
-                    velocity: {
-                        x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
-                        y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
-                        z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
-                    },
+                    velocity: satellite.velocity,
                     mass: satellite.mass
                 };
             });
-
-            const stepData: PhysicsWorkerStepData = {
+            
+            const stepData: PhysicsStepData = {
                 realDeltaTime,
                 timeWarp,
                 satellites: satelliteData,
-                celestialBodies: this.getCelestialBodyData()
+                earthPosition: {
+                    x: this.app.earth.earthBody.position.x / (Constants.metersToKm * Constants.scale),
+                    y: this.app.earth.earthBody.position.y / (Constants.metersToKm * Constants.scale),
+                    z: this.app.earth.earthBody.position.z / (Constants.metersToKm * Constants.scale)
+                },
+                earthRadius: Constants.earthRadius,
+                moonPosition: {
+                    x: this.app.moon.moonBody.position.x / (Constants.metersToKm * Constants.scale),
+                    y: this.app.moon.moonBody.position.y / (Constants.metersToKm * Constants.scale),
+                    z: this.app.moon.moonBody.position.z / (Constants.metersToKm * Constants.scale)
+                }
             };
-            
+
             this.physicsWorker?.postMessage({
                 type: 'step',
                 data: stepData
@@ -227,11 +208,7 @@ export class PhysicsManager {
                     y: satellite.position.y / (Constants.metersToKm * Constants.scale),
                     z: satellite.position.z / (Constants.metersToKm * Constants.scale)
                 },
-                velocity: {
-                    x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
-                    y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
-                    z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
-                },
+                velocity: satellite.velocity,
                 mass: satellite.mass
             };
 
