@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import { JulianDay, RotateAroundX, RotateAroundY } from '../utils/AstronomyUtils.js';
 import moonTexture from '../../public/assets/texture/lroc_color_poles_8k.jpg';
@@ -46,18 +45,16 @@ export class Moon {
         scene.add(this.moonMesh);
         this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.7);
 
-        // Create the moon body
-        const moonShape = new CANNON.Sphere(Constants.moonRadius);
-        this.moonBody = new CANNON.Body({
+        // Create the moon body using our own physics representation
+        this.moonBody = {
             mass: Constants.moonMass,
-            shape: moonShape,
-            position: new CANNON.Vec3(
+            radius: Constants.moonRadius,
+            position: new THREE.Vector3(
                 Constants.moonInitialPosition.x,
                 Constants.moonInitialPosition.y,
                 Constants.moonInitialPosition.z
             )
-        });
-        world.addBody(this.moonBody);
+        };
 
         this.initTraceLine();
         this.addLightSource();
@@ -275,9 +272,9 @@ export class Moon {
         // Compute Moon's position using ephemerides
         const { x, y, z } = this.getMoonPosition(jd);
 
-        // Set position in CANNON.js (meters)
+        // Update our physics body position
         this.moonBody.position.set(x, y, z);
-        // Convert to Three.js coordinates and set position
+        // Update Three.js mesh position
         this.moonMesh.position.copy(this.moonBody.position).multiplyScalar(Constants.metersToKm * Constants.scale);
 
         this.updateTraceLine(currentTime);
@@ -347,10 +344,12 @@ export class Moon {
         const { x, y, z } = this.getMoonPosition(jd);
 
         const position = new THREE.Vector3(x, y, z);
+        // Since we're not using CANNON.js anymore, we'll calculate velocity differently
+        // For now, we'll use a simplified velocity calculation
         const velocity = new THREE.Vector3(
-            this.moonBody.velocity.x,
-            this.moonBody.velocity.y,
-            this.moonBody.velocity.z
+            -z * Constants.moonOrbitSpeed, // Approximate velocity components
+            0,
+            x * Constants.moonOrbitSpeed
         );
 
         const mu = Constants.G * Constants.earthMass;

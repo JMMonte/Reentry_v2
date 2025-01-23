@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RadialGrid } from '../components/RadialGrid.js';
-import { setupScene, setupSceneDetails, setupPostProcessing, loadTextures } from '../setup/setupScene.js';
+import { setupScene, setupSceneDetails, setupPostProcessing, loadTextures } from '../setup/SetupScene.js';
 
 export class SceneManager {
     // Define common display properties
@@ -41,7 +41,9 @@ export class SceneManager {
                     }
                     break;
                 case 'ambientLight':
-                    // Handle ambient light changes
+                    if (this.ambientLight) {
+                        this.ambientLight.intensity = value;
+                    }
                     break;
             }
         }

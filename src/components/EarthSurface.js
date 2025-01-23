@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import geojsonData from '../config/ne_50m_admin_0_sovereignty.json';
-import geojsonDataStates from '../config/ne_110m_admin_1_states_provinces.json';
+import geojsonData from '../config/data/ne_50m_admin_0_sovereignty.json';
+import geojsonDataStates from '../config/data/ne_110m_admin_1_states_provinces.json';
 
 class EarthSurface {
     constructor(mesh, earthRadius) {

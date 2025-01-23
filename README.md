@@ -51,16 +51,16 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
    ```
 
 4. Start the server
-   
-      ```bash
-      npm run server.mjs
-      ```
+
+   ```bash
+   npm run server.mjs
+   ```
 
 This will run the application on `http://localhost:1234`.
 
 ## Usage
 
-1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out. Also works with touch screens(drag, pinch, etc). 
+1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out. Also works with touch screens(drag, pinch, etc).
 2. **Interacting with GUI**: Adjust simulation parameters like time warp, object visibility, and physics variables through the GUI.
 3. **Viewing Data**: Real-time data for satellites can be viewed and analyzed via the integrated chart system (wip).
 4. **Create and manage Spacecraft**: launch satellites from specific locations on Earth to any orbit. Currently only allows for only the first orbit implementation, working on multi-impulse capabilities.

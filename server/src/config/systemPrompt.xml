@@ -14,7 +14,6 @@
             <rule>Use createSatelliteFromOrbitalElements for precise orbital parameter specification</rule>
             <rule>Use createSatelliteFromLatLonCircular for simple circular orbits (velocity automatically calculated)</rule>
             <rule>Use getMoonOrbit to get Moon's orbital data for reference</rule>
-            <rule>Never suggest orbital maneuvers as they are not supported</rule>
             <rule>Create satellites directly in their target orbits - no transfer orbits available</rule>
             <rule>Provide complete parameter sets when calling satellite creation tools</rule>
         </tool_usage_rules>

@@ -1,8 +1,16 @@
-import { getMethodFromApiMode } from '../config/satelliteCreationMethods';
+import { getMethodFromApiMode } from '../config/SatelliteCreationMethods';
 
 export class APIManager {
     constructor(app) {
         this.app = app;
+    }
+
+    initialize() {
+        // Ensure SatelliteManager is initialized before setting up satellites getter
+        if (!this.app.managers?.satellite) {
+            throw new Error('SatelliteManager must be initialized before APIManager');
+        }
+
         this.initializeAPI();
     }
 
@@ -14,11 +22,11 @@ export class APIManager {
 
         // Add satellites getter/setter
         Object.defineProperty(this.app, 'satellites', {
-            get: () => this.app.satelliteManager.satellites,
+            get: () => this.app.managers.satellite.satellites,
             set: (value) => {
                 console.warn('Direct satellite setting is deprecated. Use satelliteManager instead.');
-                Object.assign(this.app.satelliteManager._satellites, value);
-                this.app.satelliteManager.updateSatelliteList();
+                Object.assign(this.app.managers.satellite._satellites, value);
+                this.app.managers.satellite.updateSatelliteList();
             }
         });
     }
@@ -30,7 +38,7 @@ export class APIManager {
                 throw new Error(`Unknown satellite mode: ${params.mode}`);
             }
 
-            const satellite = await this.app.satelliteManager[method](params);
+            const satellite = await this.app.managers.satellite[method](params);
             
             if (!satellite) {
                 throw new Error('Failed to create satellite');

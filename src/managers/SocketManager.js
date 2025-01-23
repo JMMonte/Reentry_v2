@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client';
-import { SATELLITE_METHODS } from '../config/satelliteCreationMethods';
+import { SATELLITE_METHODS } from '../config/SatelliteCreationMethods';
 
 export class SocketManager {
     constructor(app) {

@@ -8,7 +8,8 @@
     "build": "tsc && cp src/config/systemPrompt.xml dist/config/",
     "start": "node dist/index.js",
     "dev": "tsc -w & nodemon dist/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "clean-start": "rm -rf dist && npm run build && npm run start"
   },
   "dependencies": {
     "cors": "^2.8.5",

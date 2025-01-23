@@ -1,15 +1,14 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 import { EarthSurface } from './EarthSurface.js';
 import { Constants } from '../utils/Constants.js';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import atmosphereFragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
 import atmosphereVertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';
-import geojsonDataCities from '../config/ne_110m_populated_places.json';
-import geojsonDataAirports from '../config/ne_10m_airports.json';
-import geojsonDataSpaceports from '../config/spaceports.json';
-import geojsonDataGroundStations from '../config/ground_stations.json';
-import geojsonDataObservatories from '../config/observatories.json';
+import geojsonDataCities from '../config/data/ne_110m_populated_places.json';
+import geojsonDataAirports from '../config/data/ne_10m_airports.json';
+import geojsonDataSpaceports from '../config/data/spaceports.json';
+import geojsonDataGroundStations from '../config/data/ground_stations.json';
+import geojsonDataObservatories from '../config/data/observatories.json';
 
 export class Earth {
     // Define display properties for Earth
@@ -167,14 +166,12 @@ export class Earth {
     }
 
     initializePhysics(world) {
-        const earthBody = new CANNON.Body({
-            mass: 0,
-            shape: new CANNON.Sphere((Constants.earthRadius)),
-            material: new CANNON.Material(),
-            friction: 0.5
-        });
-        world.addBody(earthBody);
-        this.earthBody = earthBody;
+        // Simple physics object, world parameter is ignored since we use our own physics worker
+        this.earthBody = {
+            position: new THREE.Vector3(0, 0, 0),
+            mass: Constants.earthMass,
+            radius: Constants.earthRadius
+        };
     }
 
     addLightSource() {

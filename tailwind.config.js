@@ -4,7 +4,7 @@ import typography from '@tailwindcss/typography'
 export default {
   darkMode: ["class"],
   content: [
-    './src/**/*.{js,jsx,css}',
+    './src/**/*.{js,jsx,ts,tsx,css}',
     './public/index.html',
   ],
   theme: {

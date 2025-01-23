@@ -23,9 +23,7 @@ export default defineConfig({
           'los': ['./src/workers/lineOfSightWorker.js'],
           'satellite': [
             './src/components/Satellite/Satellite.js',
-            './src/components/Satellite/GroundTrack.js',
-            './src/components/Satellite/ManeuverPlanner.js',
-            './src/components/Satellite/ManeuverCalculator.js'
+            './src/components/Satellite/GroundTrack.js'
           ],
           'managers': [
             './src/managers/CameraControls.js',

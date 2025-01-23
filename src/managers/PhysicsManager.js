@@ -1,24 +1,20 @@
 import { Constants } from '../utils/Constants.js';
-import * as CANNON from 'cannon-es';
 
 export class PhysicsManager {
     constructor(app) {
         this.app = app;
         this.physicsWorker = null;
         this.workerInitialized = false;
-        this.world = null;
         this.initPhysicsWorld();
     }
 
     initPhysicsWorld() {
-        this.world = new CANNON.World();
-        this.world.gravity.set(0, 0, 0);
-        this.world.broadphase = new CANNON.NaiveBroadphase();
-        this.world.solver.iterations = 10;
+        // No need for CANNON world, we use our own physics worker
     }
 
     getWorld() {
-        return this.world;
+        // Return null since we don't use CANNON world anymore
+        return null;
     }
 
     checkWorkerNeeded() {
@@ -162,12 +158,5 @@ export class PhysicsManager {
 
     dispose() {
         this.cleanup();
-        if (this.world) {
-            // Clean up physics bodies
-            while(this.world.bodies.length > 0) {
-                this.world.removeBody(this.world.bodies[0]);
-            }
-            this.world = null;
-        }
     }
 } 
