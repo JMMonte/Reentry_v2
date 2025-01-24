@@ -28,7 +28,7 @@ export class Earth {
         this.timeManager = timeManager;
         this.MESH_RES = 128;
         this.EARTH_RADIUS = Constants.earthRadius * Constants.scale * Constants.metersToKm;
-        this.ATMOSPHERE_RADIUS = this.EARTH_RADIUS + 4;
+        this.ATMOSPHERE_RADIUS = this.EARTH_RADIUS * 1.005;
         this.SIDEREAL_DAY_IN_SECONDS = 86164;
         this.DAYS_IN_YEAR = 365.25;
         this.EARTH_MASS = Constants.earthMass;
@@ -73,7 +73,7 @@ export class Earth {
             map: earthTextureMap,
             specularMap: this.textureManager.getTexture('earthSpecTexture'),
             specular: 0xffffff,
-            shininess: 40.0,
+            shininess: 200.0,
             normalMap: this.textureManager.getTexture('earthNormalTexture'),
             normalScale: new THREE.Vector2(5.0, 5.0),
             normalMapType: THREE.TangentSpaceNormalMap,
@@ -85,7 +85,7 @@ export class Earth {
         this.cloudMaterial = new THREE.MeshPhongMaterial({
             alphaMap: this.cloudTexture,
             transparent: true,
-            opacity: 1.0,
+            opacity: 0.8,
             side: THREE.FrontSide,
             blending: THREE.CustomBlending,
             blendEquation: THREE.AddEquation,
@@ -108,10 +108,10 @@ export class Earth {
             blendDst: THREE.OneMinusSrcAlphaFactor,
             uniforms: {
                 lightPosition: { value: new THREE.Vector3(1.0, 0.0, 0.0) },
-                lightIntensity: { value: 4.0 },
+                lightIntensity: { value: 14.0 },
                 surfaceRadius: { value: this.EARTH_RADIUS },
-                atmoRadius: { value: this.EARTH_RADIUS + 3 },
-                ambientIntensity: { value: 0.0 }
+                atmoRadius: { value: this.ATMOSPHERE_RADIUS },
+                ambientIntensity: { value: 0.1 }
             }
         });
     }
@@ -124,6 +124,7 @@ export class Earth {
 
         const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS, this.MESH_RES, this.MESH_RES);
         this.atmosphereMesh = new THREE.Mesh(atmosphereGeometry, this.atmosphereMaterial);
+        this.atmosphereMesh.renderOrder = -2;
 
         const cloudRadius = this.EARTH_RADIUS + 0.1;
         const cloudGeometry = new THREE.SphereGeometry(cloudRadius, this.MESH_RES, this.MESH_RES);
@@ -143,16 +144,30 @@ export class Earth {
     }
 
     initializeSurfaceDetails() {
+        if (this.earthSurface) {
+            console.warn('Surface details already initialized');
+            return;
+        }
+
+        console.log('Initializing Earth surface details...');
         this.earthSurface = new EarthSurface(this.earthMesh, this.EARTH_RADIUS);
+        
+        // Add surface features
         this.earthSurface.addLatitudeLines();
         this.earthSurface.addLongitudeLines();
         this.earthSurface.addCountryBorders();
         this.earthSurface.addStates();
-        this.earthSurface.addPoints(geojsonDataCities, this.earthSurface.materials.cityPoint, 'cities');
-        this.earthSurface.addPoints(geojsonDataAirports, this.earthSurface.materials.airportPoint, 'airports');
-        this.earthSurface.addPoints(geojsonDataSpaceports, this.earthSurface.materials.spaceportPoint, 'spaceports');
-        this.earthSurface.addPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
-        this.earthSurface.addPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
+
+        // Add points only if they haven't been added yet
+        if (!this.earthSurface.hasPoints) {
+            console.log('Adding Earth surface points...');
+            this.earthSurface.addPoints(geojsonDataCities, this.earthSurface.materials.cityPoint, 'cities');
+            this.earthSurface.addPoints(geojsonDataAirports, this.earthSurface.materials.airportPoint, 'airports');
+            this.earthSurface.addPoints(geojsonDataSpaceports, this.earthSurface.materials.spaceportPoint, 'spaceports');
+            this.earthSurface.addPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
+            this.earthSurface.addPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
+            this.earthSurface.hasPoints = true;
+        }
 
         // Set initial visibility based on display settings
         this.setSurfaceLinesVisible(this.displaySettings.showSurfaceLines);
@@ -193,6 +208,7 @@ export class Earth {
     updateLightDirection() {
         const sunPosition = this.timeManager.getSunPosition();
         this.atmosphereMaterial.uniforms.lightPosition.value.set(sunPosition.x, sunPosition.y, sunPosition.z);
+        this.atmosphereMaterial.uniforms.lightIntensity.value = this.app.sun.displaySettings.sunIntensity * 15;
     }
 
     getGreenwichPosition() {

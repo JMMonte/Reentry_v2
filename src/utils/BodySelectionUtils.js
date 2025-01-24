@@ -119,7 +119,7 @@ export const getSatelliteOptions = (satellites) => {
   return Object.values(satellites || {})
     .filter(satellite => satellite && satellite.id != null && satellite.name)
     .map(satellite => ({
-      value: satellite.name,
+      value: `satellite-${satellite.id}`,
       text: satellite.name
     }));
 };

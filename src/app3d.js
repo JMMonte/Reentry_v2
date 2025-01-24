@@ -21,14 +21,14 @@ import { EventBus } from './utils/EventBus.js';
 class App3D extends EventTarget {
     constructor(config = {}) {
         super();
+        this.config = config; // Store config as instance property
         this.initialize(config);
     }
 
     async initialize(config) {
         try {
-            await this.initializeCore(config);
+            await this.initializeCore(this.config);
             await this.initializeManagers();
-            await this.initializeScene();
             await this.initializeControls();
             await this.initializeEvents();
             this.startRenderLoop();
@@ -45,13 +45,13 @@ class App3D extends EventTarget {
         this.isInitialized = false;
         this.lastTime = performance.now();
         this.animationFrameId = null;
-        this.canvas = document.getElementById('three-canvas');
+        this.canvas = config.canvas;
         this.satellites = {};
         this.eventBus = new EventBus();
         this.composers = {};
 
         if (!this.canvas) {
-            throw new Error('Canvas element not found');
+            throw new Error('Canvas element not found in config');
         }
 
         // Initialize core components
@@ -77,23 +77,11 @@ class App3D extends EventTarget {
 
     async initializeManagers() {
         try {
-            // Define manager initialization order based on dependencies
-            const managerInitOrder = [
-                'texture',    // TextureManager must be first as others depend on it
-                'physics',    // PhysicsManager is relatively independent
-                'socket',    // SocketManager is relatively independent
-                'display',   // DisplayManager depends on textures
-                'scene',     // SceneManager depends on textures and display
-                'satellite', // SatelliteManager depends on scene
-                'api',       // APIManager depends on SatelliteManager for satellites getter
-                'connection' // ConnectionManager depends on satellites
-            ];
-
-            // Create manager instances with necessary dependencies
+            // Create manager instances first
             this.managers = {
                 texture: new TextureManager(),
                 physics: new PhysicsManager(this),
-                scene: new SceneManager(this, this.renderer), // Pass renderer explicitly
+                scene: new SceneManager(this, this.renderer),
                 satellite: new SatelliteManager(this),
                 display: new DisplayManager(this),
                 connection: new ConnectionManager(this),
@@ -103,23 +91,48 @@ class App3D extends EventTarget {
 
             // Set up direct references to critical managers
             this.textureManager = this.managers.texture;
+            this.displayManager = this.managers.display;
             this.scene = this.managers.scene.scene;
 
             if (!this.scene) {
                 throw new Error('Scene not created by SceneManager');
             }
 
-            // Initialize managers in the correct order
+            // Initialize TextureManager first and wait for it
+            if (!this.managers.texture) {
+                throw new Error('TextureManager not created');
+            }
+
+            console.log('Initializing TextureManager...');
+            if (this.managers.texture.initialize) {
+                await this.managers.texture.initialize();
+            }
+            console.log('TextureManager initialized successfully');
+
+            // Then initialize other managers in order
+            const managerInitOrder = [
+                'texture',
+                'display',
+                'physics',
+                'scene',
+                'satellite',
+                'connection',
+                'api',
+                'socket'
+            ];
+
             for (const managerName of managerInitOrder) {
                 const manager = this.managers[managerName];
                 if (!manager) {
                     throw new Error(`Manager ${managerName} not found`);
                 }
 
+                console.log(`Initializing ${managerName} manager...`);
                 try {
                     if (manager.initialize) {
                         await manager.initialize();
                     }
+                    console.log(`${managerName} manager initialized successfully`);
                 } catch (error) {
                     console.error(`Failed to initialize ${managerName} manager:`, error);
                     throw error;
@@ -128,30 +141,6 @@ class App3D extends EventTarget {
 
         } catch (error) {
             console.error('Failed to initialize managers:', error);
-            throw error;
-        }
-    }
-
-    async initializeScene() {
-        try {
-            // Ensure required components are initialized
-            if (!this.managers.texture || !this.managers.texture.isInitialized) {
-                throw new Error('TextureManager not properly initialized');
-            }
-            if (!this.scene || !this.renderer) {
-                throw new Error('Scene or renderer not properly initialized');
-            }
-
-            // Enable camera layers
-            this.camera.layers.enable(1);
-
-            // Initialize display settings
-            await this.managers.display.initializeSettings();
-
-            // No need to initialize scene again as it's done in initializeManagers
-            await this.managers.connection.initialize();
-        } catch (error) {
-            console.error('Scene initialization failed:', error);
             throw error;
         }
     }
@@ -302,31 +291,76 @@ class App3D extends EventTarget {
 
         try {
             // Stop animation
-            cancelAnimationFrame(this.animationFrameId);
+            if (this.animationFrameId) {
+                console.log('Stopping animation loop...');
+                cancelAnimationFrame(this.animationFrameId);
+                this.animationFrameId = null;
+            }
 
             // Dispose composers
+            console.log('Disposing composers...');
             Object.values(this.composers || {}).forEach(composer => {
                 composer?.dispose?.();
             });
+            this.composers = {};
 
-            // Dispose managers
-            for (const manager of Object.values(this.managers || {})) {
-                await manager.dispose?.();
+            // Dispose managers in reverse initialization order
+            const managerDisposeOrder = [
+                'socket',
+                'api',
+                'connection',
+                'satellite',
+                'scene',
+                'physics',
+                'display',
+                'texture'
+            ];
+
+            console.log('Disposing managers in reverse order...');
+            for (const managerName of managerDisposeOrder) {
+                const manager = this.managers?.[managerName];
+                if (manager?.dispose) {
+                    console.log(`Disposing ${managerName} manager...`);
+                    try {
+                        await manager.dispose();
+                    } catch (error) {
+                        console.error(`Error disposing ${managerName} manager:`, error);
+                    }
+                }
             }
+            this.managers = {};
 
             // Clean up renderer
             if (this.renderer) {
+                console.log('Disposing renderer...');
                 this.renderer.dispose();
                 this.renderer.forceContextLoss();
                 this.renderer = null;
             }
 
+            // Clean up label renderer
+            if (this.labelRenderer) {
+                console.log('Disposing label renderer...');
+                this.labelRenderer.domElement.remove();
+                this.labelRenderer = null;
+            }
+
             // Clean up event listeners
+            console.log('Removing event listeners...');
             window.removeEventListener('resize', this.onWindowResize);
-            this.eventBus.dispose();
+            this.eventBus?.dispose();
+
+            // Clean up stats
+            if (this.stats?.dom) {
+                this.stats.dom.remove();
+                this.stats = null;
+            }
 
             // Clean up reference
+            console.log('Cleaning up global reference...');
             window.app3d = null;
+
+            console.log('Cleanup complete');
         } catch (error) {
             console.error('Error during cleanup:', error);
             throw error;

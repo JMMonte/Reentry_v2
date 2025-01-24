@@ -11,7 +11,8 @@ import {
   SheetTitle,
 } from '../sheet';
 
-export function SatelliteCreationPanel({ isVisible, onToggle }) {
+export function SatelliteCreationPanel({ isVisible, onToggle, onCreateSatellite }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [latLonInputs, setLatLonInputs] = useState({
     name: '',
     lat: 0,
@@ -32,6 +33,30 @@ export function SatelliteCreationPanel({ isVisible, onToggle }) {
     ta: 0,
   });
 
+  useEffect(() => {
+    if (!isVisible) {
+      setIsSubmitting(false);
+      setLatLonInputs({
+        name: '',
+        lat: 0,
+        lon: 0,
+        alt: 200,
+        velocity: 7.8,
+        azimuth: 90,
+        angleOfAttack: 0,
+      });
+      setOrbitalInputs({
+        name: '',
+        sma: 6778,
+        ecc: 0,
+        inc: 51.6,
+        raan: 0,
+        aop: 0,
+        ta: 0,
+      });
+    }
+  }, [isVisible]);
+
   const handleLatLonChange = (key, value) => {
     setLatLonInputs(prev => ({
       ...prev,
@@ -47,34 +72,40 @@ export function SatelliteCreationPanel({ isVisible, onToggle }) {
   };
 
   const handleLatLonSubmit = () => {
-    const event = new CustomEvent('createSatelliteFromLatLon', {
-      detail: {
-        name: latLonInputs.name,
-        latitude: parseFloat(latLonInputs.lat),
-        longitude: parseFloat(latLonInputs.lon),
-        altitude: parseFloat(latLonInputs.alt),
-        velocity: parseFloat(latLonInputs.velocity),
-        azimuth: parseFloat(latLonInputs.azimuth),
-        angleOfAttack: parseFloat(latLonInputs.angleOfAttack),
-      }
-    });
-    document.dispatchEvent(event);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    
+    const params = {
+      mode: 'latlon',
+      name: latLonInputs.name,
+      latitude: parseFloat(latLonInputs.lat),
+      longitude: parseFloat(latLonInputs.lon),
+      altitude: parseFloat(latLonInputs.alt),
+      velocity: parseFloat(latLonInputs.velocity),
+      azimuth: parseFloat(latLonInputs.azimuth),
+      angleOfAttack: parseFloat(latLonInputs.angleOfAttack),
+    };
+
+    onCreateSatellite(params);
     onToggle(false);
   };
 
   const handleOrbitalSubmit = () => {
-    const event = new CustomEvent('createSatelliteFromOrbitalElements', {
-      detail: {
-        name: orbitalInputs.name,
-        semiMajorAxis: parseFloat(orbitalInputs.sma),
-        eccentricity: parseFloat(orbitalInputs.ecc),
-        inclination: parseFloat(orbitalInputs.inc),
-        raan: parseFloat(orbitalInputs.raan),
-        argumentOfPeriapsis: parseFloat(orbitalInputs.aop),
-        trueAnomaly: parseFloat(orbitalInputs.ta),
-      }
-    });
-    document.dispatchEvent(event);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    
+    const params = {
+      mode: 'orbital',
+      name: orbitalInputs.name,
+      semiMajorAxis: parseFloat(orbitalInputs.sma),
+      eccentricity: parseFloat(orbitalInputs.ecc),
+      inclination: parseFloat(orbitalInputs.inc),
+      raan: parseFloat(orbitalInputs.raan),
+      argumentOfPeriapsis: parseFloat(orbitalInputs.aop),
+      trueAnomaly: parseFloat(orbitalInputs.ta),
+    };
+
+    onCreateSatellite(params);
     onToggle(false);
   };
 
@@ -133,8 +164,12 @@ export function SatelliteCreationPanel({ isVisible, onToggle }) {
                 </div>
               ))}
 
-              <Button onClick={handleLatLonSubmit} className="w-full">
-                Create Satellite
+              <Button 
+                onClick={handleLatLonSubmit} 
+                className="w-full" 
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Creating...' : 'Create Satellite'}
               </Button>
             </div>
           </TabsContent>
@@ -181,8 +216,12 @@ export function SatelliteCreationPanel({ isVisible, onToggle }) {
                 </div>
               ))}
 
-              <Button onClick={handleOrbitalSubmit} className="w-full">
-                Create Satellite
+              <Button 
+                onClick={handleOrbitalSubmit} 
+                className="w-full" 
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Creating...' : 'Create Satellite'}
               </Button>
             </div>
           </TabsContent>

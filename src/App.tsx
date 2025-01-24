@@ -14,6 +14,13 @@ import { useTimeControl } from './hooks/useTimeControl';
 import { useDisplaySettings } from './hooks/useDisplaySettings';
 import { useApp3D } from './hooks/useApp3D';
 
+declare global {
+  interface Window {
+    app3d: any;
+    handlingBodySelectedEvent: boolean;
+  }
+}
+
 function App() {
   // UI State
   const [isChatVisible, setIsChatVisible] = useState(false);
@@ -33,13 +40,12 @@ function App() {
     getNextTimeWarp
   } = useTimeControl(app3dRef);
   const {
-    displaySettings,
     isDisplayOptionsOpen,
     setIsDisplayOptionsOpen,
     updateSetting
   } = useDisplaySettings(app3dRef);
 
-  const handleBodySelect = (value) => {
+  const handleBodySelect = (value: string) => {
     setSelectedBody(value);
     if (!window.handlingBodySelectedEvent) {
       document.dispatchEvent(new CustomEvent('bodySelected', {
@@ -77,19 +83,18 @@ function App() {
         isOpen={isChatVisible}
         onClose={() => setIsChatVisible(false)}
         socket={socket}
+        modalPosition={{ x: 0, y: 0 }}
       />
       <DisplayOptions
-        settings={displaySettings}
         onSettingChange={updateSetting}
         isOpen={isDisplayOptionsOpen}
         onOpenChange={setIsDisplayOptionsOpen}
-        app3DRef={app3dRef}
       />
       {debugWindows.map(({ id, satellite }) => (
         <SatelliteDebugWindow
           key={id}
           satellite={satellite}
-          earth={app3dRef.current?.earth}
+          earth={app3dRef.current?.earth as any}
         />
       ))}
       <SatelliteListWindow

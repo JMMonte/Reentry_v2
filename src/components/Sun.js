@@ -24,7 +24,7 @@ export class Sun {
         const material = new THREE.MeshPhongMaterial({
             color: 0xFFFFFF,  // Sun's color
             emissive: 0xFFFFFF,  // Glowing color
-            emissiveIntensity: 0.1,
+            emissiveIntensity: 0.2,
             shininess: 100,
             transparent: true,
             opacity: 0.8,
@@ -35,7 +35,7 @@ export class Sun {
         this.sun = new THREE.Mesh(geometry, material);
         this.scene.add(this.sun);
 
-        this.sunLight = new THREE.PointLight(0xffffff, 40000000.0, 0);
+        this.sunLight = new THREE.PointLight(0xffffff, 160000000.0, 0);
         this.sunLight.decay = 1;
         this.sunLight.position.copy(this.sun.position);
         this.sunLight.castShadow = true;
@@ -101,7 +101,7 @@ export class Sun {
                     break;
                 case 'sunIntensity':
                     if (this.sunLight) {
-                        this.sunLight.intensity = 40000000.0 * value;
+                        this.sunLight.intensity = 100000000.0 * value;  // Match the base intensity
                     }
                     break;
             }

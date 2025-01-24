@@ -176,10 +176,6 @@ export function createSatelliteFromLatLon(app, params) {
         name
     });
 
-    if (app.updateSatelliteList) {
-        app.updateSatelliteList();
-    }
-
     return satellite;
 }
 
@@ -236,10 +232,6 @@ export function createSatelliteFromLatLonCircular(app, params) {
         name
     });
 
-    if (app.updateSatelliteList) {
-        app.updateSatelliteList();
-    }
-
     return satellite;
 }
 
@@ -285,10 +277,6 @@ export function createSatelliteFromOrbitalElements(app, params) {
         size,
         name
     });
-
-    if (app.updateSatelliteList) {
-        app.updateSatelliteList();
-    }
 
     return satellite;
 } 
