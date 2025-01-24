@@ -5,11 +5,6 @@ export class PhysicsManager {
         this.app = app;
         this.physicsWorker = null;
         this.workerInitialized = false;
-        this.initPhysicsWorld();
-    }
-
-    initPhysicsWorld() {
-        // No need for CANNON world, we use our own physics worker
     }
 
     getWorld() {
