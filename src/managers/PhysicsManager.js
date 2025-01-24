@@ -29,10 +29,10 @@ export class PhysicsManager {
     initWorker() {
         console.log('Initializing physics worker...');
         this.physicsWorker = new Worker(new URL('../workers/physicsWorker.js', import.meta.url), { type: 'module' });
-        
+
         this.physicsWorker.onmessage = (event) => {
             const { type, data } = event.data;
-            
+
             switch (type) {
                 case 'satelliteUpdate':
                     const satellite = this.app.satellites[data.id];
@@ -87,7 +87,7 @@ export class PhysicsManager {
         }
     }
 
-    updatePhysics(realDeltaTime, timeWarp) {
+    updatePhysics() {
         // Only send physics updates if we have satellites and the worker is initialized
         if (this.workerInitialized && Object.keys(this.app.satellites).length > 0 && this.app.earth && this.app.moon) {
             const satelliteData = {};
@@ -107,12 +107,11 @@ export class PhysicsManager {
                     mass: satellite.mass
                 };
             });
-            
+
             this.physicsWorker.postMessage({
                 type: 'step',
                 data: {
-                    realDeltaTime,
-                    timeWarp,
+                    simulatedTime: this.app.timeUtils.getSimulatedTime().getTime(),
                     satellites: satelliteData,
                     earthPosition: {
                         x: this.app.earth.earthBody.position.x / (Constants.metersToKm * Constants.scale),

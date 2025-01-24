@@ -6,13 +6,22 @@ export const useTimeControl = (app3dRef) => {
 
     useEffect(() => {
         const handleTimeUpdate = (event) => {
-            const { simulatedTime: newTime, timeWarp: newWarp } = event.detail;
+            const { simulatedTime: newTime } = event.detail;
             setSimulatedTime(newTime);
+        };
+
+        const handleTimeWarpChanged = (event) => {
+            const { timeWarp: newWarp } = event.detail;
             setTimeWarp(newWarp);
         };
 
         document.addEventListener('timeUpdate', handleTimeUpdate);
-        return () => document.removeEventListener('timeUpdate', handleTimeUpdate);
+        document.addEventListener('timeWarpChanged', handleTimeWarpChanged);
+        
+        return () => {
+            document.removeEventListener('timeUpdate', handleTimeUpdate);
+            document.removeEventListener('timeWarpChanged', handleTimeWarpChanged);
+        };
     }, []);
 
     useEffect(() => {

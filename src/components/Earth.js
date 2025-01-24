@@ -121,10 +121,10 @@ export class Earth {
         const scaledRadius = this.EARTH_RADIUS * (1 - oblateness);
         this.earthGeometry = new THREE.SphereGeometry(scaledRadius, this.MESH_RES, this.MESH_RES);
         this.earthMesh = new THREE.Mesh(this.earthGeometry, this.earthMaterial);
-        
+
         const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS, this.MESH_RES, this.MESH_RES);
         this.atmosphereMesh = new THREE.Mesh(atmosphereGeometry, this.atmosphereMaterial);
-        
+
         const cloudRadius = this.EARTH_RADIUS + 0.1;
         const cloudGeometry = new THREE.SphereGeometry(cloudRadius, this.MESH_RES, this.MESH_RES);
         this.cloudMesh = new THREE.Mesh(cloudGeometry, this.cloudMaterial);
@@ -137,7 +137,7 @@ export class Earth {
         this.rotationGroup.add(this.atmosphereMesh);
         this.rotationGroup.add(this.earthMesh);
         this.rotationGroup.add(this.cloudMesh);
-        
+
         this.earthMesh.rotateY(1.5 * Math.PI);
         this.cloudMesh.rotateY(1.5 * Math.PI);
     }

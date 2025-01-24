@@ -17,6 +17,7 @@ export const useApp3D = () => {
             const app = new App3D();
             app3dRef.current = app;
             setApp3dInstance(app);
+            window.app3d = app;
 
             // Add method to create debug windows
             app.createDebugWindow = (satellite) => {

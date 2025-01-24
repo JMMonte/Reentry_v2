@@ -295,9 +295,9 @@ export class SatelliteManager {
 
     async initializePhysics(satellite) {
         // Check if physics worker is needed and initialize it
-        this.app.physicsManager.checkWorkerNeeded();
-        await this.app.physicsManager.waitForInitialization();
-        await this.app.physicsManager.addSatellite(satellite);
+        this.app.managers.physics.checkWorkerNeeded();
+        await this.app.managers.physics.waitForInitialization();
+        await this.app.managers.physics.addSatellite(satellite);
     }
 
     updateSatelliteList() {

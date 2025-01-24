@@ -30,8 +30,8 @@ export class DisplayManager {
                 this.settings[key] = prop.value;
             });
         }
-        if (this.app.satelliteManager) {
-            Object.entries(this.app.satelliteManager.constructor.displayProperties).forEach(([key, prop]) => {
+        if (this.app.managers.satellite) {
+            Object.entries(this.app.managers.satellite.constructor.displayProperties).forEach(([key, prop]) => {
                 this.settings[key] = prop.value;
             });
         }
@@ -73,9 +73,13 @@ export class DisplayManager {
         }
 
         // Satellite display properties
-        if (this.app.satelliteManager) {
-            displayProperties.satellites = Object.entries(this.app.satelliteManager.constructor.displayProperties).reduce((acc, [key, prop]) => {
-                acc[key] = { ...prop, value: this.settings[key] };
+        if (this.app.managers.satellite) {
+            displayProperties.satellites = Object.entries(this.app.managers.satellite.constructor.displayProperties).reduce((acc, [key, prop]) => {
+                acc[key] = {
+                    value: this.settings[key],
+                    name: prop.name,
+                    icon: prop.icon
+                };
                 return acc;
             }, {});
         }
@@ -106,8 +110,8 @@ export class DisplayManager {
         if (this.app.moon?.updateDisplaySetting) {
             this.app.moon.updateDisplaySetting(key, value);
         }
-        if (this.app.satelliteManager?.updateDisplaySetting) {
-            this.app.satelliteManager.updateDisplaySetting(key, value);
+        if (this.app.managers.satellite?.updateDisplaySetting) {
+            this.app.managers.satellite.updateDisplaySetting(key, value);
         }
         
         // Update scene-related settings

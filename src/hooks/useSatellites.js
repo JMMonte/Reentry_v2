@@ -22,8 +22,19 @@ export const useSatellites = () => {
             }
         };
 
+        const handleCreateDebugWindow = (event) => {
+            if (event.detail?.satellite) {
+                createDebugWindow(event.detail.satellite);
+            }
+        };
+
         document.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
-        return () => document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+        document.addEventListener('createDebugWindow', handleCreateDebugWindow);
+        
+        return () => {
+            document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+            document.removeEventListener('createDebugWindow', handleCreateDebugWindow);
+        };
     }, []);
 
     const createDebugWindow = (satellite) => {

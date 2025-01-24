@@ -27,7 +27,7 @@ export class SocketManager {
         // Setup satellite creation events
         Object.entries(SATELLITE_METHODS).forEach(([method, config]) => {
             this.socket.on(config.eventName, (params) => {
-                this.app.satelliteManager[method](params);
+                this.app.managers.satellite[method](params);
             });
         });
     }

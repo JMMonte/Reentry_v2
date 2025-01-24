@@ -16,9 +16,9 @@ export class BodySelectorManager {
                 this.app.cameraControls.updateCameraTarget(this.app.earth);
             } else if (value === 'moon') {
                 this.app.cameraControls.updateCameraTarget(this.app.moon);
-            } else {
-                // Handle satellite selection (value is the satellite ID)
-                const satellite = this.app.satellites[value];
+            } else if (value.startsWith('satellite-')) {
+                const satelliteId = parseInt(value.split('-')[1]);
+                const satellite = this.app.satellites[satelliteId];
                 if (satellite) {
                     this.app.cameraControls.updateCameraTarget(satellite);
                 }

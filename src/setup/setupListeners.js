@@ -23,7 +23,7 @@ export function setupEventListeners(app) {
     // Setup satellite creation events
     Object.entries(SATELLITE_METHODS).forEach(([method, config]) => {
         document.addEventListener(config.eventName, (event) => {
-            app.satelliteManager[method](event.detail);
+            app.managers.satellite[method](event.detail);
         });
     });
 

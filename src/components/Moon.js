@@ -192,7 +192,7 @@ export class Moon {
         const periapsisMaterial = new THREE.PointsMaterial({
             color: 0xff0000,
             size: 5,
-            sizeAttenuation: false 
+            sizeAttenuation: false
         });
         this.periapsisPoint = new THREE.Points(periapsisGeometry, periapsisMaterial);
         this.scene.add(this.periapsisPoint);
@@ -203,7 +203,7 @@ export class Moon {
         const apoapsisMaterial = new THREE.PointsMaterial({
             color: 0x0000ff,
             size: 5,
-            sizeAttenuation: false 
+            sizeAttenuation: false
         });
         this.apoapsisPoint = new THREE.Points(apoapsisGeometry, apoapsisMaterial);
         this.scene.add(this.apoapsisPoint);
@@ -237,7 +237,7 @@ export class Moon {
         let y = 0;
         // Rotate around the x-axis by the inclination
         ({ x, y, z } = RotateAroundX(x, y, z, -inclination));
-        
+
         // Rotate 180 around x-axis to match the Moon's orientation
         ({ x, y, z } = RotateAroundX(x, y, z, Math.PI));
 
@@ -308,9 +308,10 @@ export class Moon {
         this.previousTime = currentTime;
 
         // Calculate the rotation speed in radians per second
-        const rotationSpeed = Constants.moonOrbitSpeed; // Constants.siderialDay should be the moon's rotation period in seconds
+        const rotationSpeed = Constants.moonOrbitSpeed;
 
         // Calculate the total rotation for this frame
+        // Note: currentTime is already warped, so we don't multiply by timeWarp again
         const deltaRotation = rotationSpeed * elapsedTime;
 
         // Update moon rotation

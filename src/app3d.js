@@ -223,7 +223,7 @@ class App3D extends EventTarget {
 
         // Update controls and physics
         this.controls?.update();
-        this.managers.physics.updatePhysics(realDeltaTime, this.timeUtils.timeWarp);
+        this.managers.physics.updatePhysics();  // No need to pass time parameters
         this.managers.connection.updateConnections();
 
         // Update satellites
