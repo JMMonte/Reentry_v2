@@ -1,5 +1,9 @@
 import { io } from 'socket.io-client';
 import { SATELLITE_METHODS } from '../config/SatelliteCreationMethods';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 export class SocketManager {
     constructor(app) {
@@ -9,10 +13,13 @@ export class SocketManager {
     }
 
     initialize() {
-        this.socket = io('http://localhost:3000');
+        // Use the environment variable or a fallback URL
+        const serverUrl = process.env.SOCKET_SERVER_URL || 'http://localhost:3000';
+        
+        this.socket = io(serverUrl);
         
         this.socket.on('connect', () => {
-            console.log('Connected to server');
+            console.log(`Connected to server at ${serverUrl}`);
         });
 
         this.socket.on('connect_error', (err) => {
@@ -37,4 +44,4 @@ export class SocketManager {
             this.socket = null;
         }
     }
-} 
+}

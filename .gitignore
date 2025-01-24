@@ -7,3 +7,4 @@ venv/
 .vercel
 *.swp
 *.swo
+.env
