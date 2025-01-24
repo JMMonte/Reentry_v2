@@ -43,13 +43,13 @@ export class TimeUtils {
         // Apply timewarp to the simulation time
         const simulatedDelta = this.deltaTime * this.timeWarp;
         this.simulatedTime = new Date(this.simulatedTime.getTime() + simulatedDelta);
-        
+
         // Update derived times
         this.updateDerivedTimes();
 
         // Dispatch time update event
         document.dispatchEvent(new CustomEvent('timeUpdate', {
-            detail: { 
+            detail: {
                 simulatedTime: this.simulatedTime.toISOString(),
                 timeWarp: this.timeWarp,
                 deltaTime: this.deltaTime
@@ -69,17 +69,17 @@ export class TimeUtils {
         this.simulatedTime = new Date(newTime);
         this.validateAndFixSimulatedTime();
         this.updateDerivedTimes();
-        
+
         // Dispatch time update event
         document.dispatchEvent(new CustomEvent('timeUpdate', {
-            detail: { 
+            detail: {
                 simulatedTime: this.simulatedTime.toISOString(),
                 timeWarp: this.timeWarp,
                 deltaTime: this.deltaTime
             }
         }));
     }
-    
+
     getSimulatedTime() {
         return this.simulatedTime;
     }
@@ -96,8 +96,8 @@ export class TimeUtils {
         const meanLongitude = (280.4665 + 0.98564736 * this.dayOfYear) % 360;
         const eccentricity = 0.0167;
         const equationOfCenter = (1.9148 * Math.sin(meanAnomaly * Math.PI / 180) +
-                                  0.0200 * Math.sin(2 * meanAnomaly * Math.PI / 180) +
-                                  0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180));
+            0.0200 * Math.sin(2 * meanAnomaly * Math.PI / 180) +
+            0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180));
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
         const distance = this.AU * Constants.metersToKm * Constants.scale;
         const x = -distance * Math.cos(trueLongitude * Math.PI / 180);

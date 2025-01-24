@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
-import { ManeuverCalculator } from './ManeuverCalculator.js';
 import { GroundTrack } from './GroundTrack.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
@@ -18,8 +17,6 @@ export class Satellite {
         this.initialized = false;
         this.updateBuffer = [];
         this.landed = false;
-        this.maneuverNodes = [];
-        this.maneuverCalculator = new ManeuverCalculator();
         this.app3d = app3d;
         this.baseScale = 4;
 
@@ -156,7 +153,7 @@ export class Satellite {
 
         // Initialize ground track
         this.groundTrack = new GroundTrack(this.app3d.earth, this.color);
-        this.groundTrack.setVisible(this.app3d.getDisplaySetting('showGroundTraces'));
+        this.groundTrack.setVisible(this.app3d.displaySettings?.showGroundTraces || false);
 
         // Initialize apsis visualizer
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
@@ -262,11 +259,6 @@ export class Satellite {
         if (this.apsisVisualizer && this.apsisVisualizer.visible) {
             this.apsisVisualizer.update(position, velocity);
         }
-
-        // Force visibility update
-        if (this.orbitLine) {
-            this.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
-        }
     }
 
     updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
@@ -288,22 +280,16 @@ export class Satellite {
             }
         }
 
-        // Update maneuver nodes if any
-        this.maneuverNodes.forEach(node => {
-            node.update(currentTime);
-        });
 
-        // Clean up completed maneuver nodes
-        this.maneuverNodes = this.maneuverNodes.filter(node => !node.isComplete);
     }
 
     setVisible(visible) {
         this.mesh.visible = visible;
-        this.traceLine.visible = visible && window.app3d.getDisplaySetting('showTraces');
-        this.orbitLine.visible = visible && window.app3d.getDisplaySetting('showOrbits');
-        this.groundTrack.setVisible(visible && window.app3d.getDisplaySetting('showGroundTraces'));
+        this.traceLine.visible = visible && (this.app3d.displaySettings?.showTraces || false);
+        this.orbitLine.visible = visible && (this.app3d.displaySettings?.showOrbits || false);
+        this.groundTrack.setVisible(visible && (this.app3d.displaySettings?.showGroundTraces || false));
         // Show apsis markers only if orbit is visible
-        this.apsisVisualizer.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
+        this.apsisVisualizer.setVisible(visible && (this.app3d.displaySettings?.showOrbits || false));
     }
 
     setVectorsVisible(visible) {

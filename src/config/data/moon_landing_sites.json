@@ -1,0 +1,145 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 11",
+                "mission": "First human Moon landing",
+                "date": "July 20, 1969",
+                "crew": "Neil Armstrong, Buzz Aldrin",
+                "wikipedia": "https://en.wikipedia.org/wiki/Apollo_11"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [23.47, 0.67]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 12",
+                "mission": "Second human Moon landing",
+                "date": "November 19, 1969",
+                "crew": "Pete Conrad, Alan Bean",
+                "wikipedia": "https://en.wikipedia.org/wiki/Apollo_12"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-23.42, -3.01]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 14",
+                "mission": "Third human Moon landing",
+                "date": "February 5, 1971",
+                "crew": "Alan Shepard, Edgar Mitchell",
+                "wikipedia": "https://en.wikipedia.org/wiki/Apollo_14"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-17.47, -3.65]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 15",
+                "mission": "Fourth human Moon landing",
+                "date": "July 30, 1971",
+                "crew": "David Scott, James Irwin",
+                "wikipedia": "https://en.wikipedia.org/wiki/Apollo_15"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [3.63, 26.13]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 16",
+                "mission": "Fifth human Moon landing",
+                "date": "April 21, 1972",
+                "crew": "John Young, Charles Duke",
+                "wikipedia": "https://en.wikipedia.org/wiki/Apollo_16"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [15.50, -8.97]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 17",
+                "mission": "Sixth and final human Moon landing",
+                "date": "December 11, 1972",
+                "crew": "Eugene Cernan, Harrison Schmitt",
+                "wikipedia": "https://en.wikipedia.org/wiki/Apollo_17"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [30.77, 20.19]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 2",
+                "mission": "First spacecraft to reach Moon's surface",
+                "date": "September 13, 1959",
+                "type": "Impactor",
+                "wikipedia": "https://en.wikipedia.org/wiki/Luna_2"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [0.0, 29.1]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 9",
+                "mission": "First soft landing on Moon",
+                "date": "February 3, 1966",
+                "type": "Lander",
+                "wikipedia": "https://en.wikipedia.org/wiki/Luna_9"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-64.37, 7.08]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Surveyor 1",
+                "mission": "First US soft landing on Moon",
+                "date": "June 2, 1966",
+                "type": "Lander",
+                "wikipedia": "https://en.wikipedia.org/wiki/Surveyor_1"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-43.22, -2.45]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Chang'e 3",
+                "mission": "First Chinese landing on Moon",
+                "date": "December 14, 2013",
+                "type": "Lander/Rover",
+                "wikipedia": "https://en.wikipedia.org/wiki/Chang%27e_3"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-19.51, 44.12]
+            }
+        }
+    ]
+} 

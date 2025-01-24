@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import contourData from '../config/moon_map_contours_simplified.json';  
+import contourData from '../config/data/moon_map_contours_simplified.json';  
 
 class MoonSurface {
     constructor(mesh, moonRadius) {
