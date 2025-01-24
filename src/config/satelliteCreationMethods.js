@@ -28,4 +28,4 @@ export function getMethodFromEventName(eventName) {
 
 export function getAllEventNames() {
     return Object.values(SATELLITE_METHODS).map(config => config.eventName);
-} 
+}
