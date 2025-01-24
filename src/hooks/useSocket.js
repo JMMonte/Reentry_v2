@@ -1,31 +1,29 @@
 import { useState, useEffect } from 'react';
-import { io } from 'socket.io-client';
+import { SocketManager } from '../managers/SocketManager';
 
-export const useSocket = () => {
+export const useSocket = (app) => {
     const [socket, setSocket] = useState(null);
 
     useEffect(() => {
-        const newSocket = io('http://localhost:3000', {
-            reconnectionDelayMax: 10000,
-            transports: ['websocket']
-        });
-
-        newSocket.on('connect', () => {
-            console.log('Socket connected');
-        });
-
-        newSocket.on('connect_error', (error) => {
-            console.error('Socket connection error:', error);
-        });
-
-        setSocket(newSocket);
+        let socketManager;
+        
+        if (!app) {
+            return;
+        }
+        
+        try {
+            socketManager = new SocketManager(app);
+            setSocket(socketManager.getSocket());
+        } catch (error) {
+            console.error('Socket connection failed:', error);
+        }
 
         return () => {
-            if (newSocket) {
-                newSocket.close();
+            if (socketManager) {
+                socketManager.dispose();
             }
         };
-    }, []);
+    }, [app]);
 
     return socket;
-}; 
+};

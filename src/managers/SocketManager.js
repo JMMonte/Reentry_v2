@@ -1,30 +1,30 @@
 import { io } from 'socket.io-client';
 import { SATELLITE_METHODS } from '../config/SatelliteCreationMethods';
 
-// Use the environment variable prefixed with NEXT_PUBLIC for client-side access
-const SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_SERVER_URL || 'http://localhost:3000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
 
 export class SocketManager {
     constructor(app) {
+        if (!app) {
+            throw new Error('SocketManager requires an app instance');
+        }
         this.app = app;
         this.socket = null;
         this.initialize();
     }
 
     initialize() {
-        // Initialize the socket connection
-        this.socket = io(SERVER_URL);
-
-        // Handle connection events
+        this.socket = io(SOCKET_URL);
+        
         this.socket.on('connect', () => {
-            console.log(`Connected to server at ${SERVER_URL}`);
+            console.log('Connected to server');
         });
 
         this.socket.on('connect_error', (err) => {
             console.error('Error connecting to server:', err.message);
         });
 
-        // Set up event listeners for satellite creation methods
+        // Setup satellite creation events
         Object.entries(SATELLITE_METHODS).forEach(([method, config]) => {
             this.socket.on(config.eventName, (params) => {
                 this.app.satelliteManager[method](params);
@@ -42,4 +42,4 @@ export class SocketManager {
             this.socket = null;
         }
     }
-}
+} 

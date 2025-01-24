@@ -23,7 +23,7 @@ function App() {
 
   // Initialize hooks
   const { app3dInstance, app3dRef } = useApp3D();
-  const socket = useSocket();
+  const socket = useSocket(app3dInstance);
   const { satellites, debugWindows } = useSatellites();
   const {
     timeWarp,
