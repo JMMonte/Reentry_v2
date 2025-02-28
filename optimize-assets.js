@@ -1,101 +1,17 @@
 import fs from 'fs-extra';
 import path from 'path';
 
-// Check if we're in Vercel environment - always assume true to be safe
-const isVercel = process.env.VERCEL === '1' || true;
+// Check if we're in Vercel environment
+const isVercel = process.env.VERCEL === '1';
 
-// Always skip heavy optimization in potential deployment environments
-const SKIP_HEAVY_OPTIMIZATION = isVercel;
-
-console.log('🔧 Asset Optimization Script');
-console.log(`Running in Vercel mode: ${isVercel ? 'YES' : 'NO'}`);
-console.log(`Node.js version: ${process.version}`);
-
-// Only try to import sharp if we're not skipping optimization
-let sharp;
-if (!SKIP_HEAVY_OPTIMIZATION) {
-    try {
-        const sharpModule = await import('sharp');
-        sharp = sharpModule.default;
-        console.log('Sharp module loaded successfully');
-    } catch (err) {
-        console.warn('Sharp module not available - skipping image optimization:', err.message);
-    }
-}
+console.log('🔧 Asset Preparation Script');
+console.log(`Running in Vercel environment: ${isVercel ? 'YES' : 'NO'}`);
 
 const ASSET_DIRS = [
     'src/assets/textures',
     'src/assets/cubemaps',
     'src/assets/models'
 ];
-
-// Configuration for different file types
-const CONFIG = {
-    // Images to optimize
-    images: {
-        extensions: ['.png', '.jpg', '.jpeg', '.webp'],
-        sizeThreshold: isVercel ? 1024 * 1024 * 5 : 1024 * 1024 * 5, // 5MB threshold for all environments
-        quality: isVercel ? 70 : 80,
-        maxWidth: isVercel ? 2048 : 4096, // Lower resolution for Vercel deployments
-    }
-};
-
-async function optimizeImage(filePath, stats) {
-    // Skip optimization if sharp is not available
-    if (!sharp) {
-        console.log(`Skipping ${filePath} - Sharp not available`);
-        return;
-    }
-
-    const fileSize = stats.size;
-    const ext = path.extname(filePath).toLowerCase();
-
-    // Skip if file is smaller than threshold
-    if (fileSize < CONFIG.images.sizeThreshold) {
-        console.log(`Skipping ${filePath} (${(fileSize / 1024 / 1024).toFixed(2)}MB): under threshold`);
-        return;
-    }
-
-    console.log(`Optimizing ${filePath} (${(fileSize / 1024 / 1024).toFixed(2)}MB)...`);
-
-    try {
-        const outputPath = filePath.replace(ext, `.opt${ext}`);
-        const image = sharp(filePath);
-        
-        // Get image info
-        const metadata = await image.metadata();
-        
-        // Only resize if larger than maxWidth
-        if (metadata.width > CONFIG.images.maxWidth) {
-            image.resize(CONFIG.images.maxWidth);
-        }
-        
-        // Apply compression based on file type
-        if (ext === '.png') {
-            await image.png({ quality: CONFIG.images.quality, compressionLevel: 9 }).toFile(outputPath);
-        } else if (['.jpg', '.jpeg'].includes(ext)) {
-            await image.jpeg({ quality: CONFIG.images.quality }).toFile(outputPath);
-        } else if (ext === '.webp') {
-            await image.webp({ quality: CONFIG.images.quality }).toFile(outputPath);
-        }
-        
-        // Check new file size
-        const newStats = await fs.stat(outputPath);
-        const newSize = newStats.size;
-        const savings = ((1 - (newSize / fileSize)) * 100).toFixed(2);
-        
-        if (newSize < fileSize) {
-            console.log(`  Optimized: ${(fileSize / 1024 / 1024).toFixed(2)}MB → ${(newSize / 1024 / 1024).toFixed(2)}MB (${savings}% saved)`);
-            // Replace original with optimized version
-            await fs.rename(outputPath, filePath);
-        } else {
-            console.log(`  No savings achieved, keeping original`);
-            await fs.remove(outputPath);
-        }
-    } catch (error) {
-        console.error(`Error optimizing ${filePath}:`, error.message);
-    }
-}
 
 async function ensureDirectoryExists(dir) {
     try {
@@ -108,62 +24,24 @@ async function ensureDirectoryExists(dir) {
     }
 }
 
-async function processDirectory(dir) {
-    try {
-        await ensureDirectoryExists(dir);
-        console.log(`Processing directory: ${dir}`);
-        
-        const files = await fs.readdir(dir);
-        
-        for (const file of files) {
-            const filePath = path.join(dir, file);
-            try {
-                const stats = await fs.stat(filePath);
-                
-                if (stats.isDirectory()) {
-                    // Process subdirectories recursively
-                    await processDirectory(filePath);
-                } else {
-                    const ext = path.extname(file).toLowerCase();
-                    
-                    // Process images
-                    if (CONFIG.images.extensions.includes(ext)) {
-                        await optimizeImage(filePath, stats);
-                    }
-                }
-            } catch (err) {
-                console.error(`Error processing ${filePath}:`, err.message);
-            }
-        }
-    } catch (err) {
-        console.error(`Error processing directory ${dir}:`, err.message);
-    }
-}
-
 async function main() {
-    console.log('🔄 Starting asset optimization...');
+    console.log('🔄 Starting asset preparation...');
     
-    // Create asset directories regardless
+    // Create asset directories
     for (const dir of ASSET_DIRS) {
         await ensureDirectoryExists(dir);
     }
     
-    // Skip heavy optimization in Vercel environment
-    if (SKIP_HEAVY_OPTIMIZATION) {
-        console.log('⏩ Running in deployment environment, skipping heavy optimization');
+    // When in Vercel, skip any heavy optimization
+    if (isVercel) {
+        console.log('⏩ Running in Vercel environment, skipping optimization');
         console.log('✅ Asset preparation complete!');
         return;
     }
 
-    // Process each asset directory
-    for (const dir of ASSET_DIRS) {
-        await processDirectory(dir);
-    }
-
-    console.log('✅ Asset optimization complete!');
+    console.log('✅ Asset preparation complete!');
 }
 
-// Use regular promise handling for better error messages
 main().then(() => {
     console.log('Script completed successfully');
 }).catch(err => {
