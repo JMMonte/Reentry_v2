@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import { JulianDay, RotateAroundX, RotateAroundY } from '../utils/AstronomyUtils.js';
-import moonTexture from '../../public/assets/texture/lroc_color_poles_8k.jpg';
-import moonBump from '../../public/assets/texture/ldem_16_uint.jpg';
+import moonTexture from '../assets/texture/lroc_color_poles_8k.jpg';
+import moonBump from '../assets/texture/ldem_16_uint.jpg';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { MoonSurface } from './MoonSurface.js';
 
@@ -172,7 +172,7 @@ export class Moon {
         const periapsisMaterial = new THREE.PointsMaterial({
             color: 0xff0000,
             size: 5,
-            sizeAttenuation: false 
+            sizeAttenuation: false
         });
         this.periapsisPoint = new THREE.Points(periapsisGeometry, periapsisMaterial);
         this.scene.add(this.periapsisPoint);
@@ -183,7 +183,7 @@ export class Moon {
         const apoapsisMaterial = new THREE.PointsMaterial({
             color: 0x0000ff,
             size: 5,
-            sizeAttenuation: false 
+            sizeAttenuation: false
         });
         this.apoapsisPoint = new THREE.Points(apoapsisGeometry, apoapsisMaterial);
         this.scene.add(this.apoapsisPoint);
@@ -217,7 +217,7 @@ export class Moon {
         let y = 0;
         // Rotate around the x-axis by the inclination
         ({ x, y, z } = RotateAroundX(x, y, z, -inclination));
-        
+
         // Rotate 180 around x-axis to match the Moon's orientation
         ({ x, y, z } = RotateAroundX(x, y, z, Math.PI));
 

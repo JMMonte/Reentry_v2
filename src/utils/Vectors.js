@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import helveticaRegular from '../../public/assets/fonts/helvetiker_regular.typeface.json';
+import helveticaRegular from '../assets/fonts/helvetiker_regular.typeface.json';
 
 export class Vectors {
     constructor(earth, scene, timeUtils) {
@@ -74,9 +74,9 @@ export class Vectors {
     initNorthPoleVector() {
         const northPoleDirection = new THREE.Vector3(0, 1, 0);
         this.northPoleVector = new THREE.ArrowHelper(
-            northPoleDirection, 
-            this.earth.earthMesh.position, 
-            this.scale, 
+            northPoleDirection,
+            this.earth.earthMesh.position,
+            this.scale,
             0x0000ff
         );
         this.northPoleVector.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);
@@ -90,9 +90,9 @@ export class Vectors {
     initSunDirection() {
         const sunDirection = new THREE.Vector3(0, 1, 0);
         this.sunDirectionArrow = new THREE.ArrowHelper(
-            sunDirection, 
-            this.earth.earthMesh.position, 
-            this.scale, 
+            sunDirection,
+            this.earth.earthMesh.position,
+            this.scale,
             0xffff00
         );
         this.sunDirectionArrow.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);
@@ -106,9 +106,9 @@ export class Vectors {
     initGreenwichVector() {
         const greenwichDirection = new THREE.Vector3(0, 0, 1);
         this.greenwichVector = new THREE.ArrowHelper(
-            greenwichDirection, 
-            this.earth.earthMesh.position, 
-            this.scale, 
+            greenwichDirection,
+            this.earth.earthMesh.position,
+            this.scale,
             0x00ff00
         );
         this.greenwichVector.setLength(this.scale * 1, this.scale * 0.02, this.scale * 0.005);

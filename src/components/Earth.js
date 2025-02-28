@@ -3,8 +3,8 @@ import * as CANNON from 'cannon-es';
 import { EarthSurface } from './EarthSurface.js';
 import { Constants } from '../utils/Constants.js';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
-import atmosphereFragmentShader from '../../public/assets/shaders/atmosphereFragmentShader.glsl';
-import atmosphereVertexShader from '../../public/assets/shaders/atmosphereVertexShader.glsl';
+import atmosphereFragmentShader from '../assets/shaders/atmosphereFragmentShader.glsl';
+import atmosphereVertexShader from '../assets/shaders/atmosphereVertexShader.glsl';
 import geojsonDataCities from '../config/ne_110m_populated_places.json';
 import geojsonDataAirports from '../config/ne_10m_airports.json';
 import geojsonDataSpaceports from '../config/spaceports.json';
@@ -103,10 +103,10 @@ export class Earth {
         const scaledRadius = this.EARTH_RADIUS * (1 - oblateness);
         this.earthGeometry = new THREE.SphereGeometry(scaledRadius, this.MESH_RES, this.MESH_RES);
         this.earthMesh = new THREE.Mesh(this.earthGeometry, this.earthMaterial);
-        
+
         const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS, this.MESH_RES, this.MESH_RES);
         this.atmosphereMesh = new THREE.Mesh(atmosphereGeometry, this.atmosphereMaterial);
-        
+
         const cloudRadius = this.EARTH_RADIUS + 0.1;
         const cloudGeometry = new THREE.SphereGeometry(cloudRadius, this.MESH_RES, this.MESH_RES);
         this.cloudMesh = new THREE.Mesh(cloudGeometry, this.cloudMaterial);
@@ -119,7 +119,7 @@ export class Earth {
         this.rotationGroup.add(this.atmosphereMesh);
         this.rotationGroup.add(this.earthMesh);
         this.rotationGroup.add(this.cloudMesh);
-        
+
         this.earthMesh.rotateY(1.5 * Math.PI);
         this.cloudMesh.rotateY(1.5 * Math.PI);
     }
