@@ -1,7 +1,7 @@
 {
     "framework": "vite",
-    "buildCommand": "./vercel.sh",
-    "installCommand": "npm install --prefer-offline --no-audit --loglevel=error --no-fund",
+    "buildCommand": "node -v && npm -v && npm run build",
+    "installCommand": "npm install --prefer-offline --no-audit --loglevel=error --legacy-peer-deps",
     "outputDirectory": "dist",
     "rewrites": [
         {
@@ -32,5 +32,8 @@
                 }
             ]
         }
-    ]
+    ],
+    "env": {
+        "NODE_OPTIONS": "--max-old-space-size=4096"
+    }
 }
