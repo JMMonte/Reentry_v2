@@ -31,8 +31,11 @@ All visuals implemented from scratch. Physics running in cannon-es latest versio
 ## Deployment
 
 This application is deployed using:
-- Frontend: [Vercel](https://vercel.com)
+
+- Frontend: [Vercel](https://vercel.com) (using static deployment approach)
 - Backend Server: [Railway](https://railway.app)
+
+For detailed instructions on deploying to Vercel, please see [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md).
 
 The server code is maintained in a separate repository.
 
@@ -58,8 +61,9 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
    ```bash
    cp .env.example .env
    ```
-   
+
    Edit the `.env` file to configure the socket server URL:
+
    - For local development, point to your locally running server: `NEXT_PUBLIC_SOCKET_SERVER_URL=http://localhost:3000`
    - For production, point to the Railway server: `NEXT_PUBLIC_SOCKET_SERVER_URL=https://reentry-server.up.railway.app`
 
@@ -73,7 +77,7 @@ This will run the application on `http://localhost:1234`.
 
 ## Usage
 
-1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out. Also works with touch screens(drag, pinch, etc). 
+1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out. Also works with touch screens(drag, pinch, etc).
 2. **Interacting with GUI**: Adjust simulation parameters like time warp, object visibility, and physics variables through the GUI.
 3. **Viewing Data**: Real-time data for satellites can be viewed and analyzed via the integrated chart system (wip).
 4. **Create and manage Spacecraft**: launch satellites from specific locations on Earth to any orbit. Currently only allows for only the first orbit implementation, working on multi-impulse capabilities.
