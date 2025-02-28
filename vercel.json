@@ -1,7 +1,7 @@
 {
     "framework": "vite",
-    "buildCommand": "NODE_OPTIONS=\"--max-old-space-size=3072\" npm run vercel-build",
-    "installCommand": "NODE_OPTIONS=\"--max-old-space-size=3072\" npm install --no-optional --legacy-peer-deps --production=false",
+    "buildCommand": "NODE_OPTIONS=--max-old-space-size=3072 npm run build",
+    "installCommand": "NODE_OPTIONS=--max-old-space-size=3072 npm install --no-optional --legacy-peer-deps --production=false",
     "outputDirectory": "dist",
     "rewrites": [
         {
