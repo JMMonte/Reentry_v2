@@ -10,17 +10,12 @@ export default defineConfig({
   ],
   build: {
     outDir: 'dist',
-    emptyOutDir: true
-  },
-  server: {
-    port: 1234, // Same as Parcel's default port
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 10000
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
-  },
-  optimizeDeps: {
-    include: ['react', 'react-dom'],
-  },
+  }
 })
