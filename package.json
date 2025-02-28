@@ -9,9 +9,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "vercel-build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist node_modules",
-    "clean-install": "npm run clean && npm install"
+    "analyze": "vite build --mode analyze"
   },
   "keywords": [],
   "author": "",
