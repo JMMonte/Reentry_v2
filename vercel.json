@@ -1,7 +1,7 @@
 {
     "framework": "vite",
     "buildCommand": "./vercel.sh",
-    "installCommand": "true",
+    "installCommand": "npm install --prefer-offline --no-audit --loglevel=error --no-fund",
     "outputDirectory": "dist",
     "rewrites": [
         {

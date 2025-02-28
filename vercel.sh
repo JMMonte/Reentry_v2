@@ -1,35 +1,36 @@
 #!/bin/bash
 
-# Exit on error
+# Exit on error but print the error command
 set -e
+set -o pipefail
+
+# Print commands before execution
+set -x
 
 echo "🚀 Starting Vercel deployment build process"
-echo ""
 
-echo "🔍 Environment info:"
+# Print environment info
+echo "Node version:"
 node -v
-npm -v
-env | grep VERCEL
+echo "NPM version:"
+npm -v 
 
-echo "📦 Installing dependencies with minimal settings..."
+# Set environment variables
 export NODE_OPTIONS="--max-old-space-size=3072"
 export VERCEL=1
 
-# Skip build cache to avoid issues
-export VERCEL_CACHE_SKIP=1
-
-# Use clean install with minimal output
-npm ci --prefer-offline --no-audit --progress=false --loglevel=error --no-fund
-
-echo "🔍 Setting up asset directories..."
+# Create asset directories
+echo "Creating asset directories..."
 mkdir -p src/assets/textures
 mkdir -p src/assets/cubemaps
 mkdir -p src/assets/models
 
-echo "🔧 Checking assets..."
+# Skip optimization in Vercel environment
+echo "Checking assets..."
 node optimize-assets.js
 
-echo "🏗️ Building application..."
+# Build the application with minimal output
+echo "Building application..."
 npm run build --silent
 
 echo "✅ Build completed successfully!" 

@@ -3,6 +3,10 @@
 # Exit on error
 set -e
 
+# Make vercel.sh executable (for permission issues)
+echo "Making vercel.sh executable..."
+chmod +x vercel.sh
+
 echo "🔍 Environment info:"
 node -v
 npm -v
