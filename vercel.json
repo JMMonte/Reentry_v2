@@ -10,7 +10,8 @@
         }
     ],
     "github": {
-        "silent": true
+        "silent": true,
+        "autoJobCancelation": true
     },
     "headers": [
         {

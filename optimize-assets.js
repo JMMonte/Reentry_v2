@@ -9,14 +9,17 @@ const SKIP_HEAVY_OPTIMIZATION = isVercel;
 
 console.log('🔧 Asset Optimization Script');
 console.log(`Running in Vercel mode: ${isVercel ? 'YES' : 'NO'}`);
+console.log(`Node.js version: ${process.version}`);
 
 // Only try to import sharp if we're not skipping optimization
 let sharp;
 if (!SKIP_HEAVY_OPTIMIZATION) {
     try {
-        sharp = await import('sharp');
+        const sharpModule = await import('sharp');
+        sharp = sharpModule.default;
+        console.log('Sharp module loaded successfully');
     } catch (err) {
-        console.warn('Sharp module not available - skipping image optimization');
+        console.warn('Sharp module not available - skipping image optimization:', err.message);
     }
 }
 
@@ -31,9 +34,9 @@ const CONFIG = {
     // Images to optimize
     images: {
         extensions: ['.png', '.jpg', '.jpeg', '.webp'],
-        sizeThreshold: isVercel ? 1024 * 1024 * 10 : 1024 * 1024 * 5,
-        quality: isVercel ? 60 : 80,
-        maxWidth: isVercel ? 1024 : 2048,
+        sizeThreshold: isVercel ? 1024 * 1024 * 5 : 1024 * 1024 * 5, // 5MB threshold for all environments
+        quality: isVercel ? 70 : 80,
+        maxWidth: isVercel ? 2048 : 4096, // Lower resolution for Vercel deployments
     }
 };
 
@@ -98,7 +101,7 @@ async function ensureDirectoryExists(dir) {
     try {
         if (!fs.existsSync(dir)) {
             console.log(`Creating directory: ${dir}`);
-            fs.mkdirpSync(dir);
+            await fs.mkdirp(dir);
         }
     } catch (err) {
         console.error(`Error creating directory ${dir}:`, err.message);
@@ -168,5 +171,7 @@ main().then(() => {
     // Don't exit with error in Vercel to prevent build failure
     if (!isVercel) {
         process.exit(1);
+    } else {
+        console.log('Error occurred but continuing build in Vercel environment');
     }
 }); 
