@@ -11,14 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist node_modules",
-    "clean-install": "npm run clean && npm install",
-    "clean-start": "npm run clean-install && npm run build && npm run dev",
-    "vercel-build": "NODE_OPTIONS='--max-old-space-size=3072' vite build",
-    "analyze": "vite build --mode analyze",
-    "optimize-build": "NODE_ENV=production vite build",
-    "optimize-assets": "node optimize-assets.js",
-    "prebuild": "npm run optimize-assets",
-    "prevercel-build": "npm run optimize-assets"
+    "clean-install": "npm run clean && npm install"
   },
   "keywords": [],
   "author": "",
