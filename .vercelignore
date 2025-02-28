@@ -1,0 +1,7 @@
+# Ignore public assets since we're moving them to src/assets
+public/assets
+# Ignore backup files
+backup
+# Ignore development artifacts
+.vscode
+.DS_Store 

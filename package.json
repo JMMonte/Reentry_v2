@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A space simulation for orbital mechanics, interplanetary travel, and reentry vehicles using Three.js and Cannon.js.",
   "type": "module",
+  "engines": {
+    "node": ">=18.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
