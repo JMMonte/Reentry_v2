@@ -9,6 +9,7 @@ import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWind
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
 import App3D from './app3d.js';
+import { testSocketConnection } from './socket-test.js';
 import './styles/globals.css';
 import './styles/animations.css';
 
@@ -42,7 +43,11 @@ function App() {
     
     const newSocket = io(socketServerUrl, {
       reconnectionDelayMax: 10000,
-      transports: ['websocket']
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      secure: socketServerUrl.startsWith('https'),
+      withCredentials: true
     });
     
     newSocket.on('connect', () => {
@@ -58,6 +63,19 @@ function App() {
     return () => {
       if (newSocket) {
         newSocket.close();
+      }
+    };
+  }, []);
+
+  // Test socket connection independently
+  useEffect(() => {
+    console.log('Testing socket connection independently...');
+    const testSocket = testSocketConnection();
+    
+    return () => {
+      if (testSocket) {
+        console.log('Cleaning up test socket');
+        testSocket.disconnect();
       }
     };
   }, []);

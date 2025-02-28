@@ -69,7 +69,7 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
    npm run dev
    ```
 
-This will run the application on `http://localhost:5173`.
+This will run the application on `http://localhost:1234`.
 
 ## Usage
 
