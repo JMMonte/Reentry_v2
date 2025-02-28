@@ -8,14 +8,9 @@ export default defineConfig({
     react(),
     glsl()
   ],
-  root: 'src',
-  publicDir: '../public',
   build: {
-    outDir: '../dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      input: 'src/index.html'
-    }
+    outDir: 'dist',
+    emptyOutDir: true
   },
   server: {
     port: 1234, // Same as Parcel's default port
