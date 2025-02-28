@@ -16,6 +16,7 @@ All visuals implemented from scratch. Physics running in cannon-es latest versio
 - GUI for real-time interaction, satellite creation, and visualization adjustments.
 - Dynamic data visualization of satellite metrics such as altitude, velocity, atmospheric drag, and acceleration.
 - Customizable time warp features to speed up or slow down the simulation by many orders of magnitude.
+- AI assistant for orbital mechanics guidance (connects to separate server).
 - Runs on the browser in high performance (trying to make it even faster).
 - Tested on iPhone at 60fps. (let me know how it performs on your machine 🙂).
 
@@ -27,6 +28,14 @@ All visuals implemented from scratch. Physics running in cannon-es latest versio
 - Simulation data streaming
 - Whole solar system
 
+## Deployment
+
+This application is deployed using:
+- Frontend: [Vercel](https://vercel.com)
+- Backend Server: [Railway](https://railway.app)
+
+The server code is maintained in a separate repository.
+
 ## Installation
 
 Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, follow these steps:
@@ -34,8 +43,8 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
 1. Clone the repository:
 
    ```bash
-   git clone https://your-repository-url
-   cd your-repository-directory
+   git clone https://github.com/yourusername/reenter_v2.git
+   cd reenter_v2
    ```
 
 2. Install the required dependencies:
@@ -44,19 +53,23 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
    npm install
    ```
 
-3. Start the development server:
+3. Set up environment variables:
 
    ```bash
-   npm run start
+   cp .env.example .env
+   ```
+   
+   Edit the `.env` file to configure the socket server URL:
+   - For local development, point to your locally running server: `NEXT_PUBLIC_SOCKET_SERVER_URL=http://localhost:3000`
+   - For production, point to the Railway server: `NEXT_PUBLIC_SOCKET_SERVER_URL=https://reentry-server.up.railway.app`
+
+4. Start the development server:
+
+   ```bash
+   npm run dev
    ```
 
-4. Start the server
-   
-      ```bash
-      npm run server.mjs
-      ```
-
-This will run the application on `http://localhost:1234`.
+This will run the application on `http://localhost:5173`.
 
 ## Usage
 
@@ -64,6 +77,11 @@ This will run the application on `http://localhost:1234`.
 2. **Interacting with GUI**: Adjust simulation parameters like time warp, object visibility, and physics variables through the GUI.
 3. **Viewing Data**: Real-time data for satellites can be viewed and analyzed via the integrated chart system (wip).
 4. **Create and manage Spacecraft**: launch satellites from specific locations on Earth to any orbit. Currently only allows for only the first orbit implementation, working on multi-impulse capabilities.
+5. **AI Assistant**: Access the orbital mechanics AI assistant through the chat interface, which connects to the backend server.
+
+## Related Repositories
+
+- [Reentry Server](https://github.com/yourusername/reentry-server): Backend server for the AI assistant and orbital mechanics guidance.
 
 ## Contributing
 

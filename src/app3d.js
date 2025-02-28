@@ -147,7 +147,9 @@ class App3D extends EventTarget {
         });
 
         // Initialize the Socket.IO client
-        this.socket = io('http://localhost:3000');
+        const socketServerUrl = import.meta.env.NEXT_PUBLIC_SOCKET_SERVER_URL || 'http://localhost:3000';
+        console.log('App3D connecting to socket server:', socketServerUrl);
+        this.socket = io(socketServerUrl);
         
         this.socket.on('connect', () => {
             console.log('Connected to server');

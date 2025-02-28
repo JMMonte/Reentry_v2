@@ -37,7 +37,10 @@ function App() {
 
   // Socket connection effect
   useEffect(() => {
-    const newSocket = io('http://localhost:3000', {
+    const socketServerUrl = import.meta.env.NEXT_PUBLIC_SOCKET_SERVER_URL || 'http://localhost:3000';
+    console.log('Connecting to socket server:', socketServerUrl);
+    
+    const newSocket = io(socketServerUrl, {
       reconnectionDelayMax: 10000,
       transports: ['websocket']
     });
