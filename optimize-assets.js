@@ -2,6 +2,12 @@ import fs from 'fs-extra';
 import path from 'path';
 import { execSync } from 'child_process';
 
+// Check if we're in Vercel environment
+const isVercel = process.env.VERCEL === '1';
+
+// If in Vercel, we might want to skip heavy optimization
+const SKIP_HEAVY_OPTIMIZATION = isVercel;
+
 // Check if sharp is installed
 try {
     require.resolve('sharp');
@@ -24,9 +30,9 @@ const CONFIG = {
     // Images to optimize
     images: {
         extensions: ['.png', '.jpg', '.jpeg', '.webp'],
-        sizeThreshold: 1024 * 1024 * 5, // 5MB
-        quality: 80,
-        maxWidth: 2048,
+        sizeThreshold: isVercel ? 1024 * 1024 * 10 : 1024 * 1024 * 5, // Higher threshold on Vercel
+        quality: isVercel ? 60 : 80, // Lower quality on Vercel for faster processing
+        maxWidth: isVercel ? 1024 : 2048, // Smaller dimensions on Vercel
     }
 };
 
@@ -113,6 +119,13 @@ async function processDirectory(dir) {
 
 async function main() {
     console.log('🔄 Starting asset optimization...');
+
+    // Skip heavy optimization in Vercel environment
+    if (SKIP_HEAVY_OPTIMIZATION) {
+        console.log('⏩ Running in Vercel environment, skipping heavy optimization');
+        console.log('✅ Asset check complete!');
+        return;
+    }
 
     // Process each asset directory
     for (const dir of ASSET_DIRS) {

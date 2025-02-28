@@ -1,0 +1,16 @@
+{
+    "projectId": "reentry-v2",
+    "buildCommand": "./build.sh",
+    "outputDirectory": "dist",
+    "framework": "vite",
+    "devCommand": "npm run dev",
+    "installCommand": "true",
+    "public": true,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "18.x",
+    "github": {
+        "enabled": true,
+        "silent": true
+    }
+}
