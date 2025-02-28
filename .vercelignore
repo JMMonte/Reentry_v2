@@ -1,7 +1,47 @@
 # Ignore public assets since we're moving them to src/assets
 public/assets
+
 # Ignore backup files
 backup
+**/backup
+
+# Ignore large original assets that we're not using directly
+**/orig_assets
+**/*.psd
+**/*.ai
+**/*.xcf
+**/*.tif
+**/*.tiff
+**/*.raw
+**/*.blend
+
 # Ignore development artifacts
 .vscode
-.DS_Store 
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Tests and docs
+tests
+**/tests
+docs
+**/docs
+**/*.test.js
+**/*.spec.js
+**/__tests__
+README.md
+LICENSE
+
+# Dev configs
+.git
+.github
+.gitignore
+.npmrc
+.prettierrc
+jsconfig.json 

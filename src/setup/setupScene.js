@@ -28,18 +28,48 @@ import {
 } from '../config/geojsonData.js';
 
 export async function loadTextures(textureManager) {
-    const textureList = [
-        { url: earthTexture, name: 'earthTexture' },
-        { url: earthSpecTexture, name: 'earthSpecTexture' },
-        { url: earthNormalTexture, name: 'earthNormalTexture' },
-        { url: cloudTexture, name: 'cloudTexture' },
-        { url: moonTexture, name: 'moonTexture' },
-        { url: moonBump, name: 'moonBump' }
+    console.log('Loading textures...');
+
+    // Define textures with fallbacks for large files
+    const textures = [
+        {
+            name: 'earthTexture',
+            url: earthTexture,
+            // Add URL parameter for deployment detection
+            fallbackUrl: earthTexture + '?url'
+        },
+        {
+            name: 'earthSpecTexture',
+            url: earthSpecTexture,
+            fallbackUrl: earthSpecTexture + '?url'
+        },
+        {
+            name: 'earthNormalTexture',
+            url: earthNormalTexture,
+            fallbackUrl: earthNormalTexture + '?url'
+        },
+        {
+            name: 'cloudTexture',
+            url: cloudTexture,
+            fallbackUrl: cloudTexture + '?url'
+        },
+        {
+            name: 'moonTexture',
+            url: moonTexture,
+            fallbackUrl: moonTexture + '?url'
+        },
+        {
+            name: 'moonBump',
+            url: moonBump,
+            fallbackUrl: moonBump + '?url'
+        }
     ];
+
     try {
-        await textureManager.loadAllTextures(textureList);
+        await textureManager.loadAllTextures(textures);
+        console.log('Textures loaded successfully');
     } catch (error) {
-        console.error('Failed to load all textures:', error);
+        console.error('Error loading textures:', error);
         throw error;
     }
 }
@@ -75,7 +105,7 @@ export async function setupSceneDetails(app) {
         app.sun = new Sun(app.scene, app.timeUtils);
         app.moon = new Moon(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
         app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);
-        
+
         // Add earth points after Earth is initialized
         addEarthPoints(app);
 

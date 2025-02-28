@@ -12,7 +12,13 @@
     "preview": "vite preview",
     "clean": "rm -rf dist node_modules",
     "clean-install": "npm run clean && npm install",
-    "clean-start": "npm run clean-install && npm run build && npm run dev"
+    "clean-start": "npm run clean-install && npm run build && npm run dev",
+    "vercel-build": "NODE_OPTIONS='--max-old-space-size=3072' vite build",
+    "analyze": "vite build --mode analyze",
+    "optimize-build": "NODE_ENV=production vite build",
+    "optimize-assets": "node optimize-assets.js",
+    "prebuild": "npm run optimize-assets",
+    "prevercel-build": "npm run optimize-assets"
   },
   "keywords": [],
   "author": "",
@@ -81,6 +87,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
+    "sharp": "^0.33.2",
     "tailwindcss": "^3.4.15",
     "vite": "^5.4.11",
     "vite-plugin-glsl": "^1.3.1"
