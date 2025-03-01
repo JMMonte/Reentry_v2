@@ -1,4 +1,4 @@
-// app3d.js
+// App3D.js
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer';
@@ -147,7 +147,9 @@ class App3D extends EventTarget {
         });
 
         // Initialize the Socket.IO client
-        this.socket = io('http://localhost:3000');
+        const serverUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
+        console.log('App3D connecting to socket server:', serverUrl);
+        this.socket = io(serverUrl);
         
         this.socket.on('connect', () => {
             console.log('Connected to server');

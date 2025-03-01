@@ -8,7 +8,7 @@ import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWi
 import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWindow';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
-import App3D from './App3d.js';
+import App3D from './App3D.js';
 import './styles/globals.css';
 import './styles/animations.css';
 
@@ -37,7 +37,11 @@ function App() {
 
   // Socket connection effect
   useEffect(() => {
-    const newSocket = io('http://localhost:3000', {
+    // Use environment variable with fallback to localhost
+    const serverUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
+    console.log('Connecting to socket server:', serverUrl);
+    
+    const newSocket = io(serverUrl, {
       reconnectionDelayMax: 10000,
       transports: ['websocket']
     });
