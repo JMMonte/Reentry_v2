@@ -22,7 +22,6 @@ import 'prismjs/components/prism-markdown';
 import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-scss';
 import { DataTable } from '../table/DataTable';
-import ReactDOM from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
 // Configure marked
