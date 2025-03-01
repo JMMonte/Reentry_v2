@@ -5,7 +5,7 @@ import { Sun } from '../components/Sun.js';
 import { Moon } from '../components/Moon.js';
 import { Vectors } from '../utils/Vectors.js';
 import CannonDebugger from 'cannon-es-debugger';
-import { BackgroundStars } from '../components/Background.js';
+import { BackgroundStars } from '../components/background.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
