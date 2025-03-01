@@ -4,6 +4,5 @@
     ],
     "buildCommand": "npm run build",
     "outputDirectory": "dist",
-    "framework": "vite",
-    "caseSensitive": true
+    "framework": "vite"
 }

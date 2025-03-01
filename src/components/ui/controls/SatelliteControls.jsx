@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Button } from '../button';
-import { Input } from '../input';
-import { Label } from '../label';
+import { Button } from '../Button';
+import { Input } from '../Input';
+import { Label } from '../Label';
 import { Satellite } from 'lucide-react';
 import {
   Sheet,
@@ -10,13 +10,13 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '../sheet';
+} from '../Sheet';
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from '../tabs';
+} from '../Tabs';
 import {
   Form,
   FormControl,
@@ -25,7 +25,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '../form';
+} from '../Form';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';

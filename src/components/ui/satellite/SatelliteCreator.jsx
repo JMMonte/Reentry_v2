@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Button } from '../button';
-import { Label } from '../label';
-import { Input } from '../input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
-import { Slider } from '../slider';
+import { Button } from '../Button';
+import { Label } from '../Label';
+import { Input } from '../Input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../Select';
+import { Slider } from '../Slider';
 
 const SatelliteCreator = ({ onCreateSatellite }) => {
     const [mode, setMode] = useState('latlon');

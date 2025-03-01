@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from '../button';
+import { Button } from '../Button';
 import { 
   Settings2,
   Rocket,
@@ -16,7 +16,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '../tooltip';
+} from '../Tooltip';
 import {
   Select,
   SelectContent,
@@ -24,11 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
   SelectSeparator
-} from '../select';
-import { Separator } from '../separator';
+} from '../Select';
+import { Separator } from '../Separator';
 import { DraggableModal } from '../modal/DraggableModal';
 import SatelliteCreator from '../satellite/SatelliteCreator';
-import { cn } from "../../../lib/utils";
+import { cn } from "../../../lib/Utils";
 import { DateTimePicker } from '../datetime/DateTimePicker';
 import { formatBodySelection, getBodyDisplayName, updateCameraTarget, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
 

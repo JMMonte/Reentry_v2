@@ -1,6 +1,6 @@
 import React from "react";
-import { Input } from "../input";
-import { cn } from "../../../lib/utils";
+import { Input } from "../Input";
+import { cn } from "../../../lib/Utils";
 
 const TimeInput = ({
   hours,

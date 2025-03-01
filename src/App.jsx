@@ -8,7 +8,7 @@ import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWi
 import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWindow';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
-import App3D from './app3d.js';
+import App3D from './App3d.js';
 import './styles/globals.css';
 import './styles/animations.css';
 

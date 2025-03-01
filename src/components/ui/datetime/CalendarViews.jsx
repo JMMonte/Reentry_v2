@@ -1,6 +1,6 @@
 import React from 'react';
 import { DayPicker } from "react-day-picker";
-import { cn } from "../../../lib/utils";
+import { cn } from "../../../lib/Utils";
 import { CalendarNavigation } from './CalendarNavigation';
 
 const VIEWS = {

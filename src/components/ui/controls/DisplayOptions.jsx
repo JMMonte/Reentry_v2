@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Button } from '../button';
-import { Switch } from '../switch';
+import { Button } from '../Button';
+import { Switch } from '../Switch';
 import { 
   Settings2,
   Grid,

@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button } from '../button';
-import { Input } from '../input';
+import { Button } from '../Button';
+import { Input } from '../Input';
 import { Send, Loader2, Copy, Check, X } from 'lucide-react';
-import { ScrollArea } from '../scroll-area';
-import { cn } from '../../../lib/utils';
+import { ScrollArea } from '../Scroll-area';
+import { cn } from '../../../lib/Utils';
 import { DraggableModal } from '../modal/DraggableModal';
 import { marked } from 'marked';
 import katex from 'katex';

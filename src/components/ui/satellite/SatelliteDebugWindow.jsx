@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { Button } from "../button";
+import { Button } from "../Button";
 import { DraggableModal } from "../modal/DraggableModal";
 import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2 } from "lucide-react";
 import { Constants } from "../../../utils/Constants";
-import { Popover, PopoverContent, PopoverTrigger } from "../popover";
+import { Popover, PopoverContent, PopoverTrigger } from "../Popover";
 import { updateCameraTarget, formatBodySelection } from '../../../utils/BodySelectionUtils';
 
 export function SatelliteDebugWindow({ satellite, earth }) {

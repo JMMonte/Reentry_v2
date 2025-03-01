@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button } from '../button';
+import { Button } from '../Button';
 import { ChevronDown, ChevronUp, X, GripHorizontal } from 'lucide-react';
 
 export function DraggableModal({ 

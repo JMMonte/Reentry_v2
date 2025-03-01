@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DraggableModal } from "../modal/DraggableModal";
-import { Button } from "../button";
+import { Button } from "../Button";
 import { Focus, MonitorX, MonitorCheck, Trash2 } from "lucide-react";
 import { ColorPicker } from "./ColorPicker";
 import { updateCameraTarget, formatBodySelection } from '../../../utils/BodySelectionUtils';

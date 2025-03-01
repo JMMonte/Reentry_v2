@@ -1,6 +1,6 @@
 import React, { useState, useId } from 'react';
 import { Download, Copy, Maximize2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '../../../lib/Utils';
 import { DraggableModal } from '../modal/DraggableModal';
 
 const TableContent = ({ data }) => (

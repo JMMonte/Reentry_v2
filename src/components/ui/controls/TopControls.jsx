@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '../button';
+import { Button } from '../Button';
 import { 
   MessageSquare, 
   Eye, 
@@ -14,7 +14,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../select';
+} from '../Select';
 
 export function TopControls({ 
   onToggleChat, 
