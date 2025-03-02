@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Button } from '../Button';
 import { Input } from '../Input';
-import { Label } from '../Label';
 import { Satellite } from 'lucide-react';
 import {
   Sheet,
@@ -20,7 +19,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -67,7 +65,7 @@ const orbitalElementsSchema = z.object({
 
 export function SatelliteControls({ socket }) {
   const [activeTab, setActiveTab] = useState('lat-lon');
-  
+
   const latLonForm = useForm({
     resolver: zodResolver(latLonSchema),
     defaultValues: {
@@ -117,13 +115,13 @@ export function SatelliteControls({ socket }) {
             Add a new satellite using either Lat/Lon or Orbital Elements
           </SheetDescription>
         </SheetHeader>
-        
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="lat-lon">Lat/Lon</TabsTrigger>
             <TabsTrigger value="orbital-elements">Orbital Elements</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="lat-lon">
             <Form {...latLonForm}>
               <form onSubmit={latLonForm.handleSubmit(onLatLonSubmit)} className="space-y-4">
@@ -183,7 +181,7 @@ export function SatelliteControls({ socket }) {
               </form>
             </Form>
           </TabsContent>
-          
+
           <TabsContent value="orbital-elements">
             <Form {...orbitalElementsForm}>
               <form onSubmit={orbitalElementsForm.handleSubmit(onOrbitalElementsSubmit)} className="space-y-4">

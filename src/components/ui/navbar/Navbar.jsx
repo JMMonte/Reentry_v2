@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../Button';
-import { 
+import {
   Settings2,
   Rocket,
   MessageSquare,
@@ -41,13 +41,13 @@ const getNextTimeWarp = (currentTimeWarp, increase) => {
   if (currentIndex === -1) {
     return increase ? timeWarpOptions[1] : timeWarpOptions[0];
   }
-  const nextIndex = increase ? 
-    Math.min(currentIndex + 1, timeWarpOptions.length - 1) : 
+  const nextIndex = increase ?
+    Math.min(currentIndex + 1, timeWarpOptions.length - 1) :
     Math.max(currentIndex - 1, 0);
   return timeWarpOptions[nextIndex];
 };
 
-export function Navbar({ 
+export function Navbar({
   onChatToggle,
   onSatelliteListToggle,
   onDisplayOptionsToggle,
@@ -78,7 +78,7 @@ export function Navbar({
     // Get satellite options using utility function
     const options = getSatelliteOptions(satellites);
     setSatelliteOptions(options);
-    
+
     // If the currently selected satellite is not in the new options, reset selection
     if (selectedBody && selectedBody !== 'none' && selectedBody !== 'earth' && selectedBody !== 'moon') {
       const satellite = findSatellite(selectedBody, satellites);
@@ -104,7 +104,7 @@ export function Navbar({
   const handleBodyChange = (eventOrValue) => {
     // Handle both direct value calls and event calls
     const value = typeof eventOrValue === 'object' ? eventOrValue.target.value : eventOrValue;
-    
+
     if (!value || value === 'none') {
       onBodySelect('none');
       return;
@@ -138,7 +138,7 @@ export function Navbar({
       } else if (params.mode === 'circular') {
         satellite = await app3DRef.current?.createSatelliteCircular(params);
       }
-      
+
       if (satellite) {
         onSatelliteCreatorToggle(false);
       }
@@ -189,9 +189,9 @@ export function Navbar({
         <Separator orientation="vertical" className="h-8" />
 
         {/* DateTime Picker */}
-        <DateTimePicker 
-          date={simulatedTime} 
-          onDateTimeChange={onSimulatedTimeChange} 
+        <DateTimePicker
+          date={simulatedTime}
+          onDateTimeChange={onSimulatedTimeChange}
         />
 
         <Separator orientation="vertical" className="h-8" />
@@ -220,8 +220,8 @@ export function Navbar({
             </Tooltip>
           </TooltipProvider>
 
-          <Select 
-            value={timeWarp.toString()} 
+          <Select
+            value={timeWarp.toString()}
             onValueChange={(value) => onTimeWarpChange(parseFloat(value))}
             defaultValue="1"
           >
@@ -296,10 +296,10 @@ export function Navbar({
           {/* Satellite List Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={onSatelliteListToggle} 
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onSatelliteListToggle}
                 className={cn(isSatelliteListVisible && "bg-accent")}
               >
                 <List className="h-4 w-4" />

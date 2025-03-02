@@ -1,12 +1,11 @@
-import React from 'react';
 import { Button } from '../Button';
-import { 
-  MessageSquare, 
-  Eye, 
-  Satellite, 
-  ChevronLeft, 
-  ChevronRight, 
-  RotateCcw 
+import {
+  MessageSquare,
+  Eye,
+  Satellite,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw
 } from 'lucide-react';
 import {
   Select,
@@ -16,9 +15,9 @@ import {
   SelectValue,
 } from '../Select';
 
-export function TopControls({ 
-  onToggleChat, 
-  onToggleDisplay, 
+export function TopControls({
+  onToggleChat,
+  onToggleDisplay,
   onToggleSatellite,
   selectedBody,
   onBodyChange,

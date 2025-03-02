@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { Satellite } from './components/Satellite/Satellite.js';
-import { PhysicsUtils } from './utils/PhysicsUtils.js';
-import { Constants } from './utils/Constants.js';
+import { Satellite } from '../components/Satellite/Satellite.js';
+import { PhysicsUtils } from './PhysicsUtils.js';
+import { Constants } from './Constants.js';
 import { createRoot } from 'react-dom/client';
-import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
+import { SatelliteDebugWindow } from '../components/ui/satellite/SatelliteDebugWindow.jsx';
 
 export async function createSatellite(app, params) {
     const { scene, satellites, displaySettings } = app;
-    
+
     // Generate new unique ID
     let id = 0;
     while (satellites[id]) {
@@ -21,7 +21,7 @@ export async function createSatellite(app, params) {
         0xFF1493, 0x00FF7F, 0xFF69B4, 0x7FFF00, 0x40E0D0,  // Bright neon
         0xFF99CC, 0x99FF99, 0x99FFFF, 0x9999FF, 0xFF99FF   // Bright pastel
     ];
-    
+
     const color = brightColors[Math.floor(Math.random() * brightColors.length)];
     const newSatellite = new Satellite({
         scene,

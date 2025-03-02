@@ -13,13 +13,13 @@ import {
     createSatelliteFromLatLon,
     createSatelliteFromOrbitalElements,
     createSatelliteFromLatLonCircular
-} from './createSatellite.js';
+} from './utils/CreateSatellite.js';
 
 import { setupEventListeners, setupSocketListeners } from './setup/SetupListeners.js';
 import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setup/SetupComponents.js';
 import { loadTextures, setupScene, setupSceneDetails, setupPostProcessing } from './setup/SetupScene.js';
-import { initTimeControls } from './timeControls.js';
-import { initializeBodySelector } from './bodySelectorControls.js';
+import { initTimeControls } from './utils/TimeControls.js';
+import { initializeBodySelector } from './utils/BodySelectorControls.js';
 
 class App3D extends EventTarget {
     constructor() {
