@@ -17,7 +17,7 @@ import {
 
 import { setupEventListeners, setupSocketListeners } from './setup/SetupListeners.js';
 import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setup/SetupComponents.js';
-import { loadTextures, setupScene, setupSceneDetails, setupPostProcessing, addEarthPoints } from './setup/SetupScene.js';
+import { loadTextures, setupScene, setupSceneDetails, setupPostProcessing } from './setup/SetupScene.js';
 import { initTimeControls } from './timeControls.js';
 import { initializeBodySelector } from './bodySelectorControls.js';
 
@@ -75,7 +75,7 @@ class App3D extends EventTarget {
                         default:
                             throw new Error(`Unknown satellite mode: ${params.mode}`);
                     }
-                    
+
                     if (!satellite) {
                         throw new Error('Failed to create satellite');
                     }
@@ -86,7 +86,7 @@ class App3D extends EventTarget {
                     // Generate default name if none provided
                     const name = satellite.name || `Satellite ${satellite.id}`;
                     satellite.name = name;
-                    
+
                     // Dispatch an event to trigger state updates
                     const updateEvent = new CustomEvent('satelliteCreated', {
                         detail: {
@@ -97,7 +97,7 @@ class App3D extends EventTarget {
                         }
                     });
                     document.dispatchEvent(updateEvent);
-                    
+
                     // Return only safe JSON data
                     return {
                         id: satellite.id,
@@ -125,10 +125,10 @@ class App3D extends EventTarget {
 
         // Add satellites getter/setter
         Object.defineProperty(this, 'satellites', {
-            get: function() {
+            get: function () {
                 return this._satellites;
             },
-            set: function(value) {
+            set: function (value) {
                 this._satellites = value;
                 this.updateSatelliteList();
             }
@@ -150,7 +150,7 @@ class App3D extends EventTarget {
         const serverUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
         console.log('App3D connecting to socket server:', serverUrl);
         this.socket = io(serverUrl);
-        
+
         this.socket.on('connect', () => {
             console.log('Connected to server');
         });
@@ -170,14 +170,14 @@ class App3D extends EventTarget {
             simulatedTime: new Date().toISOString() // Current time as default
         });
         this.stats = new Stats();
-        
+
         // Initialize the app
         this.init();
     }
 
     async init() {
         console.log('Initializing App...');
-        
+
         try {
             // Setup camera first
             this.camera = setupCamera();
@@ -185,13 +185,13 @@ class App3D extends EventTarget {
                 throw new Error('Failed to initialize camera');
             }
             this.camera.layers.enable(1);  // Enable layer 1 for labels
-            
+
             // Initialize renderer
             this.renderer = setupRenderer(this.canvas);
             if (!this.renderer) {
                 throw new Error('Failed to initialize renderer');
             }
-            
+
             // Initialize CSS2D renderer for labels
             this.labelRenderer = new CSS2DRenderer();
             this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
@@ -200,13 +200,13 @@ class App3D extends EventTarget {
             this.labelRenderer.domElement.style.pointerEvents = 'none';  // Disable pointer events on container
             this.labelRenderer.domElement.style.zIndex = '1';  // Ensure labels are above 3D scene
             document.body.appendChild(this.labelRenderer.domElement);
-            
+
             // Create scene and initialize basic components
             this.scene = new THREE.Scene();
             if (!this.scene) {
                 throw new Error('Failed to create scene');
             }
-            
+
             // Initialize basic scene components
             this.controls = setupControls(this.camera, this.renderer);
             if (!this.controls) {
@@ -218,7 +218,7 @@ class App3D extends EventTarget {
             if (!this.cameraControls) {
                 throw new Error('Failed to initialize camera controls');
             }
-            
+
             this.world = setupPhysicsWorld();
             this.settings = setupSettings();
             await setupScene(this);
@@ -241,28 +241,28 @@ class App3D extends EventTarget {
             setupEventListeners(this);
             setupSocketListeners(this, this.socket);
             this.setupSatelliteAPI();
-            
+
             // Initialize time and body controls
             initTimeControls(this.timeUtils);
             initializeBodySelector(this);
 
             // Apply stats style
             this.applyStatsStyle();
-            
+
             // Set initialization flag
             this.isInitialized = true;
-            
+
             // Add window resize listener
             window.addEventListener('resize', this.onWindowResize.bind(this));
             this.onWindowResize(); // Initial resize
-            
+
             // Start animation loop
             this.animate();
-            
+
             // Dispatch scene ready event
             const sceneReadyEvent = new Event('sceneReady');
             this.dispatchEvent(sceneReadyEvent);
-            
+
             console.log('App initialization complete');
         } catch (error) {
             console.error('Error during initialization:', error);
@@ -284,7 +284,7 @@ class App3D extends EventTarget {
             if (this.stats) {
                 this.stats.begin();
             }
-            
+
             // Update time
             const timestamp = performance.now();
             this.timeUtils.update(timestamp);
@@ -331,7 +331,7 @@ class App3D extends EventTarget {
                     satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
                 }
             });
-            
+
             // Update scene and camera
             this.updateScene(currentTime);
             if (this.cameraControls && typeof this.cameraControls.updateCameraPosition === 'function') {
@@ -380,10 +380,10 @@ class App3D extends EventTarget {
     initPhysicsWorker() {
         console.log('Initializing physics worker...');
         this.physicsWorker = new Worker(new URL('./workers/physicsWorker.js', import.meta.url), { type: 'module' });
-        
+
         this.physicsWorker.onmessage = (event) => {
             const { type, data } = event.data;
-            
+
             switch (type) {
                 case 'satelliteUpdate':
                     const satellite = this._satellites[data.id];
@@ -433,7 +433,7 @@ class App3D extends EventTarget {
                     mass: satellite.mass
                 };
             });
-            
+
             this.physicsWorker.postMessage({
                 type: 'step',
                 data: {
@@ -470,7 +470,7 @@ class App3D extends EventTarget {
     }
 
     updateSatelliteConnections(connections) {
-        
+
         // Clear existing connections
         while (this.satelliteConnections.children.length > 0) {
             const line = this.satelliteConnections.children[0];
@@ -482,16 +482,16 @@ class App3D extends EventTarget {
         // Create new connections if enabled
         if (this.displaySettings.showSatConnections) {
             connections.forEach(conn => {
-                const material = new THREE.LineBasicMaterial({ 
+                const material = new THREE.LineBasicMaterial({
                     color: conn.color === 'red' ? 0xff0000 : 0x00ff00,
                     opacity: conn.color === 'red' ? 0.8 : 0.5, // Make red lines more visible
-                    transparent: true 
+                    transparent: true
                 });
-                
+
                 const geometry = new THREE.BufferGeometry();
                 const vertices = new Float32Array(conn.points.flat());
                 geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-                
+
                 const line = new THREE.Line(geometry, material);
                 this.satelliteConnections.add(line);
             });
@@ -504,7 +504,7 @@ class App3D extends EventTarget {
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
             this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
-            
+
             if (this.composers.bloom && this.composers.final) {
                 this.composers.bloom.setSize(window.innerWidth, window.innerHeight);
                 this.composers.final.setSize(window.innerWidth, window.innerHeight);
@@ -556,7 +556,7 @@ class App3D extends EventTarget {
     updateDisplaySetting(key, value) {
         if (this.displaySettings[key] !== value) {
             this.displaySettings[key] = value;
-            
+
             switch (key) {
                 case 'ambientLight':
                     const ambientLight = this.scene?.getObjectByName('ambientLight');
@@ -700,7 +700,7 @@ class App3D extends EventTarget {
     }
 
     updateSatelliteList() {
-        
+
         // Create a clean object with only necessary satellite data
         const satelliteData = Object.fromEntries(
             Object.entries(this._satellites)
@@ -710,14 +710,14 @@ class App3D extends EventTarget {
                     name: sat.name
                 }])
         );
-        
+
         // Dispatch an event to notify React components about the satellite list update
         document.dispatchEvent(new CustomEvent('satelliteListUpdated', {
             detail: {
                 satellites: satelliteData
             }
         }));
-        
+
         // Update the window.app3d reference
         if (window.app3d) {
             window.app3d.satellites = this._satellites;
@@ -732,16 +732,16 @@ class App3D extends EventTarget {
                 id: satellite.id,
                 name: satellite.name
             };
-            
+
             // Dispose of the satellite
             satellite.dispose();
             delete this._satellites[satelliteId];
-            
+
             // Dispatch satellite deleted event
             document.dispatchEvent(new CustomEvent('satelliteDeleted', {
                 detail: satelliteInfo
             }));
-            
+
             // Update the satellite list
             this.updateSatelliteList();
         }

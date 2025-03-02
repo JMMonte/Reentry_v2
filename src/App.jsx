@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
-import * as THREE from 'three';
 import { ThemeProvider } from './components/theme-provider';
 import { Navbar } from './components/ui/navbar/Navbar';
 import { ChatModal } from './components/ui/chat/ChatModal';
@@ -40,12 +39,12 @@ function App() {
     // Use environment variable with fallback to localhost
     const serverUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
     console.log('Connecting to socket server:', serverUrl);
-    
+
     const newSocket = io(serverUrl, {
       reconnectionDelayMax: 10000,
       transports: ['websocket']
     });
-    
+
     newSocket.on('connect', () => {
       console.log('Socket connected');
     });
@@ -69,10 +68,10 @@ function App() {
       console.log('App: Received satellite list update:', event.detail);
       if (event.detail?.satellites) {
         // Convert satellites to array if needed
-        const satelliteArray = Array.isArray(event.detail.satellites) 
-          ? event.detail.satellites 
+        const satelliteArray = Array.isArray(event.detail.satellites)
+          ? event.detail.satellites
           : Object.values(event.detail.satellites);
-        
+
         // Filter out invalid satellites and ensure unique entries
         const validSatellites = satelliteArray
           .filter(sat => sat && sat.id != null && sat.name)
@@ -80,7 +79,7 @@ function App() {
             acc[sat.id] = sat;
             return acc;
           }, {});
-        
+
         console.log('App: Setting satellites state with:', validSatellites);
         setSatellites(validSatellites);
       }
@@ -192,7 +191,7 @@ function App() {
   const getNextTimeWarp = (current, increase) => {
     const timeWarpSteps = [0.25, 0.5, 1, 2, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000];
     const currentIndex = timeWarpSteps.findIndex(step => step >= current);
-    
+
     if (increase) {
       // Going up
       if (currentIndex < timeWarpSteps.length - 1) {
@@ -258,7 +257,7 @@ function App() {
           onClose={() => setIsChatVisible(false)}
           socket={socket}
         />
-        <DisplayOptions 
+        <DisplayOptions
           settings={displaySettings}
           onSettingChange={(key, value) => {
             if (app3dInstance) {
@@ -277,8 +276,8 @@ function App() {
             earth={app3dRef.current?.earth}
           />
         ))}
-        <SatelliteListWindow 
-          satellites={satellites} 
+        <SatelliteListWindow
+          satellites={satellites}
           isOpen={isSatelliteListVisible}
           setIsOpen={setIsSatelliteListVisible}
         />
