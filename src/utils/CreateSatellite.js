@@ -34,40 +34,60 @@ export async function createSatellite(app, params) {
         app3d: app,
         name: params.name
     });
+
     // Apply display settings after creation
     const showOrbits = displaySettings.showOrbits;
     const showTraces = displaySettings.showTraces;
     const showGroundTraces = displaySettings.showGroundTraces;
     const showSatVectors = displaySettings.showSatVectors;
 
-    newSatellite.orbitLine.visible = showOrbits;
-    if (newSatellite.apsisVisualizer) {
-        newSatellite.apsisVisualizer.visible = showOrbits;
-    }
-    newSatellite.traceLine.visible = showTraces;
-    if (newSatellite.groundTrack) {
-        newSatellite.groundTrack.visible = showGroundTraces;
-    }
-    if (newSatellite.velocityVector) {
-        newSatellite.velocityVector.visible = showSatVectors;
-    }
-    if (newSatellite.orientationVector) {
-        newSatellite.orientationVector.visible = showSatVectors;
+    // Update orbit visibility
+    if (newSatellite.orbit && newSatellite.orbit.orbitLine) {
+        newSatellite.orbit.orbitLine.visible = showOrbits;
     }
 
-    // Force initial updates
-    if (newSatellite.orbitLine && newSatellite.orbitLine.visible) {
-        newSatellite.updateOrbitLine(params.position, params.velocity);
+    // Update apsis visualizer visibility
+    if (newSatellite.orbit && newSatellite.orbit.apsisVisualizer) {
+        newSatellite.orbit.apsisVisualizer.visible = showOrbits;
     }
-    if (newSatellite.traceLine && newSatellite.traceLine.visible) {
+
+    // Update trace visibility
+    if (newSatellite.visuals && newSatellite.visuals.traceLine) {
+        newSatellite.visuals.traceLine.visible = showTraces;
+    }
+
+    // Update ground track visibility
+    if (newSatellite.orbit && newSatellite.orbit.groundTrack) {
+        newSatellite.orbit.groundTrack.visible = showGroundTraces;
+    }
+
+    // Update velocity vector visibility
+    if (newSatellite.visuals && newSatellite.visuals.velocityVector) {
+        newSatellite.visuals.velocityVector.visible = showSatVectors;
+    }
+
+    // Update orientation vector visibility
+    if (newSatellite.visuals && newSatellite.visuals.orientationVector) {
+        newSatellite.visuals.orientationVector.visible = showSatVectors;
+    }
+
+    // Force initial updates for orbit line
+    if (newSatellite.orbit && newSatellite.orbit.orbitLine && newSatellite.orbit.orbitLine.visible) {
+        newSatellite.orbit.updateOrbitLine(params.position, params.velocity);
+    }
+
+    // Force initial updates for trace line
+    if (newSatellite.visuals && newSatellite.visuals.traceLine && newSatellite.visuals.traceLine.visible) {
         const scaledPosition = new THREE.Vector3(
             params.position.x * Constants.metersToKm * Constants.scale,
             params.position.y * Constants.metersToKm * Constants.scale,
             params.position.z * Constants.metersToKm * Constants.scale
         );
-        newSatellite.tracePoints.push(scaledPosition.clone());
-        newSatellite.traceLine.geometry.setFromPoints(newSatellite.tracePoints);
-        newSatellite.traceLine.geometry.computeBoundingSphere();
+        if (newSatellite.visuals.tracePoints) {
+            newSatellite.visuals.tracePoints.push(scaledPosition.clone());
+            newSatellite.visuals.traceLine.geometry.setFromPoints(newSatellite.visuals.tracePoints);
+            newSatellite.visuals.traceLine.geometry.computeBoundingSphere();
+        }
     }
 
     // Create debug window
@@ -290,4 +310,93 @@ export function createSatelliteFromOrbitalElements(app, params) {
     }
 
     return satellite;
+}
+
+export function createSatelliteInCircularOrbit(app, params) {
+    const { earth } = app;
+    const {
+        altitude, // in km
+        inclination = 0, // in degrees
+        longitudeOfAscendingNode = 0, // in degrees
+        argumentOfPeriapsis = 0, // in degrees
+        trueAnomaly = 0, // in degrees
+        mass = 100, // in kg
+        size = 1, // in meters
+        name = `Satellite at ${altitude} km`
+    } = params;
+
+    // Convert Earth radius to km for calculations
+    const earthRadiusKm = Constants.earthRadius * Constants.metersToKm;
+
+    // Calculate orbital radius in km
+    const orbitRadiusKm = earthRadiusKm + altitude;
+
+    // Calculate orbital velocity for a circular orbit (in m/s)
+    const orbitalVelocityMS = Math.sqrt(Constants.G * Constants.earthMass / (orbitRadiusKm * Constants.kmToMeters));
+
+    // Convert orbital velocity to km/s for consistent scaling
+    const orbitalVelocityKmS = orbitalVelocityMS * Constants.metersToKm;
+
+    // Create position vector (in km)
+    // Starting with position along the x-axis at the specified altitude
+    const truAnoRad = THREE.MathUtils.degToRad(trueAnomaly);
+    const position = new THREE.Vector3(
+        orbitRadiusKm * Math.cos(truAnoRad),
+        orbitRadiusKm * Math.sin(truAnoRad),
+        0
+    );
+
+    // Create velocity vector perpendicular to position (in km/s)
+    // For a circular orbit, velocity is perpendicular to position
+    const velocity = new THREE.Vector3(
+        -orbitalVelocityKmS * Math.sin(truAnoRad),
+        orbitalVelocityKmS * Math.cos(truAnoRad),
+        0
+    );
+
+    // Apply rotations for orbital parameters
+    // First rotate by argument of periapsis
+    const aopRad = THREE.MathUtils.degToRad(argumentOfPeriapsis);
+    position.applyAxisAngle(new THREE.Vector3(0, 0, 1), aopRad);
+    velocity.applyAxisAngle(new THREE.Vector3(0, 0, 1), aopRad);
+
+    // Then rotate by inclination
+    const incRad = THREE.MathUtils.degToRad(inclination);
+    position.applyAxisAngle(new THREE.Vector3(1, 0, 0), incRad);
+    velocity.applyAxisAngle(new THREE.Vector3(1, 0, 0), incRad);
+
+    // Finally rotate by longitude of ascending node
+    const raanRad = THREE.MathUtils.degToRad(longitudeOfAscendingNode);
+    position.applyAxisAngle(new THREE.Vector3(0, 0, 1), raanRad);
+    velocity.applyAxisAngle(new THREE.Vector3(0, 0, 1), raanRad);
+
+    // Scale for visualization
+    const scaledPosition = new THREE.Vector3(
+        position.x * Constants.scale,
+        position.y * Constants.scale,
+        position.z * Constants.scale
+    );
+
+    const scaledVelocity = new THREE.Vector3(
+        velocity.x * Constants.scale,
+        velocity.y * Constants.scale,
+        velocity.z * Constants.scale
+    );
+
+    console.log(`Creating satellite at ${altitude}km altitude`);
+    console.log(`Orbital radius: ${orbitRadiusKm.toFixed(2)}km`);
+    console.log(`Orbital velocity: ${orbitalVelocityKmS.toFixed(2)}km/s`);
+    console.log(`Position (km): ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
+    console.log(`Velocity (km/s): ${velocity.x.toFixed(2)}, ${velocity.y.toFixed(2)}, ${velocity.z.toFixed(2)}`);
+    console.log(`Scaled position: ${scaledPosition.x.toFixed(2)}, ${scaledPosition.y.toFixed(2)}, ${scaledPosition.z.toFixed(2)}`);
+    console.log(`Scaled velocity: ${scaledVelocity.x.toFixed(2)}, ${scaledVelocity.y.toFixed(2)}, ${scaledVelocity.z.toFixed(2)}`);
+
+    // Create the satellite with these parameters
+    return createSatellite(app, {
+        position: scaledPosition,
+        velocity: scaledVelocity,
+        mass,
+        size,
+        name
+    });
 }

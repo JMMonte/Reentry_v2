@@ -23,6 +23,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         argumentOfPeriapsis: 0,
         trueAnomaly: 0,
         angleOfAttack: 0,
+        longitudeOfAscendingNode: 0,
     });
 
     const handleInputChange = (e) => {
@@ -44,7 +45,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         e.preventDefault();
         try {
             const params = { ...formData };
-            
+
             // Map the parameters based on the mode
             if (mode === 'latlon') {
                 await onCreateSatellite({
@@ -75,17 +76,17 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
             } else if (mode === 'circular') {
                 await onCreateSatellite({
                     mode,
-                    latitude: params.latitude,
-                    longitude: params.longitude,
                     altitude: params.altitude,
-                    azimuth: params.azimuth,
-                    angleOfAttack: params.angleOfAttack,
+                    inclination: params.inclination,
+                    longitudeOfAscendingNode: params.longitudeOfAscendingNode,
+                    argumentOfPeriapsis: params.argumentOfPeriapsis,
+                    trueAnomaly: params.trueAnomaly,
                     mass: params.mass,
                     size: params.size,
                     name: params.name || undefined
                 });
             }
-            
+
             setFormData(prev => ({
                 ...prev,
                 name: ''  // Reset only the name field after successful creation
@@ -182,11 +183,11 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                 {/* Circular Orbit Fields */}
                 {mode === 'circular' && (
                     <>
-                        {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
-                        {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
-                        {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                        {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
-                        {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
+                        {renderField("altitude", "Alt", "number", 160, 2000, 1, "km")}
+                        {renderField("inclination", "Inc", "number", 0, 180, 0.1, "deg")}
+                        {renderField("longitudeOfAscendingNode", "RAAN", "number", 0, 360, 0.1, "deg")}
+                        {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
+                        {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
                     </>
                 )}
 

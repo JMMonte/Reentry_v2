@@ -12,7 +12,8 @@ import { RadialGrid } from './components/RadialGrid.js';
 import {
     createSatelliteFromLatLon,
     createSatelliteFromOrbitalElements,
-    createSatelliteFromLatLonCircular
+    createSatelliteFromLatLonCircular,
+    createSatelliteInCircularOrbit
 } from './utils/CreateSatellite.js';
 
 import { setupEventListeners, setupSocketListeners } from './setup/SetupListeners.js';
@@ -765,7 +766,18 @@ class App3D extends EventTarget {
     }
 
     async createSatelliteCircular(params) {
-        const satellite = await createSatelliteFromLatLonCircular(this, params);
+        // Check if altitude is a number and at least 160km (minimum safe orbital altitude)
+        const altitude = Number(params.altitude) || 500;
+        const satellite = await createSatelliteInCircularOrbit(this, {
+            altitude: altitude,
+            inclination: Number(params.inclination) || 0,
+            longitudeOfAscendingNode: Number(params.longitudeOfAscendingNode) || 0,
+            argumentOfPeriapsis: Number(params.argumentOfPeriapsis) || 0,
+            trueAnomaly: Number(params.trueAnomaly) || 0,
+            mass: Number(params.mass) || 100,
+            size: Number(params.size) || 1,
+            name: params.name || `Satellite at ${altitude}km`
+        });
         this._satellites[satellite.id] = satellite;
         this.checkPhysicsWorkerNeeded();
         this.updateSatelliteList();

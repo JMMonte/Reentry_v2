@@ -17,7 +17,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
   // Store reference to setIsOpen in satellite
   useEffect(() => {
     if (satellite) {
-      satellite.debugWindow = { 
+      satellite.debugWindow = {
         setIsOpen,
         onPositionUpdate: () => {
           if (isOpen) {
@@ -34,10 +34,10 @@ export function SatelliteDebugWindow({ satellite, earth }) {
   useEffect(() => {
     const updateOrbitalElements = () => {
       if (!satellite || !earth || !isOpen) return;
-      
+
       const currentTime = performance.now();
       if (currentTime - lastUpdateTime.current < updateInterval) return;
-      
+
       lastUpdateTime.current = currentTime;
       setOrbitalElements(satellite.getOrbitalElements(earth));
     };
@@ -51,7 +51,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
       updateOrbitalElements();
       animationFrameId = requestAnimationFrame(animate);
     };
-    
+
     if (isOpen) {
       animate();
     }
@@ -66,12 +66,12 @@ export function SatelliteDebugWindow({ satellite, earth }) {
   const handleFocus = () => {
     if (window.app3d && satellite) {
       const formattedValue = formatBodySelection(satellite);
-      
+
       // Dispatch body selected event
       document.dispatchEvent(new CustomEvent('bodySelected', {
         detail: { body: formattedValue }
       }));
-      
+
       // Update camera target without dispatching another event
       updateCameraTarget(satellite, window.app3d, false);
     }
@@ -86,16 +86,59 @@ export function SatelliteDebugWindow({ satellite, earth }) {
 
   const renderVector = (vector, label, isVelocity = false) => {
     if (!vector) return null;
-    // Position is in meters and needs to be converted to km
-    // Velocity is in m/s and should be displayed as is
-    const scale = isVelocity ? 1 : Constants.metersToKm;
-    const unit = isVelocity ? 'm/s' : 'km';
+
+    let x, y, z;
+    let unit;
+
+    if (isVelocity) {
+      // Get velocity in km/s using the physics helper method
+      if (label === "Velocity") {
+        // Convert velocity from m/s to km/s
+        const velInMS = satellite.physics._getVelocityInMetersPerSecond();
+        if (velInMS) {
+          x = formatNumber(velInMS.x * Constants.metersToKm);
+          y = formatNumber(velInMS.y * Constants.metersToKm);
+          z = formatNumber(velInMS.z * Constants.metersToKm);
+        } else {
+          x = "N/A";
+          y = "N/A";
+          z = "N/A";
+        }
+      } else {
+        // For other vectors (like acceleration) just unscale
+        x = formatNumber(vector.x / Constants.scale);
+        y = formatNumber(vector.y / Constants.scale);
+        z = formatNumber(vector.z / Constants.scale);
+      }
+      unit = "km/s";
+    } else {
+      // Get position in km using the physics helper method
+      if (label === "Position") {
+        const posInKm = satellite.physics._getPositionInKm();
+        if (posInKm) {
+          x = formatNumber(posInKm.x);
+          y = formatNumber(posInKm.y);
+          z = formatNumber(posInKm.z);
+        } else {
+          x = "N/A";
+          y = "N/A";
+          z = "N/A";
+        }
+      } else {
+        // For other vectors just unscale
+        x = formatNumber(vector.x / Constants.scale);
+        y = formatNumber(vector.y / Constants.scale);
+        z = formatNumber(vector.z / Constants.scale);
+      }
+      unit = "km";
+    }
+
     return (
       <div className="grid grid-cols-4 gap-0.5">
         <span className="text-[10px] font-mono text-muted-foreground">{label}:</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.x * scale)} {unit}</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.y * scale)} {unit}</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.z * scale)} {unit}</span>
+        <span className="text-[10px] font-mono">{x} {unit}</span>
+        <span className="text-[10px] font-mono">{y} {unit}</span>
+        <span className="text-[10px] font-mono">{z} {unit}</span>
       </div>
     );
   };
@@ -108,7 +151,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
   if (!satellite || !isOpen) return null;
 
   return (
-    <DraggableModal 
+    <DraggableModal
       title={satellite.name || `Satellite ${satellite.id}`}
       isOpen={true}
       onClose={() => setIsOpen(false)}
@@ -139,17 +182,21 @@ export function SatelliteDebugWindow({ satellite, earth }) {
             {renderVector(satellite.position, "Position")}
             {renderVector(satellite.velocity, "Velocity", true)}
             {renderVector(satellite.acceleration, "Acceleration", true)}
-            
+
             <div className="grid grid-cols-4 gap-0.5">
               <span className="text-[10px] font-mono text-muted-foreground">Speed:</span>
-              <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.velocity.length())} m/s</span>
+              <span className="col-span-3 text-[10px] font-mono">
+                {formatNumber(satellite.physics.getSpeedKmS())} km/s
+              </span>
             </div>
 
             <div className="space-y-0.5">
               <div className="text-[10px] font-semibold">Current Altitude</div>
               <div className="grid grid-cols-4 gap-0.5">
                 <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
-                <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.getRadialAltitude())} km</span>
+                <span className="col-span-3 text-[10px] font-mono">
+                  {formatNumber(satellite.getRadialAltitude() + Constants.earthRadius * Constants.metersToKm)} km
+                </span>
               </div>
               <div className="grid grid-cols-4 gap-0.5">
                 <span className="text-[10px] font-mono text-muted-foreground">Surface:</span>
@@ -190,16 +237,16 @@ export function SatelliteDebugWindow({ satellite, earth }) {
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
                   <span className="text-[10px] font-mono text-muted-foreground">h:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.specificAngularMomentum)} m²/s</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.h)} m²/s</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
                   <span className="text-[10px] font-mono text-muted-foreground">ε:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.specificOrbitalEnergy)} m²/s²</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.specificEnergy)} m²/s²</span>
                 </div>
                 <div className="text-[10px] font-semibold mt-1">Periapsis</div>
                 <div className="grid grid-cols-4 gap-0.5">
                   <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.periapsisRadial)} km</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.periapsisDistance)} km</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
                   <span className="text-[10px] font-mono text-muted-foreground">Altitude:</span>
@@ -208,7 +255,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
                 <div className="text-[10px] font-semibold mt-1">Apoapsis</div>
                 <div className="grid grid-cols-4 gap-0.5">
                   <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.apoapsisRadial)} km</span>
+                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(orbitalElements.apoapsisDistance)} km</span>
                 </div>
                 <div className="grid grid-cols-4 gap-0.5">
                   <span className="text-[10px] font-mono text-muted-foreground">Altitude:</span>
