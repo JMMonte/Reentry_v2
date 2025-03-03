@@ -194,6 +194,11 @@ class App3D extends EventTarget {
                 this.controls.update();
             }
 
+            // Update camera tracking for selected body
+            if (this.cameraControls) {
+                this.cameraControls.updateCameraPosition();
+            }
+
             // Step physics & line of sight checks
             this._updatePhysics(realDeltaTime);
             this._updateLineOfSight();
@@ -659,6 +664,12 @@ class App3D extends EventTarget {
         if (this.displaySettings[key] === value) return; // No change
 
         this.displaySettings[key] = value;
+
+        // Dispatch event to notify components that a display setting has changed
+        this.dispatchEvent(new CustomEvent('displaySettingChanged', {
+            detail: { key, value }
+        }));
+
         switch (key) {
             case 'ambientLight': {
                 const ambientLight = this.scene?.getObjectByName('ambientLight');
@@ -693,23 +704,23 @@ class App3D extends EventTarget {
             }
             case 'showOrbits': {
                 Object.values(this._satellites).forEach((sat) => {
-                    if (sat.orbitLine) sat.orbitLine.visible = value;
-                    if (sat.apsisVisualizer?.setVisible) {
-                        sat.apsisVisualizer.setVisible(value);
+                    if (sat.orbit && sat.orbit.orbitLine) sat.orbit.orbitLine.visible = value && sat.visuals.mesh.visible;
+                    if (sat.orbit && sat.orbit.apsisVisualizer && sat.orbit.apsisVisualizer.setVisible) {
+                        sat.orbit.apsisVisualizer.setVisible(value && sat.visuals.mesh.visible);
                     }
                 });
                 break;
             }
             case 'showTraces': {
                 Object.values(this._satellites).forEach((sat) => {
-                    if (sat.traceLine) sat.traceLine.visible = value;
+                    if (sat.visuals && sat.visuals.traceLine) sat.visuals.traceLine.visible = value && sat.visuals.mesh.visible;
                 });
                 break;
             }
             case 'showGroundTraces': {
                 Object.values(this._satellites).forEach((sat) => {
-                    if (sat.orbit?.setGroundTraceVisible) {
-                        sat.orbit.setGroundTraceVisible(value);
+                    if (sat.orbit && sat.orbit.groundTrack) {
+                        sat.orbit.groundTrack.setVisible(value);
                     }
                 });
                 break;

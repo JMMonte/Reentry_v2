@@ -47,16 +47,27 @@ export class Satellite {
             const { key, value } = event.detail;
             switch (key) {
                 case 'showOrbits':
-                    if (this.orbit) this.orbit.setVisible(this.visuals.mesh.visible);
+                    if (this.orbit && this.orbit.orbitLine) {
+                        this.orbit.orbitLine.visible = this.visuals.mesh.visible && value;
+                    }
+                    if (this.orbit && this.orbit.apsisVisualizer) {
+                        this.orbit.apsisVisualizer.setVisible(this.visuals.mesh.visible && value);
+                    }
                     break;
                 case 'showTraces':
-                    if (this.visuals.traceLine) this.visuals.traceLine.visible = this.visuals.mesh.visible && value;
+                    if (this.visuals && this.visuals.traceLine) {
+                        this.visuals.traceLine.visible = this.visuals.mesh.visible && value;
+                    }
                     break;
                 case 'showGroundTraces':
-                    if (this.orbit) this.orbit.setGroundTraceVisible(value);
+                    if (this.orbit && this.orbit.groundTrack) {
+                        this.orbit.groundTrack.setVisible(value);
+                    }
                     break;
                 case 'showSatVectors':
-                    if (this.visuals) this.visuals.setVectorsVisible(value);
+                    if (this.visuals) {
+                        this.visuals.setVectorsVisible(value);
+                    }
                     break;
             }
         });
