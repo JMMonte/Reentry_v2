@@ -3,7 +3,7 @@
 export function initializeBodySelector(app) {
     // Instead of manipulating the DOM directly, we'll use the app's event system
     // to communicate with the React components
-    
+
     document.addEventListener('bodySelected', (event) => {
         const value = event.detail.body;
         if (value === 'none') {
@@ -12,9 +12,10 @@ export function initializeBodySelector(app) {
             app.cameraControls.updateCameraTarget(app.earth);
         } else if (value === 'moon') {
             app.cameraControls.updateCameraTarget(app.moon);
-        } else {
-            // Handle satellite selection (value is the satellite ID)
-            const satellite = app.satellites[value];
+        } else if (value.startsWith('satellite-')) {
+            // Handle satellite selection (value follows the format "satellite-id")
+            const satelliteId = parseInt(value.split('-')[1]);
+            const satellite = app._satellites[satelliteId];
             if (satellite) {
                 app.cameraControls.updateCameraTarget(satellite);
             }

@@ -32,7 +32,8 @@ export class SatellitePhysics {
     _getPositionInKm() {
         if (!this.satellite.position) return null;
 
-        // Convert from position units to km
+        // The satellite.position is stored in meters (from the updatePosition method)
+        // We need to convert it to kilometers
         return new THREE.Vector3(
             this.satellite.position.x * Constants.metersToKm,
             this.satellite.position.y * Constants.metersToKm,
@@ -44,7 +45,7 @@ export class SatellitePhysics {
     _getVelocityInMetersPerSecond() {
         if (!this.satellite.velocity) return null;
 
-        // Similar to position, velocity appears to be already in m/s
+        // The satellite.velocity is already stored in m/s (from the updatePosition method)
         return new THREE.Vector3(
             this.satellite.velocity.x,
             this.satellite.velocity.y,

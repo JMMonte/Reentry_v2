@@ -73,7 +73,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
       }));
 
       // Update camera target without dispatching another event
-      updateCameraTarget(satellite, window.app3d, false);
+      updateCameraTarget(formattedValue, window.app3d, false);
     }
   };
 

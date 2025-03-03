@@ -16,14 +16,14 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
     const handleFocus = (satellite) => {
         if (window.app3d) {
             const formattedValue = formatBodySelection(satellite);
-            
+
             // Dispatch body selected event
             document.dispatchEvent(new CustomEvent('bodySelected', {
                 detail: { body: formattedValue }
             }));
-            
+
             // Update camera target without dispatching another event
-            updateCameraTarget(satellite, window.app3d, false);
+            updateCameraTarget(formattedValue, window.app3d, false);
         }
     };
 
@@ -56,7 +56,7 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
         >
             <div className="space-y-1 p-1">
                 {Object.values(satellites).map((satellite) => (
-                    <div 
+                    <div
                         key={satellite.id}
                         className="flex items-center justify-between p-1.5 bg-secondary/50 rounded-md text-xs"
                     >
@@ -70,30 +70,30 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
+                            <Button
+                                variant="ghost"
+                                size="icon"
                                 className="w-6 h-6"
                                 onClick={() => handleToggleDebug(satellite)}
                                 title="Toggle Debug Window"
                             >
-                                {satellite.debugWindow?.isOpen ? 
-                                    <MonitorX className="h-3 w-3" /> : 
+                                {satellite.debugWindow?.isOpen ?
+                                    <MonitorX className="h-3 w-3" /> :
                                     <MonitorCheck className="h-3 w-3" />
                                 }
                             </Button>
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
+                            <Button
+                                variant="ghost"
+                                size="icon"
                                 className="w-6 h-6"
                                 onClick={() => handleFocus(satellite)}
                                 title="Focus Camera"
                             >
                                 <Focus className="h-3 w-3" />
                             </Button>
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
+                            <Button
+                                variant="ghost"
+                                size="icon"
                                 className="w-6 h-6 text-destructive hover:text-destructive"
                                 onClick={() => handleDelete(satellite)}
                                 title="Delete Satellite"

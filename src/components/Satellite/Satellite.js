@@ -167,4 +167,9 @@ export class Satellite {
     updateVectors() {
         this.visuals.updateVectors();
     }
+
+    // Get the satellite's mesh for camera targeting
+    getMesh() {
+        return this.visuals.mesh;
+    }
 }
