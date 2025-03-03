@@ -1,7 +1,7 @@
 {
   "name": "reentry_v2",
   "version": "1.0.0",
-  "description": "A space simulation for orbital mechanics, interplanetary travel, and reentry vehicles using Three.js and Cannon.js.",
+  "description": "A space simulation for orbital mechanics, interplanetary travel, and reentry vehicles using Three.js with a custom physics implementation.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -34,8 +34,6 @@
     "@types/react-dom": "^18.3.0",
     "@wojtekmaj/react-timerange-picker": "^6.0.0",
     "body-parser": "^1.20.2",
-    "cannon-es": "^0.20.0",
-    "cannon-es-debugger": "^1.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",

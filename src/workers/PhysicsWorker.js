@@ -1,11 +1,8 @@
-import * as CANNON from 'cannon-es';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { Constants } from '../utils/Constants.js';
 
-let world, satellites = [], earthMass, moonMass;
+let world = null, satellites = [], earthMass, moonMass;
 let manuallyManagedSatellites = []; // To store satellites managed manually
-let timeStep = 0.01; // Default time step for high precision
-let precision = 'high';
 
 self.onmessage = function (event) {
     let messageData;
@@ -49,8 +46,9 @@ self.onmessage = function (event) {
 };
 
 function initPhysics(data) {
-    world = new CANNON.World();
-    world.gravity.set(0, 0, 0);
+    // Create a simple world object instead of using Cannon.js
+    world = { initialized: true };
+    world.gravity = { x: 0, y: 0, z: 0 };
     Object.assign(Constants, data);
     satellites = [];
     // Notify that initialization is complete

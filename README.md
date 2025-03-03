@@ -3,11 +3,11 @@
 ![Screenshot](public/assets/texture/reenter_v2.png)
 ![Screenshot](public/assets/texture/reenter_v2_1.png)
 
-This project utilizes WebGL via the Three.js library and the physics engine Cannon.js to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth-Moon system and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
+This project utilizes WebGL via the Three.js library and a custom physics implementation to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth-Moon system and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
 
 There are no good space simulation environments with high quality visualization that run with modern software. Reenter means to change that by building an opensource simulation tool that can grow with its own community. Try it out and improve on it.
 
-All visuals implemented from scratch. Physics running in cannon-es latest version through a service worker. Some mathematical models are running in javascript for now, would be great to change to higher precision ones later (C#?).
+All visuals implemented from scratch. Physics running on a lightweight custom implementation through a service worker. Some mathematical models are running in javascript for now, would be great to change to higher precision ones later (C#?).
 
 ## Features
 
@@ -51,16 +51,16 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
    ```
 
 4. Start the server
-   
-      ```bash
-      npm run server.mjs
-      ```
+
+   ```bash
+   npm run server.mjs
+   ```
 
 This will run the application on `http://localhost:1234`.
 
 ## Usage
 
-1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out. Also works with touch screens(drag, pinch, etc). 
+1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out. Also works with touch screens(drag, pinch, etc).
 2. **Interacting with GUI**: Adjust simulation parameters like time warp, object visibility, and physics variables through the GUI.
 3. **Viewing Data**: Real-time data for satellites can be viewed and analyzed via the integrated chart system (wip).
 4. **Create and manage Spacecraft**: launch satellites from specific locations on Earth to any orbit. Currently only allows for only the first orbit implementation, working on multi-impulse capabilities.
@@ -75,8 +75,8 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) f
 
 ## Acknowledgments
 
-- Three.js and Cannon.js communities for continuous support and resources.
-- Contributors and maintainers of the `stats.js`, `cannon-es-debugger`, and other utilized libraries.
+- Three.js community for continuous support and resources.
+- Contributors and maintainers of the `stats.js` and other utilized libraries.
 
 ## Contact
 

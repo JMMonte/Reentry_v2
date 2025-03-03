@@ -1,6 +1,5 @@
 // setupComponents.js
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Constants } from '../utils/Constants.js';
 
@@ -35,8 +34,8 @@ export function setupRenderer(canvas) {
             failIfMajorPerformanceCaveat: false,
         };
 
-        const gl = canvas.getContext('webgl2', contextAttributes) || 
-                  canvas.getContext('webgl', contextAttributes);
+        const gl = canvas.getContext('webgl2', contextAttributes) ||
+            canvas.getContext('webgl', contextAttributes);
 
         if (!gl) {
             throw new Error('WebGL not supported');
@@ -79,11 +78,13 @@ export function setupControls(camera, renderer) {
 }
 
 export function setupPhysicsWorld() {
-    const world = new CANNON.World();
-    world.gravity.set(0, 0, 0);
-    world.broadphase = new CANNON.NaiveBroadphase();
-    world.solver.iterations = 10;
-    return world;
+    // Create a simple physics world object instead of using Cannon.js
+    return {
+        gravity: { x: 0, y: 0, z: 0 },
+        bodies: [],
+        broadphase: { type: 'simple' },
+        solver: { iterations: 10 }
+    };
 }
 
 export function setupSettings() {

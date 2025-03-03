@@ -1,6 +1,5 @@
 import { Constants } from './Constants.js';
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 
 export class PhysicsUtils {
     static calculateGravitationalForce(m1, m2, r) {
@@ -374,8 +373,8 @@ export class PhysicsUtils {
         velocityENU.applyQuaternion(tiltQuaternion);
         positionECI.applyQuaternion(earthQuaternion);
         velocityENU.applyQuaternion(earthQuaternion);
-        const position = new CANNON.Vec3(positionECI.x, positionECI.y, positionECI.z);
-        const velocityECEF = new CANNON.Vec3(velocityENU.x, velocityENU.y, velocityENU.z);
+        const position = new THREE.Vector3(positionECI.x, positionECI.y, positionECI.z);
+        const velocityECEF = new THREE.Vector3(velocityENU.x, velocityENU.y, velocityENU.z);
         return { positionECEF: position, velocityECEF: velocityECEF };
     }
 
@@ -404,8 +403,8 @@ export class PhysicsUtils {
         if (p <= 0) {
             console.error('Invalid value for p:', p);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
@@ -423,8 +422,8 @@ export class PhysicsUtils {
         if (isNaN(h) || h <= 0) {
             console.error('Invalid value for h:', h);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
@@ -432,8 +431,8 @@ export class PhysicsUtils {
         if (isNaN(sqrtMuOverP) || sqrtMuOverP <= 0) {
             console.error('Invalid value for sqrtMuOverP:', sqrtMuOverP);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
@@ -480,19 +479,19 @@ export class PhysicsUtils {
         ) {
             console.error('Invalid ECI coordinates:', positionECI, velocityECI);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
         // Return the position and velocity in ECI frame
         return {
-            positionECI: new CANNON.Vec3(
+            positionECI: new THREE.Vector3(
                 positionECI.x,
                 positionECI.y,
                 positionECI.z
             ),
-            velocityECI: new CANNON.Vec3(
+            velocityECI: new THREE.Vector3(
                 velocityECI.x,
                 velocityECI.y,
                 velocityECI.z

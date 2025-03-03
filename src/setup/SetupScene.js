@@ -4,7 +4,6 @@ import { Earth } from '../components/Earth.js';
 import { Sun } from '../components/Sun.js';
 import { Moon } from '../components/Moon.js';
 import { Vectors } from '../utils/Vectors.js';
-import CannonDebugger from 'cannon-es-debugger';
 import { BackgroundStars } from '../components/Background.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -55,7 +54,6 @@ export function setupScene(app) {
         ambientLight.name = 'ambientLight';
         app.scene.add(ambientLight);
 
-        app.cannonDebugger = new CannonDebugger(app.scene, app.world, { autoUpdate: false });
         return app.scene;
     } catch (error) {
         console.error('Error setting up scene:', error);
@@ -75,7 +73,7 @@ export async function setupSceneDetails(app) {
         app.sun = new Sun(app.scene, app.timeUtils);
         app.moon = new Moon(app.scene, app.world, app.renderer, app.timeUtils, app.textureManager);
         app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);
-        
+
         // Add earth points after Earth is initialized
         addEarthPoints(app);
 

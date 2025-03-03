@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import { JulianDay, RotateAroundX, RotateAroundY } from '../utils/AstronomyUtils.js';
 import moonTexture from '../../public/assets/texture/lroc_color_poles_8k.jpg';
@@ -35,18 +34,27 @@ export class Moon {
         scene.add(this.moonMesh);
         this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.7); // Rotate 180 degrees around the y-axis
 
-        // Create the moon body
-        const moonShape = new CANNON.Sphere(Constants.moonRadius);
-        this.moonBody = new CANNON.Body({
+        // Create the moon body - replace with simple implementation
+        this.moonBody = {
             mass: Constants.moonMass,
-            shape: moonShape,
-            position: new CANNON.Vec3(
-                Constants.moonInitialPosition.x,
-                Constants.moonInitialPosition.y,
-                Constants.moonInitialPosition.z
-            )
-        });
-        world.addBody(this.moonBody);
+            radius: Constants.moonRadius,
+            position: {
+                x: Constants.moonInitialPosition.x,
+                y: Constants.moonInitialPosition.y,
+                z: Constants.moonInitialPosition.z
+            },
+            velocity: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            quaternion: { x: 0, y: 0, z: 0, w: 1 }
+        };
+
+        // Add to world if it has a bodies array
+        if (world && world.bodies) {
+            world.bodies.push(this.moonBody);
+        }
 
         // Initialize trace line
         this.initTraceLine();
@@ -172,7 +180,7 @@ export class Moon {
         const periapsisMaterial = new THREE.PointsMaterial({
             color: 0xff0000,
             size: 5,
-            sizeAttenuation: false 
+            sizeAttenuation: false
         });
         this.periapsisPoint = new THREE.Points(periapsisGeometry, periapsisMaterial);
         this.scene.add(this.periapsisPoint);
@@ -183,7 +191,7 @@ export class Moon {
         const apoapsisMaterial = new THREE.PointsMaterial({
             color: 0x0000ff,
             size: 5,
-            sizeAttenuation: false 
+            sizeAttenuation: false
         });
         this.apoapsisPoint = new THREE.Points(apoapsisGeometry, apoapsisMaterial);
         this.scene.add(this.apoapsisPoint);
@@ -217,7 +225,7 @@ export class Moon {
         let y = 0;
         // Rotate around the x-axis by the inclination
         ({ x, y, z } = RotateAroundX(x, y, z, -inclination));
-        
+
         // Rotate 180 around x-axis to match the Moon's orientation
         ({ x, y, z } = RotateAroundX(x, y, z, Math.PI));
 
@@ -252,10 +260,17 @@ export class Moon {
         // Compute Moon's position using ephemerides
         const { x, y, z } = this.getMoonPosition(jd);
 
-        // Set position in CANNON.js (meters)
-        this.moonBody.position.set(x, y, z);
+        // Update position in our custom object (meters)
+        this.moonBody.position.x = x;
+        this.moonBody.position.y = y;
+        this.moonBody.position.z = z;
+
         // Convert to Three.js coordinates and set position
-        this.moonMesh.position.copy(this.moonBody.position).multiplyScalar(Constants.metersToKm * Constants.scale);
+        this.moonMesh.position.set(
+            this.moonBody.position.x * Constants.metersToKm * Constants.scale,
+            this.moonBody.position.y * Constants.metersToKm * Constants.scale,
+            this.moonBody.position.z * Constants.metersToKm * Constants.scale
+        );
 
         this.updateTraceLine(currentTime);
     }
