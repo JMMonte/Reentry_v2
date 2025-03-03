@@ -34,7 +34,7 @@ self.onmessage = function (event) {
                 console.error('Physics world is not initialized. Please send an "init" message first.');
             }
             break;
-        case 'addSatellite':  
+        case 'addSatellite':
             addSatellite(data);
             break;
         case 'removeSatellite':
@@ -77,7 +77,7 @@ function stepPhysics(data) {
         satellites.forEach(satellite => {
             // Calculate gravitational forces
             const satPos = satellite.position;
-            
+
             // Convert Earth and Moon positions from scaled km to meters
             const earthPosMeters = {
                 x: earthPosition.x / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
@@ -90,7 +90,7 @@ function stepPhysics(data) {
                 y: moonPosition.y / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
                 z: moonPosition.z / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters
             };
-            
+
             // Force from Earth (all calculations in meters)
             const earthForce = calculateGravitationalForce(
                 satellite.mass,
@@ -139,16 +139,16 @@ function stepPhysics(data) {
 
 function addSatellite(data) {
     const { id, mass, size, position, velocity } = data;
-    
+
     // Convert position and velocity to arrays if they're not already
-    const posArray = Array.isArray(position) ? position : 
-                    position.toArray ? position.toArray() : 
-                    [position.x, position.y, position.z];
-                    
+    const posArray = Array.isArray(position) ? position :
+        position.toArray ? position.toArray() :
+            [position.x, position.y, position.z];
+
     const velArray = Array.isArray(velocity) ? velocity :
-                    velocity.toArray ? velocity.toArray() :
-                    [velocity.x, velocity.y, velocity.z];
-    
+        velocity.toArray ? velocity.toArray() :
+            [velocity.x, velocity.y, velocity.z];
+
     // Create satellite object
     const satellite = {
         id,
@@ -157,7 +157,7 @@ function addSatellite(data) {
         position: posArray,
         velocity: velArray
     };
-    
+
     satellites.push(satellite);
 
     // Send confirmation
@@ -171,15 +171,17 @@ function calculateGravitationalForce(mass1, mass2, pos1, pos2) {
     const dx = pos2.x - pos1[0];
     const dy = pos2.y - pos1[1];
     const dz = pos2.z - pos1[2];
-    
+
     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const forceMagnitude = (Constants.G * mass1 * mass2) / (distance * distance);
-    
+
+    // Use the centralized function to calculate the force magnitude
+    const forceMagnitude = PhysicsUtils.calculateGravitationalForce(mass1, mass2, distance);
+
     // Unit vector components
     const ux = dx / distance;
     const uy = dy / distance;
     const uz = dz / distance;
-    
+
     return {
         x: forceMagnitude * ux,
         y: forceMagnitude * uy,

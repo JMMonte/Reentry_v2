@@ -28,61 +28,224 @@ export class PhysicsUtils {
     }
 
     static calculateOrbitalElements(position, velocity, mu) {
-        const r = position.length();
-        const v = velocity.length();
-        const vr = velocity.dot(position) / r;
-        const hVec = position.clone().cross(velocity);
-        const h = hVec.length();
-        const i = Math.acos(hVec.z / h);
-        const nVec = new THREE.Vector3(-hVec.y, hVec.x, 0);
-        const n = nVec.length();
-        const eVec = velocity.clone().cross(hVec).divideScalar(mu).sub(position.clone().divideScalar(r));
-        const e = eVec.length();
-        let omega = Math.acos(nVec.x / n);
-        if (nVec.y < 0) omega = 2 * Math.PI - omega;
-        let w = Math.acos(nVec.dot(eVec) / (n * e));
-        if (eVec.z < 0) w = 2 * Math.PI - w;
-        let theta = Math.acos(eVec.dot(position) / (e * r));
-        if (vr < 0) theta = 2 * Math.PI - theta;
+        if (!position || !velocity) return null;
 
-        return { h, e, i, omega, w, trueAnomaly: theta };
+        try {
+            const r = position.length(); // Position magnitude
+            const v = velocity.length(); // Velocity magnitude
+
+            // Angular momentum vector h = r × v
+            const h_vector = new THREE.Vector3().crossVectors(position, velocity);
+            const h = h_vector.length(); // Angular momentum magnitude
+
+            // Radial velocity
+            const vr = velocity.clone().dot(position) / r;
+
+            // Eccentricity vector calculation 
+            // Calculate the first term: (v^2 - μ/r)r
+            const term1 = position.clone().multiplyScalar((v * v - mu / r) / mu);
+
+            // Calculate the second term: (r·v)v / μ
+            const term2 = velocity.clone().multiplyScalar(position.clone().dot(velocity) / mu);
+
+            // Subtract to get e = ((v^2 - μ/r)r - (r·v)v) / μ
+            const e_vector = term1.sub(term2);
+            const eccentricity = e_vector.length();
+
+            // Specific orbital energy
+            const specificEnergy = (v * v / 2) - (mu / r);
+
+            // Semi-major axis (a = -μ/(2ε))
+            let semiMajorAxis;
+            if (Math.abs(specificEnergy) < 1e-10) {
+                // Parabolic orbit
+                semiMajorAxis = Infinity;
+            } else {
+                semiMajorAxis = -mu / (2 * specificEnergy);
+            }
+
+            // For inclination, we need the angular momentum vector z-component
+            const inclination = Math.acos(h_vector.z / h); // Inclination in radians
+
+            // Node vector (perpendicular to angular momentum and z-axis)
+            const nodeVector = new THREE.Vector3(0, 0, 1).cross(h_vector);
+            const nodeLength = nodeVector.length();
+
+            // Calculate longitude of ascending node
+            let longitudeOfAscendingNode = 0;
+            if (nodeLength > 1e-10) {
+                // n is not zero, so orbit is inclined
+                nodeVector.normalize();
+                longitudeOfAscendingNode = Math.acos(nodeVector.x);
+                if (nodeVector.y < 0) {
+                    longitudeOfAscendingNode = 2 * Math.PI - longitudeOfAscendingNode;
+                }
+            }
+
+            // Calculate argument of periapsis
+            let argumentOfPeriapsis = 0;
+            if (nodeLength > 1e-10 && eccentricity > 1e-10) {
+                // Neither circular nor equatorial orbit
+                const dotProduct = nodeVector.dot(e_vector) / eccentricity;
+                argumentOfPeriapsis = Math.acos(Math.min(1, Math.max(-1, dotProduct))); // Clamp to avoid floating point errors
+                if (e_vector.z < 0) {
+                    argumentOfPeriapsis = 2 * Math.PI - argumentOfPeriapsis;
+                }
+            }
+
+            // Calculate true anomaly
+            let trueAnomaly = 0;
+            if (eccentricity > 1e-10) {
+                // Non-circular orbit
+                const dotProduct = e_vector.dot(position) / (eccentricity * r);
+                trueAnomaly = Math.acos(Math.min(1, Math.max(-1, dotProduct))); // Clamp to avoid floating point errors
+                if (vr < 0) {
+                    trueAnomaly = 2 * Math.PI - trueAnomaly;
+                }
+            } else if (nodeLength > 1e-10) {
+                // Circular inclined orbit
+                const dotProduct = nodeVector.dot(position) / r;
+                trueAnomaly = Math.acos(Math.min(1, Math.max(-1, dotProduct))); // Clamp to avoid floating point errors
+                if (h_vector.dot(new THREE.Vector3().crossVectors(nodeVector, position)) < 0) {
+                    trueAnomaly = 2 * Math.PI - trueAnomaly;
+                }
+            } else {
+                // Circular equatorial orbit
+                trueAnomaly = Math.acos(position.x / r);
+                if (position.y < 0) {
+                    trueAnomaly = 2 * Math.PI - trueAnomaly;
+                }
+            }
+
+            // Calculate period (only valid for elliptical orbits)
+            let period = null;
+            if (semiMajorAxis > 0 && isFinite(semiMajorAxis)) {
+                period = 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis, 3) / mu);
+            }
+
+            // Calculate periapsis and apoapsis distances (only valid for elliptical orbits)
+            let periapsisDistance = null;
+            let apoapsisDistance = null;
+            let periapsisAltitude = null;
+            let apoapsisAltitude = null;
+
+            if (eccentricity < 1 && eccentricity >= 0) {
+                // Elliptical orbit (including circular when e=0)
+                periapsisDistance = semiMajorAxis * (1 - eccentricity); // in meters
+                apoapsisDistance = semiMajorAxis * (1 + eccentricity);  // in meters
+
+                // Convert distances to km
+                const periapsisDistanceKm = periapsisDistance * Constants.metersToKm;
+                const apoapsisDistanceKm = apoapsisDistance * Constants.metersToKm;
+
+                // Calculate altitudes
+                const earthRadiusKm = Constants.earthRadius * Constants.metersToKm;
+                periapsisAltitude = periapsisDistanceKm - earthRadiusKm;
+                apoapsisAltitude = apoapsisDistanceKm - earthRadiusKm;
+            }
+
+            // Convert values to appropriate units for display
+            const semiMajorAxisKm = isFinite(semiMajorAxis) ? semiMajorAxis * Constants.metersToKm : null;
+
+            // Convert radians to degrees for display
+            const inclinationDeg = (inclination * 180 / Math.PI).toFixed(2);
+            const longitudeOfAscendingNodeDeg = (longitudeOfAscendingNode * 180 / Math.PI).toFixed(2);
+            const argumentOfPeriopsisDeg = (argumentOfPeriapsis * 180 / Math.PI).toFixed(2);
+            const trueAnomalyDeg = (trueAnomaly * 180 / Math.PI).toFixed(2);
+
+            const result = {
+                // Display values (some converted to degrees or km)
+                semiMajorAxis: semiMajorAxisKm,
+                eccentricity: eccentricity,
+                inclination: inclinationDeg,
+                longitudeOfAscendingNode: longitudeOfAscendingNodeDeg,
+                argumentOfPeriapsis: argumentOfPeriopsisDeg,
+                trueAnomaly: trueAnomalyDeg,
+                period: period,
+                specificEnergy: specificEnergy,
+                periapsisDistance: periapsisDistance ? periapsisDistance * Constants.metersToKm : null,
+                periapsisAltitude: periapsisAltitude,
+                apoapsisDistance: apoapsisDistance ? apoapsisDistance * Constants.metersToKm : null,
+                apoapsisAltitude: apoapsisAltitude,
+
+                // Raw values needed for orbit computation (in radians)
+                h: h,
+                e: eccentricity,
+                i: inclination,
+                omega: longitudeOfAscendingNode,
+                w: argumentOfPeriapsis
+            };
+
+            return result;
+        } catch (error) {
+            console.error('Error calculating orbital elements:', error);
+            return null;
+        }
     }
 
-    static computeOrbit({ h, e, i, omega, w }, mu, numPoints = 100) {
+    static computeOrbit(orbitalElements, mu, numPoints = 100) {
+        if (!orbitalElements) return [];
+
+        // Extract the raw orbital element values (not the degree values)
+        const { h, e, i, omega, w } = orbitalElements;
+
+        // Check if we have all the required values for orbit computation
+        if (h === undefined || e === undefined || i === undefined ||
+            omega === undefined || w === undefined) {
+
+            console.error('Invalid orbital elements for orbit computation', orbitalElements);
+            return [];
+        }
+
+        // Make sure we're working with numbers, not strings
+        const hVal = Number(h);
+        const eVal = Number(e);
+        const iVal = Number(i);
+        const omegaVal = Number(omega);
+        const wVal = Number(w);
+
         const points = [];
         const step = 2 * Math.PI / numPoints;
 
         for (let f = 0; f < 2 * Math.PI; f += step) {
-            const r = (h * h / mu) / (1 + e * Math.cos(f));
-            
+            // Skip points for near-parabolic orbits where the formula might break down
+            if (Math.abs(eVal - 1.0) < 1e-5 && Math.cos(f) < -0.99) continue;
+
+            const r = (hVal * hVal / mu) / (1 + eVal * Math.cos(f));
+
             // Position in the orbital plane
             const xOrbitalPlane = r * Math.cos(f);
             const yOrbitalPlane = r * Math.sin(f);
-    
+
             // Rotate by argument of periapsis
-            const cos_w = Math.cos(w);
-            const sin_w = Math.sin(w);
+            const cos_w = Math.cos(wVal);
+            const sin_w = Math.sin(wVal);
             const xAfterPeriapsis = cos_w * xOrbitalPlane - sin_w * yOrbitalPlane;
             const yAfterPeriapsis = sin_w * xOrbitalPlane + cos_w * yOrbitalPlane;
-    
+
             // Rotate by inclination
-            const cos_i = Math.cos(i);
-            const sin_i = Math.sin(i);
+            const cos_i = Math.cos(iVal);
+            const sin_i = Math.sin(iVal);
             const xAfterInclination = xAfterPeriapsis;
             const zAfterInclination = sin_i * yAfterPeriapsis;
             const yAfterInclination = cos_i * yAfterPeriapsis;
-    
+
             // Rotate by longitude of ascending node
-            const cos_omega = Math.cos(omega);
-            const sin_omega = Math.sin(omega);
+            const cos_omega = Math.cos(omegaVal);
+            const sin_omega = Math.sin(omegaVal);
             const xECI = cos_omega * xAfterInclination - sin_omega * yAfterInclination;
             const yECI = sin_omega * xAfterInclination + cos_omega * yAfterInclination;
             const zECI = zAfterInclination;
-    
+
             // Convert to kilometers for Three.js
-            points.push(new THREE.Vector3(xECI * Constants.metersToKm * Constants.scale, yECI * Constants.metersToKm * Constants.scale, zECI * Constants.metersToKm * Constants.scale));
+            points.push(new THREE.Vector3(
+                xECI * Constants.metersToKm * Constants.scale,
+                yECI * Constants.metersToKm * Constants.scale,
+                zECI * Constants.metersToKm * Constants.scale
+            ));
         }
-    
+
+
         return points;
     }
 
@@ -153,22 +316,22 @@ export class PhysicsUtils {
         const z = position.z;
         return new THREE.Vector3(x, y, z);
     }
-    
+
     static calculateGMST(date) {
         const jd = date / 86400000 + 2440587.5;
         const T = (jd - 2451545.0) / 36525.0;
         const GMST = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - (T * T * T) / 38710000.0;
         return THREE.MathUtils.degToRad(GMST % 360);
     }
-    
+
     static calculateIntersectionWithEarth(position) {
         const earthRadius = Constants.earthRadius * Constants.metersToKm * Constants.scale;
         const origin = new THREE.Vector3(0, 0, 0);
         const direction = position.clone().normalize();
-        
+
         // Ray from position to the center of the Earth
         const ray = new THREE.Ray(origin, direction);
-        
+
         // Find intersection with the Earth's surface
         const intersection = ray.at(earthRadius, new THREE.Vector3());
         return intersection;
@@ -338,7 +501,20 @@ export class PhysicsUtils {
     }
 
     static orbitalVelocityAtAnomaly(orbitalElements, trueAnomaly, mu) {
-        const { h, e } = orbitalElements;
+        if (!orbitalElements) {
+            console.error('Invalid orbital elements');
+            return new THREE.Vector3();
+        }
+
+        // Extract orbital elements, ensuring compatibility with both formats
+        const h = orbitalElements.h;
+        const e = orbitalElements.e || orbitalElements.eccentricity;
+
+        // Convert trueAnomaly to radians if it's a string
+        if (typeof trueAnomaly === 'string') {
+            trueAnomaly = THREE.MathUtils.degToRad(parseFloat(trueAnomaly));
+        }
+
         const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
         const velocityMagnitude = Math.sqrt(mu * ((2 / r) - (1 / (h * h / mu / (1 - e * e)))));
         const velocityAngle = trueAnomaly + Math.PI / 2; // Perpendicular to the radius vector in the orbital plane
@@ -348,6 +524,17 @@ export class PhysicsUtils {
     }
 
     static rotateToECI(velocity, inclination, omega, w) {
+        // Convert to radians if the values are strings or degrees
+        if (typeof inclination === 'string') {
+            inclination = THREE.MathUtils.degToRad(parseFloat(inclination));
+        }
+        if (typeof omega === 'string') {
+            omega = THREE.MathUtils.degToRad(parseFloat(omega));
+        }
+        if (typeof w === 'string') {
+            w = THREE.MathUtils.degToRad(parseFloat(w));
+        }
+
         const rotationMatrix = new THREE.Matrix4();
         rotationMatrix.multiply(new THREE.Matrix4().makeRotationZ(-w));
         rotationMatrix.multiply(new THREE.Matrix4().makeRotationX(-inclination));
@@ -357,7 +544,58 @@ export class PhysicsUtils {
     }
 
     static calculateOrbitalPosition(orbitalElements, mu, time) {
-        const { h, e, i, omega, w, trueAnomaly } = orbitalElements;
+        if (!orbitalElements) {
+            console.error('Invalid orbital elements');
+            return new THREE.Vector3();
+        }
+
+        // Extract orbital elements, handling both raw values and degree values
+        const h = orbitalElements.h;
+        const e = orbitalElements.e || orbitalElements.eccentricity;
+
+        // Handle both raw radians and degree string values
+        let i, omega, w, trueAnomaly;
+
+        // For i (inclination)
+        if (typeof orbitalElements.i === 'number') {
+            i = orbitalElements.i; // Already in radians
+        } else if (orbitalElements.inclination !== undefined) {
+            // Convert from degrees to radians if it's a string or a number in degrees
+            i = THREE.MathUtils.degToRad(parseFloat(orbitalElements.inclination));
+        } else {
+            console.error('No valid inclination found in orbital elements');
+            return new THREE.Vector3();
+        }
+
+        // For omega (longitude of ascending node)
+        if (typeof orbitalElements.omega === 'number') {
+            omega = orbitalElements.omega; // Already in radians
+        } else if (orbitalElements.longitudeOfAscendingNode !== undefined) {
+            // Convert from degrees to radians if it's a string or a number in degrees
+            omega = THREE.MathUtils.degToRad(parseFloat(orbitalElements.longitudeOfAscendingNode));
+        } else {
+            console.error('No valid longitude of ascending node found in orbital elements');
+            return new THREE.Vector3();
+        }
+
+        // For w (argument of periapsis)
+        if (typeof orbitalElements.w === 'number') {
+            w = orbitalElements.w; // Already in radians
+        } else if (orbitalElements.argumentOfPeriapsis !== undefined) {
+            // Convert from degrees to radians if it's a string or a number in degrees
+            w = THREE.MathUtils.degToRad(parseFloat(orbitalElements.argumentOfPeriapsis));
+        } else {
+            console.error('No valid argument of periapsis found in orbital elements');
+            return new THREE.Vector3();
+        }
+
+        // For trueAnomaly
+        if (typeof orbitalElements.trueAnomaly === 'string') {
+            trueAnomaly = THREE.MathUtils.degToRad(parseFloat(orbitalElements.trueAnomaly));
+        } else {
+            trueAnomaly = orbitalElements.trueAnomaly;
+        }
+
         const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
         const position = new THREE.Vector3(
             r * Math.cos(trueAnomaly),
@@ -378,7 +616,68 @@ export class PhysicsUtils {
     }
 
     static calculateStateVectorsAtAnomaly(orbitalElements, trueAnomaly, mu) {
-        const { h, e, i, omega, w } = orbitalElements;
+        if (!orbitalElements) {
+            console.error('Invalid orbital elements');
+            return {
+                position: new THREE.Vector3(),
+                velocity: new THREE.Vector3()
+            };
+        }
+
+        // Extract orbital elements, handling both raw values and degree values
+        const h = orbitalElements.h;
+        const e = orbitalElements.e || orbitalElements.eccentricity;
+
+        // Handle both raw radians and degree string values
+        let i, omega, w;
+
+        // For i (inclination)
+        if (typeof orbitalElements.i === 'number') {
+            i = orbitalElements.i; // Already in radians
+        } else if (orbitalElements.inclination !== undefined) {
+            // Convert from degrees to radians if it's a string or a number in degrees
+            i = THREE.MathUtils.degToRad(parseFloat(orbitalElements.inclination));
+        } else {
+            console.error('No valid inclination found in orbital elements');
+            return {
+                position: new THREE.Vector3(),
+                velocity: new THREE.Vector3()
+            };
+        }
+
+        // For omega (longitude of ascending node)
+        if (typeof orbitalElements.omega === 'number') {
+            omega = orbitalElements.omega; // Already in radians
+        } else if (orbitalElements.longitudeOfAscendingNode !== undefined) {
+            // Convert from degrees to radians if it's a string or a number in degrees
+            omega = THREE.MathUtils.degToRad(parseFloat(orbitalElements.longitudeOfAscendingNode));
+        } else {
+            console.error('No valid longitude of ascending node found in orbital elements');
+            return {
+                position: new THREE.Vector3(),
+                velocity: new THREE.Vector3()
+            };
+        }
+
+        // For w (argument of periapsis)
+        if (typeof orbitalElements.w === 'number') {
+            w = orbitalElements.w; // Already in radians
+        } else if (orbitalElements.argumentOfPeriapsis !== undefined) {
+            // Convert from degrees to radians if it's a string or a number in degrees
+            w = THREE.MathUtils.degToRad(parseFloat(orbitalElements.argumentOfPeriapsis));
+        } else {
+            console.error('No valid argument of periapsis found in orbital elements');
+            return {
+                position: new THREE.Vector3(),
+                velocity: new THREE.Vector3()
+            };
+        }
+
+        // Convert trueAnomaly to radians if it's a string
+        if (typeof trueAnomaly === 'string') {
+            trueAnomaly = THREE.MathUtils.degToRad(parseFloat(trueAnomaly));
+        }
+
         const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
 
         // Position in the orbital plane
@@ -503,16 +802,6 @@ export class PhysicsUtils {
         return { burnNode1, burnNode2 };
     }
 
-    static solveKeplersEquation(M, e, tol = 1e-6) {
-        let E = M;
-        let deltaE;
-        do {
-            deltaE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
-            E += deltaE;
-        } while (Math.abs(deltaE) > tol);
-        return E;
-    }
-
     static meanAnomalyFromTrueAnomaly(trueAnomaly, eccentricity) {
         const E = 2 * Math.atan(Math.sqrt((1 - eccentricity) / (1 + eccentricity)) * Math.tan(trueAnomaly / 2));
         return E - eccentricity * Math.sin(E);
@@ -541,12 +830,80 @@ export class PhysicsUtils {
     }
 
     static cartesianToGeodetic(x, y, z) {
-        const r = Math.sqrt(x*x + y*y + z*z);
+        const r = Math.sqrt(x * x + y * y + z * z);
         const latitude = Math.asin(y / r);
         const longitude = Math.atan2(x, z);
         return {
             latitude: THREE.MathUtils.radToDeg(latitude),
             longitude: THREE.MathUtils.radToDeg(longitude)
         };
+    }
+
+    // Conversion methods added from SatellitePhysics
+    static positionToMeters(position) {
+        if (!position) return null;
+        return new THREE.Vector3(
+            position.x,
+            position.y,
+            position.z
+        );
+    }
+
+    static positionToKm(position) {
+        if (!position) return null;
+        return new THREE.Vector3(
+            position.x * Constants.metersToKm,
+            position.y * Constants.metersToKm,
+            position.z * Constants.metersToKm
+        );
+    }
+
+    static velocityToMetersPerSecond(velocity) {
+        if (!velocity) return null;
+        return new THREE.Vector3(
+            velocity.x,
+            velocity.y,
+            velocity.z
+        );
+    }
+
+    static velocityToKmPerSecond(velocity) {
+        if (!velocity) return null;
+        return new THREE.Vector3(
+            velocity.x * Constants.metersToKm,
+            velocity.y * Constants.metersToKm,
+            velocity.z * Constants.metersToKm
+        );
+    }
+
+    static getSpeed(velocity) {
+        return velocity ? velocity.length() : 0;
+    }
+
+    static getRadialAltitude(position) {
+        if (!position) return 0;
+        const positionM = this.positionToMeters(position);
+        // Calculate distance from Earth center in meters, then convert to km and subtract Earth radius in km
+        return positionM.length() * Constants.metersToKm - Constants.earthRadius * Constants.metersToKm;
+    }
+
+    static getSurfaceAltitude(position) {
+        if (!position) return 0;
+        const positionLengthM = this.positionToMeters(position).length();
+        const earthRadiusM = Constants.earthRadius;
+        return (positionLengthM - earthRadiusM) * Constants.metersToKm;
+    }
+
+    static getAltitude(position) {
+        if (!position) return 0;
+
+        // Get position in km
+        const positionKm = this.positionToKm(position);
+
+        // Earth radius in km
+        const earthRadiusKm = Constants.earthRadius * Constants.metersToKm;
+
+        // Calculate distance in km
+        return positionKm.length() - earthRadiusKm;
     }
 }
