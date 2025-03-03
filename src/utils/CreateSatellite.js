@@ -57,8 +57,8 @@ export async function createSatellite(app, params) {
     }
 
     // Update ground track visibility
-    if (newSatellite.orbit && newSatellite.orbit.groundTrack) {
-        newSatellite.orbit.groundTrack.visible = showGroundTraces;
+    if (newSatellite.orbit && newSatellite.orbit.setGroundTraceVisible) {
+        newSatellite.orbit.setGroundTraceVisible(showGroundTraces);
     }
 
     // Update velocity vector visibility
@@ -199,6 +199,13 @@ export function createSatelliteFromLatLon(app, params) {
         app.updateSatelliteList();
     }
 
+    // Initialize trace with the first point
+    if (satellite.visuals && satellite.visuals.traceLine && satellite.visuals.traceLine.visible) {
+        satellite.visuals.tracePoints.push(scaledPosition.clone());
+        satellite.visuals.traceLine.geometry.setFromPoints(satellite.visuals.tracePoints);
+        satellite.visuals.traceLine.geometry.computeBoundingSphere();
+    }
+
     return satellite;
 }
 
@@ -309,6 +316,13 @@ export function createSatelliteFromOrbitalElements(app, params) {
         app.updateSatelliteList();
     }
 
+    // Initialize trace with the first point
+    if (satellite.visuals && satellite.visuals.traceLine && satellite.visuals.traceLine.visible) {
+        satellite.visuals.tracePoints.push(scaledPosition.clone());
+        satellite.visuals.traceLine.geometry.setFromPoints(satellite.visuals.tracePoints);
+        satellite.visuals.traceLine.geometry.computeBoundingSphere();
+    }
+
     return satellite;
 }
 
@@ -392,11 +406,20 @@ export function createSatelliteInCircularOrbit(app, params) {
     console.log(`Scaled velocity: ${scaledVelocity.x.toFixed(2)}, ${scaledVelocity.y.toFixed(2)}, ${scaledVelocity.z.toFixed(2)}`);
 
     // Create the satellite with these parameters
-    return createSatellite(app, {
+    const satellite = createSatellite(app, {
         position: scaledPosition,
         velocity: scaledVelocity,
         mass,
         size,
         name
     });
+
+    // Initialize trace with the first point
+    if (satellite.visuals && satellite.visuals.traceLine && satellite.visuals.traceLine.visible) {
+        satellite.visuals.tracePoints.push(scaledPosition.clone());
+        satellite.visuals.traceLine.geometry.setFromPoints(satellite.visuals.tracePoints);
+        satellite.visuals.traceLine.geometry.computeBoundingSphere();
+    }
+
+    return satellite;
 }

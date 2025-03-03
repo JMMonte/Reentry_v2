@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from '../Button';
 import { Switch } from '../Switch';
-import { 
+import {
   Settings2,
   Grid,
   Move,
@@ -57,12 +57,12 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
         position={position}
         onPositionChange={setPosition}
         rightElement={
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="w-8 h-8 mr-2" 
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-8 h-8 mr-2"
             onClick={() => {
-              const allTrue = Object.entries(defaultSettings).every(([key, setting]) => 
+              const allTrue = Object.entries(defaultSettings).every(([key, setting]) =>
                 setting.type === 'range' ? true : settings[key]
               );
               Object.entries(defaultSettings).forEach(([key, setting]) => {
@@ -85,13 +85,13 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
               </div>
               <div className="col-span-2 flex justify-end">
                 {setting.type === 'range' ? (
-                  <input 
-                    type="range" 
+                  <input
+                    type="range"
                     className="h-1 w-20"
-                    min={setting.min} 
-                    max={setting.max} 
-                    step={setting.step} 
-                    value={settings[key]} 
+                    min={setting.min}
+                    max={setting.max}
+                    step={setting.step}
+                    value={settings[key]}
                     onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
                   />
                 ) : (
