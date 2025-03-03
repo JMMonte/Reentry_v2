@@ -31,6 +31,7 @@ import SatelliteCreator from '../satellite/SatelliteCreator';
 import { cn } from "../../../lib/Utils";
 import { DateTimePicker } from '../datetime/DateTimePicker';
 import { formatBodySelection, getBodyDisplayName, updateCameraTarget, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
+import { SimulationStateControls } from './SimulationStateControls';
 
 // Time warp options
 const timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
@@ -262,6 +263,11 @@ export function Navbar({
       </div>
 
       <div className="flex items-center space-x-4">
+        {/* Simulation State Controls */}
+        <SimulationStateControls />
+
+        <Separator orientation="vertical" className="h-8" />
+
         <TooltipProvider>
           {/* Create Satellite Button */}
           <Tooltip>

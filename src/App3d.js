@@ -12,6 +12,7 @@ import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { RadialGrid } from './components/RadialGrid.js';
 
 import {
+    createSatellite,
     createSatelliteFromLatLon,
     createSatelliteFromOrbitalElements,
     createSatelliteInCircularOrbit
@@ -918,34 +919,31 @@ class App3D extends EventTarget {
                         new CustomEvent('satelliteCreated', {
                             detail: {
                                 id: sat.id,
-                                name,
-                                mode: params.mode,
-                                params
-                            }
+                                name: sat.name,
+                            },
                         })
                     );
 
-                    return {
-                        id: sat.id,
-                        name,
-                        mode: params.mode,
-                        params,
-                        success: true
-                    };
+                    return sat.id;
                 } catch (error) {
                     console.error('Error creating satellite:', error);
-                    return { success: false, error: error.message };
+                    throw error;
                 }
             },
-
-            getMoonOrbit: async () => {
-                // Placeholder for future expansions
-                return {
-                    success: true,
-                    data: {}
-                };
-            }
+            removeSatellite: (id) => this.removeSatellite(id),
+            getDisplaySetting: (key) => this.getDisplaySetting(key),
+            updateDisplaySetting: (key, value) => this.updateDisplaySetting(key, value),
+            updateSelectedBody: (value) => this.updateSelectedBody(value),
+            updateTimeWarp: (value) => this.updateTimeWarp(value),
+            // Add save and load methods
+            saveSimulationState: () => this.saveSimulationState(),
+            loadSimulationState: async (fileOrData) => await this.loadSimulationState(fileOrData)
         };
+
+        // Expose the API to the web worker
+        if (this.physicsWorker) {
+            this.physicsWorker.api = window.api;
+        }
     }
 
     /**
@@ -1025,10 +1023,198 @@ class App3D extends EventTarget {
      * Applies custom styling to the stats panel.
      */
     _applyStatsStyle() {
-        if (this.stats?.dom) {
-            this.stats.dom.style.cssText =
-                'position:fixed;bottom:16px;right:16px;cursor:pointer;opacity:0.9;z-index:10000;';
-            document.body.appendChild(this.stats.dom);
+        // If stats panel exists, apply styling
+        if (this.stats && this.stats.dom) {
+            const dom = this.stats.dom;
+            dom.style.cssText = 'position:fixed;bottom:16px;right:16px;cursor:pointer;opacity:0.9;z-index:10000;';
+
+            // Ensure the stats DOM element is attached to the document body
+            if (!document.body.contains(dom)) {
+                document.body.appendChild(dom);
+            }
+        }
+    }
+
+    /**
+     * Saves the current simulation state to a JSON file and triggers download
+     */
+    saveSimulationState() {
+        // Create state object with all relevant simulation data
+        const state = {
+            // Basic simulation data
+            timestamp: Date.now(),
+            simulationTime: this.simulationTime,
+            timeWarp: this.timeWarp,
+
+            // Display settings
+            displaySettings: { ...this.displaySettings },
+
+            // Camera state
+            camera: {
+                position: this.camera.position.toArray(),
+                quaternion: this.camera.quaternion.toArray(),
+                zoom: this.camera.zoom
+            },
+
+            // Earth state
+            earth: this.earth ? {
+                rotation: this.earth.rotationGroup?.rotation.toArray() || [0, 0, 0]
+            } : null,
+
+            // Satellites - store creation parameters for each satellite
+            satellites: Object.values(this._satellites).map(sat => {
+                // Get basic properties
+                const { id, name, mass, size, color } = sat;
+
+                // Get position and velocity (in meters for accuracy)
+                const position = sat.position.toArray();
+                const velocity = sat.velocity.toArray();
+
+                return {
+                    id,
+                    name,
+                    mass,
+                    size,
+                    color,
+                    position,
+                    velocity
+                };
+            })
+        };
+
+        // Convert to JSON and create download link
+        const json = JSON.stringify(state, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        // Create and trigger download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sim-state-${new Date().toISOString().replace(/:/g, '-')}.json`;
+        document.body.appendChild(a);
+        a.click();
+
+        // Clean up
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 0);
+
+        return state;
+    }
+
+    /**
+     * Loads simulation state from a JSON file
+     * @param {File|string} fileOrJSON - Either a File object from file input or a JSON string
+     * @returns {Promise<boolean>} - Success status
+     */
+    async loadSimulationState(fileOrJSON) {
+        try {
+            let stateData;
+
+            // Handle different input types
+            if (typeof fileOrJSON === 'string') {
+                // Parse JSON string
+                stateData = JSON.parse(fileOrJSON);
+            } else if (fileOrJSON instanceof File) {
+                // Read file contents
+                const text = await fileOrJSON.text();
+                stateData = JSON.parse(text);
+            } else {
+                console.error('Invalid input format for loadSimulationState');
+                return false;
+            }
+
+            // Validate state data
+            if (!stateData || !stateData.satellites) {
+                console.error('Invalid simulation state data');
+                return false;
+            }
+
+            // First, clear existing satellites
+            Object.keys(this._satellites).forEach(id => {
+                this.removeSatellite(id);
+            });
+
+            // Set simulation time
+            if (stateData.simulationTime !== undefined) {
+                this.simulationTime = stateData.simulationTime;
+            }
+
+            // Set time warp
+            if (stateData.timeWarp !== undefined) {
+                this.updateTimeWarp(stateData.timeWarp);
+            }
+
+            // Restore display settings
+            if (stateData.displaySettings) {
+                Object.entries(stateData.displaySettings).forEach(([key, value]) => {
+                    this.updateDisplaySetting(key, value);
+                });
+            }
+
+            // Restore camera position if available
+            if (stateData.camera) {
+                if (stateData.camera.position) {
+                    this.camera.position.fromArray(stateData.camera.position);
+                }
+                if (stateData.camera.quaternion) {
+                    this.camera.quaternion.fromArray(stateData.camera.quaternion);
+                }
+                if (stateData.camera.zoom) {
+                    this.camera.zoom = stateData.camera.zoom;
+                    this.camera.updateProjectionMatrix();
+                }
+            }
+
+            // Restore earth rotation if available
+            if (stateData.earth && this.earth && this.earth.rotationGroup) {
+                this.earth.rotationGroup.rotation.fromArray(stateData.earth.rotation);
+            }
+
+            // Recreate all satellites
+            for (const satData of stateData.satellites) {
+                // Create a new satellite with the saved parameters
+                const position = new THREE.Vector3().fromArray(satData.position);
+                const velocity = new THREE.Vector3().fromArray(satData.velocity);
+
+                // Apply proper scaling - positions and velocities are stored in meters
+                // but need to be scaled for visualization
+                const scaledPosition = new THREE.Vector3(
+                    position.x * Constants.metersToKm * Constants.scale,
+                    position.y * Constants.metersToKm * Constants.scale,
+                    position.z * Constants.metersToKm * Constants.scale
+                );
+
+                const scaledVelocity = new THREE.Vector3(
+                    velocity.x * Constants.metersToKm * Constants.scale,
+                    velocity.y * Constants.metersToKm * Constants.scale,
+                    velocity.z * Constants.metersToKm * Constants.scale
+                );
+
+                // Create the satellite
+                const sat = await createSatellite(this, {
+                    position: scaledPosition,
+                    velocity: scaledVelocity,
+                    mass: satData.mass,
+                    size: satData.size,
+                    name: satData.name,
+                    color: satData.color
+                });
+
+                this._satellites[sat.id] = sat;
+            }
+
+            // Update satellite list in UI
+            this.updateSatelliteList();
+
+            // Check if physics worker is needed
+            this._checkPhysicsWorkerNeeded();
+
+            return true;
+        } catch (error) {
+            console.error('Error loading simulation state:', error);
+            return false;
         }
     }
 }
