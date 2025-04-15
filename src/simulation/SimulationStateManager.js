@@ -208,7 +208,22 @@ export class SimulationStateManager {
                 const encoded = window.location.hash.replace('#state=', '');
                 const json = LZString.decompressFromEncodedURIComponent(encoded);
                 if (json) {
-                    return JSON.parse(json);
+                    const parsed = JSON.parse(json);
+                    // Basic validation: must be an object, not an array/function, and only expected keys
+                    if (
+                        typeof parsed === 'object' &&
+                        parsed !== null &&
+                        !Array.isArray(parsed) &&
+                        Object.keys(parsed).every(key => ['satellites', 'camera', 'displaySettings', 'simulatedTime', 'timeWarp'].includes(key))
+                    ) {
+                        // Validate satellites
+                        if ('satellites' in parsed && !Array.isArray(parsed.satellites)) return null;
+                        // Validate camera
+                        if ('camera' in parsed && (typeof parsed.camera !== 'object' || parsed.camera === null || Array.isArray(parsed.camera))) return null;
+                        // Validate displaySettings
+                        if ('displaySettings' in parsed && (typeof parsed.displaySettings !== 'object' || parsed.displaySettings === null || Array.isArray(parsed.displaySettings))) return null;
+                        return parsed;
+                    }
                 }
             } catch (err) {
                 alert('Failed to import simulation state from URL: ' + err.message);
