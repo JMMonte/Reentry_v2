@@ -154,20 +154,7 @@ export function Navbar({
   const handleSaveState = () => {
     const app = app3DRef.current;
     if (!app) return;
-    const timeUtils = app.timeUtils;
-    const state = {
-      simulatedTime: timeUtils?.getSimulatedTime()?.toISOString?.() || null,
-      timeWarp: timeUtils?.timeWarp || 1,
-      satellites: Object.values(app.satellites || {}).map(sat => ({
-        id: sat.id,
-        name: sat.name,
-        mass: sat.mass,
-        size: sat.size,
-        color: sat.color,
-        position: sat.position ? { x: sat.position.x, y: sat.position.y, z: sat.position.z } : null,
-        velocity: sat.velocity ? { x: sat.velocity.x, y: sat.velocity.y, z: sat.velocity.z } : null
-      }))
-    };
+    const state = app.exportSimulationState();
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     saveAs(blob, `simulation-state-${new Date().toISOString()}.json`);
   };
@@ -217,54 +204,20 @@ export function Navbar({
     reader.onload = (e) => {
       try {
         const state = JSON.parse(e.target.result);
-        console.log('Parsed state:', state);
         const app = app3DRef.current;
-        console.log('App3D instance:', app);
-        console.log('app.createSatellite:', app && app.createSatellite);
         if (!app) {
           console.log('App3D instance not found');
           return;
         }
-        // Set simulation time
-        if (state.simulatedTime) {
-          app.timeUtils.setSimulatedTime(state.simulatedTime);
+        // Use the same import logic as URL load
+        if (typeof app.importSimulationState === 'function') {
+          app.importSimulationState(state);
         }
-        if (typeof state.timeWarp === 'number') {
-          app.timeUtils.setTimeWarp(state.timeWarp);
-          if (typeof app.updateTimeWarp === 'function') {
-            app.updateTimeWarp(state.timeWarp); // Notify worker
-          }
+        // Update selected body if present
+        if (state.camera && typeof state.camera.focusedBody !== 'undefined') {
+          onBodySelect(state.camera.focusedBody || 'earth');
         }
-        // Remove existing satellites
-        Object.keys(app.satellites).forEach(id => app.removeSatellite(id));
-        // Add satellites from state
-        (state.satellites || []).forEach(sat => {
-          // Convert meters to simulation units (km * scale)
-          const toSimUnits = (x) => x * Constants.metersToKm * Constants.scale;
-          const position = new THREE.Vector3(
-            toSimUnits(sat.position.x),
-            toSimUnits(sat.position.y),
-            toSimUnits(sat.position.z)
-          );
-          const velocity = new THREE.Vector3(
-            toSimUnits(sat.velocity.x),
-            toSimUnits(sat.velocity.y),
-            toSimUnits(sat.velocity.z)
-          );
-          // Always use createSatellite for state import
-          if (typeof app.createSatellite === 'function') {
-            console.log('Creating satellite:', sat);
-            app.createSatellite({
-              name: sat.name,
-              mass: sat.mass,
-              size: sat.size,
-              color: sat.color,
-              position,
-              velocity,
-              id: sat.id
-            });
-          }
-        });
+        // Optionally, update display settings if you keep them in Navbar state (if not, App.jsx already does this)
       } catch (err) {
         alert('Failed to import simulation state: ' + err.message);
         console.error('Import error:', err);
@@ -286,7 +239,7 @@ export function Navbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={onShareState /* Save State */}>
+            <DropdownMenuItem onClick={handleSaveState}>
               <Save className="h-4 w-4 mr-2" /> Save State
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => importInputRef.current && importInputRef.current.click()}>

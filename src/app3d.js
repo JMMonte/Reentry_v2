@@ -33,8 +33,9 @@ function extractDefaultDisplaySettings(settingsObj) {
 class App3D extends EventTarget {
     /**
      * Core 3D application for simulation.
+     * @param {Object} initialState - Optional initial simulation state
      */
-    constructor() {
+    constructor(initialState) {
         super();
         // Make instance available globally
         console.log('App3D: Initializing...');

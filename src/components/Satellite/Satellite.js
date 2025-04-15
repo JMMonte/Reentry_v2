@@ -265,6 +265,7 @@ export class Satellite {
         }
     }
 
+    // TODO: The method below has attributes that are not used. Find out what they are and remove them.
     updateSatellite(currentTime, realDeltaTime, warpedDeltaTime) {
         // Process any buffered physics updates
         while (this.updateBuffer.length > 0) {

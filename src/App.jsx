@@ -15,12 +15,9 @@ import './styles/animations.css';
 import SatelliteCreator from './components/ui/satellite/SatelliteCreator';
 import { DraggableModal } from './components/ui/modal/DraggableModal';
 import LZString from 'lz-string';
-import { saveAs } from 'file-saver';
-import * as THREE from 'three';
-import { Constants } from './utils/Constants.js';
 import { Button } from './components/ui/button';
 
-function App() {
+function App3DMain() {
   const [socket, setSocket] = useState(null);
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
@@ -29,6 +26,7 @@ function App() {
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date());
+  const [toast, setToast] = useState(null);
 
   const [displaySettings, setDisplaySettings] = useState(() => {
     const initialSettings = {};
@@ -45,13 +43,23 @@ function App() {
   const [shareCopied, setShareCopied] = useState(false);
 
   // --- OOP App3D Controller ---
-  const { controller, ready } = useApp3D();
+  const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
+  const { controller, ready } = useApp3D(importedState);
   const app3d = controller?.app3d;
 
   // --- State from URL hash (reactive to hash changes) ---
-  const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
+  const [checkedInitialState, setCheckedInitialState] = useState(false);
+  // Add a ref to ignore the next hashchange if triggered by save
+  const ignoreNextHashChange = React.useRef(false);
+  useEffect(() => {
+    setCheckedInitialState(true);
+  }, []);
   useEffect(() => {
     const onHashChange = () => {
+      if (ignoreNextHashChange.current) {
+        ignoreNextHashChange.current = false;
+        return;
+      }
       setImportedState(SimulationStateManager.decodeFromUrlHash());
     };
     window.addEventListener('hashchange', onHashChange);
@@ -73,6 +81,10 @@ function App() {
         });
         return merged;
       });
+    }
+    // Update selectedBody from importedState.camera.focusedBody if present
+    if (importedState && importedState.camera && typeof importedState.camera.focusedBody !== 'undefined') {
+      setSelectedBody(importedState.camera.focusedBody || 'earth');
     }
   }, [importedState]);
 
@@ -99,7 +111,14 @@ function App() {
   useEffect(() => {
     const handleSatelliteListUpdate = () => {
       if (app3d && app3d.satellites) {
-        setSatellites(app3d.satellites.getSatellites());
+        const satellites = app3d.satellites.getSatellites();
+        setSatellites(satellites);
+        // Update debug windows to use the latest satellite references
+        setDebugWindows(prev =>
+          prev
+            .map(w => satellites[w.id] ? { ...w, satellite: satellites[w.id] } : null)
+            .filter(Boolean)
+        );
       }
     };
     document.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
@@ -157,21 +176,6 @@ function App() {
     return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
   }, []);
 
-  const getNextTimeWarp = (current, increase) => {
-    const timeWarpSteps = [0.25, 0.5, 1, 2, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000];
-    const currentIndex = timeWarpSteps.findIndex(step => step >= current);
-    if (increase) {
-      if (currentIndex < timeWarpSteps.length - 1) {
-        return timeWarpSteps[currentIndex + 1];
-      }
-      return timeWarpSteps[timeWarpSteps.length - 1];
-    } else {
-      if (currentIndex > 0) {
-        return timeWarpSteps[currentIndex - 1];
-      }
-      return timeWarpSteps[0];
-    }
-  };
 
   const handleSimulatedTimeChange = (newTime) => {
     if (app3d?.timeUtils) {
@@ -197,11 +201,11 @@ function App() {
     try {
       let satellite;
       if (params.mode === 'latlon') {
-        satellite = await app3d?.createSatelliteLatLon(params);
+        satellite = await app3d?.createSatelliteFromLatLon(params);
       } else if (params.mode === 'orbital') {
-        satellite = await app3d?.createSatelliteOrbital(params);
+        satellite = await app3d?.createSatelliteFromOrbitalElements(params);
       } else if (params.mode === 'circular') {
-        satellite = await app3d?.createSatelliteCircular(params);
+        satellite = await app3d?.createSatelliteFromLatLonCircular(params);
       }
       if (satellite) {
         setIsSatelliteModalOpen(false);
@@ -237,6 +241,32 @@ function App() {
     window.open(`mailto:?subject=${subject}&body=${body}`);
   };
 
+  // Show toast for a short time
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2000);
+  };
+
+  // Cmd+S / Ctrl+S save shortcut
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (!app3d) return;
+        const state = app3d.exportSimulationState();
+        const json = JSON.stringify(state);
+        const compressed = LZString.compressToEncodedURIComponent(json);
+        const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;
+        // Set flag to ignore the next hashchange event
+        ignoreNextHashChange.current = true;
+        window.location.hash = `state=${compressed}`;
+        showToast('Sim saved');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [app3d]);
+
   // Import state handler (for completeness, pass to Navbar if needed)
   const handleImportState = (event) => {
     const file = event.target.files[0];
@@ -250,36 +280,10 @@ function App() {
         const state = JSON.parse(e.target.result);
         const app = app3d;
         if (!app) return;
-        if (state.simulatedTime) app.timeUtils.setSimulatedTime(state.simulatedTime);
-        if (typeof state.timeWarp === 'number') {
-          app.timeUtils.setTimeWarp(state.timeWarp);
-          if (typeof app.updateTimeWarp === 'function') app.updateTimeWarp(state.timeWarp);
+        // Use unified import logic
+        if (typeof app.importSimulationState === 'function') {
+          app.importSimulationState(state);
         }
-        Object.keys(app.satellites).forEach(id => app.removeSatellite(id));
-        (state.satellites || []).forEach(sat => {
-          const toSimUnits = (x) => x * Constants.metersToKm * Constants.scale;
-          const position = new THREE.Vector3(
-            toSimUnits(sat.position.x),
-            toSimUnits(sat.position.y),
-            toSimUnits(sat.position.z)
-          );
-          const velocity = new THREE.Vector3(
-            toSimUnits(sat.velocity.x),
-            toSimUnits(sat.velocity.y),
-            toSimUnits(sat.velocity.z)
-          );
-          if (typeof app.createSatellite === 'function') {
-            app.createSatellite({
-              name: sat.name,
-              mass: sat.mass,
-              size: sat.size,
-              color: sat.color,
-              position,
-              velocity,
-              id: sat.id
-            });
-          }
-        });
         // Update displaySettings state if present in imported file
         if (state.displaySettings) {
           setDisplaySettings(prev => {
@@ -293,6 +297,14 @@ function App() {
             return merged;
           });
         }
+        // Update selectedBody if present in imported file
+        if (state.camera && typeof state.camera.focusedBody !== 'undefined') {
+          setSelectedBody(state.camera.focusedBody || 'earth');
+        }
+        // Update URL to match imported state
+        const json = JSON.stringify(state);
+        const compressed = LZString.compressToEncodedURIComponent(json);
+        window.location.hash = `state=${compressed}`;
       } catch (err) {
         alert('Failed to import simulation state: ' + err.message);
       }
@@ -301,9 +313,11 @@ function App() {
     event.target.value = '';
   };
 
+  if (!checkedInitialState) return null;
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
-      <div className="relative h-screen w-screen overflow-hidden">
+      <div className="relative overflow-hidden">
         <canvas id="three-canvas" className="absolute inset-0 z-0" />
         <Navbar
           onChatToggle={() => setIsChatVisible(!isChatVisible)}
@@ -399,8 +413,61 @@ function App() {
           </div>
         </DraggableModal>
       </div>
+      {/* Toast notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          left: 0,
+          right: 0,
+          bottom: 32,
+          display: 'flex',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: 'rgba(30,30,30,0.95)',
+            color: 'white',
+            padding: '12px 32px',
+            borderRadius: 8,
+            fontSize: 16,
+            boxShadow: '0 2px 16px rgba(0,0,0,0.2)'
+          }}>{toast}</div>
+        </div>
+      )}
     </ThemeProvider>
   );
 }
 
-export default App;
+function AppWithCanvas() {
+  const [canvasReady, setCanvasReady] = useState(false);
+  const [checkedInitialState, setCheckedInitialState] = useState(false);
+
+  useEffect(() => {
+    setCheckedInitialState(true);
+  }, []);
+
+  useEffect(() => {
+    // Wait for the canvas to be in the DOM
+    const check = () => {
+      if (document.getElementById('three-canvas')) {
+        setCanvasReady(true);
+      } else {
+        setTimeout(check, 10);
+      }
+    };
+    check();
+  }, []);
+
+  if (!checkedInitialState) return null;
+
+  return (
+    <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
+      <div className="relative h-screen w-screen overflow-hidden">
+        <canvas id="three-canvas" className="absolute inset-0 z-0" />
+        {canvasReady && <App3DMain />}
+      </div>
+    </ThemeProvider>
+  );
+}
+
+export default AppWithCanvas;
