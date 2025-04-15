@@ -14,6 +14,7 @@ import {
     createSatelliteFromOrbitalElements,
     createSatelliteFromLatLonCircular
 } from './createSatellite.js';
+import { Satellite } from './components/Satellite/Satellite.js';
 
 import { setupEventListeners, setupSocketListeners } from './setup/setupListeners.js';
 import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setup/setupComponents.js';
@@ -41,6 +42,10 @@ class App3D extends EventTarget {
         this.animationFrameId = null;
         this.lineOfSightWorker = null;
         this.satelliteConnections = new THREE.Group();
+        this._satelliteArray = [];
+        this._satelliteConnectionArray = [];
+        this._frameCount = 0;
+        this._satelliteAddQueue = [];
 
         // Initialize display settings from defaults
         this.displaySettings = {};
@@ -284,7 +289,6 @@ class App3D extends EventTarget {
             return;
         }
 
-        // Request next frame first to ensure smooth animation even if there's an error
         this.animationFrameId = requestAnimationFrame(() => this.animate());
 
         try {
@@ -292,7 +296,6 @@ class App3D extends EventTarget {
                 this.stats.begin();
             }
 
-            // Update time
             const timestamp = performance.now();
             this.timeUtils.update(timestamp);
             const currentTime = this.timeUtils.getSimulatedTime();
@@ -300,38 +303,20 @@ class App3D extends EventTarget {
             this.lastTime = timestamp;
             const warpedDeltaTime = realDeltaTime * this.timeUtils.timeWarp;
 
-            // Update controls if available
             if (this.controls && typeof this.controls.update === 'function') {
                 this.controls.update();
             }
 
-            // Update satellite positions in physics worker
-            if (Object.keys(this._satellites).length > 0 && this.physicsWorker && this.workerInitialized) {
-                this.physicsWorker.postMessage({
-                    type: 'step',
-                    data: {
-                        deltaTime: warpedDeltaTime,
-                        satellites: Object.values(this._satellites).map(sat => ({
-                            id: sat.id,
-                            position: sat.position,
-                            velocity: sat.velocity
-                        }))
-                    }
+            // --- Reuse arrays for satellites ---
+            this._satelliteArray.length = 0;
+            for (const sat of Object.values(this._satellites)) {
+                this._satelliteArray.push({
+                    id: sat.id,
+                    position: sat.position,
+                    velocity: sat.velocity
                 });
             }
 
-            // Update line of sight connections if enabled
-            if (this.displaySettings.showSatConnections && this.lineOfSightWorker && Object.keys(this._satellites).length > 0) {
-                this.lineOfSightWorker.postMessage({
-                    type: 'UPDATE_SATELLITES',
-                    satellites: Object.values(this._satellites).map(sat => ({
-                        id: sat.id,
-                        position: sat.position
-                    }))
-                });
-            }
-
-            // Update physics and objects
             this.updatePhysics(realDeltaTime);
             Object.values(this._satellites).forEach(satellite => {
                 if (satellite.updateSatellite) {
@@ -339,20 +324,17 @@ class App3D extends EventTarget {
                 }
             });
 
-            // Update scene and camera
             this.updateScene(currentTime);
             if (this.cameraControls && typeof this.cameraControls.updateCameraPosition === 'function') {
                 this.cameraControls.updateCameraPosition();
             }
 
-            // Render the scene
             if (this.composers.final) {
                 this.composers.final.render();
             } else {
                 this.renderer.render(this.scene, this.camera);
             }
 
-            // Render labels
             if (this.labelRenderer) {
                 this.labelRenderer.render(this.scene, this.camera);
             }
@@ -362,7 +344,6 @@ class App3D extends EventTarget {
             }
         } catch (error) {
             console.error('Error in animation loop:', error);
-            // Don't rethrow to keep animation going
         }
     }
 
@@ -392,15 +373,33 @@ class App3D extends EventTarget {
             const { type, data } = event.data;
 
             switch (type) {
+                case 'satellitesUpdate':
+                    // Update all satellites with new positions/velocities
+                    data.forEach(update => {
+                        const satellite = this._satellites[update.id];
+                        if (satellite) {
+                            // Convert arrays to THREE.Vector3
+                            const position = new THREE.Vector3(update.position[0], update.position[1], update.position[2]);
+                            const velocity = new THREE.Vector3(update.velocity[0], update.velocity[1], update.velocity[2]);
+                            satellite.updatePosition(position, velocity);
+                        }
+                    });
+                    break;
                 case 'satelliteUpdate':
-                    const satellite = this._satellites[data.id];
-                    if (satellite) {
-                        satellite.updateBuffer.push(data);
-                    }
+                    // (Legacy, can be removed if not used elsewhere)
+                    break;
+                case 'satelliteAdded':
+                    // Optionally handle confirmation
                     break;
                 case 'initialized':
                     console.log('Physics worker initialized successfully');
                     this.workerInitialized = true;
+                    // Add any queued satellites
+                    if (this._satelliteAddQueue.length > 0) {
+                        this._satelliteAddQueue.forEach(sat => this._addSatelliteToWorker(sat));
+                        this._satelliteAddQueue = [];
+                        console.log('Queued satellites sent to worker after initialization.');
+                    }
                     break;
                 case 'error':
                     console.error('Physics worker error:', data);
@@ -422,45 +421,46 @@ class App3D extends EventTarget {
 
     updatePhysics(realDeltaTime) {
         // Only send physics updates if we have satellites and the worker is initialized
-        if (this.workerInitialized && Object.keys(this._satellites).length > 0 && this.earth && this.moon) {
-            const satelliteData = {};
-            Object.entries(this._satellites).forEach(([id, satellite]) => {
-                satelliteData[id] = {
-                    id: satellite.id,
-                    position: {
-                        x: satellite.position.x,
-                        y: satellite.position.y,
-                        z: satellite.position.z
-                    },
-                    velocity: {
-                        x: satellite.velocity.x,
-                        y: satellite.velocity.y,
-                        z: satellite.velocity.z
-                    },
-                    mass: satellite.mass
-                };
-            });
-
-            this.physicsWorker.postMessage({
-                type: 'step',
-                data: {
-                    realDeltaTime,
-                    timeWarp: this.timeUtils.timeWarp,
-                    satellites: satelliteData,
-                    earthPosition: {
-                        x: this.earth.earthBody.position.x / (Constants.metersToKm * Constants.scale),
-                        y: this.earth.earthBody.position.y / (Constants.metersToKm * Constants.scale),
-                        z: this.earth.earthBody.position.z / (Constants.metersToKm * Constants.scale)
-                    },
-                    earthRadius: Constants.earthRadius,
-                    moonPosition: {
-                        x: this.moon.moonBody.position.x / (Constants.metersToKm * Constants.scale),
-                        y: this.moon.moonBody.position.y / (Constants.metersToKm * Constants.scale),
-                        z: this.moon.moonBody.position.z / (Constants.metersToKm * Constants.scale)
-                    }
-                }
-            });
-        }
+        // REMOVE: Per-frame step message to physics worker
+        // if (this.workerInitialized && Object.keys(this._satellites).length > 0 && this.earth && this.moon) {
+        //     const satelliteData = {};
+        //     Object.entries(this._satellites).forEach(([id, satellite]) => {
+        //         satelliteData[id] = {
+        //             id: satellite.id,
+        //             position: {
+        //                 x: satellite.position.x,
+        //                 y: satellite.position.y,
+        //                 z: satellite.position.z
+        //             },
+        //             velocity: {
+        //                 x: satellite.velocity.x,
+        //                 y: satellite.velocity.y,
+        //                 z: satellite.velocity.z
+        //             },
+        //             mass: satellite.mass
+        //         };
+        //     });
+        //
+        //     this.physicsWorker.postMessage({
+        //         type: 'step',
+        //         data: {
+        //             realDeltaTime,
+        //             timeWarp: this.timeUtils.timeWarp,
+        //             satellites: satelliteData,
+        //             earthPosition: {
+        //                 x: this.earth.earthBody.position.x / (Constants.metersToKm * Constants.scale),
+        //                 y: this.earth.earthBody.position.y / (Constants.metersToKm * Constants.scale),
+        //                 z: this.earth.earthBody.position.z / (Constants.metersToKm * Constants.scale)
+        //             },
+        //             earthRadius: Constants.earthRadius,
+        //             moonPosition: {
+        //                 x: this.moon.moonBody.position.x / (Constants.metersToKm * Constants.scale),
+        //                 y: this.moon.moonBody.position.y / (Constants.metersToKm * Constants.scale),
+        //                 z: this.moon.moonBody.position.z / (Constants.metersToKm * Constants.scale)
+        //             }
+        //         }
+        //     });
+        // }
     }
 
     updateScene(currentTime) {
@@ -535,6 +535,10 @@ class App3D extends EventTarget {
     updateTimeWarp(value) {
         if (this.timeUtils) {
             this.timeUtils.setTimeWarp(value);
+        }
+        // Notify the physics worker of the new timeWarp
+        if (this.physicsWorker && this.workerInitialized) {
+            this.physicsWorker.postMessage({ type: 'setTimeWarp', data: { value } });
         }
     }
 
@@ -872,6 +876,77 @@ class App3D extends EventTarget {
             document.body.appendChild(this.stats.dom);
         }
     }
+
+    createSatelliteFromState({ name, mass, size, color, position, velocity, id }) {
+        console.log('createSatelliteFromState called', { name, mass, size, color, position, velocity, id });
+        const satellite = new Satellite({
+            scene: this.scene,
+            position,
+            velocity,
+            id,
+            color,
+            mass,
+            size,
+            app3d: this,
+            name
+        });
+        // Apply current display settings
+        const showOrbits = this.displaySettings.showOrbits;
+        const showTraces = this.displaySettings.showTraces;
+        const showGroundTraces = this.displaySettings.showGroundTraces;
+        const showSatVectors = this.displaySettings.showSatVectors;
+        if (satellite.orbitLine) satellite.orbitLine.visible = showOrbits;
+        if (satellite.apsisVisualizer) satellite.apsisVisualizer.visible = showOrbits;
+        if (satellite.traceLine) satellite.traceLine.visible = showTraces;
+        if (satellite.groundTrack) satellite.groundTrack.setVisible(showGroundTraces);
+        if (satellite.velocityVector) satellite.velocityVector.visible = showSatVectors;
+        if (satellite.orientationVector) satellite.orientationVector.visible = showSatVectors;
+        console.log('Satellite instance created:', satellite);
+        this._satellites[satellite.id] = satellite;
+        console.log('Satellite added to _satellites:', this._satellites);
+        this.checkPhysicsWorkerNeeded();
+        this.updateSatelliteList();
+        // Queue or send to worker
+        if (this.physicsWorker && this.workerInitialized) {
+            this._addSatelliteToWorker(satellite);
+        } else {
+            // Queue for later
+            this._satelliteAddQueue.push(satellite);
+            console.log('Satellite queued for worker:', satellite);
+        }
+        // Check if mesh is in the scene
+        if (this.scene && satellite.mesh && this.scene.children.includes(satellite.mesh)) {
+            console.log('Satellite mesh is in the scene.');
+        } else {
+            console.warn('Satellite mesh is NOT in the scene!');
+        }
+        return satellite;
+    }
+
+    _addSatelliteToWorker(satellite) {
+        if (!this.physicsWorker || !this.workerInitialized) return;
+        this.physicsWorker.postMessage({
+            type: 'addSatellite',
+            data: {
+                id: satellite.id,
+                position: {
+                    x: satellite.position.x / (Constants.metersToKm * Constants.scale),
+                    y: satellite.position.y / (Constants.metersToKm * Constants.scale),
+                    z: satellite.position.z / (Constants.metersToKm * Constants.scale)
+                },
+                velocity: {
+                    x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
+                    y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
+                    z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
+                },
+                mass: satellite.mass
+            }
+        });
+        console.log('Satellite sent to worker:', satellite.id);
+    }
 }
+
+// Ensure this is immediately after the class definition
+App3D.prototype.createSatellite = App3D.prototype.createSatelliteFromState;
 
 export default App3D;

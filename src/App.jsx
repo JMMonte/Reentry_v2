@@ -10,6 +10,9 @@ import { defaultSettings } from './components/ui/controls/DisplayOptions';
 import App3D from './app3d.js';
 import './styles/globals.css';
 import './styles/animations.css';
+import LZString from 'lz-string';
+import * as THREE from 'three';
+import { Constants } from './utils/Constants.js';
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -31,7 +34,6 @@ function App() {
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
   const app3dRef = useRef(null);
-  const gridHelperRef = useRef(null);
   const initializingRef = useRef(false);
 
   // Socket connection effect
@@ -116,6 +118,63 @@ function App() {
 
     initializingRef.current = true;
 
+    function importStateFromHash(app) {
+      if (window.location.hash.startsWith('#state=')) {
+        try {
+          const encoded = window.location.hash.replace('#state=', '');
+          const json = LZString.decompressFromEncodedURIComponent(encoded);
+          if (json) {
+            const state = JSON.parse(json);
+            // Set simulation time
+            if (state.simulatedTime) {
+              app.timeUtils.setSimulatedTime(state.simulatedTime);
+            }
+            if (typeof state.timeWarp === 'number') {
+              app.timeUtils.setTimeWarp(state.timeWarp);
+              if (typeof app.updateTimeWarp === 'function') {
+                app.updateTimeWarp(state.timeWarp); // Notify worker
+              }
+            }
+            // Remove existing satellites
+            Object.keys(app.satellites).forEach(id => app.removeSatellite(id));
+            // Add satellites from state
+            (state.satellites || []).forEach(sat => {
+              // Convert meters to simulation units (km * scale)
+              const toSimUnits = (x) => x * Constants.metersToKm * Constants.scale;
+              const position = new THREE.Vector3(
+                toSimUnits(sat.position.x),
+                toSimUnits(sat.position.y),
+                toSimUnits(sat.position.z)
+              );
+              const velocity = new THREE.Vector3(
+                toSimUnits(sat.velocity.x),
+                toSimUnits(sat.velocity.y),
+                toSimUnits(sat.velocity.z)
+              );
+              // Always use createSatellite for state import
+              if (typeof app.createSatellite === 'function') {
+                app.createSatellite({
+                  name: sat.name,
+                  mass: sat.mass,
+                  size: sat.size,
+                  color: sat.color,
+                  position,
+                  velocity,
+                  id: sat.id
+                });
+              }
+            });
+            // Optionally update React state
+            setSimulatedTime(state.simulatedTime ? new Date(state.simulatedTime) : new Date());
+            setTimeWarp(typeof state.timeWarp === 'number' ? state.timeWarp : 1);
+          }
+        } catch (err) {
+          alert('Failed to import simulation state from URL: ' + err.message);
+          console.error('Import error from URL:', err);
+        }
+      }
+    }
+
     try {
       const app = new App3D();
       app3dRef.current = app;
@@ -145,6 +204,21 @@ function App() {
       app.addEventListener('sceneReady', () => {
         console.log('Scene is ready');
       });
+
+      // --- Import state from URL hash if present ---
+      importStateFromHash(app);
+      // --- End import from URL hash ---
+
+      // --- Listen for hash changes to support hot loading ---
+      const onHashChange = () => importStateFromHash(app);
+      window.addEventListener('hashchange', onHashChange);
+      // --- End hashchange listener ---
+
+      // Clean up listener on unmount
+      return () => {
+        window.removeEventListener('hashchange', onHashChange);
+      };
+
     } catch (error) {
       console.error('Error initializing App3D:', error);
     }
