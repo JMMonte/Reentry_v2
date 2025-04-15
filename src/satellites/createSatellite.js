@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { PhysicsUtils } from './utils/PhysicsUtils.js';
-import { Constants } from './utils/Constants.js';
+import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { Constants } from '../utils/Constants.js';
 
 export async function createSatellite(app, params) {
     // Generate new unique ID using SatelliteManager's internal state

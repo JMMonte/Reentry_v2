@@ -10,7 +10,7 @@ import {
     createSatelliteFromLatLon,
     createSatelliteFromOrbitalElements,
     createSatelliteFromLatLonCircular
-} from './createSatellite.js';
+} from './satellites/createSatellite.js';
 import { SatelliteManager } from './simulation/SatelliteManager.js';
 import { DisplaySettingsManager } from './simulation/DisplaySettingsManager.js';
 import { SceneManager } from './simulation/SceneManager.js';
@@ -21,8 +21,8 @@ import { SimulationLoop } from './simulation/SimulationLoop.js';
 import { setupEventListeners } from './setup/setupListeners.js';
 import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setup/setupComponents.js';
 import { loadTextures, setupSceneDetails, setupPostProcessing } from './setup/setupScene.js';
-import { initTimeControls } from './timeControls.js';
-import { initializeBodySelector } from './bodySelectorControls.js';
+import { initTimeControls } from './controls/timeControls.js';
+import { initializeBodySelector } from './controls/bodySelectorControls.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 
 // Utility to convert defaultSettings to {key: value}
