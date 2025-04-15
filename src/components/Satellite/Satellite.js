@@ -6,6 +6,7 @@ import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 
 export class Satellite {
     constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name }) {
+        this.app3d = app3d;
         this.scene = scene;
         this.id = id;
         this.name = name;

@@ -31,6 +31,7 @@ import SatelliteCreator from '../satellite/SatelliteCreator';
 import { cn } from "../../../lib/utils";
 import { DateTimePicker } from '../datetime/DateTimePicker';
 import { formatBodySelection, getBodyDisplayName, updateCameraTarget, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
+import { saveAs } from 'file-saver';
 
 // Time warp options
 const timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
@@ -145,6 +146,67 @@ export function Navbar({
     } catch (error) {
       console.error('Error creating satellite:', error);
     }
+  };
+
+  // --- Save/Import Simulation State ---
+  const handleSaveState = () => {
+    const app = app3DRef.current;
+    if (!app) return;
+    const timeUtils = app.timeUtils;
+    const state = {
+      simulatedTime: timeUtils?.getSimulatedTime()?.toISOString?.() || null,
+      timeWarp: timeUtils?.timeWarp || 1,
+      satellites: Object.values(app.satellites || {}).map(sat => ({
+        id: sat.id,
+        name: sat.name,
+        mass: sat.mass,
+        size: sat.size,
+        color: sat.color,
+        position: sat.position ? { x: sat.position.x, y: sat.position.y, z: sat.position.z } : null,
+        velocity: sat.velocity ? { x: sat.velocity.x, y: sat.velocity.y, z: sat.velocity.z } : null
+      }))
+    };
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    saveAs(blob, `simulation-state-${new Date().toISOString()}.json`);
+  };
+
+  const handleImportState = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const state = JSON.parse(e.target.result);
+        const app = app3DRef.current;
+        if (!app) return;
+        // Set simulation time
+        if (state.simulatedTime) {
+          app.timeUtils.setSimulatedTime(state.simulatedTime);
+        }
+        if (typeof state.timeWarp === 'number') {
+          app.timeUtils.setTimeWarp(state.timeWarp);
+        }
+        // Remove existing satellites
+        Object.keys(app.satellites).forEach(id => app.removeSatellite(id));
+        // Add satellites from state
+        (state.satellites || []).forEach(sat => {
+          app.createSatelliteOrbital({
+            name: sat.name,
+            mass: sat.mass,
+            size: sat.size,
+            color: sat.color,
+            position: new window.THREE.Vector3(sat.position.x, sat.position.y, sat.position.z),
+            velocity: new window.THREE.Vector3(sat.velocity.x, sat.velocity.y, sat.velocity.z),
+            id: sat.id
+          });
+        });
+      } catch (err) {
+        alert('Failed to import simulation state: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    // Reset input value so the same file can be selected again
+    event.target.value = '';
   };
 
   return (
@@ -308,6 +370,23 @@ export function Navbar({
             <TooltipContent>Toggle Satellite List</TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        {/* Save/Import Simulation State Buttons */}
+        <Button variant="outline" size="sm" onClick={handleSaveState} style={{ minWidth: 90 }}>
+          Save State
+        </Button>
+        <label htmlFor="import-state-input" style={{ margin: 0 }}>
+          <Button as="span" variant="outline" size="sm" style={{ minWidth: 90 }}>
+            Import State
+          </Button>
+          <input
+            id="import-state-input"
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={handleImportState}
+          />
+        </label>
       </div>
 
       {/* Satellite Creator Modal */}

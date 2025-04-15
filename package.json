@@ -47,6 +47,7 @@
     "dompurify": "^3.2.2",
     "domutils": "^3.1.0",
     "dotenv": "^16.4.5",
+    "file-saver": "^2.0.5",
     "fs-extra": "^11.2.0",
     "jsdom": "^25.0.0",
     "katex": "^0.16.11",
