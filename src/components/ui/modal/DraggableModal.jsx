@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '../button';
 import { ChevronDown, ChevronUp, X, GripHorizontal } from 'lucide-react';
 
+// Module-level z-index tracker
+let globalZIndex = 9999;
+
 export function DraggableModal({ 
   title, 
   children, 
@@ -24,6 +27,7 @@ export function DraggableModal({
   const [position, setPosition] = useState(defaultPosition);
   const [height, setHeight] = useState(defaultHeight);
   const [width, setWidth] = useState(defaultWidth);
+  const [zIndex, setZIndex] = useState(globalZIndex);
   const modalRef = useRef(null);
   const contentRef = useRef(null);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0 });
@@ -44,6 +48,9 @@ export function DraggableModal({
   }, [isCollapsed, children, resizable, height]);
 
   const startDragging = (e) => {
+    // Bring this modal to front
+    globalZIndex += 1;
+    setZIndex(globalZIndex);
     dragRef.current = {
       isDragging: true,
       startX: e.clientX - position.x,
@@ -126,7 +133,7 @@ export function DraggableModal({
         minWidth,
         maxHeight: isCollapsed ? 'auto' : (resizable ? (maxHeight || window.innerHeight * 0.9) : 'none'),
         maxWidth: resizable ? (maxWidth || window.innerWidth * 0.9) : 'none',
-        zIndex: 9999,
+        zIndex,
       }}
     >
       {/* Header */}
