@@ -5,7 +5,7 @@ import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer';
 import Stats from 'stats.js';
 import { Constants } from './utils/Constants.js';
 import { TimeUtils } from './utils/TimeUtils.js';
-import { TextureManager } from './managers/TextureManager.js';
+import { TextureManager } from './managers/textureManager.js';
 import { CameraControls } from './managers/CameraControls.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { RadialGrid } from './components/RadialGrid.js';
