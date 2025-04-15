@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
-import * as THREE from 'three';
 import { ThemeProvider } from './components/theme-provider';
 import { Navbar } from './components/ui/navbar/Navbar';
 import { ChatModal } from './components/ui/chat/ChatModal';
@@ -9,7 +8,6 @@ import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWind
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
 import App3D from './app3d.js';
-import { testSocketConnection } from './socket-test.js';
 import './styles/globals.css';
 import './styles/animations.css';
 
@@ -38,7 +36,7 @@ function App() {
 
   // Socket connection effect
   useEffect(() => {
-    const socketServerUrl = import.meta.env.NEXT_PUBLIC_SOCKET_SERVER_URL || 'http://localhost:3000';
+    const socketServerUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
     console.log('Connecting to socket server:', socketServerUrl);
     
     const newSocket = io(socketServerUrl, {
@@ -63,19 +61,6 @@ function App() {
     return () => {
       if (newSocket) {
         newSocket.close();
-      }
-    };
-  }, []);
-
-  // Test socket connection independently
-  useEffect(() => {
-    console.log('Testing socket connection independently...');
-    const testSocket = testSocketConnection();
-    
-    return () => {
-      if (testSocket) {
-        console.log('Cleaning up test socket');
-        testSocket.disconnect();
       }
     };
   }, []);

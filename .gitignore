@@ -5,3 +5,4 @@ dist/
 venv/
 .env
 .vercel
+.DS_Store

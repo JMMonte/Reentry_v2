@@ -7,7 +7,7 @@ echo "🚀 Starting Vercel deployment build process"
 
 # Print environment info
 echo "Node version: $(node -v)"
-echo "NPM version: $(npm -v)"
+echo "PNPM version: $(pnpm -v)"
 
 # Create asset directories
 echo "Creating asset directories..."
@@ -20,6 +20,6 @@ node optimize-assets.js
 
 # Build the application
 echo "Building application..."
-npm run build
+pnpm run build
 
 echo "✅ Build completed successfully!" 

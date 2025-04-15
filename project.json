@@ -3,7 +3,7 @@
     "buildCommand": "./build.sh",
     "outputDirectory": "dist",
     "framework": "vite",
-    "devCommand": "npm run dev",
+    "devCommand": "pnpm run dev",
     "installCommand": "true",
     "public": true,
     "rootDirectory": null,

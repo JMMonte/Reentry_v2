@@ -7,7 +7,7 @@ This project uses a static deployment approach for Vercel to avoid build issues.
 1. Build the project locally:
 
     ```bash
-    npm run build
+    pnpm run build
     ```
 
 2. Create a `vercel.json` file in the `dist` directory with the following content:

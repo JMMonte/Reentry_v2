@@ -53,7 +53,7 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
 2. Install the required dependencies:
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. Set up environment variables:
@@ -64,13 +64,13 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
 
    Edit the `.env` file to configure the socket server URL:
 
-   - For local development, point to your locally running server: `NEXT_PUBLIC_SOCKET_SERVER_URL=http://localhost:3000`
-   - For production, point to the Railway server: `NEXT_PUBLIC_SOCKET_SERVER_URL=https://reentry-server.up.railway.app`
+   - For local development, point to your locally running server: `VITE_SOCKET_SERVER_URL=http://localhost:4000` or `http://localhost:1234` (these are the allowed dev origins)
+   - For production, point to the Railway server: `VITE_SOCKET_SERVER_URL=https://reentry-server.up.railway.app`
 
 4. Start the development server:
 
    ```bash
-   npm run dev
+   pnpm run dev
    ```
 
 This will run the application on `http://localhost:1234`.
@@ -102,4 +102,4 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) f
 
 ## Contact
 
-For support or queries, contact [jm@reenter.space](mailto:jm@reenter.space).
+For support or queries, contact [hi@darkmatter.is](mailto:hi@darkmatter.is).
