@@ -24,6 +24,7 @@ import { loadTextures, setupSceneDetails, setupPostProcessing } from './setup/se
 import { initTimeControls } from './controls/timeControls.js';
 import { initializeBodySelector } from './controls/bodySelectorControls.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
+import { Constants } from './utils/Constants.js';
 
 // Utility to convert defaultSettings to {key: value}
 function extractDefaultDisplaySettings(settingsObj) {
@@ -51,6 +52,8 @@ class App3D extends EventTarget {
         this._controls = null;
         this._lineOfSightWorker = null;
         this._satelliteConnections = new THREE.Group();
+        this._connections = [];
+        this._connectionsEnabled = false;
 
         // Managers
         this._satellites = new SatelliteManager(this);
@@ -120,6 +123,7 @@ class App3D extends EventTarget {
             this._setupRenderer();
             // Delegate all scene/camera/renderer/radialGrid setup to SceneManager
             await this.sceneManager.init();
+            this._addConnectionsGroup();
             // Controls and other setup
             this._setupControls();
             this._setupCameraControls();
@@ -133,6 +137,11 @@ class App3D extends EventTarget {
             this._isInitialized = true;
             this._addWindowResizeListener();
             this.onWindowResize();
+            // Ensure connections are enabled on load if toggle is on
+            if (this.displaySettingsManager.getSetting('showSatConnections')) {
+                this._handleShowSatConnectionsChange(true);
+                this._updateConnectionsWorkerSatellites();
+            }
             // Start simulation loop
             this.simulationLoop = new SimulationLoop({
                 app: this,
@@ -244,10 +253,14 @@ class App3D extends EventTarget {
             this.moon.updateRotation(currentTime);
         }
         if (this.vectors) this.vectors.updateVectors();
+        // Update satellite connections every frame if enabled
+        if (this._connectionsEnabled) {
+            this._updateConnectionsWorkerSatellites();
+        }
     }
 
     updateSatelliteConnections(connections) {
-
+        this._satelliteConnections.visible = true;
         // Clear existing connections
         while (this._satelliteConnections.children.length > 0) {
             const line = this._satelliteConnections.children[0];
@@ -255,21 +268,23 @@ class App3D extends EventTarget {
             line.material.dispose();
             this._satelliteConnections.remove(line);
         }
-
         // Create new connections if enabled
         if (this.displaySettingsManager.getSetting('showSatConnections')) {
             connections.forEach(conn => {
                 const material = new THREE.LineBasicMaterial({
                     color: conn.color === 'red' ? 0xff0000 : 0x00ff00,
-                    opacity: conn.color === 'red' ? 0.8 : 0.5, // Make red lines more visible
-                    transparent: true
+                    opacity: 1.0,
+                    transparent: false,
+                    linewidth: 5 // Note: linewidth only works in some environments
                 });
-
                 const geometry = new THREE.BufferGeometry();
-                const vertices = new Float32Array(conn.points.flat());
+                // Convert connection points from km to simulation units (km * scale)
+                const vertices = new Float32Array(
+                    conn.points.flat().map(v => v * Constants.scale)
+                );
                 geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-
                 const line = new THREE.Line(geometry, material);
+                line.renderOrder = 9999;
                 this._satelliteConnections.add(line);
             });
         }
@@ -328,6 +343,9 @@ class App3D extends EventTarget {
 
     updateDisplaySetting(key, value) {
         this.displaySettingsManager.updateSetting(key, value);
+        if (key === 'showSatConnections') {
+            this._handleShowSatConnectionsChange(value);
+        }
     }
 
     updateSatelliteList() {
@@ -346,6 +364,10 @@ class App3D extends EventTarget {
                 satellites: satelliteData
             }
         }));
+        // Update connections worker if enabled
+        if (this._connectionsEnabled && this._lineOfSightWorker) {
+            this._updateConnectionsWorkerSatellites();
+        }
     }
 
     // Delegate satellite/state methods to SimulationStateManager
@@ -448,6 +470,53 @@ class App3D extends EventTarget {
     }
     createSatelliteFromOrbitalElements(params) {
         return createSatelliteFromOrbitalElements(this, params);
+    }
+
+    // --- SATELLITE CONNECTIONS WORKER LOGIC ---
+    _initLineOfSightWorker() {
+        if (this._lineOfSightWorker) return;
+        this._lineOfSightWorker = new Worker(new URL('./workers/lineOfSightWorker.js', import.meta.url), { type: 'module' });
+        this._lineOfSightWorker.onmessage = (e) => {
+            if (e.data.type === 'CONNECTIONS_UPDATED') {
+                this._connections = e.data.connections;
+                this.updateSatelliteConnections(this._connections);
+            }
+        };
+    }
+    _terminateLineOfSightWorker() {
+        if (this._lineOfSightWorker) {
+            this._lineOfSightWorker.terminate();
+            this._lineOfSightWorker = null;
+        }
+        this._connections = [];
+        this.updateSatelliteConnections([]);
+    }
+    _updateConnectionsWorkerSatellites() {
+        if (!this._lineOfSightWorker) return;
+        const satellitesRaw = Object.values(this.satellites.getSatellites())
+            .filter(sat => sat && sat.position && sat.id != null)
+            .map(sat => ({
+                id: sat.id,
+                position: { ...sat.position }
+            }));
+        const satellites = satellitesRaw.map(sat => ({
+            id: sat.id,
+            position: {
+                x: sat.position.x * Constants.metersToKm,
+                y: sat.position.y * Constants.metersToKm,
+                z: sat.position.z * Constants.metersToKm
+            }
+        }));
+        this._lineOfSightWorker.postMessage({ type: 'UPDATE_SATELLITES', satellites });
+    }
+    _handleShowSatConnectionsChange(enabled) {
+        this._connectionsEnabled = enabled;
+        if (enabled) {
+            this._initLineOfSightWorker();
+            this._updateConnectionsWorkerSatellites();
+        } else {
+            this._terminateLineOfSightWorker();
+        }
     }
 }
 

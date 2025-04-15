@@ -127,6 +127,11 @@ export class SimulationStateManager {
             Object.entries(state.displaySettings).forEach(([key, value]) => {
                 this.app.displaySettingsManager.updateSetting(key, value);
             });
+            // Ensure satellite connections are enabled if toggle is on
+            if (this.app.displaySettingsManager.getSetting('showSatConnections')) {
+                this.app._handleShowSatConnectionsChange(true);
+                this.app._updateConnectionsWorkerSatellites();
+            }
         }
         // Add more state import logic as needed
     }

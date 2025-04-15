@@ -3,8 +3,8 @@ import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 
 let satellites = [];
-const EARTH_RADIUS = Constants.earthRadius * Constants.metersToKm * Constants.scale; // Convert to simulation units
-const ATMOSPHERE_HEIGHT = 100 * Constants.scale; // Approximately 1000km atmosphere height for better visibility
+const EARTH_RADIUS = Constants.earthRadius * Constants.metersToKm; // in km
+const ATMOSPHERE_HEIGHT = 100; // 100 km
 const SUN_RADIUS = Constants.sunRadius * Constants.metersToKm * Constants.scale;
 const MOON_RADIUS = Constants.moonRadius * Constants.metersToKm * Constants.scale;
 
@@ -27,16 +27,16 @@ function calculateLineOfSight() {
             const sat1 = satellites[i];
             const sat2 = satellites[j];
             
-            // Create vectors for the satellites and scale them
+            // Create vectors for the satellites (positions are already in km)
             const pos1 = new THREE.Vector3(
-                sat1.position.x * Constants.metersToKm * Constants.scale,
-                sat1.position.y * Constants.metersToKm * Constants.scale,
-                sat1.position.z * Constants.metersToKm * Constants.scale
+                sat1.position.x,
+                sat1.position.y,
+                sat1.position.z
             );
             const pos2 = new THREE.Vector3(
-                sat2.position.x * Constants.metersToKm * Constants.scale,
-                sat2.position.y * Constants.metersToKm * Constants.scale,
-                sat2.position.z * Constants.metersToKm * Constants.scale
+                sat2.position.x,
+                sat2.position.y,
+                sat2.position.z
             );
             
             // Calculate direction vector between satellites
