@@ -38,6 +38,12 @@ import { saveAs } from 'file-saver';
 import * as THREE from 'three';
 import { Constants } from '../../../utils/Constants.js';
 import LZString from 'lz-string';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem
+} from '../dropdown-menu';
 
 // Time warp options
 const timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
@@ -282,20 +288,30 @@ export function Navbar({
   return (
     <div className="fixed top-0 left-0 right-0 h-[72px] flex items-center justify-between z-20 bg-gradient-to-b from-background/90 to-transparent backdrop-blur-sm px-4">
       <div className="flex items-center space-x-4">
-        {/* Chat Toggle */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={onChatToggle} className={cn(isChatVisible && "bg-accent")}>
-                <MessageSquare className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle Chat</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <Separator orientation="vertical" className="h-8" />
-
+        {/* Darksun Logo as Dropdown Trigger */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" className="bg-black hover:bg-neutral-800 flex items-center justify-center p-0">
+              <img src="/favicon-32x32.png" alt="App Icon" style={{ height: 20, width: 20 }} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={handleSaveState}>
+              <Save className="h-4 w-4 mr-2" /> Save State
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleImportButtonClick}>
+              <Upload className="h-4 w-4 mr-2" /> Import State
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <input
+          ref={importInputRef}
+          id="import-state-input"
+          type="file"
+          accept="application/json"
+          style={{ display: 'none' }}
+          onChange={handleImportState}
+        />
         {/* Body Selection */}
         <Select value={selectedBody} onValueChange={handleBodyChange}>
           <SelectTrigger className="w-[100px]">
@@ -424,64 +440,40 @@ export function Navbar({
             </TooltipTrigger>
             <TooltipContent>Display Options</TooltipContent>
           </Tooltip>
-
-          {/* Satellite List Toggle */}
+        </TooltipProvider>
+        {/* Toggle Chat Button at right edge */}
+        <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onSatelliteListToggle}
-                className={cn(isSatelliteListVisible && "bg-accent")}
-              >
+              <Button variant="outline" size="icon" onClick={onChatToggle} className={cn(isChatVisible && "bg-accent")}> 
+                <MessageSquare className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Toggle Chat</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {/* Toggle Satellite List Button at right edge */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon" onClick={onSatelliteListToggle} className={cn(isSatelliteListVisible && "bg-accent")}> 
                 <List className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Toggle Satellite List</TooltipContent>
           </Tooltip>
         </TooltipProvider>
-
-        {/* Save/Import/Share Simulation State Buttons */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" onClick={handleSaveState}>
-                  <Save className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Save State</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" onClick={handleShareState}>
-                  <Share2 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Share State</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" onClick={handleImportButtonClick}>
-                  <Upload className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Import State</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <input
-            ref={importInputRef}
-            id="import-state-input"
-            type="file"
-            accept="application/json"
-            style={{ display: 'none' }}
-            onChange={handleImportState}
-          />
-        </div>
+        {/* Share State Button at right edge */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon" onClick={handleShareState}>
+                <Share2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Share State</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Satellite Creator Modal */}
