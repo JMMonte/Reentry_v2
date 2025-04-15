@@ -76,10 +76,11 @@ export function Navbar({
   simulatedTime,
   onSimulatedTimeChange,
   app3DRef,
-  satellites
+  satellites,
+  onShareState,
+  onImportState
 }) {
   const [satelliteOptions, setSatelliteOptions] = useState([]);
-  const [satelliteModalPosition, setSatelliteModalPosition] = useState({ x: window.innerWidth - 420, y: 80 });
   const [shareCopied, setShareCopied] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -137,25 +138,6 @@ export function Navbar({
       // For earth and moon, pass the value directly
       onBodySelect(value);
       // No direct camera update here
-    }
-  };
-
-  const onCreateSatellite = async (params) => {
-    try {
-      let satellite;
-      if (params.mode === 'latlon') {
-        satellite = await app3DRef.current?.createSatelliteLatLon(params);
-      } else if (params.mode === 'orbital') {
-        satellite = await app3DRef.current?.createSatelliteOrbital(params);
-      } else if (params.mode === 'circular') {
-        satellite = await app3DRef.current?.createSatelliteCircular(params);
-      }
-
-      if (satellite) {
-        onSatelliteCreatorToggle(false);
-      }
-    } catch (error) {
-      console.error('Error creating satellite:', error);
     }
   };
 
@@ -296,10 +278,10 @@ export function Navbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={handleSaveState}>
+            <DropdownMenuItem onClick={onShareState /* Save State */}>
               <Save className="h-4 w-4 mr-2" /> Save State
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleImportButtonClick}>
+            <DropdownMenuItem onClick={() => importInputRef.current && importInputRef.current.click()}>
               <Upload className="h-4 w-4 mr-2" /> Import State
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -310,7 +292,7 @@ export function Navbar({
           type="file"
           accept="application/json"
           style={{ display: 'none' }}
-          onChange={handleImportState}
+          onChange={onImportState}
         />
         {/* Body Selection */}
         <Select value={selectedBody} onValueChange={handleBodyChange}>
@@ -467,7 +449,7 @@ export function Navbar({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={handleShareState}>
+              <Button variant="outline" size="icon" onClick={onShareState}>
                 <Share2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
@@ -475,46 +457,6 @@ export function Navbar({
           </Tooltip>
         </TooltipProvider>
       </div>
-
-      {/* Satellite Creator Modal */}
-      <DraggableModal
-        title="Create Satellite"
-        isOpen={isSatelliteModalOpen}
-        onClose={() => onSatelliteCreatorToggle(false)}
-        className="w-[400px]"
-      >
-        <SatelliteCreator
-          onCreateSatellite={onCreateSatellite}
-        />
-      </DraggableModal>
-
-      {/* Share Modal */}
-      <DraggableModal
-        title="Share Simulation State"
-        isOpen={shareModalOpen}
-        onClose={() => setShareModalOpen(false)}
-        className="w-[480px]"
-      >
-        <div className="flex flex-col gap-4">
-          <label htmlFor="share-url" className="font-medium">Shareable URL:</label>
-          <input
-            id="share-url"
-            type="text"
-            value={shareUrl}
-            readOnly
-            className="w-full px-2 py-1 border rounded bg-muted text-xs font-mono"
-            onFocus={e => e.target.select()}
-          />
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleCopyShareUrl}>
-              {shareCopied ? 'Copied!' : 'Copy to Clipboard'}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleShareViaEmail}>
-              Share via Email
-            </Button>
-          </div>
-        </div>
-      </DraggableModal>
     </div>
   );
 }

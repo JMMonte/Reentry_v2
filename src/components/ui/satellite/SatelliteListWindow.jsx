@@ -47,6 +47,7 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
             isOpen={isOpen}
             onClose={() => setIsOpen(false)}
             className="w-[250px]"
+            key={isOpen ? 'sat-list-open' : 'sat-list-closed'}
             defaultPosition={{ x: 20, y: 80 }}
             resizable={true}
             defaultWidth={300}
@@ -55,55 +56,55 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
         >
             <div className="space-y-1 p-1">
                 {Object.values(satellites)
-                  .filter(sat => sat && sat.id != null)
-                  .map((satellite) => (
-                    <div 
-                        key={satellite.id}
-                        className="flex items-center justify-between p-1.5 bg-secondary/50 rounded-md text-xs"
-                    >
-                        <div className="flex items-center gap-1.5">
-                            <ColorPicker
-                                color={satellite.color}
-                                onChange={(color) => satellite.setColor(color)}
-                            />
-                            <span>
-                                {satellite.name || `Satellite ${satellite.id}`}
-                            </span>
+                    .filter(sat => sat && sat.id != null)
+                    .map((satellite) => (
+                        <div
+                            key={satellite.id}
+                            className="flex items-center justify-between p-1.5 bg-secondary/50 rounded-md text-xs"
+                        >
+                            <div className="flex items-center gap-1.5">
+                                <ColorPicker
+                                    color={satellite.color}
+                                    onChange={(color) => satellite.setColor(color)}
+                                />
+                                <span>
+                                    {satellite.name || `Satellite ${satellite.id}`}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-6 h-6"
+                                    onClick={() => handleToggleDebug(satellite)}
+                                    title="Toggle Debug Window"
+                                >
+                                    {satellite.debugWindow?.isOpen ?
+                                        <MonitorX className="h-3 w-3" /> :
+                                        <MonitorCheck className="h-3 w-3" />
+                                    }
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-6 h-6"
+                                    onClick={() => handleFocus(satellite)}
+                                    title="Focus Camera"
+                                >
+                                    <Focus className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-6 h-6 text-destructive hover:text-destructive"
+                                    onClick={() => handleDelete(satellite)}
+                                    title="Delete Satellite"
+                                >
+                                    <Trash2 className="h-3 w-3" />
+                                </Button>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="w-6 h-6"
-                                onClick={() => handleToggleDebug(satellite)}
-                                title="Toggle Debug Window"
-                            >
-                                {satellite.debugWindow?.isOpen ? 
-                                    <MonitorX className="h-3 w-3" /> : 
-                                    <MonitorCheck className="h-3 w-3" />
-                                }
-                            </Button>
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="w-6 h-6"
-                                onClick={() => handleFocus(satellite)}
-                                title="Focus Camera"
-                            >
-                                <Focus className="h-3 w-3" />
-                            </Button>
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="w-6 h-6 text-destructive hover:text-destructive"
-                                onClick={() => handleDelete(satellite)}
-                                title="Delete Satellite"
-                            >
-                                <Trash2 className="h-3 w-3" />
-                            </Button>
-                        </div>
-                    </div>
-                ))}
+                    ))}
                 {Object.values(satellites).length === 0 && (
                     <div className="text-xs text-muted-foreground text-center p-2">
                         No satellites in orbit

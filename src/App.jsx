@@ -12,6 +12,13 @@ import { useSimulationState } from './simulation/useSimulationState';
 import { SimulationStateManager } from './simulation/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
+import SatelliteCreator from './components/ui/satellite/SatelliteCreator';
+import { DraggableModal } from './components/ui/modal/DraggableModal';
+import LZString from 'lz-string';
+import { saveAs } from 'file-saver';
+import * as THREE from 'three';
+import { Constants } from './utils/Constants.js';
+import { Button } from './components/ui/button';
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -33,6 +40,9 @@ function App() {
 
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
 
   // --- OOP App3D Controller ---
   const { controller, ready } = useApp3D();
@@ -165,6 +175,102 @@ function App() {
 
   const navbarSatellites = useMemo(() => satellites, [satellites]);
 
+  // Satellite Creator handler
+  const onCreateSatellite = async (params) => {
+    try {
+      let satellite;
+      if (params.mode === 'latlon') {
+        satellite = await app3d?.createSatelliteLatLon(params);
+      } else if (params.mode === 'orbital') {
+        satellite = await app3d?.createSatelliteOrbital(params);
+      } else if (params.mode === 'circular') {
+        satellite = await app3d?.createSatelliteCircular(params);
+      }
+      if (satellite) {
+        setIsSatelliteModalOpen(false);
+      }
+    } catch (error) {
+      console.error('Error creating satellite:', error);
+    }
+  };
+
+  // Share modal handlers
+  const handleShareState = () => {
+    if (!app3d) return;
+    const state = app3d.exportSimulationState();
+    const json = JSON.stringify(state);
+    const compressed = LZString.compressToEncodedURIComponent(json);
+    const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;
+    setShareUrl(url);
+    setShareModalOpen(true);
+    setShareCopied(false);
+  };
+  const handleCopyShareUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1500);
+    } catch (err) {
+      alert('Failed to copy URL: ' + err.message);
+    }
+  };
+  const handleShareViaEmail = () => {
+    const subject = encodeURIComponent('Check out this simulation state!');
+    const body = encodeURIComponent(`Open this link to load the simulation state:\n${shareUrl}`);
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+  };
+
+  // Import state handler (for completeness, pass to Navbar if needed)
+  const handleImportState = (event) => {
+    const file = event.target.files[0];
+    if (!file) {
+      console.log('No file selected');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const state = JSON.parse(e.target.result);
+        const app = app3d;
+        if (!app) return;
+        if (state.simulatedTime) app.timeUtils.setSimulatedTime(state.simulatedTime);
+        if (typeof state.timeWarp === 'number') {
+          app.timeUtils.setTimeWarp(state.timeWarp);
+          if (typeof app.updateTimeWarp === 'function') app.updateTimeWarp(state.timeWarp);
+        }
+        Object.keys(app.satellites).forEach(id => app.removeSatellite(id));
+        (state.satellites || []).forEach(sat => {
+          const toSimUnits = (x) => x * Constants.metersToKm * Constants.scale;
+          const position = new THREE.Vector3(
+            toSimUnits(sat.position.x),
+            toSimUnits(sat.position.y),
+            toSimUnits(sat.position.z)
+          );
+          const velocity = new THREE.Vector3(
+            toSimUnits(sat.velocity.x),
+            toSimUnits(sat.velocity.y),
+            toSimUnits(sat.velocity.z)
+          );
+          if (typeof app.createSatellite === 'function') {
+            app.createSatellite({
+              name: sat.name,
+              mass: sat.mass,
+              size: sat.size,
+              color: sat.color,
+              position,
+              velocity,
+              id: sat.id
+            });
+          }
+        });
+      } catch (err) {
+        alert('Failed to import simulation state: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <div className="relative h-screen w-screen overflow-hidden">
@@ -186,6 +292,8 @@ function App() {
           onSimulatedTimeChange={handleSimulatedTimeChange}
           app3DRef={{ current: app3d }}
           satellites={navbarSatellites}
+          onShareState={handleShareState}
+          onImportState={handleImportState}
         />
         <ChatModal
           isOpen={isChatVisible}
@@ -219,6 +327,44 @@ function App() {
           setIsOpen={setIsSatelliteListVisible}
           onBodySelect={handleBodySelect}
         />
+        {/* Satellite Creator Modal */}
+        <DraggableModal
+          title="Create Satellite"
+          isOpen={isSatelliteModalOpen}
+          onClose={() => setIsSatelliteModalOpen(false)}
+          className="w-[400px]"
+        >
+          <SatelliteCreator onCreateSatellite={onCreateSatellite} />
+        </DraggableModal>
+        {/* Share Modal */}
+        <DraggableModal
+          title="Share Simulation State"
+          isOpen={shareModalOpen}
+          onClose={() => setShareModalOpen(false)}
+          className="w-[480px]"
+          key={shareModalOpen ? 'share-modal-open' : 'share-modal-closed'}
+          defaultPosition={{ x: window.innerWidth / 2 - 240, y: 120 }}
+        >
+          <div className="flex flex-col gap-4">
+            <label htmlFor="share-url" className="font-medium">Shareable URL:</label>
+            <input
+              id="share-url"
+              type="text"
+              value={shareUrl}
+              readOnly
+              className="w-full px-2 py-1 border rounded bg-muted text-xs font-mono"
+              onFocus={e => e.target.select()}
+            />
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleCopyShareUrl}>
+                {shareCopied ? 'Copied!' : 'Copy to Clipboard'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleShareViaEmail}>
+                Share via Email
+              </Button>
+            </div>
+          </div>
+        </DraggableModal>
       </div>
     </ThemeProvider>
   );

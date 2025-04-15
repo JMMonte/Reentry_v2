@@ -92,6 +92,7 @@ export function SatelliteDebugWindow({ satellite, earth, onBodySelect, onClose }
       isOpen={true}
       onClose={onClose}
       className="w-[300px]"
+      key={satellite.id + '-debug-' + (satellite.debugWindow?.isOpen ? 'open' : 'closed')}
       defaultPosition={{ x: window.innerWidth - 320, y: 80 }}
       resizable={true}
       defaultWidth={300}

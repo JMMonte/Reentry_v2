@@ -2,8 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '../button';
 import { ChevronDown, ChevronUp, X, GripHorizontal } from 'lucide-react';
 
-// Module-level z-index tracker
-let globalZIndex = 9999;
+// Module-level z-index tracker (now truly global)
+if (typeof window !== 'undefined') {
+  if (!window.__GLOBAL_MODAL_Z_INDEX__) window.__GLOBAL_MODAL_Z_INDEX__ = 9999;
+}
+const getGlobalZIndex = () => (typeof window !== 'undefined' ? window.__GLOBAL_MODAL_Z_INDEX__ : 9999);
+const bumpGlobalZIndex = () => (typeof window !== 'undefined' ? ++window.__GLOBAL_MODAL_Z_INDEX__ : 10000);
 
 export function DraggableModal({ 
   title, 
@@ -27,7 +31,7 @@ export function DraggableModal({
   const [position, setPosition] = useState(defaultPosition);
   const [height, setHeight] = useState(defaultHeight);
   const [width, setWidth] = useState(defaultWidth);
-  const [zIndex, setZIndex] = useState(globalZIndex);
+  const [zIndex, setZIndex] = useState(getGlobalZIndex());
   const modalRef = useRef(null);
   const contentRef = useRef(null);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0 });
@@ -49,8 +53,7 @@ export function DraggableModal({
 
   const startDragging = (e) => {
     // Bring this modal to front
-    globalZIndex += 1;
-    setZIndex(globalZIndex);
+    setZIndex(bumpGlobalZIndex());
     dragRef.current = {
       isDragging: true,
       startX: e.clientX - position.x,
@@ -118,6 +121,19 @@ export function DraggableModal({
     }
   }, [isOpen]);
 
+  // Bring to front on any click
+  const bringToFront = () => {
+    setZIndex(bumpGlobalZIndex());
+  };
+
+  // Bring to front on mount or when opened
+  useEffect(() => {
+    if (isOpen) {
+      bringToFront();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -135,6 +151,7 @@ export function DraggableModal({
         maxWidth: resizable ? (maxWidth || window.innerWidth * 0.9) : 'none',
         zIndex,
       }}
+      onMouseDown={bringToFront}
     >
       {/* Header */}
       <div
