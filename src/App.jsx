@@ -373,6 +373,8 @@ function App3DMain() {
           isOpen={isSatelliteListVisible}
           setIsOpen={setIsSatelliteListVisible}
           onBodySelect={handleBodySelect}
+          debugWindows={debugWindows}
+          app3d={app3d}
         />
         {/* Satellite Creator Modal */}
         <DraggableModal
