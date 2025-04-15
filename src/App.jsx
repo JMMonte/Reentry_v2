@@ -322,8 +322,11 @@ function App() {
           onSimulatedTimeChange={handleSimulatedTimeChange}
           app3DRef={{ current: app3d }}
           satellites={navbarSatellites}
-          onShareState={handleShareState}
+          onShareState={undefined}
           onImportState={handleImportState}
+          shareModalOpen={shareModalOpen}
+          setShareModalOpen={setShareModalOpen}
+          setShareUrl={setShareUrl}
         />
         <ChatModal
           isOpen={isChatVisible}

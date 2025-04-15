@@ -78,12 +78,13 @@ export function Navbar({
   app3DRef,
   satellites,
   onShareState,
-  onImportState
+  onImportState,
+  shareModalOpen,
+  setShareModalOpen,
+  setShareUrl
 }) {
   const [satelliteOptions, setSatelliteOptions] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [shareUrl, setShareUrl] = useState('');
 
   // Helper function to get the display value
   const getDisplayValue = (value) => {
@@ -171,16 +172,23 @@ export function Navbar({
     saveAs(blob, `simulation-state-${new Date().toISOString()}.json`);
   };
 
-  const handleShareState = () => {
-    const app = app3DRef.current;
-    if (!app) return;
-    const state = app.exportSimulationState(); // Use robust export logic
-    const json = JSON.stringify(state);
-    const compressed = LZString.compressToEncodedURIComponent(json);
-    const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;
-    setShareUrl(url);
-    setShareModalOpen(true);
-    setShareCopied(false);
+  const handleShareToggle = () => {
+    if (!shareModalOpen) {
+      // Opening: update URL and open modal
+      const app = app3DRef.current;
+      if (!app) return;
+      const state = app.exportSimulationState();
+      const json = JSON.stringify(state);
+      const compressed = LZString.compressToEncodedURIComponent(json);
+      const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;
+      setShareUrl(url);
+      setShareModalOpen(true);
+      setShareCopied(false);
+      window.history.replaceState(null, '', url);
+    } else {
+      // Closing: just close modal
+      setShareModalOpen(false);
+    }
   };
 
   const handleCopyShareUrl = async () => {
@@ -449,7 +457,12 @@ export function Navbar({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={onShareState}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleShareToggle}
+                className={cn(shareModalOpen && "bg-accent")}
+              >
                 <Share2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
