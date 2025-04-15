@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from '../button';
 import { Switch } from '../switch';
-import { 
+import {
   Settings2,
   Grid,
   Move,
@@ -44,68 +44,141 @@ export const defaultSettings = {
   ambientLight: { value: 0.1, name: 'Ambient Light', icon: Settings2, type: 'range', min: 0, max: 1, step: 0.05 }
 };
 
+// Group settings by category
+const categories = [
+  {
+    name: 'General',
+    keys: ['showGrid', 'showVectors'],
+  },
+  {
+    name: 'Satellites',
+    keys: ['showSatVectors', 'showOrbits', 'showTraces'],
+  },
+  {
+    name: 'Ground',
+    keys: ['showGroundTraces', 'showCities', 'showAirports', 'showSpaceports', 'showObservatories', 'showGroundStations', 'showCountryBorders', 'showStates', 'showSurfaceLines'],
+  },
+  {
+    name: 'Moon',
+    keys: ['showMoonOrbit', 'showMoonTraces', 'showMoonSurfaceLines'],
+  },
+  {
+    name: 'Connections',
+    keys: ['showSatConnections'],
+  },
+  {
+    name: 'Lighting',
+    keys: ['ambientLight'],
+  },
+];
+
+function Accordion({ sections, children, openIndexes, setOpenIndexes }) {
+  return (
+    <div className="space-y-1">
+      {sections.map((section, idx) => {
+        const isOpen = openIndexes.includes(idx);
+        return (
+          <div key={section.name} className="border rounded bg-muted/30">
+            <button
+              className="w-full flex justify-between items-center px-3 py-2 text-xs font-semibold text-left focus:outline-none focus:ring-2 focus:ring-primary rounded"
+              aria-expanded={isOpen}
+              onClick={() => {
+                setOpenIndexes((prev) =>
+                  prev.includes(idx)
+                    ? prev.filter((i) => i !== idx)
+                    : [...prev, idx]
+                );
+              }}
+              type="button"
+            >
+              <span>{section.name}</span>
+              <span className={`transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+            </button>
+            <div
+              className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-96 py-1' : 'max-h-0 py-0'}`}
+              aria-hidden={!isOpen}
+            >
+              {children(idx)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
-  const [position, setPosition] = useState({ x: window.innerWidth - 320, y: 80 });
+  const [position, setPosition] = useState({ x: window.innerWidth - 220, y: 80 });
+  const [openIdxs, setOpenIdxs] = useState([0]);
 
   return (
-    <>
-      <DraggableModal
-        title="Display Options"
-        isOpen={isOpen}
-        onClose={() => onOpenChange(false)}
-        className="w-[300px]"
-        position={position}
-        onPositionChange={setPosition}
-        rightElement={
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="w-8 h-8 mr-2" 
-            onClick={() => {
-              const allTrue = Object.entries(defaultSettings).every(([key, setting]) => 
-                setting.type === 'range' ? true : settings[key]
+    <DraggableModal
+      title="Display Options"
+      isOpen={isOpen}
+      onClose={() => onOpenChange(false)}
+      className=""
+      position={position}
+      onPositionChange={setPosition}
+      resizable
+      defaultWidth={280}
+      defaultHeight={600}
+      rightElement={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="w-8 h-8 mr-2"
+          onClick={() => {
+            const allTrue = Object.entries(defaultSettings).every(([key, setting]) =>
+              setting.type === 'range' ? true : settings[key]
+            );
+            Object.entries(defaultSettings).forEach(([key, setting]) => {
+              if (setting.type !== 'range') {
+                onSettingChange(key, !allTrue);
+              }
+            });
+          }}
+        >
+          <CheckSquare className="h-4 w-4" />
+        </Button>
+      }
+    >
+      <Accordion sections={categories} openIndexes={openIdxs} setOpenIndexes={setOpenIdxs}>
+        {(idx) => (
+          <div className="space-y-1">
+            {categories[idx].keys.map((key) => {
+              const setting = defaultSettings[key];
+              if (!setting) return null;
+              return (
+                <div key={key} className="flex items-center justify-between px-2 py-1 text-xs">
+                  <div className="flex items-center gap-1">
+                    {React.createElement(setting.icon, { className: "h-3 w-3" })}
+                    <span className="text-[11px] text-muted-foreground">{setting.name}</span>
+                  </div>
+                  <div>
+                    {setting.type === 'range' ? (
+                      <input
+                        type="range"
+                        className="h-1 w-20"
+                        min={setting.min}
+                        max={setting.max}
+                        step={setting.step}
+                        value={settings[key]}
+                        onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
+                      />
+                    ) : (
+                      <Switch
+                        className="scale-[0.6]"
+                        checked={settings[key] || false}
+                        onCheckedChange={(checked) => onSettingChange(key, checked)}
+                      />
+                    )}
+                  </div>
+                </div>
               );
-              Object.entries(defaultSettings).forEach(([key, setting]) => {
-                if (setting.type !== 'range') {
-                  onSettingChange(key, !allTrue);
-                }
-              });
-            }}
-          >
-            <CheckSquare className="h-4 w-4" />
-          </Button>
-        }
-      >
-        <div className="space-y-0.5">
-          {Object.entries(defaultSettings).map(([key, setting]) => (
-            <div key={key} className="grid grid-cols-4 gap-0">
-              <div className="col-span-2 flex items-center gap-0.5">
-                {React.createElement(setting.icon, { className: "h-3 w-3" })}
-                <span className="text-[10px] text-muted-foreground">{setting.name}</span>
-              </div>
-              <div className="col-span-2 flex justify-end">
-                {setting.type === 'range' ? (
-                  <input 
-                    type="range" 
-                    className="h-1 w-20"
-                    min={setting.min} 
-                    max={setting.max} 
-                    step={setting.step} 
-                    value={settings[key]} 
-                    onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
-                  />
-                ) : (
-                  <Switch
-                    className="scale-[0.6]"
-                    checked={settings[key] || false}
-                    onCheckedChange={(checked) => onSettingChange(key, checked)}
-                  />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </DraggableModal>
-    </>
+            })}
+          </div>
+        )}
+      </Accordion>
+    </DraggableModal>
   );
 }
