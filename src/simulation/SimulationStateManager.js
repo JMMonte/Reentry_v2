@@ -86,6 +86,48 @@ export class SimulationStateManager {
                 }
             });
         }
+        // Restore camera and focus state if present
+        if (state && state.camera) {
+            const { position, target, spherical, focusedBody } = state.camera;
+            const camControls = this.app.cameraControls;
+            if (camControls && position && target && spherical) {
+                // Set camera position
+                camControls.camera.position.set(position.x, position.y, position.z);
+                // Set controls target
+                camControls.controls.target.set(target.x, target.y, target.z);
+                // Set spherical coordinates
+                camControls.spherical.radius = spherical.radius;
+                camControls.spherical.phi = spherical.phi;
+                camControls.spherical.theta = spherical.theta;
+                camControls.sphericalRadius = spherical.radius;
+                camControls.sphericalPhi = spherical.phi;
+                camControls.sphericalTheta = spherical.theta;
+                camControls.controls.update();
+            }
+            // Restore focused body
+            if (typeof focusedBody !== 'undefined' && camControls) {
+                // Use the same logic as updateSelectedBody
+                if (!focusedBody || focusedBody === 'none') {
+                    camControls.clearCameraTarget();
+                } else if (focusedBody === 'earth') {
+                    camControls.updateCameraTarget(this.app.earth);
+                } else if (focusedBody === 'moon') {
+                    camControls.updateCameraTarget(this.app.moon);
+                } else if (typeof focusedBody === 'string' && focusedBody.startsWith('satellite-')) {
+                    const satelliteId = parseInt(focusedBody.split('-')[1]);
+                    const satellite = this.app.satellites.getSatellites()[satelliteId];
+                    if (satellite) {
+                        camControls.updateCameraTarget(satellite);
+                    }
+                }
+            }
+        }
+        // Restore display settings if present
+        if (state && state.displaySettings && this.app.displaySettingsManager) {
+            Object.entries(state.displaySettings).forEach(([key, value]) => {
+                this.app.displaySettingsManager.updateSetting(key, value);
+            });
+        }
         // Add more state import logic as needed
     }
 
@@ -112,7 +154,48 @@ export class SimulationStateManager {
             }
             return null;
         }).filter(Boolean);
-        return { satellites };
+        // Save camera and focus state
+        let camera = undefined;
+        const camControls = this.app.cameraControls;
+        if (camControls) {
+            camera = {
+                position: {
+                    x: camControls.camera.position.x,
+                    y: camControls.camera.position.y,
+                    z: camControls.camera.position.z
+                },
+                target: {
+                    x: camControls.controls.target.x,
+                    y: camControls.controls.target.y,
+                    z: camControls.controls.target.z
+                },
+                spherical: {
+                    radius: camControls.sphericalRadius,
+                    phi: camControls.sphericalPhi,
+                    theta: camControls.sphericalTheta
+                },
+                focusedBody: (() => {
+                    // Try to infer the focused body from followingBody
+                    if (!camControls.followingBody) return 'none';
+                    if (camControls.followingBody === this.app.earth) return 'earth';
+                    if (camControls.followingBody === this.app.moon) return 'moon';
+                    // Try to find satellite id
+                    const sats = this.app.satellites.getSatellites();
+                    for (const id in sats) {
+                        if (sats[id] === camControls.followingBody) {
+                            return `satellite-${id}`;
+                        }
+                    }
+                    return 'none';
+                })()
+            };
+        }
+        // Save display settings
+        let displaySettings = undefined;
+        if (this.app.displaySettingsManager) {
+            displaySettings = { ...this.app.displaySettingsManager.settings };
+        }
+        return { satellites, camera, displaySettings };
     }
 
     /**
