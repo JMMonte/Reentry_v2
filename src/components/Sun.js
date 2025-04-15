@@ -43,7 +43,7 @@ export class Sun {
 
         // Main flare
         loadTexture(
-            '/textures/lensflare/lensflare0.png',
+            'src/assets/texture/lensflare/lensflare0.png',
             700,
             0,
             new THREE.Color(0xffffff).multiplyScalar(1.5)
@@ -51,7 +51,7 @@ export class Sun {
 
         // Secondary flares
         loadTexture(
-            '/textures/lensflare/lensflare2.png',
+            'src/assets/texture/lensflare/lensflare2.png',
             512,
             0.6,
             new THREE.Color(0xffffff).multiplyScalar(1.5)
@@ -59,10 +59,10 @@ export class Sun {
 
         // Additional flares
         const flare3Color = new THREE.Color(0xffffff).multiplyScalar(1.5);
-        loadTexture('/textures/lensflare/lensflare3.png', 60, 0.7, flare3Color);
-        loadTexture('/textures/lensflare/lensflare3.png', 70, 0.9, flare3Color);
-        loadTexture('/textures/lensflare/lensflare3.png', 120, 1.0, flare3Color);
-        loadTexture('/textures/lensflare/lensflare3.png', 70, 1.1, flare3Color);
+        loadTexture('src/assets/texture/lensflare/lensflare3.png', 60, 0.7, flare3Color);
+        loadTexture('src/assets/texture/lensflare/lensflare3.png', 70, 0.9, flare3Color);
+        loadTexture('src/assets/texture/lensflare/lensflare3.png', 120, 1.0, flare3Color);
+        loadTexture('src/assets/texture/lensflare/lensflare3.png', 70, 1.1, flare3Color);
     }
 
     updatePosition() {
