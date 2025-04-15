@@ -1,6 +1,6 @@
 {
     "framework": "vite",
     "buildCommand": "pnpm run vercel-build",
-    "installCommand": "pnpm install --legacy-peer-deps",
+    "installCommand": "pnpm install",
     "outputDirectory": "dist"
 }
