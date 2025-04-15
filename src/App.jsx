@@ -59,6 +59,23 @@ function App() {
   }, []);
   useSimulationState(controller, importedState);
 
+  // Update displaySettings state when importedState.displaySettings changes (URL import)
+  useEffect(() => {
+    if (importedState && importedState.displaySettings) {
+      // Merge with defaults to ensure all keys are present
+      setDisplaySettings(prev => {
+        const merged = { ...prev };
+        Object.entries(defaultSettings).forEach(([key, setting]) => {
+          merged[key] =
+            importedState.displaySettings[key] !== undefined
+              ? importedState.displaySettings[key]
+              : setting.value;
+        });
+        return merged;
+      });
+    }
+  }, [importedState]);
+
   // Socket connection effect
   useEffect(() => {
     const socketServerUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
@@ -263,6 +280,19 @@ function App() {
             });
           }
         });
+        // Update displaySettings state if present in imported file
+        if (state.displaySettings) {
+          setDisplaySettings(prev => {
+            const merged = { ...prev };
+            Object.entries(defaultSettings).forEach(([key, setting]) => {
+              merged[key] =
+                state.displaySettings[key] !== undefined
+                  ? state.displaySettings[key]
+                  : setting.value;
+            });
+            return merged;
+          });
+        }
       } catch (err) {
         alert('Failed to import simulation state: ' + err.message);
       }
