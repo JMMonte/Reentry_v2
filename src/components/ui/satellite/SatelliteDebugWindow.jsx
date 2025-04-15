@@ -1,86 +1,65 @@
 import React, { useState, useEffect, useRef } from 'react';
-import * as THREE from 'three';
 import { Button } from "../button";
 import { DraggableModal } from "../modal/DraggableModal";
 import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2 } from "lucide-react";
 import { Constants } from "../../../utils/Constants";
-import { Popover, PopoverContent, PopoverTrigger } from "../popover";
-import { updateCameraTarget, formatBodySelection } from '../../../utils/BodySelectionUtils';
+import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 
-export function SatelliteDebugWindow({ satellite, earth }) {
-  const [isOpen, setIsOpen] = useState(true);
+export function SatelliteDebugWindow({ satellite, earth, onBodySelect, onClose }) {
   const [orbitalElements, setOrbitalElements] = useState(null);
   const lastUpdateTime = useRef(0);
   const updateInterval = 100; // Update every 100ms instead of every frame
 
-  // Store reference to setIsOpen in satellite
+  // Store reference to setIsOpen in satellite (for toggling from list)
   useEffect(() => {
     if (satellite) {
-      satellite.debugWindow = { 
-        setIsOpen,
+      satellite.debugWindow = {
         onPositionUpdate: () => {
-          if (isOpen) {
-            setOrbitalElements(satellite.getOrbitalElements(earth));
-          }
+          setOrbitalElements(satellite.getOrbitalElements(earth));
         }
       };
       return () => {
         satellite.debugWindow = null;
       };
     }
-  }, [satellite, earth, isOpen]);
+  }, [satellite, earth]);
 
   useEffect(() => {
     const updateOrbitalElements = () => {
-      if (!satellite || !earth || !isOpen) return;
-      
+      if (!satellite || !earth) return;
       const currentTime = performance.now();
       if (currentTime - lastUpdateTime.current < updateInterval) return;
-      
       lastUpdateTime.current = currentTime;
       setOrbitalElements(satellite.getOrbitalElements(earth));
     };
-
     // Update initially
     updateOrbitalElements();
-
     // Set up animation frame based updates
     let animationFrameId;
     const animate = () => {
       updateOrbitalElements();
       animationFrameId = requestAnimationFrame(animate);
     };
-    
-    if (isOpen) {
-      animate();
-    }
-
+    animate();
     return () => {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [satellite, earth, isOpen]);
+  }, [satellite, earth]);
 
   const handleFocus = () => {
-    if (window.app3d && satellite) {
+    if (onBodySelect && satellite) {
       const formattedValue = formatBodySelection(satellite);
-      
-      // Dispatch body selected event
-      document.dispatchEvent(new CustomEvent('bodySelected', {
-        detail: { body: formattedValue }
-      }));
-      
-      // Update camera target without dispatching another event
-      updateCameraTarget(satellite, window.app3d, false);
+      onBodySelect(formattedValue);
     }
   };
 
   const handleDelete = () => {
     if (satellite) {
-      satellite.dispose();
-      setIsOpen(false);
+      satellite.delete();
+      if (onClose) onClose();
     }
   };
 
@@ -105,13 +84,13 @@ export function SatelliteDebugWindow({ satellite, earth }) {
     return typeof num === 'number' ? num.toFixed(2) : num;
   };
 
-  if (!satellite || !isOpen) return null;
+  if (!satellite) return null;
 
   return (
-    <DraggableModal 
+    <DraggableModal
       title={satellite.name || `Satellite ${satellite.id}`}
       isOpen={true}
-      onClose={() => setIsOpen(false)}
+      onClose={onClose}
       className="w-[300px]"
       defaultPosition={{ x: window.innerWidth - 320, y: 80 }}
       resizable={true}
@@ -139,7 +118,7 @@ export function SatelliteDebugWindow({ satellite, earth }) {
             {renderVector(satellite.position, "Position")}
             {renderVector(satellite.velocity, "Velocity", true)}
             {renderVector(satellite.acceleration, "Acceleration", true)}
-            
+
             <div className="grid grid-cols-4 gap-0.5">
               <span className="text-[10px] font-mono text-muted-foreground">Speed:</span>
               <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.velocity.length())} m/s</span>

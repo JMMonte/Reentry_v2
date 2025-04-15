@@ -207,11 +207,11 @@ export function setupPostProcessing(app) {
     bloomPass.renderToScreen = true;
     bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2);
 
-    app.composers.bloom = new EffectComposer(app.renderer);
-    app.composers.bloom.addPass(renderPass);
-    app.composers.bloom.addPass(bloomPass);
+    app.sceneManager.composers.bloom = new EffectComposer(app._renderer);
+    app.sceneManager.composers.bloom.addPass(renderPass);
+    app.sceneManager.composers.bloom.addPass(bloomPass);
 
-    app.composers.final = new EffectComposer(app.renderer);
-    app.composers.final.addPass(renderPass);
-    app.composers.final.addPass(app.composers.bloom);
+    app.sceneManager.composers.final = new EffectComposer(app._renderer);
+    app.sceneManager.composers.final.addPass(renderPass);
+    app.sceneManager.composers.final.addPass(app.sceneManager.composers.bloom);
 }

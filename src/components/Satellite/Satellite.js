@@ -422,14 +422,9 @@ export class Satellite {
             this.apsisVisualizer.dispose();
         }
 
-        // Remove from app3d satellites list
-        if (this.app3d && this.app3d.satellites) {
-            delete this.app3d.satellites[this.id];
-            // Update satellite list in UI
-            if (this.app3d.updateSatelliteList) {
-                this.app3d.updateSatelliteList();
-            }
-        }
+        console.log('[Satellite.dispose] Disposing satellite', this.id);
+        // Only dispatch satelliteDeleted event after cleanup
+        document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
     }
 
     getAltitude(earth) {
@@ -481,6 +476,14 @@ export class Satellite {
             bodyZAxis.applyQuaternion(this.orientation);
             this.orientationVector.setDirection(bodyZAxis);
             this.orientationVector.setLength(this.baseScale * 20);
+        }
+    }
+
+    delete() {
+        if (this.app3d && this.app3d.satellites && typeof this.app3d.satellites.removeSatellite === 'function') {
+            this.app3d.satellites.removeSatellite(this.id);
+        } else {
+            this.dispose();
         }
     }
 }

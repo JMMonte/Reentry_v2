@@ -1,16 +1,12 @@
 import * as THREE from 'three';
-import { Satellite } from './components/Satellite/Satellite.js';
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
 import { Constants } from './utils/Constants.js';
-import { createRoot } from 'react-dom/client';
-import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWindow';
 
 export async function createSatellite(app, params) {
-    const { scene, satellites, displaySettings } = app;
-    
-    // Generate new unique ID
+    // Generate new unique ID using SatelliteManager's internal state
     let id = 0;
-    while (satellites[id]) {
+    const satellitesObj = app.satellites.getSatellites ? app.satellites.getSatellites() : {};
+    while (satellitesObj[id]) {
         id++;
     }
 
@@ -21,39 +17,34 @@ export async function createSatellite(app, params) {
         0xFF1493, 0x00FF7F, 0xFF69B4, 0x7FFF00, 0x40E0D0,  // Bright neon
         0xFF99CC, 0x99FF99, 0x99FFFF, 0x9999FF, 0xFF99FF   // Bright pastel
     ];
-    
     const color = brightColors[Math.floor(Math.random() * brightColors.length)];
-    const newSatellite = new Satellite({
-        scene,
-        position: params.position,
-        velocity: params.velocity,
+
+    // Compose satellite params
+    const satParams = {
+        ...params,
         id,
         color,
-        mass: params.mass || 100, // kg
-        size: params.size || 1, // meters
-        app3d: app,
-        name: params.name
-    });
+        mass: params.mass || 100,
+        size: params.size || 1,
+        name: params.name,
+    };
+
+    // Add satellite via SatelliteManager
+    const newSatellite = app.satellites.addSatellite(satParams);
+
     // Apply display settings after creation
+    const displaySettings = app.displaySettingsManager?.settings || app.displaySettings || {};
     const showOrbits = displaySettings.showOrbits;
     const showTraces = displaySettings.showTraces;
     const showGroundTraces = displaySettings.showGroundTraces;
     const showSatVectors = displaySettings.showSatVectors;
 
-    newSatellite.orbitLine.visible = showOrbits;
-    if (newSatellite.apsisVisualizer) {
-        newSatellite.apsisVisualizer.visible = showOrbits;
-    }
-    newSatellite.traceLine.visible = showTraces;
-    if (newSatellite.groundTrack) {
-        newSatellite.groundTrack.visible = showGroundTraces;
-    }
-    if (newSatellite.velocityVector) {
-        newSatellite.velocityVector.visible = showSatVectors;
-    }
-    if (newSatellite.orientationVector) {
-        newSatellite.orientationVector.visible = showSatVectors;
-    }
+    if (newSatellite.orbitLine) newSatellite.orbitLine.visible = showOrbits;
+    if (newSatellite.apsisVisualizer) newSatellite.apsisVisualizer.visible = showOrbits;
+    if (newSatellite.traceLine) newSatellite.traceLine.visible = showTraces;
+    if (newSatellite.groundTrack) newSatellite.groundTrack.visible = showGroundTraces;
+    if (newSatellite.velocityVector) newSatellite.velocityVector.visible = showSatVectors;
+    if (newSatellite.orientationVector) newSatellite.orientationVector.visible = showSatVectors;
 
     // Force initial updates
     if (newSatellite.orbitLine && newSatellite.orbitLine.visible) {
@@ -75,53 +66,9 @@ export async function createSatellite(app, params) {
         app.createDebugWindow(newSatellite);
     }
 
-    // Add satellite to app.satellites
-    app.satellites = { ...app.satellites, [newSatellite.id]: newSatellite };
-
-    // Call updateSatelliteList explicitly
+    // Call updateSatelliteList explicitly if available
     if (app.updateSatelliteList) {
         app.updateSatelliteList();
-    } else {
-        console.warn('updateSatelliteList not found on app');
-    }
-
-    // Initialize physics worker if needed and wait for it
-    if (!app.physicsWorker || !app.workerInitialized) {
-        app.checkPhysicsWorkerNeeded();
-        // Wait for worker to be initialized
-        await new Promise((resolve) => {
-            const checkWorker = () => {
-                if (app.workerInitialized) {
-                    resolve();
-                } else {
-                    setTimeout(checkWorker, 50);
-                }
-            };
-            checkWorker();
-        });
-    }
-
-    // Now we can safely notify the physics worker
-    if (app.physicsWorker && app.workerInitialized) {
-        app.physicsWorker.postMessage({
-            type: 'addSatellite',
-            data: {
-                id: newSatellite.id,
-                position: {
-                    x: newSatellite.position.x / (Constants.metersToKm * Constants.scale),
-                    y: newSatellite.position.y / (Constants.metersToKm * Constants.scale),
-                    z: newSatellite.position.z / (Constants.metersToKm * Constants.scale)
-                },
-                velocity: {
-                    x: newSatellite.velocity.x / (Constants.metersToKm * Constants.scale),
-                    y: newSatellite.velocity.y / (Constants.metersToKm * Constants.scale),
-                    z: newSatellite.velocity.z / (Constants.metersToKm * Constants.scale)
-                },
-                mass: newSatellite.mass
-            }
-        });
-    } else {
-        console.error('Physics worker not initialized when creating satellite:', newSatellite.id);
     }
 
     return newSatellite;
@@ -167,19 +114,13 @@ export function createSatelliteFromLatLon(app, params) {
         velocityECEF.z * Constants.metersToKm * Constants.scale
     );
 
-    const satellite = createSatellite(app, {
+    return createSatellite(app, {
         position: scaledPosition,
         velocity: scaledVelocity,
         mass,
         size,
         name
     });
-
-    if (app.updateSatelliteList) {
-        app.updateSatelliteList();
-    }
-
-    return satellite;
 }
 
 export function createSatelliteFromLatLonCircular(app, params) {
@@ -227,19 +168,13 @@ export function createSatelliteFromLatLonCircular(app, params) {
         velocityECEF.z * Constants.metersToKm * Constants.scale
     );
 
-    const satellite = createSatellite(app, {
+    return createSatellite(app, {
         position: scaledPosition,
         velocity: scaledVelocity,
         mass,
         size,
         name
     });
-
-    if (app.updateSatelliteList) {
-        app.updateSatelliteList();
-    }
-
-    return satellite;
 }
 
 export function createSatelliteFromOrbitalElements(app, params) {
@@ -277,17 +212,11 @@ export function createSatelliteFromOrbitalElements(app, params) {
         velocityECI.z * Constants.metersToKm * Constants.scale
     );
 
-    const satellite = createSatellite(app, {
+    return createSatellite(app, {
         position: scaledPosition,
         velocity: scaledVelocity,
         mass,
         size,
         name
     });
-
-    if (app.updateSatelliteList) {
-        app.updateSatelliteList();
-    }
-
-    return satellite;
 }

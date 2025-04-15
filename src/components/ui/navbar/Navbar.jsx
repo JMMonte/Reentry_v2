@@ -123,18 +123,14 @@ export function Navbar({
     // Find the satellite by name in the satellites array
     const satellite = findSatellite(value, satellites);
     if (satellite) {
-      // Format the satellite ID as expected by App3D and update camera
+      // Format the satellite ID as expected by App3D
       const formattedValue = formatBodySelection(satellite);
       onBodySelect(formattedValue);
-      if (window.app3d) {
-        updateCameraTarget(formattedValue, window.app3d, false); // Don't dispatch event since we're already handling selection
-      }
+      // No direct camera update here
     } else {
       // For earth and moon, pass the value directly
       onBodySelect(value);
-      if (window.app3d) {
-        updateCameraTarget(value, window.app3d, false); // Don't dispatch event since we're already handling selection
-      }
+      // No direct camera update here
     }
   };
 
@@ -190,20 +186,7 @@ export function Navbar({
   const handleShareState = () => {
     const app = app3DRef.current;
     if (!app) return;
-    const timeUtils = app.timeUtils;
-    const state = {
-      simulatedTime: timeUtils?.getSimulatedTime()?.toISOString?.() || null,
-      timeWarp: timeUtils?.timeWarp || 1,
-      satellites: Object.values(app.satellites || {}).map(sat => ({
-        id: sat.id,
-        name: sat.name,
-        mass: sat.mass,
-        size: sat.size,
-        color: sat.color,
-        position: sat.position ? { x: sat.position.x, y: sat.position.y, z: sat.position.z } : null,
-        velocity: sat.velocity ? { x: sat.velocity.x, y: sat.velocity.y, z: sat.velocity.z } : null
-      }))
-    };
+    const state = app.exportSimulationState(); // Use robust export logic
     const json = JSON.stringify(state);
     const compressed = LZString.compressToEncodedURIComponent(json);
     const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;

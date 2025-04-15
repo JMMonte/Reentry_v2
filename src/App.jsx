@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { ThemeProvider } from './components/theme-provider';
 import { Navbar } from './components/ui/navbar/Navbar';
@@ -7,22 +7,22 @@ import { SatelliteDebugWindow } from './components/ui/satellite/SatelliteDebugWi
 import { SatelliteListWindow } from './components/ui/satellite/SatelliteListWindow';
 import { DisplayOptions } from './components/ui/controls/DisplayOptions';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
-import App3D from './app3d.js';
+import { useApp3D } from './simulation/useApp3D';
+import { useSimulationState } from './simulation/useSimulationState';
+import { SimulationStateManager } from './simulation/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
-import LZString from 'lz-string';
-import * as THREE from 'three';
-import { Constants } from './utils/Constants.js';
 
 function App() {
   const [socket, setSocket] = useState(null);
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
-  const [satellites, setSatellites] = useState({});  // Initialize as empty object
+  const [satellites, setSatellites] = useState({});
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date());
+
   const [displaySettings, setDisplaySettings] = useState(() => {
     const initialSettings = {};
     Object.entries(defaultSettings).forEach(([key, setting]) => {
@@ -30,17 +30,28 @@ function App() {
     });
     return initialSettings;
   });
-  const [app3dInstance, setApp3dInstance] = useState(null);
+
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
-  const app3dRef = useRef(null);
-  const initializingRef = useRef(false);
+
+  // --- OOP App3D Controller ---
+  const { controller, ready } = useApp3D();
+  const app3d = controller?.app3d;
+
+  // --- State from URL hash (reactive to hash changes) ---
+  const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
+  useEffect(() => {
+    const onHashChange = () => {
+      setImportedState(SimulationStateManager.decodeFromUrlHash());
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+  useSimulationState(controller, importedState);
 
   // Socket connection effect
   useEffect(() => {
     const socketServerUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
-    console.log('Connecting to socket server:', socketServerUrl);
-    
     const newSocket = io(socketServerUrl, {
       reconnectionDelayMax: 10000,
       transports: ['websocket', 'polling'],
@@ -49,200 +60,31 @@ function App() {
       secure: socketServerUrl.startsWith('https'),
       withCredentials: true
     });
-    
-    newSocket.on('connect', () => {
-      console.log('Socket connected');
-    });
-
+    newSocket.on('connect', () => { });
     newSocket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
     });
-
     setSocket(newSocket);
-
-    return () => {
-      if (newSocket) {
-        newSocket.close();
-      }
-    };
+    return () => { if (newSocket) newSocket.close(); };
   }, []);
 
   // Handle satellite list updates
   useEffect(() => {
-    const handleSatelliteListUpdate = (event) => {
-      console.log('App: Received satellite list update:', event.detail);
-      if (event.detail?.satellites) {
-        // Convert satellites to array if needed
-        const satelliteArray = Array.isArray(event.detail.satellites) 
-          ? event.detail.satellites 
-          : Object.values(event.detail.satellites);
-        
-        // Filter out invalid satellites and ensure unique entries
-        const validSatellites = satelliteArray
-          .filter(sat => sat && sat.id != null && sat.name)
-          .reduce((acc, sat) => {
-            acc[sat.id] = sat;
-            return acc;
-          }, {});
-        
-        console.log('App: Setting satellites state with:', validSatellites);
-        setSatellites(validSatellites);
+    const handleSatelliteListUpdate = () => {
+      if (app3d && app3d.satellites) {
+        setSatellites(app3d.satellites.getSatellites());
       }
     };
-
     document.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
     return () => document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
-  }, []);
-
-  // Handle body selection events
-  useEffect(() => {
-    const handleBodySelected = (event) => {
-      if (event.detail?.body) {
-        // Set a flag to prevent re-dispatching the event
-        window.handlingBodySelectedEvent = true;
-        handleBodySelect(event.detail.body);
-        window.handlingBodySelectedEvent = false;
-      }
-    };
-
-    document.addEventListener('bodySelected', handleBodySelected);
-    return () => document.removeEventListener('bodySelected', handleBodySelected);
-  }, []);
-
-  // App3D initialization effect
-  useEffect(() => {
-    // Prevent double initialization in strict mode
-    if (initializingRef.current || app3dInstance) {
-      return;
-    }
-
-    initializingRef.current = true;
-
-    function importStateFromHash(app) {
-      if (window.location.hash.startsWith('#state=')) {
-        try {
-          const encoded = window.location.hash.replace('#state=', '');
-          const json = LZString.decompressFromEncodedURIComponent(encoded);
-          if (json) {
-            const state = JSON.parse(json);
-            // Set simulation time
-            if (state.simulatedTime) {
-              app.timeUtils.setSimulatedTime(state.simulatedTime);
-            }
-            if (typeof state.timeWarp === 'number') {
-              app.timeUtils.setTimeWarp(state.timeWarp);
-              if (typeof app.updateTimeWarp === 'function') {
-                app.updateTimeWarp(state.timeWarp); // Notify worker
-              }
-            }
-            // Remove existing satellites
-            Object.keys(app.satellites).forEach(id => app.removeSatellite(id));
-            // Add satellites from state
-            (state.satellites || []).forEach(sat => {
-              // Convert meters to simulation units (km * scale)
-              const toSimUnits = (x) => x * Constants.metersToKm * Constants.scale;
-              const position = new THREE.Vector3(
-                toSimUnits(sat.position.x),
-                toSimUnits(sat.position.y),
-                toSimUnits(sat.position.z)
-              );
-              const velocity = new THREE.Vector3(
-                toSimUnits(sat.velocity.x),
-                toSimUnits(sat.velocity.y),
-                toSimUnits(sat.velocity.z)
-              );
-              // Always use createSatellite for state import
-              if (typeof app.createSatellite === 'function') {
-                app.createSatellite({
-                  name: sat.name,
-                  mass: sat.mass,
-                  size: sat.size,
-                  color: sat.color,
-                  position,
-                  velocity,
-                  id: sat.id
-                });
-              }
-            });
-            // Optionally update React state
-            setSimulatedTime(state.simulatedTime ? new Date(state.simulatedTime) : new Date());
-            setTimeWarp(typeof state.timeWarp === 'number' ? state.timeWarp : 1);
-          }
-        } catch (err) {
-          alert('Failed to import simulation state from URL: ' + err.message);
-          console.error('Import error from URL:', err);
-        }
-      }
-    }
-
-    try {
-      const app = new App3D();
-      app3dRef.current = app;
-      setApp3dInstance(app);
-
-      // Add method to create debug windows
-      app.createDebugWindow = (satellite) => {
-        setDebugWindows(prev => {
-          if (prev.some(w => w.id === satellite.id)) {
-            return prev;
-          }
-          return [...prev, { id: satellite.id, satellite }];
-        });
-      };
-
-      // Add method to update satellites list
-      app.updateSatelliteList = () => {
-        setSatellites(app.satellites);
-      };
-
-      // Add method to remove debug windows
-      app.removeDebugWindow = (satelliteId) => {
-        setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
-      };
-
-      // Initialize display settings after scene is ready
-      app.addEventListener('sceneReady', () => {
-        console.log('Scene is ready');
-      });
-
-      // --- Import state from URL hash if present ---
-      importStateFromHash(app);
-      // --- End import from URL hash ---
-
-      // --- Listen for hash changes to support hot loading ---
-      const onHashChange = () => importStateFromHash(app);
-      window.addEventListener('hashchange', onHashChange);
-      // --- End hashchange listener ---
-
-      // Clean up listener on unmount
-      return () => {
-        window.removeEventListener('hashchange', onHashChange);
-      };
-
-    } catch (error) {
-      console.error('Error initializing App3D:', error);
-    }
-
-    return () => {
-      if (app3dRef.current) {
-        console.log('Cleaning up App3D...');
-        app3dRef.current.dispose();
-        app3dRef.current = null;
-        setApp3dInstance(null);
-      }
-      initializingRef.current = false;
-    };
-  }, []); // Empty dependency array since we only want to initialize once
+  }, [app3d]);
 
   // Display settings effect
   useEffect(() => {
-    const app = app3dRef.current;
-    if (!app || typeof app.updateDisplaySetting !== 'function') return;
-
-    Object.entries(displaySettings).forEach(([key, value]) => {
-      app.updateDisplaySetting(key, value);
-    });
-  }, [displaySettings]);
+    if (app3d && app3d.displaySettingsManager && typeof app3d.displaySettingsManager.applyAll === 'function') {
+      app3d.displaySettingsManager.applyAll();
+    }
+  }, [app3d]);
 
   // Time update effect
   useEffect(() => {
@@ -251,65 +93,82 @@ function App() {
       setSimulatedTime(simulatedTime);
       setTimeWarp(timeWarp);
     };
-
     document.addEventListener('timeUpdate', handleTimeUpdate);
     return () => document.removeEventListener('timeUpdate', handleTimeUpdate);
   }, []);
 
   useEffect(() => {
-    const app = app3dRef.current;
-    if (!app) return;
-
+    if (!app3d) return;
     document.dispatchEvent(new CustomEvent('updateTimeWarp', {
       detail: { value: timeWarp }
     }));
-  }, [timeWarp]);
+  }, [timeWarp, app3d]);
+
+  // --- Debug window helpers ---
+  useEffect(() => {
+    if (!app3d) return;
+    app3d.createDebugWindow = (satellite) => {
+      setDebugWindows(prev => {
+        if (prev.some(w => w.id === satellite.id)) return prev;
+        return [...prev, { id: satellite.id, satellite }];
+      });
+    };
+    app3d.updateSatelliteList = () => {
+      setSatellites(app3d.satellites.getSatellites());
+    };
+    app3d.removeDebugWindow = (satelliteId) => {
+      setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
+    };
+  }, [app3d]);
+
+  useEffect(() => {
+    const handleSatelliteDeleted = (event) => {
+      console.log('[App.jsx] satelliteDeleted event received:', event.detail?.id);
+      setDebugWindows(prev => prev.filter(w => w.id !== event.detail.id));
+    };
+    document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
+    return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
+  }, []);
 
   const getNextTimeWarp = (current, increase) => {
     const timeWarpSteps = [0.25, 0.5, 1, 2, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000];
     const currentIndex = timeWarpSteps.findIndex(step => step >= current);
-    
     if (increase) {
-      // Going up
       if (currentIndex < timeWarpSteps.length - 1) {
         return timeWarpSteps[currentIndex + 1];
       }
-      return timeWarpSteps[timeWarpSteps.length - 1]; // Max value
+      return timeWarpSteps[timeWarpSteps.length - 1];
     } else {
-      // Going down
       if (currentIndex > 0) {
         return timeWarpSteps[currentIndex - 1];
       }
-      return timeWarpSteps[0]; // Min value
+      return timeWarpSteps[0];
     }
   };
 
   const handleSimulatedTimeChange = (newTime) => {
-    const app = app3dRef.current;
-    if (app?.timeUtils) {
-      app.timeUtils.setSimulatedTime(newTime);
+    if (app3d?.timeUtils) {
+      app3d.timeUtils.setSimulatedTime(newTime);
     }
   };
 
   const handleBodySelect = (value) => {
     setSelectedBody(value);
-    // Only dispatch the event if it wasn't triggered by an event
     if (!window.handlingBodySelectedEvent) {
+      window.handlingBodySelectedEvent = true;
       document.dispatchEvent(new CustomEvent('bodySelected', {
         detail: { body: value }
       }));
+      window.handlingBodySelectedEvent = false;
     }
   };
 
-  // Pass satellites to Navbar
-  const navbarSatellites = useMemo(() => {
-    return satellites;
-  }, [satellites]);
+  const navbarSatellites = useMemo(() => satellites, [satellites]);
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <div className="relative h-screen w-screen overflow-hidden">
-        <canvas id="three-canvas" ref={app3dRef} className="absolute inset-0 z-0" />
+        <canvas id="three-canvas" className="absolute inset-0 z-0" />
         <Navbar
           onChatToggle={() => setIsChatVisible(!isChatVisible)}
           onSatelliteListToggle={() => setIsSatelliteListVisible(!isSatelliteListVisible)}
@@ -325,38 +184,40 @@ function App() {
           onTimeWarpChange={setTimeWarp}
           simulatedTime={simulatedTime}
           onSimulatedTimeChange={handleSimulatedTimeChange}
-          app3DRef={app3dRef}
+          app3DRef={{ current: app3d }}
           satellites={navbarSatellites}
         />
-
         <ChatModal
           isOpen={isChatVisible}
           onClose={() => setIsChatVisible(false)}
           socket={socket}
         />
-        <DisplayOptions 
+        <DisplayOptions
           settings={displaySettings}
           onSettingChange={(key, value) => {
-            if (app3dInstance) {
-              app3dInstance.updateDisplaySetting(key, value);
+            if (app3d) {
+              app3d.updateDisplaySetting(key, value);
               setDisplaySettings(prev => ({ ...prev, [key]: value }));
             }
           }}
           isOpen={isDisplayOptionsOpen}
           onOpenChange={setIsDisplayOptionsOpen}
-          app3DRef={app3dRef}
+          app3DRef={{ current: app3d }}
         />
         {debugWindows.map(({ id, satellite }) => (
           <SatelliteDebugWindow
             key={id}
             satellite={satellite}
-            earth={app3dRef.current?.earth}
+            earth={app3d?.earth}
+            onBodySelect={handleBodySelect}
+            onClose={() => setDebugWindows(prev => prev.filter(w => w.id !== id))}
           />
         ))}
-        <SatelliteListWindow 
-          satellites={satellites} 
+        <SatelliteListWindow
+          satellites={satellites}
           isOpen={isSatelliteListVisible}
           setIsOpen={setIsSatelliteListVisible}
+          onBodySelect={handleBodySelect}
         />
       </div>
     </ThemeProvider>

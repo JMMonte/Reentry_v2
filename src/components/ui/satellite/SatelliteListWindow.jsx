@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { DraggableModal } from "../modal/DraggableModal";
 import { Button } from "../button";
 import { Focus, MonitorX, MonitorCheck, Trash2 } from "lucide-react";
 import { ColorPicker } from "./ColorPicker";
-import { updateCameraTarget, formatBodySelection } from '../../../utils/BodySelectionUtils';
+import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 
-export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
+export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect }) {
     // Open automatically when first satellite is created
     useEffect(() => {
         if (satellites.length > 0 && !isOpen) {
@@ -14,16 +14,11 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
     }, [satellites.length, isOpen, setIsOpen]);
 
     const handleFocus = (satellite) => {
-        if (window.app3d) {
+        if (onBodySelect && satellite) {
             const formattedValue = formatBodySelection(satellite);
-            
-            // Dispatch body selected event
-            document.dispatchEvent(new CustomEvent('bodySelected', {
-                detail: { body: formattedValue }
-            }));
-            
-            // Update camera target without dispatching another event
-            updateCameraTarget(satellite, window.app3d, false);
+            onBodySelect(formattedValue);
+            // Do NOT dispatch the event or call updateCameraTarget here.
+            // Let the React state and App.jsx handle it.
         }
     };
 
@@ -34,10 +29,14 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
     };
 
     const handleDelete = (satellite) => {
-        if (satellite.dispose) {
+        if (satellite.delete) {
+            satellite.delete();
+        } else if (window.app3d && typeof window.app3d.removeSatellite === 'function') {
+            window.app3d.removeSatellite(satellite.id);
+        } else if (satellite.dispose) {
             satellite.dispose();
-            // The satellite list will update automatically through the existing satellite tracking system
         }
+        // No need to dispatch satelliteDeleted here; it is handled in Satellite.dispose().
     };
 
     if (!isOpen) return null;
@@ -55,7 +54,9 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen }) {
             minHeight={100}
         >
             <div className="space-y-1 p-1">
-                {Object.values(satellites).map((satellite) => (
+                {Object.values(satellites)
+                  .filter(sat => sat && sat.id != null)
+                  .map((satellite) => (
                     <div 
                         key={satellite.id}
                         className="flex items-center justify-between p-1.5 bg-secondary/50 rounded-md text-xs"
