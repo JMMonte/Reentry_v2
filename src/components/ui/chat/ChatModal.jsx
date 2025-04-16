@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '../button';
 import { Input } from '../input';
-import { Send, Loader2, Copy, Check, X } from 'lucide-react';
+import { Send, Loader2, Copy, Check } from 'lucide-react';
 import { ScrollArea } from '../scroll-area';
 import { cn } from '../../../lib/utils';
 import { DraggableModal } from '../modal/DraggableModal';
@@ -22,8 +22,8 @@ import 'prismjs/components/prism-markdown';
 import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-scss';
 import { DataTable } from '../table/DataTable';
-import ReactDOM from 'react-dom';
 import { createRoot } from 'react-dom/client';
+import PropTypes from 'prop-types';
 
 // Configure marked
 marked.setOptions({
@@ -69,7 +69,7 @@ const processLatex = (text) => {
     });
 
     // Replace inline LaTeX (\( \) or $ $)
-    processedText = processedText.replace(/\\\(([\s\S]+?)\\\)|\$([^\$\n]+?)\$/g, (match, tex1, tex2) => {
+    processedText = processedText.replace(/\\\(([^)]+?)\\\)|\$([^$\n]+?)\$/g, (match, tex1, tex2) => {
       const tex = tex1 || tex2;
       return createPlaceholder(tex, false);
     });
@@ -124,7 +124,7 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const [copiedStates, setCopiedStates] = useState({});
-  const [tableData, setTableData] = useState(new Map());
+  const [tableData] = useState(new Map());
 
   // Conversation starters
   const conversationStarters = [
@@ -197,15 +197,14 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
         let output;
         const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
         
+        let mappedArgs;
         switch (name) {
           case 'createSatelliteFromLatLon':
-            // Map velocity/azimuth to speed/heading if needed
-            const mappedArgs = {
+            mappedArgs = {
               ...parsedArgs,
               speed: parsedArgs.speed || parsedArgs.velocity,
               heading: parsedArgs.heading || parsedArgs.azimuth
             };
-            
             // Validate required parameters
             if (typeof mappedArgs.latitude !== 'number' || 
                 typeof mappedArgs.longitude !== 'number' || 
@@ -296,7 +295,7 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
       setThreadId(data.threadId);
     };
 
-    const handleRunCompleted = (data) => {
+    const handleRunCompleted = () => {
       setIsLoading(false);
     };
 
@@ -748,3 +747,18 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
     </DraggableModal>
   );
 }
+
+ChatModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  socket: PropTypes.shape({
+    connected: PropTypes.bool,
+    emit: PropTypes.func,
+    on: PropTypes.func,
+    off: PropTypes.func
+  }),
+  modalPosition: PropTypes.shape({
+    x: PropTypes.number,
+    y: PropTypes.number
+  })
+};
