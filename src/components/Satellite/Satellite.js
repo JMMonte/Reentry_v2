@@ -151,7 +151,7 @@ export class Satellite {
         this.scene.add(this.orbitLine);
 
         // Initialize ground track
-        this.groundTrack = new GroundTrack(this.app3d.earth, this.color);
+        this.groundTrack = new GroundTrack(this.app3d.earth, this.color, this.id);
         this.groundTrack.setVisible(this.app3d.getDisplaySetting('showGroundTraces'));
 
         // Initialize apsis visualizer
