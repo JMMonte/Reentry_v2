@@ -23,7 +23,6 @@ export class Satellite {
         this.orbitUpdateCounter = 0;
         this.orbitUpdateInterval = 30; // Update orbit every 30 frames
         this.groundTrackUpdateCounter = 0;
-        this.groundTrackUpdateInterval = 10; // Update ground track every 10 frames
         this.traceUpdateCounter = 0;
         this.traceUpdateInterval = 5; // Update trace every 5 frames
 
@@ -162,6 +161,10 @@ export class Satellite {
         if (this.position && this.velocity) {
             this.updatePosition(this.position, this.velocity);
         }
+    }
+
+    get groundTrackUpdateInterval() {
+        return this.app3d.getDisplaySetting('groundTrackUpdateInterval') || 10;
     }
 
     updatePosition(position, velocity) {

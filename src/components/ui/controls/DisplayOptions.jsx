@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '../button';
 import { Switch } from '../switch';
+import { Input } from '../input';
 import {
   Settings2,
   Grid,
@@ -42,7 +43,8 @@ export const defaultSettings = {
   showMoonTraces: { value: false, name: 'Moon Traces', icon: LineChart },
   showMoonSurfaceLines: { value: false, name: 'Moon Surface Lines', icon: Mountain },
   showSatConnections: { value: false, name: 'Sat Connections', icon: Link },
-  ambientLight: { value: 0.1, name: 'Ambient Light', icon: Settings2, type: 'range', min: 0, max: 1, step: 0.05 }
+  ambientLight: { value: 0.1, name: 'Ambient Light', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05 },
+  groundTrackUpdateInterval: { value: 5, name: 'Ground Track Update Rate', icon: LineChart, type: 'number', min: 1, max: 60, step: 1 },
 };
 
 // Group settings by category
@@ -53,7 +55,7 @@ const categories = [
   },
   {
     name: 'Satellites',
-    keys: ['showSatVectors', 'showOrbits', 'showTraces'],
+    keys: ['showSatVectors', 'showOrbits', 'showTraces', 'groundTrackUpdateInterval'],
   },
   {
     name: 'Ground',
@@ -124,6 +126,9 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
   const [position, setPosition] = useState({ x: window.innerWidth - 220, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
 
+  // Debug: log the ambientLight value
+  console.log('DisplayOptions: settings.ambientLight =', settings.ambientLight);
+
   return (
     <DraggableModal
       title="Display Options"
@@ -132,9 +137,9 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
       defaultPosition={position}
       onPositionChange={setPosition}
       resizable={true}
-      defaultWidth={280}
+      defaultWidth="auto"
       defaultHeight={600}
-      minWidth={200}
+      minWidth={0}
       minHeight={300}
       rightElement={
         <Button
@@ -162,21 +167,48 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
             {categories[idx].keys.map((key) => {
               const setting = defaultSettings[key];
               if (!setting) return null;
+              // Debug: log the input value for ambientLight
+              if (key === 'ambientLight') {
+                const v = settings[key] !== undefined ? settings[key] : setting.value;
+                console.log('Input value for ambientLight:', v);
+              }
               return (
                 <div key={key} className="flex items-center justify-between px-2 py-1 text-xs">
                   <div className="flex items-center gap-1">
                     {React.createElement(setting.icon, { className: "h-3 w-3" })}
                     <span className="text-[11px] text-muted-foreground">{setting.name}</span>
                   </div>
-                  <div>
-                    {setting.type === 'range' ? (
+                  <div className="pr-2">
+                    {setting.type === 'number' ? (
+                      <Input
+                        type="number"
+                        size="sm"
+                        className="text-xs h-5 w-12"
+                        min={setting.min}
+                        max={setting.max}
+                        step={setting.step}
+                        value={
+                          (() => {
+                            const v = settings[key] !== undefined ? settings[key] : setting.value;
+                            if (typeof v === 'number' && !Number.isInteger(v)) {
+                              return v.toFixed(3);
+                            }
+                            return v;
+                          })()
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          onSettingChange(key, val === '' ? '' : parseFloat(val));
+                        }}
+                      />
+                    ) : setting.type === 'range' ? (
                       <input
                         type="range"
                         className="h-1 w-20"
                         min={setting.min}
                         max={setting.max}
                         step={setting.step}
-                        value={settings[key]}
+                        value={settings[key] !== undefined ? settings[key] : setting.value}
                         onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
                       />
                     ) : (

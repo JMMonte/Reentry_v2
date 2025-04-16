@@ -10,6 +10,15 @@ import './styles/globals.css';
 import './styles/animations.css';
 import LZString from 'lz-string';
 
+function getInitialDisplaySettings(importedState) {
+  const loaded = importedState?.displaySettings || {};
+  const initial = {};
+  Object.entries(defaultSettings).forEach(([key, setting]) => {
+    initial[key] = loaded[key] !== undefined ? loaded[key] : setting.value;
+  });
+  return initial;
+}
+
 function App3DMain() {
   const [socket, setSocket] = useState(null);
   const [isChatVisible, setIsChatVisible] = useState(false);
@@ -20,13 +29,7 @@ function App3DMain() {
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date());
   const [toast, setToast] = useState(null);
-  const [displaySettings, setDisplaySettings] = useState(() => {
-    const initialSettings = {};
-    Object.entries(defaultSettings).forEach(([key, setting]) => {
-      initialSettings[key] = setting.value;
-    });
-    return initialSettings;
-  });
+  const [displaySettings, setDisplaySettings] = useState(() => getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash()));
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -53,13 +56,7 @@ function App3DMain() {
   useSimulationState(controller, importedState);
   useEffect(() => {
     if (importedState && importedState.displaySettings) {
-      setDisplaySettings(prev => {
-        const merged = { ...prev };
-        Object.entries(defaultSettings).forEach(([key, setting]) => {
-          merged[key] = importedState.displaySettings[key] !== undefined ? importedState.displaySettings[key] : setting.value;
-        });
-        return merged;
-      });
+      setDisplaySettings(getInitialDisplaySettings(importedState));
     }
     if (importedState && importedState.camera && typeof importedState.camera.focusedBody !== 'undefined') {
       setSelectedBody(importedState.camera.focusedBody || 'earth');
@@ -213,13 +210,7 @@ function App3DMain() {
           app.importSimulationState(state);
         }
         if (state.displaySettings) {
-          setDisplaySettings(prev => {
-            const merged = { ...prev };
-            Object.entries(defaultSettings).forEach(([key, setting]) => {
-              merged[key] = state.displaySettings[key] !== undefined ? state.displaySettings[key] : setting.value;
-            });
-            return merged;
-          });
+          setDisplaySettings(getInitialDisplaySettings(state));
         }
         if (state.camera && typeof state.camera.focusedBody !== 'undefined') {
           setSelectedBody(state.camera.focusedBody || 'earth');
