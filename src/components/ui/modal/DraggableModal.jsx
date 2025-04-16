@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '../button';
 import { ChevronDown, ChevronUp, X, GripHorizontal } from 'lucide-react';
+import PropTypes from 'prop-types';
 
 // Module-level z-index tracker (now truly global)
 if (typeof window !== 'undefined') {
@@ -131,7 +132,6 @@ export function DraggableModal({
     if (isOpen) {
       bringToFront();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -212,3 +212,43 @@ export function DraggableModal({
     </div>
   );
 }
+
+DraggableModal.propTypes = {
+  title: PropTypes.node.isRequired,
+  children: PropTypes.node,
+  defaultPosition: PropTypes.shape({
+    x: PropTypes.number,
+    y: PropTypes.number
+  }),
+  rightElement: PropTypes.node,
+  leftElement: PropTypes.node,
+  className: PropTypes.string,
+  isOpen: PropTypes.bool,
+  onClose: PropTypes.func,
+  defaultCollapsed: PropTypes.bool,
+  minHeight: PropTypes.oneOfType([
+    PropTypes.number,
+    PropTypes.string
+  ]),
+  maxHeight: PropTypes.oneOfType([
+    PropTypes.number,
+    PropTypes.string
+  ]),
+  minWidth: PropTypes.oneOfType([
+    PropTypes.number,
+    PropTypes.string
+  ]),
+  maxWidth: PropTypes.oneOfType([
+    PropTypes.number,
+    PropTypes.string
+  ]),
+  resizable: PropTypes.bool,
+  defaultHeight: PropTypes.oneOfType([
+    PropTypes.number,
+    PropTypes.string
+  ]),
+  defaultWidth: PropTypes.oneOfType([
+    PropTypes.number,
+    PropTypes.string
+  ])
+};

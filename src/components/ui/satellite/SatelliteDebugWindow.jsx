@@ -92,11 +92,12 @@ export function SatelliteDebugWindow({ satellite, earth, onBodySelect, onClose }
       title={satellite.name || `Satellite ${satellite.id}`}
       isOpen={true}
       onClose={onClose}
-      className="w-[300px]"
-      key={satellite.id + '-debug-' + (satellite.debugWindow?.isOpen ? 'open' : 'closed')}
       defaultPosition={{ x: window.innerWidth - 320, y: 80 }}
       resizable={true}
       defaultWidth={300}
+      defaultHeight={400}
+      minWidth={200}
+      minHeight={200}
       leftElement={
         <ColorPicker
           color={satellite.color}

@@ -1,11 +1,11 @@
 import * as React from "react"
-import * as LabelPrimitive from "@radix-ui/react-label"
 import { Slot } from "@radix-ui/react-slot"
 import {
   Controller,
   FormProvider,
   useFormContext,
 } from "react-hook-form"
+import PropTypes from "prop-types"
 
 import { cn } from "../../lib/utils"
 import { Label } from "../ui/label"
@@ -26,6 +26,9 @@ const FormItem = React.forwardRef(({ className, ...props }, ref) => {
   )
 })
 FormItem.displayName = "FormItem"
+FormItem.propTypes = {
+  className: PropTypes.string
+};
 
 const FormLabel = React.forwardRef(({ className, ...props }, ref) => {
   return (
@@ -37,6 +40,9 @@ const FormLabel = React.forwardRef(({ className, ...props }, ref) => {
   )
 })
 FormLabel.displayName = "FormLabel"
+FormLabel.propTypes = {
+  className: PropTypes.string
+};
 
 const FormControl = React.forwardRef(({ ...props }, ref) => {
   const { error, formItemId, formDescriptionId, formMessageId } = useFormContext()
@@ -70,6 +76,9 @@ const FormDescription = React.forwardRef(({ className, ...props }, ref) => {
   )
 })
 FormDescription.displayName = "FormDescription"
+FormDescription.propTypes = {
+  className: PropTypes.string
+};
 
 const FormMessage = React.forwardRef(({ className, children, ...props }, ref) => {
   const { error, formMessageId } = useFormContext()
@@ -91,6 +100,10 @@ const FormMessage = React.forwardRef(({ className, children, ...props }, ref) =>
   )
 })
 FormMessage.displayName = "FormMessage"
+FormMessage.propTypes = {
+  className: PropTypes.string,
+  children: PropTypes.node
+};
 
 export {
   useFormContext,
@@ -102,3 +115,7 @@ export {
   FormMessage,
   FormField,
 }
+
+Form.propTypes = {
+  children: PropTypes.node
+};

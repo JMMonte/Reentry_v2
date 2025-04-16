@@ -2,6 +2,7 @@ import React from 'react';
 import { DayPicker } from "react-day-picker";
 import { cn } from "../../../lib/utils";
 import { CalendarNavigation } from './CalendarNavigation';
+import PropTypes from 'prop-types';
 
 const VIEWS = {
   DAYS: 'days',
@@ -38,6 +39,11 @@ const MonthsView = ({ displayDate, onMonthSelect }) => {
   );
 };
 
+MonthsView.propTypes = {
+  displayDate: PropTypes.instanceOf(Date).isRequired,
+  onMonthSelect: PropTypes.func.isRequired
+};
+
 const YearsView = ({ displayDate, onYearSelect }) => {
   const currentYear = displayDate.getFullYear();
   const startYear = currentYear - 4;
@@ -62,6 +68,11 @@ const YearsView = ({ displayDate, onYearSelect }) => {
   );
 };
 
+YearsView.propTypes = {
+  displayDate: PropTypes.instanceOf(Date).isRequired,
+  onYearSelect: PropTypes.func.isRequired
+};
+
 const CalendarViews = ({
   view,
   displayDate,
@@ -72,7 +83,6 @@ const CalendarViews = ({
   onPrevMonth,
   onNextMonth,
   onViewChange,
-  onNowClick,
   className
 }) => {
   const handleMonthChange = (month) => {
@@ -143,6 +153,19 @@ const CalendarViews = ({
       {renderView()}
     </div>
   );
+};
+
+CalendarViews.propTypes = {
+  view: PropTypes.string.isRequired,
+  displayDate: PropTypes.instanceOf(Date).isRequired,
+  selectedDate: PropTypes.instanceOf(Date),
+  onDaySelect: PropTypes.func.isRequired,
+  onMonthSelect: PropTypes.func.isRequired,
+  onYearSelect: PropTypes.func.isRequired,
+  onPrevMonth: PropTypes.func.isRequired,
+  onNextMonth: PropTypes.func.isRequired,
+  onViewChange: PropTypes.func.isRequired,
+  className: PropTypes.string
 };
 
 export { VIEWS };

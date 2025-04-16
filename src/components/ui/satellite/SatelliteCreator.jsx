@@ -4,6 +4,7 @@ import { Label } from '../label';
 import { Input } from '../input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import { Slider } from '../slider';
+import PropTypes from 'prop-types';
 
 const SatelliteCreator = ({ onCreateSatellite }) => {
     const [mode, setMode] = useState('latlon');
@@ -196,6 +197,10 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
             </form>
         </div>
     );
+};
+
+SatelliteCreator.propTypes = {
+    onCreateSatellite: PropTypes.func.isRequired
 };
 
 export default SatelliteCreator;

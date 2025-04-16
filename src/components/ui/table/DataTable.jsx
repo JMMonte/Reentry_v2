@@ -2,6 +2,7 @@ import React, { useState, useId } from 'react';
 import { Download, Copy, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DraggableModal } from '../modal/DraggableModal';
+import PropTypes from 'prop-types';
 
 const TableContent = ({ data }) => (
   <table className="w-full table-auto border-collapse text-xs border border-white/20">
@@ -40,6 +41,10 @@ const TableContent = ({ data }) => (
     </tbody>
   </table>
 );
+
+TableContent.propTypes = {
+  data: PropTypes.arrayOf(PropTypes.object).isRequired
+};
 
 export const DataTable = ({ data, className }) => {
   const [fullscreenInstances, setFullscreenInstances] = useState(new Set());
@@ -129,6 +134,8 @@ export const DataTable = ({ data, className }) => {
           resizable={true}
           defaultWidth={500}
           defaultHeight={400}
+          minWidth={300}
+          minHeight={200}
         >
           <div className="overflow-auto h-full">
             <TableContent data={data} />
@@ -137,4 +144,9 @@ export const DataTable = ({ data, className }) => {
       )}
     </>
   );
+};
+
+DataTable.propTypes = {
+  data: PropTypes.arrayOf(PropTypes.object).isRequired,
+  className: PropTypes.string
 };

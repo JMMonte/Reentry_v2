@@ -68,7 +68,7 @@ export class Satellite {
         // Satellite mesh - pyramid shape (cone with 3 segments)
         const geometry = new THREE.ConeGeometry(0.5, 2, 3); // radius: 0.5, height: 2, segments: 3 (minimum)
         // Point along +Z axis (no rotation needed - ConeGeometry already points up)
-        const material = new THREE.MeshBasicMaterial({ 
+        const material = new THREE.MeshBasicMaterial({
             color: this.color,
             side: THREE.DoubleSide
         });
@@ -77,7 +77,7 @@ export class Satellite {
 
         // Add to scene
         this.scene.add(this.mesh);
-        
+
         // Add onBeforeRender callback to maintain relative size and orientation
         const targetSize = 0.005;
         this.mesh.onBeforeRender = (renderer, scene, camera) => {
@@ -86,10 +86,10 @@ export class Satellite {
                 const distance = camera.position.distanceTo(this.mesh.position);
                 const scale = distance * targetSize;
                 this.mesh.scale.set(scale, scale, scale);
-                
+
                 // Update mesh orientation
                 this.mesh.quaternion.copy(this.orientation);
-                
+
                 // Scale vectors with camera distance - only if they exist and are visible
                 if (this.velocityVector && this.velocityVector.visible) {
                     this.velocityVector.setLength(scale * 20);
@@ -125,7 +125,7 @@ export class Satellite {
 
         // Initialize trace line
         const traceGeometry = new THREE.BufferGeometry();
-        const traceMaterial = new THREE.LineBasicMaterial({ 
+        const traceMaterial = new THREE.LineBasicMaterial({
             color: this.color,
             linewidth: 2,
             transparent: true,
@@ -139,7 +139,7 @@ export class Satellite {
 
         // Initialize orbit line
         const orbitGeometry = new THREE.BufferGeometry();
-        const orbitMaterial = new THREE.LineBasicMaterial({ 
+        const orbitMaterial = new THREE.LineBasicMaterial({
             color: this.color,
             linewidth: 2,
             transparent: true,
@@ -239,7 +239,7 @@ export class Satellite {
     updateOrbitLine(position, velocity) {
         const mu = Constants.G * Constants.earthMass;
         const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
-        
+
         if (!orbitalElements) {
             console.warn('No orbital elements calculated');
             return;
@@ -247,13 +247,13 @@ export class Satellite {
 
         // Compute orbit points
         const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu, 180);
-        
+
         // Update orbit line geometry
         if (orbitPoints && orbitPoints.length > 0) {
             this.orbitLine.geometry.setFromPoints(orbitPoints);
             this.orbitLine.geometry.computeBoundingSphere();
         }
-        
+
         // Update apsis visualizer
         if (this.apsisVisualizer && this.apsisVisualizer.visible) {
             this.apsisVisualizer.update(position, velocity);
@@ -322,25 +322,25 @@ export class Satellite {
         const mu = Constants.G * Constants.earthMass;
         const r = this.position.clone();
         const v = this.velocity.clone();
-        
+
         // Calculate specific angular momentum
         const h = new THREE.Vector3().crossVectors(r, v);
         const h_mag = h.length();
-        
+
         // Calculate specific orbital energy
         const v2 = v.lengthSq();
         const r_mag = r.length();
         const energy = (v2 / 2) - (mu / r_mag);
-        
+
         // Calculate semi-major axis (in meters)
         const sma = -mu / (2 * energy);
-        
+
         // Calculate eccentricity vector
         const ev = new THREE.Vector3()
             .crossVectors(v, h)
             .divideScalar(mu)
             .sub(r.clone().divideScalar(r_mag));
-        
+
         const ecc = ev.length();
 
         // Calculate inclination
@@ -462,7 +462,7 @@ export class Satellite {
 
     updateVectors() {
         const scaledPosition = this.mesh.position;
-        
+
         if (this.velocityVector && this.velocityVector.visible) {
             this.velocityVector.position.copy(scaledPosition);
             const normalizedVelocity = this.velocity.clone().normalize();

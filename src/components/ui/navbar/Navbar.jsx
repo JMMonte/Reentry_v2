@@ -29,14 +29,10 @@ import {
   SelectSeparator
 } from '../select';
 import { Separator } from '../separator';
-import { DraggableModal } from '../modal/DraggableModal';
-import SatelliteCreator from '../satellite/SatelliteCreator';
 import { cn } from "../../../lib/utils";
 import { DateTimePicker } from '../datetime/DateTimePicker';
-import { formatBodySelection, getBodyDisplayName, updateCameraTarget, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
+import { formatBodySelection, getBodyDisplayName, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
 import { saveAs } from 'file-saver';
-import * as THREE from 'three';
-import { Constants } from '../../../utils/Constants.js';
 import LZString from 'lz-string';
 import {
   DropdownMenu,
@@ -44,6 +40,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem
 } from '../dropdown-menu';
+import PropTypes from 'prop-types';
 
 // Time warp options
 const timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
@@ -77,14 +74,14 @@ export function Navbar({
   onSimulatedTimeChange,
   app3DRef,
   satellites,
-  onShareState,
   onImportState,
   shareModalOpen,
   setShareModalOpen,
-  setShareUrl
+  setShareUrl,
+  setIsAuthOpen
 }) {
   const [satelliteOptions, setSatelliteOptions] = useState([]);
-  const [shareCopied, setShareCopied] = useState(false);
+  const [user, setUser] = useState(null);
 
   // Helper function to get the display value
   const getDisplayValue = (value) => {
@@ -119,6 +116,13 @@ export function Navbar({
     return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
   }, [selectedBody, onBodySelect, satellites]);
 
+  useEffect(() => {
+    fetch('/api/auth/session')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setUser(data?.user || null))
+      .catch(() => setUser(null));
+  }, []);
+
   const handleBodyChange = (eventOrValue) => {
     // Handle both direct value calls and event calls
     const value = typeof eventOrValue === 'object' ? eventOrValue.target.value : eventOrValue;
@@ -145,12 +149,6 @@ export function Navbar({
   // --- Save/Import/Share Simulation State ---
   const importInputRef = useRef(null);
 
-  const handleImportButtonClick = () => {
-    if (importInputRef.current) {
-      importInputRef.current.click();
-    }
-  };
-
   const handleSaveState = () => {
     const app = app3DRef.current;
     if (!app) return;
@@ -170,7 +168,6 @@ export function Navbar({
       const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;
       setShareUrl(url);
       setShareModalOpen(true);
-      setShareCopied(false);
       window.history.replaceState(null, '', url);
     } else {
       // Closing: just close modal
@@ -178,54 +175,11 @@ export function Navbar({
     }
   };
 
-  const handleCopyShareUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 1500);
-    } catch (err) {
-      alert('Failed to copy URL: ' + err.message);
-    }
+  const handleLogin = () => {
+    setIsAuthOpen(true);
   };
-
-  const handleShareViaEmail = () => {
-    const subject = encodeURIComponent('Check out this simulation state!');
-    const body = encodeURIComponent(`Open this link to load the simulation state:\n${shareUrl}`);
-    window.open(`mailto:?subject=${subject}&body=${body}`);
-  };
-
-  const handleImportState = (event) => {
-    const file = event.target.files[0];
-    if (!file) {
-      console.log('No file selected');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const state = JSON.parse(e.target.result);
-        const app = app3DRef.current;
-        if (!app) {
-          console.log('App3D instance not found');
-          return;
-        }
-        // Use the same import logic as URL load
-        if (typeof app.importSimulationState === 'function') {
-          app.importSimulationState(state);
-        }
-        // Update selected body if present
-        if (state.camera && typeof state.camera.focusedBody !== 'undefined') {
-          onBodySelect(state.camera.focusedBody || 'earth');
-        }
-        // Optionally, update display settings if you keep them in Navbar state (if not, App.jsx already does this)
-      } catch (err) {
-        alert('Failed to import simulation state: ' + err.message);
-        console.error('Import error:', err);
-      }
-    };
-    reader.readAsText(file);
-    // Reset input value so the same file can be selected again
-    event.target.value = '';
+  const handleLogout = () => {
+    window.location.href = '/api/auth/signout';
   };
 
   return (
@@ -422,9 +376,58 @@ export function Navbar({
             <TooltipContent>Share State</TooltipContent>
           </Tooltip>
         </TooltipProvider>
+        {/* Login/Profile Button */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={user ? handleLogout : handleLogin}
+                className=""
+              >
+                {/* User icon from lucide-react */}
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M6 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+                </svg>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {user ? `Logout (${user.email || user.name})` : 'Login / Profile'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </div>
   );
 }
+
+Navbar.propTypes = {
+  onChatToggle: PropTypes.func.isRequired,
+  onSatelliteListToggle: PropTypes.func.isRequired,
+  onDisplayOptionsToggle: PropTypes.func.isRequired,
+  onSatelliteCreatorToggle: PropTypes.func.isRequired,
+  isChatVisible: PropTypes.bool.isRequired,
+  isSatelliteListVisible: PropTypes.bool.isRequired,
+  isDisplayOptionsOpen: PropTypes.bool.isRequired,
+  isSatelliteModalOpen: PropTypes.bool.isRequired,
+  selectedBody: PropTypes.string.isRequired,
+  onBodySelect: PropTypes.func.isRequired,
+  timeWarp: PropTypes.number.isRequired,
+  onTimeWarpChange: PropTypes.func.isRequired,
+  simulatedTime: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.instanceOf(Date)
+  ]).isRequired,
+  onSimulatedTimeChange: PropTypes.func.isRequired,
+  app3DRef: PropTypes.shape({ current: PropTypes.object }),
+  satellites: PropTypes.array.isRequired,
+  onImportState: PropTypes.func.isRequired,
+  shareModalOpen: PropTypes.bool.isRequired,
+  setShareModalOpen: PropTypes.func.isRequired,
+  setShareUrl: PropTypes.func.isRequired,
+  setIsAuthOpen: PropTypes.func.isRequired
+};
 
 export default Navbar;

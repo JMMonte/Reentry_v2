@@ -1,6 +1,7 @@
 import React from "react";
 import { Input } from "../input";
 import { cn } from "../../../lib/utils";
+import PropTypes from 'prop-types';
 
 const TimeInput = ({
   hours,
@@ -85,6 +86,15 @@ const TimeInput = ({
       </div>
     </div>
   );
+};
+
+TimeInput.propTypes = {
+  hours: PropTypes.number.isRequired,
+  minutes: PropTypes.number.isRequired,
+  seconds: PropTypes.number.isRequired,
+  milliseconds: PropTypes.number.isRequired,
+  onTimeChange: PropTypes.func.isRequired,
+  className: PropTypes.string
 };
 
 export { TimeInput };

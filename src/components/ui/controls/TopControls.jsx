@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../select';
+import PropTypes from 'prop-types';
 
 export function TopControls({ 
   onToggleChat, 
@@ -70,3 +71,15 @@ export function TopControls({
     </div>
   );
 }
+
+TopControls.propTypes = {
+  onToggleChat: PropTypes.func.isRequired,
+  onToggleDisplay: PropTypes.func.isRequired,
+  onToggleSatellite: PropTypes.func.isRequired,
+  selectedBody: PropTypes.string.isRequired,
+  onBodyChange: PropTypes.func.isRequired,
+  timeWarp: PropTypes.number.isRequired,
+  onDecreaseTimeWarp: PropTypes.func.isRequired,
+  onIncreaseTimeWarp: PropTypes.func.isRequired,
+  onResetTimeWarp: PropTypes.func.isRequired
+};

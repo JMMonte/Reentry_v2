@@ -667,12 +667,12 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
       title="Chat"
       isOpen={isOpen}
       onClose={onClose}
-      defaultPosition={modalPosition}
+      defaultPosition={modalPosition || { x: 100, y: 100 }}
       defaultWidth={450}
       defaultHeight={600}
+      minWidth={300}
       minHeight={300}
       resizable={true}
-      className="w-[400px]"
     >
       <div className="flex flex-col h-full w-full overflow-hidden">
         <ScrollArea 

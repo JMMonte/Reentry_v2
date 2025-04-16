@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Button } from '../button';
 import { Input } from '../input';
-import { Label } from '../label';
 import { Satellite } from 'lucide-react';
 import {
   Sheet,
@@ -20,7 +19,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -29,6 +27,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import PropTypes from 'prop-types';
 
 const latLonSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -287,3 +286,9 @@ export function SatelliteControls({ socket }) {
     </Sheet>
   );
 }
+
+SatelliteControls.propTypes = {
+  socket: PropTypes.shape({
+    emit: PropTypes.func.isRequired
+  })
+};

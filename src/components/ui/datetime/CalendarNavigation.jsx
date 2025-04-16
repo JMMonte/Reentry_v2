@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "../../../lib/utils";
+import PropTypes from 'prop-types';
 
 const CalendarNavigation = ({ 
   displayDate,
@@ -60,6 +61,14 @@ const CalendarNavigation = ({
       </button>
     </div>
   );
+};
+
+CalendarNavigation.propTypes = {
+  displayDate: PropTypes.instanceOf(Date).isRequired,
+  onPrevMonth: PropTypes.func.isRequired,
+  onNextMonth: PropTypes.func.isRequired,
+  onViewChange: PropTypes.func.isRequired,
+  className: PropTypes.string
 };
 
 export { CalendarNavigation };

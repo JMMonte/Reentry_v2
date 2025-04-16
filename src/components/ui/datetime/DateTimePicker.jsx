@@ -2,10 +2,11 @@ import React, { useState, useMemo } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../popover";
 import { Button } from "../button";
 import { cn } from "../../../lib/utils";
-import { format, parseISO, isValid } from "date-fns";
+import { parseISO, isValid } from "date-fns";
 import { Calendar } from "lucide-react";
 import { CalendarViews, VIEWS } from "./CalendarViews";
 import { TimeInput } from "./TimeInput";
+import PropTypes from 'prop-types';
 
 const formatDateTime = (date) => {
   if (!date) return "";
@@ -191,7 +192,7 @@ const DateTimePicker = ({ date, onDateTimeChange }) => {
             minutes={minutes}
             seconds={seconds}
             milliseconds={milliseconds}
-            onChange={handleTimeChange}
+            onTimeChange={handleTimeChange}
           />
           <Button
             variant="ghost"
@@ -205,6 +206,14 @@ const DateTimePicker = ({ date, onDateTimeChange }) => {
       </PopoverContent>
     </Popover>
   );
+};
+
+DateTimePicker.propTypes = {
+  date: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.instanceOf(Date)
+  ]),
+  onDateTimeChange: PropTypes.func.isRequired
 };
 
 export { DateTimePicker };

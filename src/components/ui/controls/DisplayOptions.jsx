@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../button';
 import { Switch } from '../switch';
 import {
@@ -20,6 +20,7 @@ import {
   CheckSquare
 } from 'lucide-react';
 import { DraggableModal } from '../modal/DraggableModal';
+import PropTypes from 'prop-types';
 
 // Default settings with display options metadata
 export const defaultSettings = {
@@ -107,6 +108,18 @@ function Accordion({ sections, children, openIndexes, setOpenIndexes }) {
   );
 }
 
+Accordion.propTypes = {
+  sections: PropTypes.arrayOf(
+    PropTypes.shape({
+      name: PropTypes.string.isRequired,
+      keys: PropTypes.arrayOf(PropTypes.string).isRequired
+    })
+  ).isRequired,
+  children: PropTypes.func.isRequired,
+  openIndexes: PropTypes.arrayOf(PropTypes.number).isRequired,
+  setOpenIndexes: PropTypes.func.isRequired
+};
+
 export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
   const [position, setPosition] = useState({ x: window.innerWidth - 220, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
@@ -116,12 +129,13 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
       title="Display Options"
       isOpen={isOpen}
       onClose={() => onOpenChange(false)}
-      className=""
-      position={position}
+      defaultPosition={position}
       onPositionChange={setPosition}
-      resizable
+      resizable={true}
       defaultWidth={280}
       defaultHeight={600}
+      minWidth={200}
+      minHeight={300}
       rightElement={
         <Button
           variant="ghost"
@@ -182,3 +196,10 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
     </DraggableModal>
   );
 }
+
+DisplayOptions.propTypes = {
+  settings: PropTypes.object.isRequired,
+  onSettingChange: PropTypes.func.isRequired,
+  isOpen: PropTypes.bool.isRequired,
+  onOpenChange: PropTypes.func.isRequired
+};

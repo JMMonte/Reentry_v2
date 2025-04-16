@@ -4,6 +4,7 @@ import { Button } from "../button";
 import { Focus, MonitorX, MonitorCheck, Trash2 } from "lucide-react";
 import { ColorPicker } from "./ColorPicker";
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
+import PropTypes from 'prop-types';
 
 export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect, debugWindows, app3d }) {
     // Open automatically when first satellite is created
@@ -50,12 +51,11 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
             title="Satellites"
             isOpen={isOpen}
             onClose={() => setIsOpen(false)}
-            className="w-[250px]"
-            key={isOpen ? 'sat-list-open' : 'sat-list-closed'}
             defaultPosition={{ x: 20, y: 80 }}
             resizable={true}
             defaultWidth={300}
             defaultHeight={500}
+            minWidth={200}
             minHeight={100}
         >
             <div className="space-y-1 p-1">
@@ -121,3 +121,19 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
         </DraggableModal>
     );
 }
+
+SatelliteListWindow.propTypes = {
+    satellites: PropTypes.oneOfType([
+        PropTypes.array,
+        PropTypes.object
+    ]).isRequired,
+    isOpen: PropTypes.bool.isRequired,
+    setIsOpen: PropTypes.func.isRequired,
+    onBodySelect: PropTypes.func,
+    debugWindows: PropTypes.array.isRequired,
+    app3d: PropTypes.shape({
+        removeDebugWindow: PropTypes.func,
+        createDebugWindow: PropTypes.func,
+        removeSatellite: PropTypes.func
+    })
+};

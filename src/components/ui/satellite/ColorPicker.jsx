@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '../button';
 import { Popover, PopoverContent, PopoverTrigger } from "../popover";
+import PropTypes from 'prop-types';
 
 export function ColorPicker({ color, onChange }) {
   const colors = [
@@ -61,3 +62,11 @@ export function ColorPicker({ color, onChange }) {
     </Popover>
   );
 }
+
+ColorPicker.propTypes = {
+  color: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.number
+  ]).isRequired,
+  onChange: PropTypes.func.isRequired
+};
