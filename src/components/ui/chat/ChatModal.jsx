@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '../button';
-import { Input } from '../input';
+import { Textarea } from '../textarea';
 import { Send, Loader2, Copy, Check } from 'lucide-react';
 import { ScrollArea } from '../scroll-area';
 import { cn } from '../../../lib/utils';
@@ -721,14 +721,17 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
 
         <div className="border-t p-2"> 
           <div className="flex gap-2">
-            <Input
+            <Textarea
               ref={inputRef}
               value={userMessage}
               onChange={(e) => setUserMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               placeholder={isConnected ? "Type a message..." : "Connecting to server..."}
               disabled={!isConnected || isLoading}
-              className="flex-1 text-sm" 
+              className="flex-1 text-sm"
+              textareaClassName="w-full"
+              minRows={1}
+              maxRows={6}
             />
             <Button 
               size="sm" 

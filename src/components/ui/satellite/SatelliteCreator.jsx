@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Button } from '../button';
 import { Label } from '../label';
 import { Input } from '../input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import { Slider } from '../slider';
+import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import PropTypes from 'prop-types';
 
 const SatelliteCreator = ({ onCreateSatellite }) => {
@@ -100,25 +100,50 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         const value = formData[name];
         const isNumeric = type === "number";
         const showSlider = isNumeric && min !== null && max !== null;
-
+        if (name === "name") {
+            return (
+                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                    <Label htmlFor={name} className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                        {label}{unit ? ` (${unit})` : ''}:
+                    </Label>
+                    <div className="col-span-9">
+                        <Input
+                            type="text"
+                            id={name}
+                            name={name}
+                            value={value}
+                            onChange={handleInputChange}
+                            className="h-6 text-xs py-0 px-1"
+                            inputClassName="w-full"
+                            required
+                            size="sm"
+                        />
+                    </div>
+                </div>
+            );
+        }
         return (
-            <div className="grid grid-cols-4 gap-0.5">
-                <Label htmlFor={name} className="text-[10px] text-muted-foreground flex items-center">
+            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                <Label htmlFor={name} className="col-span-3 text-xs text-muted-foreground text-right pr-1">
                     {label}{unit ? ` (${unit})` : ''}:
                 </Label>
-                <div className="col-span-3 flex items-center gap-1">
+                <div className="col-span-3">
                     <Input
                         type={type}
                         id={name}
                         name={name}
                         value={value}
                         onChange={handleInputChange}
-                        className="h-5 text-[10px] py-0 px-1 w-20"
+                        className="h-6 text-xs py-0 px-1"
+                        inputClassName="w-full"
                         min={min}
                         max={max}
                         step={step}
+                        size="sm"
                         required
                     />
+                </div>
+                <div className="col-span-6 flex items-center">
                     {showSlider && (
                         <Slider
                             value={[value]}
@@ -126,7 +151,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                             min={min}
                             max={max}
                             step={step || (max - min) / 100}
-                            className="flex-1 h-1"
+                            className="ml-3 flex-1 h-1"
                         />
                     )}
                 </div>
@@ -135,65 +160,56 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
     };
 
     return (
-        <div className="space-y-1 text-[10px]">
-            <div className="grid grid-cols-4 gap-0.5">
-                <Label className="text-muted-foreground">Mode:</Label>
-                <Select value={mode} onValueChange={setMode}>
-                    <SelectTrigger className="col-span-3 h-5 text-[10px] py-0 px-1">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="latlon">Latitude/Longitude</SelectItem>
-                        <SelectItem value="orbital">Orbital Elements</SelectItem>
-                        <SelectItem value="circular">Circular Orbit</SelectItem>
-                    </SelectContent>
-                </Select>
+        <div className="text-xs p-4">
+            <div className="mb-2">
+                <Tabs value={mode} onValueChange={setMode}>
+                    <TabsList className="flex justify-center gap-0 text-xs mb-2">
+                        <TabsTrigger value="latlon" className="w-1/3 text-xs transition-colors hover:bg-primary/10">Lat/Lon</TabsTrigger>
+                        <TabsTrigger value="orbital" className="w-1/3 text-xs transition-colors hover:bg-primary/10">Orbital</TabsTrigger>
+                        <TabsTrigger value="circular" className="w-1/3 text-xs transition-colors hover:bg-primary/10">Circular</TabsTrigger>
+                    </TabsList>
+                </Tabs>
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-1">
-                {/* Common Fields */}
-                {renderField("name", "Name", "text")}
-                {renderField("mass", "Mass", "number", 1, 1000, 1, "kg")}
-                {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
-
-                {/* Lat/Lon Fields */}
-                {mode === 'latlon' && (
-                    <>
-                        {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
-                        {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
-                        {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                        {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
-                        {renderField("velocity", "Velocity", "number", null, null, 0.1, "km/s")}
-                        {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
-                    </>
-                )}
-
-                {/* Orbital Elements Fields */}
-                {mode === 'orbital' && (
-                    <>
-                        {renderField("semiMajorAxis", "SMA", "number", null, null, 0.1, "km")}
-                        {renderField("eccentricity", "Ecc", "number", 0, 1, 0.01)}
-                        {renderField("inclination", "Inc", "number", -180, 180, 0.1, "deg")}
-                        {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
-                        {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
-                        {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
-                    </>
-                )}
-
-                {/* Circular Orbit Fields */}
-                {mode === 'circular' && (
-                    <>
-                        {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
-                        {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
-                        {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                        {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
-                        {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
-                    </>
-                )}
-
-                <Button type="submit" className="w-full h-5 text-[10px] py-0">
-                    Create
-                </Button>
+            <form onSubmit={handleSubmit} className="space-y-0.5 mb-0">
+                <div className="flex flex-col gap-y-2">
+                    {renderField("name", "Name", "text")}
+                    {renderField("mass", "Mass", "number", 1, 1000, 1, "kg")}
+                    {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
+                    {mode === 'latlon' && (
+                        <>
+                            {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
+                            {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
+                            {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
+                            {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
+                            {renderField("velocity", "Velocity", "number", null, null, 0.1, "km/s")}
+                            {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
+                        </>
+                    )}
+                    {mode === 'orbital' && (
+                        <>
+                            {renderField("semiMajorAxis", "SMA", "number", null, null, 0.1, "km")}
+                            {renderField("eccentricity", "Ecc", "number", 0, 1, 0.01)}
+                            {renderField("inclination", "Inc", "number", -180, 180, 0.1, "deg")}
+                            {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
+                            {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
+                            {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
+                        </>
+                    )}
+                    {mode === 'circular' && (
+                        <>
+                            {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
+                            {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
+                            {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
+                            {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
+                            {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
+                        </>
+                    )}
+                </div>
+                <div className="pt-8">
+                    <Button type="submit" className="w-full h-7 text-xs py-0 mb-2" size="sm">
+                        Create
+                    </Button>
+                </div>
             </form>
         </div>
     );

@@ -177,7 +177,15 @@ function App3DMain() {
     app3d.createDebugWindow = (satellite) => {
       setDebugWindows(prev => {
         if (prev.some(w => w.id === satellite.id)) return prev;
-        return [...prev, { id: satellite.id, satellite, onBodySelect: handleBodySelect }];
+        return [
+          ...prev,
+          {
+            id: satellite.id,
+            satellite,
+            onBodySelect: handleBodySelect,
+            onClose: () => app3d.removeDebugWindow(satellite.id)
+          }
+        ];
       });
     };
     app3d.updateSatelliteList = () => {

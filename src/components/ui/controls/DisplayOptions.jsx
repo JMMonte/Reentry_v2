@@ -55,11 +55,11 @@ const categories = [
   },
   {
     name: 'Satellites',
-    keys: ['showSatVectors', 'showOrbits', 'showTraces', 'groundTrackUpdateInterval'],
+    keys: ['showSatVectors', 'showOrbits', 'showTraces', 'showGroundTraces', 'groundTrackUpdateInterval'],
   },
   {
     name: 'Ground',
-    keys: ['showGroundTraces', 'showCities', 'showAirports', 'showSpaceports', 'showObservatories', 'showGroundStations', 'showCountryBorders', 'showStates', 'showSurfaceLines'],
+    keys: ['showCities', 'showAirports', 'showSpaceports', 'showObservatories', 'showGroundStations', 'showCountryBorders', 'showStates', 'showSurfaceLines'],
   },
   {
     name: 'Moon',

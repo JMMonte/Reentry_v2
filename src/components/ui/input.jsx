@@ -13,6 +13,7 @@ const Input = React.forwardRef(
       leftIcon,
       rightIcon,
       className,
+      inputClassName,
       ...props
     },
     ref
@@ -55,7 +56,8 @@ const Input = React.forwardRef(
             stateStyles,
             leftIcon && "pl-8",
             rightIcon && "pr-8",
-            numberInputClass
+            numberInputClass,
+            inputClassName
           )}
           {...props}
         />
@@ -75,6 +77,7 @@ Input.propTypes = {
   leftIcon: PropTypes.node,
   rightIcon: PropTypes.node,
   className: PropTypes.string,
+  inputClassName: PropTypes.string,
 };
 
 export { Input }
