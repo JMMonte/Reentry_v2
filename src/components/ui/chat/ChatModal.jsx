@@ -126,6 +126,26 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
   const [copiedStates, setCopiedStates] = useState({});
   const [tableData, setTableData] = useState(new Map());
 
+  // Conversation starters
+  const conversationStarters = [
+    "Create a Walker constellation with 24 satellites.",
+    "Show me a sun-synchronous orbit for Earth observation.",
+    "Design a spacecraft in a Molniya orbit.",
+    "Create a custom constellation with 6 planes and 4 satellites per plane.",
+    "Place a satellite in a geostationary orbit.",
+    "Show a spacecraft in a lunar transfer orbit.",
+    // Fun and creative starters
+    "Create a Galileo constellation analogue.",
+    "Create a nice geometric satellite constellation art around the Earth.",
+    "Create satellites over each city in Europe moving eastward.",
+    "Simulate a mega-constellation for global internet coverage.",
+    "Arrange satellites in a flower-shaped pattern around the planet.",
+    "Put a satellite in a retrograde orbit.",
+    "Create a constellation for continuous coverage of the North Pole.",
+    "Design a constellation for tracking ships across all oceans.",
+    "Show a satellite in a highly elliptical orbit passing over Antarctica."
+  ];
+
   // Handle initial socket state
   useEffect(() => {
     if (socket) {
@@ -665,6 +685,27 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
               <div className="flex justify-center">
                 <div className="bg-destructive text-destructive-foreground rounded-lg px-4 py-2">
                   Disconnected from server. Reconnecting...
+                </div>
+              </div>
+            )}
+            {/* Conversation Starters */}
+            {messages.length === 0 && isConnected && !isLoading && (
+              <div className="mb-4">
+                <div className="text-xs text-muted-foreground mb-2">Try one of these to get started:</div>
+                <div
+                  className="grid gap-3 grid-cols-1 sm:grid-cols-2"
+                  style={{ maxWidth: 400 }}
+                >
+                  {conversationStarters.map((starter, idx) => (
+                    <button
+                      key={idx}
+                      className="w-full text-left px-4 py-3 rounded-xl bg-secondary shadow-sm border border-border hover:bg-primary/10 transition-colors text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 break-words min-h-[56px]"
+                      onClick={() => setUserMessage(starter)}
+                      type="button"
+                    >
+                      {starter}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
