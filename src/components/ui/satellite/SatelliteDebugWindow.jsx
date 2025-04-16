@@ -5,6 +5,7 @@ import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2 } from "lucide-react";
 import { Constants } from "../../../utils/Constants";
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
+import PropTypes from 'prop-types';
 
 export function SatelliteDebugWindow({ satellite, earth, onBodySelect, onClose }) {
   const [orbitalElements, setOrbitalElements] = useState(null);
@@ -202,3 +203,10 @@ export function SatelliteDebugWindow({ satellite, earth, onBodySelect, onClose }
     </DraggableModal>
   );
 }
+
+SatelliteDebugWindow.propTypes = {
+  satellite: PropTypes.object,
+  earth: PropTypes.object,
+  onBodySelect: PropTypes.func,
+  onClose: PropTypes.func,
+};

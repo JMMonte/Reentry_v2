@@ -1,4 +1,6 @@
-import { createContext, useContext, useEffect, useState } from "react"
+import React from "react"
+import { createContext, useEffect, useState } from "react"
+import PropTypes from "prop-types"
 
 const ThemeProviderContext = createContext({
   theme: "system",
@@ -45,5 +47,11 @@ export function ThemeProvider({
       {children}
     </ThemeProviderContext.Provider>
   )
+}
+
+ThemeProvider.propTypes = {
+  children: PropTypes.node,
+  defaultTheme: PropTypes.string,
+  storageKey: PropTypes.string,
 }
 

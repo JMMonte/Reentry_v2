@@ -44,7 +44,7 @@ function App3DMain() {
 
   // --- OOP App3D Controller ---
   const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
-  const { controller, ready } = useApp3D(importedState);
+  const { controller } = useApp3D(importedState);
   const app3d = controller?.app3d;
 
   // --- State from URL hash (reactive to hash changes) ---
@@ -216,16 +216,6 @@ function App3DMain() {
   };
 
   // Share modal handlers
-  const handleShareState = () => {
-    if (!app3d) return;
-    const state = app3d.exportSimulationState();
-    const json = JSON.stringify(state);
-    const compressed = LZString.compressToEncodedURIComponent(json);
-    const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;
-    setShareUrl(url);
-    setShareModalOpen(true);
-    setShareCopied(false);
-  };
   const handleCopyShareUrl = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
@@ -256,7 +246,6 @@ function App3DMain() {
         const state = app3d.exportSimulationState();
         const json = JSON.stringify(state);
         const compressed = LZString.compressToEncodedURIComponent(json);
-        const url = `${window.location.origin}${window.location.pathname}#state=${compressed}`;
         // Set flag to ignore the next hashchange event
         ignoreNextHashChange.current = true;
         window.location.hash = `state=${compressed}`;
@@ -304,7 +293,10 @@ function App3DMain() {
         // Update URL to match imported state
         const json = JSON.stringify(state);
         const compressed = LZString.compressToEncodedURIComponent(json);
+        // Set flag to ignore the next hashchange event
+        ignoreNextHashChange.current = true;
         window.location.hash = `state=${compressed}`;
+        showToast('Sim saved');
       } catch (err) {
         alert('Failed to import simulation state: ' + err.message);
       }

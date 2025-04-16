@@ -1,13 +1,12 @@
 import { Constants } from '../utils/Constants.js';
 
-let satellites = [], earthMass, moonMass;
+let satellites = [];
 let manuallyManagedSatellites = []; // To store satellites managed manually
 // --- Simulation loop state ---
 let simulationInterval = null;
 let lastSimTime = null;
 let timeWarp = 1; // Default time warp
 let earthPosition = { x: 0, y: 0, z: 0 };
-let earthRadius = 0;
 let moonPosition = { x: 0, y: 0, z: 0 };
 
 self.onmessage = function (event) {
@@ -42,7 +41,6 @@ self.onmessage = function (event) {
         case 'updateBodies':
             // Update earth/moon positions from main thread
             if (data.earthPosition) earthPosition = data.earthPosition;
-            if (data.earthRadius) earthRadius = data.earthRadius;
             if (data.moonPosition) moonPosition = data.moonPosition;
             break;
         default:
@@ -55,7 +53,6 @@ function initPhysics(data) {
     satellites = [];
     // Set initial earth/moon positions if provided
     if (data.earthPosition) earthPosition = data.earthPosition;
-    if (data.earthRadius) earthRadius = data.earthRadius;
     if (data.moonPosition) moonPosition = data.moonPosition;
     // Notify that initialization is complete
     self.postMessage({
