@@ -189,7 +189,7 @@ export class SatelliteManager {
     _updateSatelliteList() {
         const satelliteData = Object.fromEntries(
             Object.entries(this._satellites)
-                .filter(([_, sat]) => sat && sat.id != null && sat.name)
+                .filter(([, sat]) => sat && sat.id != null && sat.name)
                 .map(([id, sat]) => [id, { id: sat.id, name: sat.name }])
         );
         document.dispatchEvent(new CustomEvent('satelliteListUpdated', {

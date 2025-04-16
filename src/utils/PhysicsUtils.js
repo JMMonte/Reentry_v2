@@ -29,7 +29,6 @@ export class PhysicsUtils {
 
     static calculateOrbitalElements(position, velocity, mu) {
         const r = position.length();
-        const v = velocity.length();
         const vr = velocity.dot(position) / r;
         const hVec = position.clone().cross(velocity);
         const h = hVec.length();
@@ -356,7 +355,7 @@ export class PhysicsUtils {
         return velocity;
     }
 
-    static calculateOrbitalPosition(orbitalElements, mu, time) {
+    static calculateOrbitalPosition(orbitalElements, mu) {
         const { h, e, i, omega, w, trueAnomaly } = orbitalElements;
         const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
         const position = new THREE.Vector3(
@@ -365,16 +364,6 @@ export class PhysicsUtils {
             0
         );
         return this.rotateToECI(position, i, omega, w);
-    }
-
-    static solveKeplersEquation(M, e, tol = 1e-6) {
-        let E = M;
-        let deltaE;
-        do {
-            deltaE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
-            E += deltaE;
-        } while (Math.abs(deltaE) > tol);
-        return E;
     }
 
     static calculateStateVectorsAtAnomaly(orbitalElements, trueAnomaly, mu) {
@@ -396,7 +385,6 @@ export class PhysicsUtils {
         position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
 
         // Velocity in the orbital plane
-        const p = h * h / mu;
         const vr = (mu / h) * e * Math.sin(trueAnomaly);
         const vt = (mu / h) * (1 + e * Math.cos(trueAnomaly));
         const vx = vr * Math.cos(trueAnomaly) - vt * Math.sin(trueAnomaly);
@@ -503,16 +491,6 @@ export class PhysicsUtils {
         return { burnNode1, burnNode2 };
     }
 
-    static solveKeplersEquation(M, e, tol = 1e-6) {
-        let E = M;
-        let deltaE;
-        do {
-            deltaE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
-            E += deltaE;
-        } while (Math.abs(deltaE) > tol);
-        return E;
-    }
-
     static meanAnomalyFromTrueAnomaly(trueAnomaly, eccentricity) {
         const E = 2 * Math.atan(Math.sqrt((1 - eccentricity) / (1 + eccentricity)) * Math.tan(trueAnomaly / 2));
         return E - eccentricity * Math.sin(E);
@@ -548,5 +526,15 @@ export class PhysicsUtils {
             latitude: THREE.MathUtils.radToDeg(latitude),
             longitude: THREE.MathUtils.radToDeg(longitude)
         };
+    }
+
+    static solveKeplersEquation(M, e, tol = 1e-6) {
+        let E = M;
+        let deltaE;
+        do {
+            deltaE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
+            E += deltaE;
+        } while (Math.abs(deltaE) > tol);
+        return E;
     }
 }

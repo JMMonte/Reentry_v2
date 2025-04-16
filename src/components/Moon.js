@@ -297,10 +297,6 @@ export class Moon {
         this.moonMesh.rotation.y += deltaRotation;
     }
 
-    getMesh() {
-        return this.moonMesh;
-    }
-
     get quaternion() {
         return this.moonMesh.quaternion;
     }

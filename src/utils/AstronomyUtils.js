@@ -1,5 +1,4 @@
 // utils/AstronomyUtils.js
-import { Constants } from './Constants.js';
 
 export function JulianDay(date) {
     const time = date.getTime() / 86400000.0 + 2440587.5;

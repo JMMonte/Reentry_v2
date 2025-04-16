@@ -35,7 +35,7 @@ export class Vectors {
         }
     }
 
-    createLabel(text, position, color) {
+    createLabel(text, position) {
         const fontSize = 64;
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');

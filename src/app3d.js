@@ -1,6 +1,5 @@
 // app3d.js
 import * as THREE from 'three';
-import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer';
 import Stats from 'stats.js';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { TextureManager } from './managers/textureManager.js';
@@ -34,9 +33,8 @@ function extractDefaultDisplaySettings(settingsObj) {
 class App3D extends EventTarget {
     /**
      * Core 3D application for simulation.
-     * @param {Object} initialState - Optional initial simulation state
      */
-    constructor(initialState) {
+    constructor() {
         super();
         // Make instance available globally
         console.log('App3D: Initializing...');
@@ -352,7 +350,7 @@ class App3D extends EventTarget {
         // Create a clean object with only necessary satellite data
         const satelliteData = Object.fromEntries(
             Object.entries(this.satellites.getSatellites())
-                .filter(([_, sat]) => sat && sat.id != null && sat.name)
+                .filter(([, sat]) => sat && sat.id != null && sat.name)
                 .map(([id, sat]) => [id, {
                     id: sat.id,
                     name: sat.name

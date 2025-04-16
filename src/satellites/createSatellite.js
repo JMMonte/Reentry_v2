@@ -75,7 +75,7 @@ export async function createSatellite(app, params) {
 }
 
 export function createSatelliteFromLatLon(app, params) {
-    const { earth, displaySettings } = app;
+    const { earth } = app;
     const {
         latitude,
         longitude,
@@ -124,7 +124,7 @@ export function createSatelliteFromLatLon(app, params) {
 }
 
 export function createSatelliteFromLatLonCircular(app, params) {
-    const { earth, displaySettings } = app;
+    const { earth } = app;
     const {
         latitude,
         longitude,
@@ -178,7 +178,6 @@ export function createSatelliteFromLatLonCircular(app, params) {
 }
 
 export function createSatelliteFromOrbitalElements(app, params) {
-    const { displaySettings } = app;
     const {
         semiMajorAxis,
         eccentricity,
