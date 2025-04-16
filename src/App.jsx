@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, createContext, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { ThemeProvider } from './components/theme-provider';
 import { Layout } from './components/Layout';
@@ -9,6 +9,64 @@ import { SimulationStateManager } from './simulation/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
 import LZString from 'lz-string';
+
+const ToastContext = createContext({ showToast: () => {} });
+
+const Toast = React.forwardRef((props, ref) => {
+  const [visible, setVisible] = React.useState(false);
+  const [internalMessage, setInternalMessage] = React.useState('');
+  const hideTimeout = React.useRef();
+  React.useImperativeHandle(ref, () => ({
+    showToast: (msg) => {
+      setInternalMessage(msg);
+      setVisible(true);
+      if (hideTimeout.current) clearTimeout(hideTimeout.current);
+      hideTimeout.current = setTimeout(() => {
+        setVisible(false);
+        hideTimeout.current = setTimeout(() => setInternalMessage(''), 500);
+      }, 2000);
+    }
+  }), []);
+  React.useEffect(() => {
+    return () => hideTimeout.current && clearTimeout(hideTimeout.current);
+  }, []);
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: 0,
+        right: 0,
+        bottom: 32,
+        display: 'flex',
+        justifyContent: 'center',
+        zIndex: 10000,
+        pointerEvents: 'none',
+      }}
+    >
+      {internalMessage && (
+        <div
+          className={`transition-all duration-500 ease-in-out transform ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} shadow-lg`}
+          style={{
+            background: 'linear-gradient(90deg, #232526 0%, #414345 100%)',
+            color: '#fff',
+            padding: '14px 36px',
+            borderRadius: 12,
+            fontSize: 17,
+            fontWeight: 500,
+            boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+            minWidth: 220,
+            textAlign: 'center',
+            letterSpacing: 0.2,
+            pointerEvents: 'auto',
+          }}
+        >
+          {internalMessage}
+        </div>
+      )}
+    </div>
+  );
+});
+Toast.displayName = 'Toast';
 
 function getInitialDisplaySettings(importedState) {
   const loaded = importedState?.displaySettings || {};
@@ -28,7 +86,6 @@ function App3DMain() {
   const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date());
-  const [toast, setToast] = useState(null);
   const [displaySettings, setDisplaySettings] = useState(() => getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash()));
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
@@ -36,11 +93,16 @@ function App3DMain() {
   const [shareUrl, setShareUrl] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState('signin');
   const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
   const { controller } = useApp3D(importedState);
   const app3d = controller?.app3d;
   const [checkedInitialState, setCheckedInitialState] = useState(false);
   const ignoreNextHashChange = React.useRef(false);
+  const toastRef = useRef();
+  const showToast = (msg) => {
+    toastRef.current?.showToast(msg);
+  };
   useEffect(() => { setCheckedInitialState(true); }, []);
   useEffect(() => {
     const onHashChange = () => {
@@ -177,10 +239,6 @@ function App3DMain() {
     const body = encodeURIComponent(`Open this link to load the simulation state:\n${shareUrl}`);
     window.open(`mailto:?subject=${subject}&body=${body}`);
   };
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2000);
-  };
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
@@ -196,7 +254,7 @@ function App3DMain() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [app3d]);
+  }, [app3d, showToast]);
   const handleImportState = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -252,7 +310,8 @@ function App3DMain() {
     setShareModalOpen,
     setShareUrl,
     isAuthOpen,
-    setIsAuthOpen
+    setIsAuthOpen,
+    setAuthMode
   };
   const chatModalProps = {
     isOpen: isChatVisible,
@@ -294,44 +353,29 @@ function App3DMain() {
   };
   const authModalProps = {
     isOpen: isAuthOpen,
-    onClose: () => setIsAuthOpen(false)
+    onClose: () => setIsAuthOpen(false),
+    mode: authMode,
+    setMode: setAuthMode,
+    onSignupSuccess: showToast
   };
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
-      <Layout
-        navbarProps={navbarProps}
-        chatModalProps={chatModalProps}
-        displayOptionsProps={displayOptionsProps}
-        debugWindows={debugWindows}
-        satelliteListWindowProps={satelliteListWindowProps}
-        satelliteCreatorModalProps={satelliteCreatorModalProps}
-        shareModalProps={shareModalProps}
-        authModalProps={authModalProps}
-      >
-        {/* Main app content (canvas, etc.) */}
-        <canvas id="three-canvas" className="absolute inset-0 z-0" />
-      </Layout>
-      {/* Toast notification */}
-      {toast && (
-        <div style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 32,
-          display: 'flex',
-          justifyContent: 'center',
-          zIndex: 10000
-        }}>
-          <div style={{
-            background: 'rgba(30,30,30,0.95)',
-            color: 'white',
-            padding: '12px 32px',
-            borderRadius: 8,
-            fontSize: 16,
-            boxShadow: '0 2px 16px rgba(0,0,0,0.2)'
-          }}>{toast}</div>
-        </div>
-      )}
+      <ToastContext.Provider value={{ showToast }}>
+        <Layout
+          navbarProps={navbarProps}
+          chatModalProps={chatModalProps}
+          displayOptionsProps={displayOptionsProps}
+          debugWindows={debugWindows}
+          satelliteListWindowProps={satelliteListWindowProps}
+          satelliteCreatorModalProps={satelliteCreatorModalProps}
+          shareModalProps={shareModalProps}
+          authModalProps={authModalProps}
+        >
+          {/* Main app content (canvas, etc.) */}
+          <canvas id="three-canvas" className="absolute inset-0 z-0" />
+        </Layout>
+        <Toast ref={toastRef} />
+      </ToastContext.Provider>
     </ThemeProvider>
   );
 }
@@ -362,3 +406,4 @@ function AppWithCanvas() {
 }
 
 export default AppWithCanvas;
+export { ToastContext };

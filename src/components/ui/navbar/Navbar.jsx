@@ -1,46 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Button } from '../button';
-import {
-  Settings2,
-  Rocket,
-  MessageSquare,
-  Rewind,
-  FastForward,
-  RotateCcw,
-  List,
-  Pause,
-  Play,
-  Save,
-  Upload,
-  Share2
-} from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../tooltip';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  SelectSeparator
-} from '../select';
-import { Separator } from '../separator';
-import { cn } from "../../../lib/utils";
-import { DateTimePicker } from '../datetime/DateTimePicker';
+import PropTypes from 'prop-types';
+import { supabase } from '../../../supabaseClient';
+import LogoMenu from './LogoMenu';
+import BodySelector from './BodySelector';
+import TimeControls from './TimeControls';
 import { formatBodySelection, getBodyDisplayName, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
 import { saveAs } from 'file-saver';
 import LZString from 'lz-string';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem
-} from '../dropdown-menu';
-import PropTypes from 'prop-types';
+import ActionButtons from './ActionButtons';
+import UserMenu from './UserMenu';
 
 // Time warp options
 const timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
@@ -57,15 +25,21 @@ const getNextTimeWarp = (currentTimeWarp, increase) => {
   return timeWarpOptions[nextIndex];
 };
 
+// Helper to generate a color from a string
+function stringToColor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const color = `hsl(${hash % 360}, 70%, 55%)`;
+  return color;
+}
+
 export function Navbar({
   onChatToggle,
   onSatelliteListToggle,
   onDisplayOptionsToggle,
   onSatelliteCreatorToggle,
-  isChatVisible,
-  isSatelliteListVisible,
-  isDisplayOptionsOpen,
-  isSatelliteModalOpen,
   selectedBody,
   onBodySelect,
   timeWarp,
@@ -78,7 +52,8 @@ export function Navbar({
   shareModalOpen,
   setShareModalOpen,
   setShareUrl,
-  setIsAuthOpen
+  setIsAuthOpen,
+  setAuthMode
 }) {
   const [satelliteOptions, setSatelliteOptions] = useState([]);
   const [user, setUser] = useState(null);
@@ -116,11 +91,21 @@ export function Navbar({
     return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
   }, [selectedBody, onBodySelect, satellites]);
 
+  // Fetch user on mount and listen for auth state changes
   useEffect(() => {
-    fetch('/api/auth/session')
-      .then(res => res.ok ? res.json() : null)
-      .then(data => setUser(data?.user || null))
-      .catch(() => setUser(null));
+    let ignore = false;
+    async function getUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!ignore) setUser(user);
+    }
+    getUser();
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+    return () => {
+      ignore = true;
+      listener?.subscription?.unsubscribe?.();
+    };
   }, []);
 
   const handleBodyChange = (eventOrValue) => {
@@ -176,228 +161,56 @@ export function Navbar({
   };
 
   const handleLogin = () => {
+    setAuthMode && setAuthMode('signin');
     setIsAuthOpen(true);
   };
-  const handleLogout = () => {
-    window.location.href = '/api/auth/signout';
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
   };
 
   return (
     <div className="fixed top-0 left-0 right-0 h-[72px] flex items-center justify-between z-20 bg-gradient-to-b from-background/90 to-transparent backdrop-blur-sm px-4">
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center gap-1.5">
         {/* Darksun Logo as Dropdown Trigger */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="bg-black hover:bg-neutral-800 flex items-center justify-center p-0">
-              <img src="/favicon-32x32.png" alt="App Icon" style={{ height: 20, width: 20 }} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={handleSaveState}>
-              <Save className="h-4 w-4 mr-2" /> Save State
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => importInputRef.current && importInputRef.current.click()}>
-              <Upload className="h-4 w-4 mr-2" /> Import State
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <input
-          ref={importInputRef}
-          id="import-state-input"
-          type="file"
-          accept="application/json"
-          style={{ display: 'none' }}
-          onChange={onImportState}
+        <LogoMenu
+          handleSaveState={handleSaveState}
+          importInputRef={importInputRef}
+          onImportState={onImportState}
         />
         {/* Body Selection */}
-        <Select value={selectedBody} onValueChange={handleBodyChange}>
-          <SelectTrigger className="w-[100px]">
-            <SelectValue placeholder="Select body">
-              {getDisplayValue(selectedBody)}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">None</SelectItem>
-            <SelectItem value="earth">Earth</SelectItem>
-            <SelectItem value="moon">Moon</SelectItem>
-            {satelliteOptions.length > 0 && (
-              <>
-                <SelectSeparator />
-                {satelliteOptions.map(({ value, text }) => (
-                  <SelectItem key={value} value={value}>{text}</SelectItem>
-                ))}
-              </>
-            )}
-          </SelectContent>
-        </Select>
-
-        <Separator orientation="vertical" className="h-8" />
-
-        {/* DateTime Picker */}
-        <DateTimePicker
-          date={simulatedTime}
-          onDateTimeChange={onSimulatedTimeChange}
+        <BodySelector
+          selectedBody={selectedBody}
+          handleBodyChange={handleBodyChange}
+          satelliteOptions={satelliteOptions}
+          getDisplayValue={getDisplayValue}
         />
-
-        <Separator orientation="vertical" className="h-8" />
-
-        {/* Time Controls */}
-        <div className="flex items-center space-x-2">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(getNextTimeWarp(timeWarp, false))}>
-                  <Rewind className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Decrease Time Warp</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(timeWarp === 0 ? 1 : 0)}>
-                  {timeWarp === 0 ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{timeWarp === 0 ? "Resume" : "Pause"}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          <Select
-            value={timeWarp.toString()}
-            onValueChange={(value) => onTimeWarpChange(parseFloat(value))}
-            defaultValue="1"
-          >
-            <SelectTrigger className="w-[100px]">
-              <SelectValue placeholder="Time Warp">
-                {timeWarp}x
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {timeWarpOptions.map((option) => (
-                <SelectItem key={option} value={option.toString()}>
-                  {option === 0 ? "Paused" : `${option}x`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(getNextTimeWarp(timeWarp, true))}>
-                  <FastForward className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Increase Time Warp</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(1)}>
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Reset Time Warp to 1x</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
+        <TimeControls
+          timeWarp={timeWarp}
+          onTimeWarpChange={onTimeWarpChange}
+          simulatedTime={simulatedTime}
+          onSimulatedTimeChange={onSimulatedTimeChange}
+          timeWarpOptions={timeWarpOptions}
+          getNextTimeWarp={getNextTimeWarp}
+        />
       </div>
 
-      <div className="flex items-center space-x-4">
-        <TooltipProvider>
-          {/* Create Satellite Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={onSatelliteCreatorToggle}
-                className={cn(isSatelliteModalOpen && "bg-accent")}
-              >
-                <Rocket className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Create New Satellite</TooltipContent>
-          </Tooltip>
-
-          {/* Display Options Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={onDisplayOptionsToggle}
-                className={cn(isDisplayOptionsOpen && "bg-accent")}
-              >
-                <Settings2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Display Options</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        {/* Toggle Chat Button at right edge */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={onChatToggle} className={cn(isChatVisible && "bg-accent")}> 
-                <MessageSquare className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle Chat</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        {/* Toggle Satellite List Button at right edge */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={onSatelliteListToggle} className={cn(isSatelliteListVisible && "bg-accent")}> 
-                <List className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle Satellite List</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        {/* Share State Button at right edge */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleShareToggle}
-                className={cn(shareModalOpen && "bg-accent")}
-              >
-                <Share2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Share State</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+      <div className="flex items-center gap-1.5">
+        <ActionButtons
+          onSatelliteCreatorToggle={onSatelliteCreatorToggle}
+          onDisplayOptionsToggle={onDisplayOptionsToggle}
+          onChatToggle={onChatToggle}
+          onSatelliteListToggle={onSatelliteListToggle}
+          handleShareToggle={handleShareToggle}
+        />
         {/* Login/Profile Button */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={user ? handleLogout : handleLogin}
-                className=""
-              >
-                {/* User icon from lucide-react */}
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
-                  <circle cx="12" cy="8" r="4" />
-                  <path d="M6 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
-                </svg>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {user ? `Logout (${user.email || user.name})` : 'Login / Profile'}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <UserMenu
+          user={user}
+          handleLogin={handleLogin}
+          handleLogout={handleLogout}
+          stringToColor={stringToColor}
+        />
       </div>
     </div>
   );
@@ -408,10 +221,6 @@ Navbar.propTypes = {
   onSatelliteListToggle: PropTypes.func.isRequired,
   onDisplayOptionsToggle: PropTypes.func.isRequired,
   onSatelliteCreatorToggle: PropTypes.func.isRequired,
-  isChatVisible: PropTypes.bool.isRequired,
-  isSatelliteListVisible: PropTypes.bool.isRequired,
-  isDisplayOptionsOpen: PropTypes.bool.isRequired,
-  isSatelliteModalOpen: PropTypes.bool.isRequired,
   selectedBody: PropTypes.string.isRequired,
   onBodySelect: PropTypes.func.isRequired,
   timeWarp: PropTypes.number.isRequired,
@@ -427,7 +236,8 @@ Navbar.propTypes = {
   shareModalOpen: PropTypes.bool.isRequired,
   setShareModalOpen: PropTypes.func.isRequired,
   setShareUrl: PropTypes.func.isRequired,
-  setIsAuthOpen: PropTypes.func.isRequired
+  setIsAuthOpen: PropTypes.func.isRequired,
+  setAuthMode: PropTypes.func.isRequired
 };
 
 export default Navbar;

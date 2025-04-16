@@ -126,9 +126,6 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
   const [position, setPosition] = useState({ x: window.innerWidth - 220, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
 
-  // Debug: log the ambientLight value
-  console.log('DisplayOptions: settings.ambientLight =', settings.ambientLight);
-
   return (
     <DraggableModal
       title="Display Options"
@@ -167,11 +164,6 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
             {categories[idx].keys.map((key) => {
               const setting = defaultSettings[key];
               if (!setting) return null;
-              // Debug: log the input value for ambientLight
-              if (key === 'ambientLight') {
-                const v = settings[key] !== undefined ? settings[key] : setting.value;
-                console.log('Input value for ambientLight:', v);
-              }
               return (
                 <div key={key} className="flex items-center justify-between px-2 py-1 text-xs">
                   <div className="flex items-center gap-1">

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, createContext, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { Navbar } from './ui/navbar/Navbar';
 import { ModalPortal } from './ui/modal/ModalPortal';
 import { AuthModal } from './ui/auth/AuthModal';
@@ -9,6 +9,94 @@ import { SatelliteListWindow } from './ui/satellite/SatelliteListWindow';
 import { DraggableModal } from './ui/modal/DraggableModal';
 import SatelliteCreator from './ui/satellite/SatelliteCreator';
 import PropTypes from 'prop-types';
+import { ResetPasswordModal } from './ui/auth/ResetPasswordModal';
+
+// Toast logic
+export const ToastContext = createContext({ showToast: () => { } });
+
+const Toast = forwardRef((props, ref) => {
+    const [visible, setVisible] = useState(false);
+    const [internalMessage, setInternalMessage] = useState('');
+    const hideTimeout = useRef();
+
+    useImperativeHandle(ref, () => ({
+        showToast: (msg) => {
+            setInternalMessage(msg);
+            setVisible(true);
+            if (hideTimeout.current) clearTimeout(hideTimeout.current);
+            hideTimeout.current = setTimeout(() => {
+                setVisible(false);
+                hideTimeout.current = setTimeout(() => setInternalMessage(''), 500);
+            }, 4000);
+        }
+    }), []);
+
+    React.useEffect(() => {
+        return () => hideTimeout.current && clearTimeout(hideTimeout.current);
+    }, []);
+
+    const handleClose = () => {
+        if (hideTimeout.current) clearTimeout(hideTimeout.current);
+        setVisible(false);
+        setTimeout(() => setInternalMessage(''), 500);
+    };
+
+    return (
+        <div
+            style={{
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 32,
+                display: 'flex',
+                justifyContent: 'center',
+                zIndex: 10000,
+                pointerEvents: 'none',
+            }}
+        >
+            {internalMessage && (
+                <div
+                    className={`transition-all duration-500 ease-in-out transform ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} shadow-lg flex items-center justify-center`}
+                    style={{
+                        background: 'linear-gradient(90deg, #232526 0%, #414345 100%)',
+                        color: '#fff',
+                        padding: '10px 24px 10px 18px',
+                        borderRadius: 12,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+                        minWidth: 180,
+                        textAlign: 'center',
+                        letterSpacing: 0.2,
+                        pointerEvents: 'auto',
+                        position: 'relative',
+                        maxWidth: 340,
+                    }}
+                >
+                    <span style={{ flex: 1, fontSize: 14 }}>{internalMessage}</span>
+                    <button
+                        onClick={handleClose}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#fff',
+                            fontSize: 18,
+                            marginLeft: 12,
+                            cursor: 'pointer',
+                            pointerEvents: 'auto',
+                            lineHeight: 1,
+                        }}
+                        aria-label="Close toast"
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+});
+Toast.displayName = 'Toast';
+Toast.propTypes = {};
 
 // SatelliteCreatorModal
 function SatelliteCreatorModal({ isOpen, onClose, onCreate }) {
@@ -87,8 +175,33 @@ export function Layout({
     shareModalProps,
     authModalProps
 }) {
+    const toastRef = useRef();
+    const showToast = (msg) => {
+        toastRef.current?.showToast(msg);
+    };
+    const [resetModalOpen, setResetModalOpen] = useState(false);
+
+    // Open reset modal if URL contains type=recovery and access_token
+    useEffect(() => {
+        function getRecoveryParams() {
+            // Try search params
+            let params = new URLSearchParams(window.location.search);
+            if (params.get('type') === 'recovery' && params.get('access_token')) return true;
+            // Try hash fragment
+            if (window.location.hash) {
+                const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+                params = new URLSearchParams(hash);
+                if (params.get('type') === 'recovery' && params.get('access_token')) return true;
+            }
+            return false;
+        }
+        if (getRecoveryParams()) {
+            setResetModalOpen(true);
+        }
+    }, []);
+
     return (
-        <>
+        <ToastContext.Provider value={{ showToast }}>
             <Navbar {...navbarProps} />
             <main>{children}</main>
             <ModalPortal>
@@ -107,8 +220,10 @@ export function Layout({
                 <SatelliteCreatorModal {...satelliteCreatorModalProps} />
                 <ShareModal {...shareModalProps} />
                 <AuthModal {...authModalProps} />
+                <ResetPasswordModal isOpen={resetModalOpen} onClose={() => setResetModalOpen(false)} showToast={showToast} />
             </ModalPortal>
-        </>
+            <Toast ref={toastRef} />
+        </ToastContext.Provider>
     );
 }
 
