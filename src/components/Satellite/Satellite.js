@@ -5,6 +5,7 @@ import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { TracePath } from './TracePath.js';
 import { OrbitPath } from './OrbitPath.js';
 import { GroundTrackPath } from './GroundTrackPath.js';
+import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 
 export class Satellite {
     constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name }) {
@@ -66,63 +67,9 @@ export class Satellite {
     }
 
     initializeVisuals() {
-        // Satellite mesh - pyramid shape (cone with 3 segments)
-        const geometry = new THREE.ConeGeometry(0.5, 2, 3); // radius: 0.5, height: 2, segments: 3 (minimum)
-        // Point along +Z axis (no rotation needed - ConeGeometry already points up)
-        const material = new THREE.MeshBasicMaterial({
-            color: this.color,
-            side: THREE.DoubleSide
-        });
-        this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.scale.setScalar(Constants.satelliteRadius);
-
-        // Add to scene
-        this.scene.add(this.mesh);
-
-        // Add onBeforeRender callback to maintain relative size and orientation
-        const targetSize = 0.005;
-        this.mesh.onBeforeRender = (renderer, scene, camera) => {
-            // Only update scale and orientation if visible
-            if (this.mesh.visible) {
-                const distance = camera.position.distanceTo(this.mesh.position);
-                const scale = distance * targetSize;
-                this.mesh.scale.set(scale, scale, scale);
-
-                // Update mesh orientation
-                this.mesh.quaternion.copy(this.orientation);
-
-                // Scale vectors with camera distance - only if they exist and are visible
-                if (this.velocityVector && this.velocityVector.visible) {
-                    this.velocityVector.setLength(scale * 20);
-                }
-                if (this.orientationVector && this.orientationVector.visible) {
-                    this.orientationVector.setLength(scale * 20);
-                }
-            }
-        };
-
-        // Initialize vectors
-        // Velocity vector (red)
-        this.velocityVector = new THREE.ArrowHelper(
-            new THREE.Vector3(1, 0, 0),
-            this.mesh.position,
-            this.baseScale * 3,
-            0xff0000
-        );
-        this.velocityVector.visible = false;
-        this.scene.add(this.velocityVector);
-
-        // Orientation vector (blue) - represents body frame z-axis
-        const bodyZAxis = new THREE.Vector3(0, 1, 0);
-        bodyZAxis.applyQuaternion(this.orientation);
-        this.orientationVector = new THREE.ArrowHelper(
-            bodyZAxis,
-            this.mesh.position,
-            this.baseScale * 3,
-            0x0000ff
-        );
-        this.orientationVector.visible = false;
-        this.scene.add(this.orientationVector);
+        // Use SatelliteVisualizer for mesh and vectors
+        this.visualizer = new SatelliteVisualizer(this.color, this.orientation, this.app3d);
+        this.visualizer.addToScene(this.scene);
 
         // Replace trace line/worker with TracePath
         this.tracePath = new TracePath(this.color);
@@ -165,22 +112,10 @@ export class Satellite {
             position.z * Constants.metersToKm * Constants.scale
         );
 
-        // Update satellite mesh position
-        this.mesh.position.copy(scaledPosition);
-
-        // Update vectors only if they're visible
-        if (this.velocityVector && this.velocityVector.visible) {
-            const normalizedVelocity = this.velocity.clone().normalize();
-            this.velocityVector.position.copy(scaledPosition);
-            this.velocityVector.setDirection(normalizedVelocity);
-        }
-
-        if (this.orientationVector && this.orientationVector.visible) {
-            const bodyZAxis = new THREE.Vector3(0, 1, 0);
-            bodyZAxis.applyQuaternion(this.orientation);
-            this.orientationVector.position.copy(scaledPosition);
-            this.orientationVector.setDirection(bodyZAxis);
-        }
+        // Update mesh and vectors via visualizer
+        this.visualizer.updatePosition(scaledPosition);
+        this.visualizer.updateOrientation(this.orientation);
+        this.visualizer.updateVectors(this.velocity, this.orientation);
 
         // Update trace via TracePath
         this.traceUpdateCounter++;
@@ -298,7 +233,7 @@ export class Satellite {
     }
 
     setVisible(visible) {
-        this.mesh.visible = visible;
+        this.visualizer.setVisible(visible);
         this.tracePath?.setVisible(visible && window.app3d.getDisplaySetting('showTraces'));
         this.orbitPath?.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
         this.groundTrackPath?.setVisible(visible && window.app3d.getDisplaySetting('showGroundTraces'));
@@ -307,12 +242,7 @@ export class Satellite {
     }
 
     setVectorsVisible(visible) {
-        if (this.velocityVector) {
-            this.velocityVector.visible = visible;
-        }
-        if (this.orientationVector) {
-            this.orientationVector.visible = visible;
-        }
+        this.visualizer.setVectorsVisible(visible);
     }
 
     getSpeed() {
@@ -399,17 +329,9 @@ export class Satellite {
     }
 
     dispose() {
-        // Reset cursor if this was the hovered object
-        if (this.mesh && window.app3d && window.app3d.hoveredObject === this.mesh) {
-            document.body.style.cursor = 'default';
-            window.app3d.hoveredObject = null;
-        }
-
-        // Remove from scene
-        if (this.mesh) {
-            this.mesh.removeFromParent();
-            this.mesh.geometry.dispose();
-            this.mesh.material.dispose();
+        if (this.visualizer) {
+            this.visualizer.removeFromScene(this.scene);
+            this.visualizer.dispose();
         }
         if (this.tracePath) {
             this.tracePath.dispose();
@@ -419,12 +341,6 @@ export class Satellite {
         }
         if (this.groundTrackPath) {
             this.groundTrackPath.dispose();
-        }
-        if (this.velocityVector) {
-            this.velocityVector.dispose();
-        }
-        if (this.orientationVector) {
-            this.orientationVector.dispose();
         }
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
@@ -443,21 +359,10 @@ export class Satellite {
     setColor(color) {
         this.color = color;
 
-        // Update mesh color
-        if (this.mesh?.material) {
-            this.mesh.material.color.set(color);
-            // Only set emissive if the material supports it
-            if (this.mesh.material.emissive) {
-                this.mesh.material.emissive.copy(new THREE.Color(color).multiplyScalar(0.2));
-            }
-        }
-
-        // Update trace line color
+        this.visualizer.setColor(color);
         if (this.tracePath?.traceLine) {
             this.tracePath.traceLine.material.color.set(color);
         }
-
-        // Update orbit line color
         if (this.orbitPath?.orbitLine) {
             this.orbitPath.orbitLine.material.color.set(color);
         }
@@ -469,22 +374,7 @@ export class Satellite {
     }
 
     updateVectors() {
-        const scaledPosition = this.mesh.position;
-
-        if (this.velocityVector && this.velocityVector.visible) {
-            this.velocityVector.position.copy(scaledPosition);
-            const normalizedVelocity = this.velocity.clone().normalize();
-            this.velocityVector.setDirection(normalizedVelocity);
-            this.velocityVector.setLength(this.baseScale * 20);
-        }
-
-        if (this.orientationVector && this.orientationVector.visible) {
-            this.orientationVector.position.copy(scaledPosition);
-            const bodyZAxis = new THREE.Vector3(0, 1, 0);
-            bodyZAxis.applyQuaternion(this.orientation);
-            this.orientationVector.setDirection(bodyZAxis);
-            this.orientationVector.setLength(this.baseScale * 20);
-        }
+        this.visualizer.updateVectors(this.velocity, this.orientation);
     }
 
     delete() {
