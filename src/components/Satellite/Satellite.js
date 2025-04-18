@@ -136,6 +136,18 @@ export class Satellite {
         this.scene.add(this.traceLine);
         this.tracePoints = [];
 
+        // Initialize trace worker
+        this.traceWorker = new Worker(new URL('../../workers/traceWorker.js', import.meta.url), { type: 'module' });
+        this.traceWorker.onmessage = (e) => {
+            if (e.data.type === 'TRACE_UPDATE' && e.data.id === this.id) {
+                this.tracePoints = e.data.tracePoints.map(pt => new THREE.Vector3(pt.x, pt.y, pt.z));
+                if (this.traceLine && this.traceLine.visible) {
+                    this.traceLine.geometry.setFromPoints(this.tracePoints);
+                    this.traceLine.geometry.computeBoundingSphere();
+                }
+            }
+        };
+
         // Initialize orbit line
         const orbitGeometry = new THREE.BufferGeometry();
         const orbitMaterial = new THREE.LineBasicMaterial({
@@ -148,6 +160,18 @@ export class Satellite {
         this.orbitLine.frustumCulled = false;
         this.orbitLine.visible = false;
         this.scene.add(this.orbitLine);
+
+        // Initialize orbit path worker
+        this.orbitPathWorker = new Worker(new URL('../../workers/orbitPathWorker.js', import.meta.url), { type: 'module' });
+        this.orbitPathWorker.onmessage = (e) => {
+            if (e.data.type === 'ORBIT_PATH_UPDATE' && e.data.id === this.id) {
+                const orbitPoints = e.data.orbitPoints.map(pt => new THREE.Vector3(pt.x, pt.y, pt.z));
+                if (this.orbitLine && this.orbitLine.visible) {
+                    this.orbitLine.geometry.setFromPoints(orbitPoints);
+                    this.orbitLine.geometry.computeBoundingSphere();
+                }
+            }
+        };
 
         // Initialize ground track
         this.groundTrack = new GroundTrack(this.app3d.earth, this.color, this.id);
@@ -196,19 +220,37 @@ export class Satellite {
             this.orientationVector.setDirection(bodyZAxis);
         }
 
-        // Update trace line
-        if (this.traceLine && this.traceLine.visible && this.tracePoints) {
-            this.traceUpdateCounter++;
-            if (this.traceUpdateCounter >= this.traceUpdateInterval) {
-                this.traceUpdateCounter = 0;
-                this.tracePoints.push(scaledPosition.clone());
-                if (this.tracePoints.length > 1000) {
-                    this.tracePoints.shift();
-                }
-                this.traceLine.geometry.setFromPoints(this.tracePoints);
-                this.traceLine.geometry.computeBoundingSphere();
+        // Update trace via worker
+        this.traceWorker?.postMessage({
+            type: 'UPDATE_TRACE',
+            id: this.id,
+            position: {
+                x: scaledPosition.x,
+                y: scaledPosition.y,
+                z: scaledPosition.z
             }
-        }
+        });
+        // Update orbit path via worker
+        this.orbitPathWorker?.postMessage({
+            type: 'UPDATE_ORBIT',
+            id: this.id,
+            position: {
+                x: position.x / (Constants.metersToKm * Constants.scale),
+                y: position.y / (Constants.metersToKm * Constants.scale),
+                z: position.z / (Constants.metersToKm * Constants.scale)
+            },
+            velocity: {
+                x: velocity.x / (Constants.metersToKm * Constants.scale),
+                y: velocity.y / (Constants.metersToKm * Constants.scale),
+                z: velocity.z / (Constants.metersToKm * Constants.scale)
+            },
+            constants: {
+                G: Constants.G,
+                earthMass: Constants.earthMass,
+                scale: Constants.scale,
+                metersToKm: Constants.metersToKm
+            }
+        });
 
         // Update orbit line if needed
         this.orbitUpdateCounter++;
@@ -423,6 +465,12 @@ export class Satellite {
         }
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
+        }
+        if (this.traceWorker) {
+            this.traceWorker.terminate();
+        }
+        if (this.orbitPathWorker) {
+            this.orbitPathWorker.terminate();
         }
 
         console.log('[Satellite.dispose] Disposing satellite', this.id);

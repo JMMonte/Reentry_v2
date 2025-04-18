@@ -123,7 +123,7 @@ Accordion.propTypes = {
 };
 
 export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
-  const [position, setPosition] = useState({ x: window.innerWidth - 220, y: 80 });
+  const [position, setPosition] = useState({ x: 40, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
 
   return (

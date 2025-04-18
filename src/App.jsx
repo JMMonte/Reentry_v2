@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, createContext, useRef } from 'react';
-import { io } from 'socket.io-client';
+import { getSocket } from './socket';
 import { ThemeProvider } from './components/theme-provider';
 import { Layout } from './components/Layout';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
@@ -10,7 +10,7 @@ import './styles/globals.css';
 import './styles/animations.css';
 import LZString from 'lz-string';
 
-const ToastContext = createContext({ showToast: () => {} });
+const ToastContext = createContext({ showToast: () => { } });
 
 const Toast = React.forwardRef((props, ref) => {
   const [visible, setVisible] = React.useState(false);
@@ -78,7 +78,6 @@ function getInitialDisplaySettings(importedState) {
 }
 
 function App3DMain() {
-  const [socket, setSocket] = useState(null);
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
@@ -124,23 +123,6 @@ function App3DMain() {
       setSelectedBody(importedState.camera.focusedBody || 'earth');
     }
   }, [importedState]);
-  useEffect(() => {
-    const socketServerUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
-    const newSocket = io(socketServerUrl, {
-      reconnectionDelayMax: 10000,
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      secure: socketServerUrl.startsWith('https'),
-      withCredentials: true
-    });
-    newSocket.on('connect', () => { });
-    newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
-    });
-    setSocket(newSocket);
-    return () => { if (newSocket) newSocket.close(); };
-  }, []);
   useEffect(() => {
     const handleSatelliteListUpdate = () => {
       if (app3d && app3d.satellites) {
@@ -324,7 +306,7 @@ function App3DMain() {
   const chatModalProps = {
     isOpen: isChatVisible,
     onClose: () => setIsChatVisible(false),
-    socket
+    socket: getSocket()
   };
   const displayOptionsProps = {
     settings: displaySettings,

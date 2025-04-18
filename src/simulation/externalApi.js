@@ -41,6 +41,31 @@ export function setupExternalApi(app3d) {
          * Create a satellite from latitude/longitude (circular orbit)
          * @param {Object} params
          */
-        createSatelliteFromLatLonCircular: (params) => serializeSatellite(app3d.createSatelliteFromLatLonCircular(params))
+        createSatelliteFromLatLonCircular: (params) => serializeSatellite(app3d.createSatelliteFromLatLonCircular(params)),
+        /**
+         * Simulate running code with optional file uploads (for code interpreter tool)
+         * @param {Object} params - { code: string, files: [{ name, data }] }
+         * @returns {Object} Simulated result or error
+         */
+        runCodeInterpreter: async (params) => {
+            const { code, files } = params || {};
+            // Simulate file validation
+            if (files && Array.isArray(files)) {
+                for (const file of files) {
+                    if (!file.name || !file.data || typeof file.data !== 'string') {
+                        return { error: 'Invalid file format. Each file must have { name, data }.' };
+                    }
+                    // Simple base64 check (not strict)
+                    if (!/^([A-Za-z0-9+/=]+)$/.test(file.data)) {
+                        return { error: `File ${file.name} data is not valid base64.` };
+                    }
+                }
+            }
+            // Simulate code execution result
+            return {
+                result: `Simulated code output for: ${code ? code.slice(0, 30) + (code.length > 30 ? '...' : '') : '[no code]'}`,
+                files: files ? files.map(f => ({ name: f.name, size: f.data.length })) : []
+            };
+        }
     };
 } 

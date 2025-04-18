@@ -1,4 +1,4 @@
-import { io } from 'socket.io-client';
+import { getSocket } from '../socket';
 
 /**
  * Manages the Socket.IO connection and related event handling for the simulation.
@@ -17,16 +17,8 @@ export class SocketManager {
      * Initialize the socket connection and set up default event handlers.
      */
     init() {
-        const socketServerUrl = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:3000';
-        console.log('SocketManager connecting to socket server:', socketServerUrl);
-        this.socket = io(socketServerUrl, {
-            reconnectionDelayMax: 10000,
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionAttempts: 10,
-            secure: socketServerUrl.startsWith('https'),
-            withCredentials: true
-        });
+        // Use the centralized socket
+        this.socket = getSocket();
         this.socket.on('connect', () => {
             console.log('SocketManager: Connected to server');
         });
@@ -55,7 +47,7 @@ export class SocketManager {
             for (const [event, handler] of Object.entries(this._handlers)) {
                 this.socket.off(event, handler);
             }
-            this.socket.close();
+            // Do not close the socket here, as it is shared
             this.socket = null;
         }
         this._handlers = {};
