@@ -13,6 +13,9 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 10000
   },
+  worker: {
+    format: 'es'
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
