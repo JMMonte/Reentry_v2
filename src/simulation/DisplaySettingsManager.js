@@ -75,18 +75,18 @@ export class DisplaySettingsManager {
                 break;
             case 'showOrbits':
                 Object.values(app3d.satellites.getSatellites()).forEach(sat => {
-                    if (sat.orbitLine) sat.orbitLine.visible = value;
+                    if (sat.orbitPath?.orbitLine) sat.orbitPath.orbitLine.visible = value;
                     if (sat.apsisVisualizer?.setVisible) sat.apsisVisualizer.setVisible(value);
                 });
                 break;
             case 'showTraces':
                 Object.values(app3d.satellites.getSatellites()).forEach(sat => {
-                    if (sat.traceLine) sat.traceLine.visible = value;
+                    if (sat.tracePath?.traceLine) sat.tracePath.traceLine.visible = value;
                 });
                 break;
             case 'showGroundTraces':
                 Object.values(app3d.satellites.getSatellites()).forEach(sat => {
-                    if (sat.groundTrack?.setVisible) sat.groundTrack.setVisible(value);
+                    if (sat.groundTrackPath?.groundTrackLine) sat.groundTrackPath.groundTrackLine.visible = value;
                 });
                 break;
             case 'showCities':

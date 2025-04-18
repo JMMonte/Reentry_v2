@@ -5,15 +5,17 @@ console.log('[orbitPathWorker] Worker loaded');
 // Map of satellite id -> orbit path points array
 let orbitPathMap = {};
 
-// Import PhysicsUtils dynamically (for worker context)
+// Import PhysicsUtils and THREE dynamically (for worker context)
 let PhysicsUtils = null;
 let Constants = null;
+let THREE = null;
 
 async function ensureUtils() {
-    if (!PhysicsUtils) {
+    if (!PhysicsUtils || !THREE) {
         const utils = await import('../utils/PhysicsUtils.js');
         PhysicsUtils = utils.PhysicsUtils;
         Constants = (await import('../utils/Constants.js')).Constants;
+        THREE = (await import('three')).default || (await import('three'));
     }
 }
 
@@ -23,10 +25,10 @@ self.onmessage = async function (e) {
         const { id, position, velocity, constants } = e.data;
         if (id === undefined || id === null) return;
         // Update constants if provided
-        if (constants) Object.assign(Constants, constants);
+        if (constants && typeof constants === 'object') Object.assign(Constants, constants);
         // Convert to THREE.Vector3
-        const pos = new self.THREE.Vector3(position.x, position.y, position.z);
-        const vel = new self.THREE.Vector3(velocity.x, velocity.y, velocity.z);
+        const pos = new THREE.Vector3(position.x, position.y, position.z);
+        const vel = new THREE.Vector3(velocity.x, velocity.y, velocity.z);
         const mu = Constants.G * Constants.earthMass;
         const elements = PhysicsUtils.calculateOrbitalElements(pos, vel, mu);
         if (!elements) return;

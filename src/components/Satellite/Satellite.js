@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
-import { GroundTrack } from './GroundTrack.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
+import { TracePath } from './TracePath.js';
+import { OrbitPath } from './OrbitPath.js';
+import { GroundTrackPath } from './GroundTrackPath.js';
 
 export class Satellite {
     constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name }) {
@@ -21,10 +23,10 @@ export class Satellite {
 
         // Performance optimization: Update counters
         this.orbitUpdateCounter = 0;
-        this.orbitUpdateInterval = 30; // Update orbit every 30 frames
+        this.orbitUpdateInterval = this.app3d.getDisplaySetting('orbitUpdateInterval') || 30;
         this.groundTrackUpdateCounter = 0;
         this.traceUpdateCounter = 0;
-        this.traceUpdateInterval = 5; // Update trace every 5 frames
+        this.traceUpdateInterval = this.app3d.getDisplaySetting('traceUpdateInterval') || 5;
 
         // Initialize orientation quaternion
         this.orientation = new THREE.Quaternion();
@@ -46,14 +48,14 @@ export class Satellite {
             const { key, value } = event.detail;
             switch (key) {
                 case 'showOrbits':
-                    if (this.orbitLine) this.orbitLine.visible = value;
+                    if (this.orbitPath) this.orbitPath.orbitLine.visible = value;
                     if (this.apsisVisualizer) this.apsisVisualizer.visible = value;
                     break;
                 case 'showTraces':
-                    if (this.traceLine) this.traceLine.visible = value;
+                    if (this.tracePath) this.tracePath.traceLine.visible = value;
                     break;
                 case 'showGroundTraces':
-                    if (this.groundTrack) this.groundTrack.setVisible(value);
+                    if (this.groundTrackPath) this.groundTrackPath.groundTrackLine.visible = value;
                     break;
                 case 'showSatVectors':
                     if (this.velocityVector) this.velocityVector.visible = value;
@@ -122,60 +124,20 @@ export class Satellite {
         this.orientationVector.visible = false;
         this.scene.add(this.orientationVector);
 
-        // Initialize trace line
-        const traceGeometry = new THREE.BufferGeometry();
-        const traceMaterial = new THREE.LineBasicMaterial({
-            color: this.color,
-            linewidth: 2,
-            transparent: true,
-            opacity: 0.5
-        });
-        this.traceLine = new THREE.Line(traceGeometry, traceMaterial);
-        this.traceLine.frustumCulled = false;
-        this.traceLine.visible = false;
-        this.scene.add(this.traceLine);
-        this.tracePoints = [];
+        // Replace trace line/worker with TracePath
+        this.tracePath = new TracePath(this.color);
+        this.scene.add(this.tracePath.traceLine);
+        this.tracePath.traceLine.visible = this.app3d.getDisplaySetting('showTraces');
 
-        // Initialize trace worker
-        this.traceWorker = new Worker(new URL('../../workers/traceWorker.js', import.meta.url), { type: 'module' });
-        this.traceWorker.onmessage = (e) => {
-            if (e.data.type === 'TRACE_UPDATE' && e.data.id === this.id) {
-                this.tracePoints = e.data.tracePoints.map(pt => new THREE.Vector3(pt.x, pt.y, pt.z));
-                if (this.traceLine && this.traceLine.visible) {
-                    this.traceLine.geometry.setFromPoints(this.tracePoints);
-                    this.traceLine.geometry.computeBoundingSphere();
-                }
-            }
-        };
+        // Replace orbit line/worker with OrbitPath
+        this.orbitPath = new OrbitPath(this.color);
+        this.scene.add(this.orbitPath.orbitLine);
+        this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
 
-        // Initialize orbit line
-        const orbitGeometry = new THREE.BufferGeometry();
-        const orbitMaterial = new THREE.LineBasicMaterial({
-            color: this.color,
-            linewidth: 2,
-            transparent: true,
-            opacity: 0.7
-        });
-        this.orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
-        this.orbitLine.frustumCulled = false;
-        this.orbitLine.visible = false;
-        this.scene.add(this.orbitLine);
-
-        // Initialize orbit path worker
-        this.orbitPathWorker = new Worker(new URL('../../workers/orbitPathWorker.js', import.meta.url), { type: 'module' });
-        this.orbitPathWorker.onmessage = (e) => {
-            if (e.data.type === 'ORBIT_PATH_UPDATE' && e.data.id === this.id) {
-                const orbitPoints = e.data.orbitPoints.map(pt => new THREE.Vector3(pt.x, pt.y, pt.z));
-                if (this.orbitLine && this.orbitLine.visible) {
-                    this.orbitLine.geometry.setFromPoints(orbitPoints);
-                    this.orbitLine.geometry.computeBoundingSphere();
-                }
-            }
-        };
-
-        // Initialize ground track
-        this.groundTrack = new GroundTrack(this.app3d.earth, this.color, this.id);
-        this.groundTrack.setVisible(this.app3d.getDisplaySetting('showGroundTraces'));
+        // Replace ground track with GroundTrackPath
+        this.groundTrackPath = new GroundTrackPath(this.color, this.id);
+        this.app3d.earth.rotationGroup.add(this.groundTrackPath.groundTrackLine);
+        this.groundTrackPath.groundTrackLine.visible = this.app3d.getDisplaySetting('showGroundTraces');
 
         // Initialize apsis visualizer
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
@@ -220,54 +182,59 @@ export class Satellite {
             this.orientationVector.setDirection(bodyZAxis);
         }
 
-        // Update trace via worker
-        this.traceWorker?.postMessage({
-            type: 'UPDATE_TRACE',
-            id: this.id,
-            position: {
-                x: scaledPosition.x,
-                y: scaledPosition.y,
-                z: scaledPosition.z
-            }
-        });
-        // Update orbit path via worker
-        this.orbitPathWorker?.postMessage({
-            type: 'UPDATE_ORBIT',
-            id: this.id,
-            position: {
-                x: position.x / (Constants.metersToKm * Constants.scale),
-                y: position.y / (Constants.metersToKm * Constants.scale),
-                z: position.z / (Constants.metersToKm * Constants.scale)
-            },
-            velocity: {
-                x: velocity.x / (Constants.metersToKm * Constants.scale),
-                y: velocity.y / (Constants.metersToKm * Constants.scale),
-                z: velocity.z / (Constants.metersToKm * Constants.scale)
-            },
-            constants: {
-                G: Constants.G,
-                earthMass: Constants.earthMass,
-                scale: Constants.scale,
-                metersToKm: Constants.metersToKm
-            }
-        });
-
-        // Update orbit line if needed
+        // Update trace via TracePath
+        this.traceUpdateCounter++;
+        if (this.traceUpdateCounter >= this.traceUpdateInterval) {
+            this.traceUpdateCounter = 0;
+            this.tracePath?.update(
+                new THREE.Vector3(
+                    position.x * Constants.metersToKm * Constants.scale,
+                    position.y * Constants.metersToKm * Constants.scale,
+                    position.z * Constants.metersToKm * Constants.scale
+                ),
+                this.id
+            );
+        }
+        // Update orbit path via OrbitPath
         this.orbitUpdateCounter++;
         if (this.orbitUpdateCounter >= this.orbitUpdateInterval) {
             this.orbitUpdateCounter = 0;
-            if (this.orbitLine && this.orbitLine.visible) {
-                this.updateOrbitLine(position, velocity);
-            }
+            this.orbitPath?.update(
+                new THREE.Vector3(
+                    position.x / (Constants.metersToKm * Constants.scale),
+                    position.y / (Constants.metersToKm * Constants.scale),
+                    position.z / (Constants.metersToKm * Constants.scale)
+                ),
+                new THREE.Vector3(
+                    velocity.x / (Constants.metersToKm * Constants.scale),
+                    velocity.y / (Constants.metersToKm * Constants.scale),
+                    velocity.z / (Constants.metersToKm * Constants.scale)
+                ),
+                this.id,
+                {
+                    G: Constants.G,
+                    earthMass: Constants.earthMass,
+                    scale: Constants.scale,
+                    metersToKm: Constants.metersToKm
+                }
+            );
         }
-
-        // Update ground track if needed
+        // Update ground track via GroundTrackPath (Earth-fixed frame, drifting with rotation)
         this.groundTrackUpdateCounter++;
         if (this.groundTrackUpdateCounter >= this.groundTrackUpdateInterval) {
             this.groundTrackUpdateCounter = 0;
-            if (this.groundTrack && this.groundTrack.visible) {
-                this.groundTrack.update(scaledPosition);
+            if (this.app3d.earth && this.app3d.earth.rotationGroup && this.app3d.earth.earthMesh) {
+                // Transform satellite position to local Earth frame
+                const earthCenter = this.app3d.earth.earthMesh.position;
+                const relativePosition = position.clone().multiplyScalar(Constants.metersToKm).sub(earthCenter);
+                const localPosition = relativePosition.clone().applyMatrix4(this.app3d.earth.rotationGroup.matrixWorld.clone().invert());
+                const groundPoint = localPosition.clone().normalize().multiplyScalar(Constants.earthRadius * Constants.metersToKm * Constants.scale);
+                this.groundTrackPath?.update(groundPoint);
             }
+        }
+        // Update orbit line if needed
+        if (this.orbitPath && this.orbitPath.orbitLine.visible) {
+            this.updateOrbitLine(position, velocity);
         }
 
         // Update apsis visualizer if needed
@@ -295,8 +262,8 @@ export class Satellite {
 
         // Update orbit line geometry
         if (orbitPoints && orbitPoints.length > 0) {
-            this.orbitLine.geometry.setFromPoints(orbitPoints);
-            this.orbitLine.geometry.computeBoundingSphere();
+            this.orbitPath.orbitLine.geometry.setFromPoints(orbitPoints);
+            this.orbitPath.orbitLine.geometry.computeBoundingSphere();
         }
 
         // Update apsis visualizer
@@ -305,8 +272,8 @@ export class Satellite {
         }
 
         // Force visibility update
-        if (this.orbitLine) {
-            this.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
+        if (this.orbitPath) {
+            this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
         }
     }
 
@@ -332,9 +299,9 @@ export class Satellite {
 
     setVisible(visible) {
         this.mesh.visible = visible;
-        this.traceLine.visible = visible && window.app3d.getDisplaySetting('showTraces');
-        this.orbitLine.visible = visible && window.app3d.getDisplaySetting('showOrbits');
-        this.groundTrack.setVisible(visible && window.app3d.getDisplaySetting('showGroundTraces'));
+        this.tracePath?.setVisible(visible && window.app3d.getDisplaySetting('showTraces'));
+        this.orbitPath?.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
+        this.groundTrackPath?.setVisible(visible && window.app3d.getDisplaySetting('showGroundTraces'));
         // Show apsis markers only if orbit is visible
         this.apsisVisualizer.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
     }
@@ -444,15 +411,14 @@ export class Satellite {
             this.mesh.geometry.dispose();
             this.mesh.material.dispose();
         }
-        if (this.traceLine) {
-            this.scene.remove(this.traceLine);
-            this.traceLine.geometry.dispose();
-            this.traceLine.material.dispose();
+        if (this.tracePath) {
+            this.tracePath.dispose();
         }
-        if (this.orbitLine) {
-            this.scene.remove(this.orbitLine);
-            this.orbitLine.geometry.dispose();
-            this.orbitLine.material.dispose();
+        if (this.orbitPath) {
+            this.orbitPath.dispose();
+        }
+        if (this.groundTrackPath) {
+            this.groundTrackPath.dispose();
         }
         if (this.velocityVector) {
             this.velocityVector.dispose();
@@ -460,17 +426,8 @@ export class Satellite {
         if (this.orientationVector) {
             this.orientationVector.dispose();
         }
-        if (this.groundTrack) {
-            this.groundTrack.dispose();
-        }
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
-        }
-        if (this.traceWorker) {
-            this.traceWorker.terminate();
-        }
-        if (this.orbitPathWorker) {
-            this.orbitPathWorker.terminate();
         }
 
         console.log('[Satellite.dispose] Disposing satellite', this.id);
@@ -496,19 +453,19 @@ export class Satellite {
         }
 
         // Update trace line color
-        if (this.traceLine?.material) {
-            this.traceLine.material.color.set(color);
+        if (this.tracePath?.traceLine) {
+            this.tracePath.traceLine.material.color.set(color);
         }
 
         // Update orbit line color
-        if (this.orbitLine?.material) {
-            this.orbitLine.material.color.set(color);
+        if (this.orbitPath?.orbitLine) {
+            this.orbitPath.orbitLine.material.color.set(color);
         }
-        this.groundTrack.setColor(color);
+        this.groundTrackPath?.setColor(color);
     }
 
     setGroundTraceVisible(visible) {
-        this.groundTrack.setVisible(visible);
+        this.groundTrackPath?.setVisible(visible);
     }
 
     updateVectors() {

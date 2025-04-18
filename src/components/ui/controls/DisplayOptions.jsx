@@ -32,6 +32,8 @@ export const defaultSettings = {
   showOrbits: { value: true, name: 'Sat Orbits', icon: Circle },
   showTraces: { value: true, name: 'Sat Traces', icon: LineChart },
   showGroundTraces: { value: false, name: 'Ground Traces', icon: MapPin },
+  orbitUpdateInterval: { value: 30, name: 'Orbit Update Rate', icon: Circle, type: 'number', min: 1, max: 120, step: 1 },
+  traceUpdateInterval: { value: 5, name: 'Trace Update Rate', icon: LineChart, type: 'number', min: 1, max: 60, step: 1 },
   showCities: { value: false, name: 'Cities', icon: Building2 },
   showAirports: { value: false, name: 'Airports', icon: Plane },
   showSpaceports: { value: false, name: 'Spaceports', icon: Rocket },
@@ -55,7 +57,7 @@ const categories = [
   },
   {
     name: 'Satellites',
-    keys: ['showSatVectors', 'showOrbits', 'showTraces', 'showGroundTraces', 'groundTrackUpdateInterval'],
+    keys: ['showSatVectors', 'showOrbits', 'showTraces', 'showGroundTraces', 'groundTrackUpdateInterval', 'orbitUpdateInterval', 'traceUpdateInterval'],
   },
   {
     name: 'Ground',
