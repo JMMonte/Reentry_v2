@@ -5,25 +5,23 @@ import { TimeUtils } from './utils/TimeUtils.js';
 import { TextureManager } from './managers/textureManager.js';
 import { CameraControls } from './managers/CameraControls.js';
 import { RadialGrid } from './components/RadialGrid.js';
-import {
-    createSatelliteFromLatLon,
-    createSatelliteFromOrbitalElements,
-    createSatelliteFromLatLonCircular
-} from './satellites/createSatellite.js';
 import { SatelliteManager } from './simulation/SatelliteManager.js';
 import { DisplaySettingsManager } from './simulation/DisplaySettingsManager.js';
 import { SceneManager } from './simulation/SceneManager.js';
-import { SocketManager } from './simulation/SocketManager.js';
 import { SimulationStateManager } from './simulation/SimulationStateManager.js';
 import { SimulationLoop } from './simulation/SimulationLoop.js';
 
-import { setupEventListeners } from './setup/setupListeners.js';
+// Hook in global app event listeners (bodySelected, displaySettings, etc.)
+import { setupEventListeners as setupGlobalListeners } from './setup/setupListeners.js';
 import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setup/setupComponents.js';
 import { loadTextures, setupSceneDetails, setupPostProcessing } from './setup/setupScene.js';
 import { initTimeControls } from './controls/timeControls.js';
 import { initializeBodySelector } from './controls/bodySelectorControls.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { Constants } from './utils/Constants.js';
+import { updateCameraTarget as selectBody } from './utils/BodySelectionUtils.js';
+// Add satellite creation functions
+import { createSatelliteFromLatLon, createSatelliteFromOrbitalElements, createSatelliteFromLatLonCircular } from './satellites/createSatellite.js';
 
 // Utility to convert defaultSettings to {key: value}
 function extractDefaultDisplaySettings(settingsObj) {
@@ -64,16 +62,15 @@ class App3D extends EventTarget {
         });
         this._stats = new Stats();
 
-        // Socket manager
-        this.socketManager = new SocketManager(this);
-
         // Simulation state manager
         this.simulationStateManager = new SimulationStateManager(this);
 
         // Simulation loop manager
         this.simulationLoop = null;
 
-        // Event listeners
+        // Global event listeners (bodySelected -> updateSelectedBody, etc.)
+        setupGlobalListeners(this);
+        // Local event handlers (e.g. resize)
         this._eventHandlers = {};
         this.setupEventListeners();
 
@@ -104,8 +101,6 @@ class App3D extends EventTarget {
     get stats() { return this._stats; }
     /** @returns {HTMLCanvasElement} */
     get canvas() { return this._canvas; }
-    /** @returns {Socket} */
-    get socket() { return this.socketManager.socket; }
     /** @returns {CSS2DRenderer} */
     get labelRenderer() { return this.sceneManager.labelRenderer; }
     /** @returns {Object} */
@@ -127,8 +122,6 @@ class App3D extends EventTarget {
             this._setupCameraControls();
             this._setupPhysicsWorld();
             this._setupSettings();
-            // Initialize socket connection
-            this.socketManager.init();
             this._setupEventAndSocketListeners();
             this._setupTimeAndBodyControls();
             this._applyStatsStyle();
@@ -200,25 +193,17 @@ class App3D extends EventTarget {
         this._scene.add(this._satelliteConnections);
     }
     _setupEventAndSocketListeners() {
-        setupEventListeners(this);
-        // Use SocketManager for socket event handlers
-        this.socketManager.on('createSatelliteFromLatLon', (params) => {
-            this.createSatelliteLatLon(params);
-        });
-        this.socketManager.on('createSatelliteFromOrbitalElements', (params) => {
-            this.createSatelliteOrbital(params);
-        });
-        this.socketManager.on('createSatelliteFromLatLonCircular', (params) => {
-            this.createSatelliteCircular(params);
-        });
-        this.setupSatelliteAPI();
+        setupGlobalListeners(this);
     }
     _setupTimeAndBodyControls() {
         initTimeControls(this.timeUtils);
         initializeBodySelector(this);
     }
     _applyStatsStyle() {
-        this.applyStatsStyle();
+        if (this.stats && this.stats.dom) {
+            this.stats.dom.style.cssText = 'position:fixed;bottom:16px;right:16px;cursor:pointer;opacity:0.9;z-index:10000;';
+            document.body.appendChild(this.stats.dom);
+        }
     }
     _addWindowResizeListener() {
         this._eventHandlers.resize = this.onWindowResize.bind(this);
@@ -318,20 +303,9 @@ class App3D extends EventTarget {
     }
 
     updateSelectedBody(value) {
+        // Delegate to BodySelectionUtils for all body types
         if (this.cameraControls) {
-            if (!value || value === 'none') {
-                this.cameraControls.clearCameraTarget();
-            } else if (value === 'earth') {
-                this.cameraControls.updateCameraTarget(this.earth);
-            } else if (value === 'moon') {
-                this.cameraControls.updateCameraTarget(this.moon);
-            } else if (typeof value === 'string' && value.startsWith('satellite-')) {
-                const satelliteId = parseInt(value.split('-')[1]);
-                const satellite = this.satellites.getSatellites()[satelliteId];
-                if (satellite) {
-                    this.cameraControls.updateCameraTarget(satellite);
-                }
-            }
+            selectBody(value, this, false);
         }
     }
 
@@ -382,93 +356,23 @@ class App3D extends EventTarget {
         return this.simulationStateManager.exportState();
     }
 
+    // Satellite creation methods
+    createSatelliteFromLatLon(params) {
+        return createSatelliteFromLatLon(this, params);
+    }
+    createSatelliteFromOrbitalElements(params) {
+        return createSatelliteFromOrbitalElements(this, params);
+    }
+    createSatelliteFromLatLonCircular(params) {
+        return createSatelliteFromLatLonCircular(this, params);
+    }
+
     // Methods for satellite creation
     // Remove direct satellite creation methods (now handled by SimulationStateManager)
     // async createSatelliteLatLon(params) { ... }
     // async createSatelliteOrbital(params) { ... }
     // async createSatelliteCircular(params) { ... }
     // createSatelliteFromState(params) { ... }
-
-    // Socket event handlers for satellite creation
-    setupSatelliteAPI() {
-        this.socket.on('createSatelliteFromLatLon', (params) => {
-            this.createSatelliteLatLon(params);
-        });
-
-        this.socket.on('createSatelliteFromOrbitalElements', (params) => {
-            this.createSatelliteOrbital(params);
-        });
-
-        this.socket.on('createSatelliteFromLatLonCircular', (params) => {
-            this.createSatelliteCircular(params);
-        });
-    }
-
-    dispose() {
-        if (this._lineOfSightWorker) {
-            this._lineOfSightWorker.terminate();
-            this._lineOfSightWorker = null;
-        }
-        console.log('Disposing App3D...');
-        this._isInitialized = false;
-
-        // Remove all event listeners
-        this.removeEventListeners();
-
-        // Dispose simulation loop
-        if (this.simulationLoop) {
-            this.simulationLoop.dispose();
-        }
-        // Dispose scene manager
-        if (this.sceneManager) {
-            this.sceneManager.dispose();
-        }
-        // Dispose socket manager
-        if (this.socketManager) {
-            this.socketManager.dispose();
-        }
-        try {
-            // Removed: Stop animation loop, composers, scene, renderer, controls cleanup (now handled by managers)
-        } catch (error) {
-            console.error('Error during cleanup:', error);
-        }
-    }
-
-    applyStatsStyle() {
-        if (this.stats && this.stats.dom) {
-            this.stats.dom.style.cssText = 'position:fixed;bottom:16px;right:16px;cursor:pointer;opacity:0.9;z-index:10000;';
-            document.body.appendChild(this.stats.dom);
-        }
-    }
-
-    /**
-     * Set up all DOM and custom event listeners for the app.
-     */
-    setupEventListeners() {
-        // Store handler references for cleanup
-        // Window resize
-        this._eventHandlers.resize = this.onWindowResize.bind(this);
-        window.addEventListener('resize', this._eventHandlers.resize);
-    }
-
-    /**
-     * Remove all event listeners set up by the app.
-     */
-    removeEventListeners() {
-        if (!this._eventHandlers) return;
-        window.removeEventListener('resize', this._eventHandlers.resize);
-    }
-
-    // Public satellite creation wrappers for external API and socket integration
-    createSatelliteFromLatLon(params) {
-        return createSatelliteFromLatLon(this, params);
-    }
-    createSatelliteFromLatLonCircular(params) {
-        return createSatelliteFromLatLonCircular(this, params);
-    }
-    createSatelliteFromOrbitalElements(params) {
-        return createSatelliteFromOrbitalElements(this, params);
-    }
 
     // --- SATELLITE CONNECTIONS WORKER LOGIC ---
     _initLineOfSightWorker() {
@@ -514,6 +418,44 @@ class App3D extends EventTarget {
             this._updateConnectionsWorkerSatellites();
         } else {
             this._terminateLineOfSightWorker();
+        }
+    }
+
+    setupEventListeners() {
+        // Store handler references for cleanup
+        // Window resize
+        this._eventHandlers.resize = this.onWindowResize.bind(this);
+        window.addEventListener('resize', this._eventHandlers.resize);
+    }
+
+    removeEventListeners() {
+        if (!this._eventHandlers) return;
+        window.removeEventListener('resize', this._eventHandlers.resize);
+    }
+
+    dispose() {
+        if (this._lineOfSightWorker) {
+            this._lineOfSightWorker.terminate();
+            this._lineOfSightWorker = null;
+        }
+        console.log('Disposing App3D...');
+        this._isInitialized = false;
+
+        // Remove all event listeners
+        this.removeEventListeners();
+
+        // Dispose simulation loop
+        if (this.simulationLoop) {
+            this.simulationLoop.dispose();
+        }
+        // Dispose scene manager
+        if (this.sceneManager) {
+            this.sceneManager.dispose();
+        }
+        try {
+            // Removed: Stop animation loop, composers, scene, renderer, controls cleanup (now handled by managers)
+        } catch (error) {
+            console.error('Error during cleanup:', error);
         }
     }
 }

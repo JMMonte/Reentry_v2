@@ -1,6 +1,5 @@
 import { Constants } from './Constants.js';
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 
 export class PhysicsUtils {
     static calculateGravitationalForce(m1, m2, r) {
@@ -210,8 +209,8 @@ export class PhysicsUtils {
         velocityENU.applyQuaternion(tiltQuaternion);
         positionECI.applyQuaternion(earthQuaternion);
         velocityENU.applyQuaternion(earthQuaternion);
-        const position = new CANNON.Vec3(positionECI.x, positionECI.y, positionECI.z);
-        const velocityECEF = new CANNON.Vec3(velocityENU.x, velocityENU.y, velocityENU.z);
+        const position = new THREE.Vector3(positionECI.x, positionECI.y, positionECI.z);
+        const velocityECEF = new THREE.Vector3(velocityENU.x, velocityENU.y, velocityENU.z);
         return { positionECEF: position, velocityECEF: velocityECEF };
     }
 
@@ -240,8 +239,8 @@ export class PhysicsUtils {
         if (p <= 0) {
             console.error('Invalid value for p:', p);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
@@ -259,8 +258,8 @@ export class PhysicsUtils {
         if (isNaN(h) || h <= 0) {
             console.error('Invalid value for h:', h);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
@@ -268,8 +267,8 @@ export class PhysicsUtils {
         if (isNaN(sqrtMuOverP) || sqrtMuOverP <= 0) {
             console.error('Invalid value for sqrtMuOverP:', sqrtMuOverP);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
@@ -316,23 +315,15 @@ export class PhysicsUtils {
         ) {
             console.error('Invalid ECI coordinates:', positionECI, velocityECI);
             return {
-                positionECI: new CANNON.Vec3(),
-                velocityECI: new CANNON.Vec3(),
+                positionECI: new THREE.Vector3(),
+                velocityECI: new THREE.Vector3(),
             };
         }
 
         // Return the position and velocity in ECI frame
         return {
-            positionECI: new CANNON.Vec3(
-                positionECI.x,
-                positionECI.y,
-                positionECI.z
-            ),
-            velocityECI: new CANNON.Vec3(
-                velocityECI.x,
-                velocityECI.y,
-                velocityECI.z
-            ),
+            positionECI: new THREE.Vector3(positionECI.x, positionECI.y, positionECI.z),
+            velocityECI: new THREE.Vector3(velocityECI.x, velocityECI.y, velocityECI.z),
         };
     }
 
@@ -536,5 +527,75 @@ export class PhysicsUtils {
             E += deltaE;
         } while (Math.abs(deltaE) > tol);
         return E;
+    }
+
+    /**
+     * Propagate a satellite's orbit for one period including multiple gravity sources using RK4.
+     * @param {THREE.Vector3} initialPosition - Initial position in meters.
+     * @param {THREE.Vector3} initialVelocity - Initial velocity in m/s.
+     * @param {Array<{position:THREE.Vector3, mass:number}>} bodies - Array of gravity bodies.
+     * @param {number} period - Orbital period in seconds.
+     * @param {number} [numPoints=180] - Number of points to sample.
+     * @returns {THREE.Vector3[]} Array of points (in scaled km) representing one orbit cycle.
+     */
+    static propagateOrbit(initialPosition, initialVelocity, bodies, period, numPoints = 180) {
+        const dt = period / numPoints;
+        let pos = initialPosition.clone();
+        let vel = initialVelocity.clone();
+        const points = [];
+        // Helper: acceleration due to multiple bodies
+        function accel(p) {
+            const a = new THREE.Vector3();
+            bodies.forEach(body => {
+                const d = new THREE.Vector3().subVectors(body.position, p);
+                const r2 = d.lengthSq();
+                const r = Math.sqrt(r2);
+                if (r > 0) {
+                    const mag = Constants.G * body.mass / r2;
+                    a.addScaledVector(d.normalize(), mag);
+                }
+            });
+            return a;
+        }
+        for (let i = 0; i < numPoints; i++) {
+            // RK4 integration step
+            const p0 = pos.clone();
+            const v0 = vel.clone();
+            const a0 = accel(p0);
+            const k1p = v0.clone().multiplyScalar(dt);
+            const k1v = a0.clone().multiplyScalar(dt);
+
+            const p1 = p0.clone().addScaledVector(k1p, 0.5);
+            const v1 = v0.clone().addScaledVector(k1v, 0.5);
+            const a1 = accel(p1);
+            const k2p = v1.clone().multiplyScalar(dt);
+            const k2v = a1.clone().multiplyScalar(dt);
+
+            const p2 = p0.clone().addScaledVector(k2p, 0.5);
+            const v2 = v0.clone().addScaledVector(k2v, 0.5);
+            const a2 = accel(p2);
+            const k3p = v2.clone().multiplyScalar(dt);
+            const k3v = a2.clone().multiplyScalar(dt);
+
+            const p3 = p0.clone().add(k3p);
+            const v3 = v0.clone().add(k3v);
+            const a3 = accel(p3);
+            const k4p = v3.clone().multiplyScalar(dt);
+            const k4v = a3.clone().multiplyScalar(dt);
+
+            // Update state
+            pos.add(
+                k1p.clone().addScaledVector(k2p, 2).addScaledVector(k3p, 2).add(k4p).multiplyScalar(1 / 6)
+            );
+            vel.add(
+                k1v.clone().addScaledVector(k2v, 2).addScaledVector(k3v, 2).add(k4v).multiplyScalar(1 / 6)
+            );
+
+            // Convert to scaled km and record
+            points.push(
+                pos.clone().multiplyScalar(Constants.metersToKm * Constants.scale)
+            );
+        }
+        return points;
     }
 }

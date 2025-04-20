@@ -190,12 +190,13 @@ export function createSatelliteFromOrbitalElements(app, params) {
         name
     } = params;
 
+    // Note: PhysicsUtils expects argumentOfPeriapsis before RAAN
     const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
         semiMajorAxis * Constants.kmToMeters,
         eccentricity,
-        inclination * (-1), // Invert inclination
-        raan,
+        -inclination, // Invert inclination
         argumentOfPeriapsis,
+        raan,
         trueAnomaly
     );
 

@@ -197,6 +197,12 @@ function App3DMain() {
       window.handlingBodySelectedEvent = false;
     }
   };
+  // Immediately update camera target when selectedBody changes
+  useEffect(() => {
+    if (controller?.app3d?.updateSelectedBody) {
+      controller.app3d.updateSelectedBody(selectedBody);
+    }
+  }, [selectedBody, controller]);
   const navbarSatellites = useMemo(() => satellites, [satellites]);
   const onCreateSatellite = async (params) => {
     try {

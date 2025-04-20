@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 import { EarthSurface } from './earthSurface.js';
 import { Constants } from '../utils/Constants.js';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
@@ -12,7 +11,7 @@ import geojsonDataGroundStations from '../config/ground_stations.json';
 import geojsonDataObservatories from '../config/observatories.json';
 
 export class Earth {
-    constructor(scene, world, renderer, timeManager, textureManager) {
+    constructor(scene, renderer, timeManager, textureManager) {
         this.timeManager = timeManager;
         this.MESH_RES = 128;
         this.EARTH_RADIUS = Constants.earthRadius * Constants.scale * Constants.metersToKm;
@@ -27,7 +26,6 @@ export class Earth {
         this.initializeMaterials();
         this.initializeMeshes();
         this.initializeSurfaceDetails(); // Modified method name
-        this.initializePhysics(world);
 
         // Add light source to simulate Earth's illumination
         this.addLightSource();
@@ -135,17 +133,6 @@ export class Earth {
         this.earthSurface.addPoints(geojsonDataSpaceports, this.earthSurface.materials.spaceportPoint, 'spaceports');
         this.earthSurface.addPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
         this.earthSurface.addPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
-    }
-
-    initializePhysics(world) {
-        const earthBody = new CANNON.Body({
-            mass: 0,
-            shape: new CANNON.Sphere((Constants.earthRadius)),
-            material: new CANNON.Material(),
-            friction: 0.5
-        });
-        world.addBody(earthBody);
-        this.earthBody = earthBody;
     }
 
     addLightSource() {

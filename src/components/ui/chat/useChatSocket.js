@@ -18,6 +18,9 @@ export function useChatSocket(socket) {
     // Track if conversation_end has been received for this turn
     const conversationEndReceived = useRef(false);
 
+    // Add state to track web-search activity
+    const [isWebSearchActive, setIsWebSearchActive] = useState(false);
+
     // --- Event Handlers (bound with state/refs) ---
     const eventHandlers = {
         conversation_start: handlers.handleConversationStart({ setMessages, setTurnInProgress }),
@@ -52,6 +55,26 @@ export function useChatSocket(socket) {
                 }
             });
         }
+
+        // Listen for web-search tool calls and clear events
+        const handleWebSearchCall = (data) => {
+            if (data.toolCalls && Array.isArray(data.toolCalls) && data.toolCalls.some(tc => tc.name === 'web_search')) {
+                setIsWebSearchActive(true);
+            }
+        };
+        const handleWebSearchResponse = (data) => {
+            if (data.toolResponses && Array.isArray(data.toolResponses) && data.toolResponses.some(resp => resp.name === 'web_search')) {
+                setIsWebSearchActive(false);
+            }
+        };
+        const clearWebSearch = () => {
+            setIsWebSearchActive(false);
+        };
+        socket.on('tool_call_sent', handleWebSearchCall);
+        socket.on('tool_call_response', handleWebSearchResponse);
+        socket.on('message', clearWebSearch);
+        socket.on('answer_end', clearWebSearch);
+
         return () => {
             // socket.off('tool_call_sent');
             Object.keys(eventHandlers).forEach(event => {
@@ -60,6 +83,10 @@ export function useChatSocket(socket) {
             if (socket.offAny) {
                 socket.offAny();
             }
+            socket.off('tool_call_sent', handleWebSearchCall);
+            socket.off('tool_call_response', handleWebSearchResponse);
+            socket.off('message', clearWebSearch);
+            socket.off('answer_end', clearWebSearch);
         };
     }, [socket]);
 
@@ -101,6 +128,7 @@ export function useChatSocket(socket) {
         tableData,
         sendMessage,
         handleCopy: handleCopyWrapper,
-        turnInProgress
+        turnInProgress,
+        isWebSearchActive
     };
 } 

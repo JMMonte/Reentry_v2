@@ -1,11 +1,17 @@
 import * as THREE from 'three';
+import { Constants } from '../../utils/Constants.js';
 
 export class TracePath {
     constructor(color, maxTracePoints = 1000) {
         this.maxTracePoints = maxTracePoints;
         this.tracePoints = [];
+        // Preallocate geometry for trace points (maxTracePoints vertices)
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(this.maxTracePoints * 3);
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setDrawRange(0, 0);
         this.traceLine = new THREE.Line(
-            new THREE.BufferGeometry(),
+            geometry,
             new THREE.LineBasicMaterial({
                 color,
                 linewidth: 2,
@@ -15,29 +21,38 @@ export class TracePath {
         );
         this.traceLine.frustumCulled = false;
         this.traceLine.visible = false;
-        this.worker = new Worker(new URL('../../workers/traceWorker.js', import.meta.url), { type: 'module' });
-        this.worker.onmessage = (e) => {
-            if (e.data.type === 'TRACE_UPDATE' && this._currentId && e.data.id === this._currentId) {
-                this.tracePoints = e.data.tracePoints.map(pt => new THREE.Vector3(pt.x, pt.y, pt.z));
-                if (this.traceLine.visible) {
-                    this.traceLine.geometry.setFromPoints(this.tracePoints);
-                    this.traceLine.geometry.computeBoundingSphere();
-                }
-            }
-        };
     }
 
-    update(position, id) {
-        this._currentId = id;
-        this.worker.postMessage({
-            type: 'UPDATE_TRACE',
-            id,
-            position: { x: position.x, y: position.y, z: position.z }
-        });
+    update(position) {
+        // Append a new trace point (position is a Vector3 in km-scale) if within threshold
+        const threshold = Constants.earthRadius * Constants.metersToKm * Constants.scale * 2; // ~2x Earth radius
+        if (position.length() > threshold) return;
+        this.tracePoints.push({ x: position.x, y: position.y, z: position.z });
+        if (this.tracePoints.length > this.maxTracePoints) this.tracePoints.shift();
+        // Update geometry in-place
+        const attr = this.traceLine.geometry.attributes.position;
+        const arr = attr.array;
+        const count = this.tracePoints.length;
+        for (let i = 0; i < count; i++) {
+            const pt = this.tracePoints[i];
+            const idx = i * 3;
+            arr[idx]     = pt.x;
+            arr[idx + 1] = pt.y;
+            arr[idx + 2] = pt.z;
+        }
+        this.traceLine.geometry.setDrawRange(0, count);
+        attr.needsUpdate = true;
     }
 
     setVisible(visible) {
         this.traceLine.visible = visible;
+        if (!visible) {
+            // Clear buffer to prevent stale points on re-show
+            this.tracePoints = [];
+            const geom = this.traceLine.geometry;
+            geom.setDrawRange(0, 0);
+            geom.attributes.position.needsUpdate = true;
+        }
     }
 
     setColor(color) {
@@ -47,8 +62,8 @@ export class TracePath {
     }
 
     dispose() {
+        // Clean up visual elements
         if (this.traceLine.geometry) this.traceLine.geometry.dispose();
         if (this.traceLine.material) this.traceLine.material.dispose();
-        if (this.worker) this.worker.terminate();
     }
 } 

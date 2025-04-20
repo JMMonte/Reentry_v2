@@ -91,6 +91,58 @@ function extractCode(message) {
     return '';
 }
 
+// --- Tool Call Card UI (sent and response) ---
+const renderToolCallCard = ({ toolName, status, args, output, isDone }) => {
+    // Format arguments as a readable list
+    let argList = null;
+    if (args && typeof args === 'object' && !Array.isArray(args)) {
+        const entries = Object.entries(args);
+        if (entries.length > 0) {
+            argList = (
+                <ul className="list-disc pl-5 text-xs text-zinc-100">
+                    {entries.map(([k, v]) => (
+                        <li key={k}><span className="font-semibold">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}</li>
+                    ))}
+                </ul>
+            );
+        }
+    }
+    // Clean output: remove curly braces and do not show if empty or just '{}'
+    let cleanOutput = output;
+    if (typeof cleanOutput === 'string') {
+        cleanOutput = cleanOutput.trim();
+        if (cleanOutput === '{}' || cleanOutput === '[]') cleanOutput = '';
+        cleanOutput = cleanOutput.replace(/^[{[]\s*|\s*[}\]]$/g, '').trim();
+    }
+    return (
+        <div className="rounded-lg px-3 py-2 max-w-[420px] relative group bg-zinc-900 border border-zinc-700 text-zinc-100 flex flex-col gap-2">
+            <div className="flex items-center justify-between mb-1">
+                <span className="font-semibold text-base">{toolName}</span>
+                <span className={cn(
+                    'ml-2 px-2 py-0.5 rounded text-xs font-semibold',
+                    status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' :
+                    status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' :
+                    'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200')
+                } title="Status">{status === 'done' ? '✓' : status === 'error' ? '!' : ''} {status}</span>
+            </div>
+            {argList && (
+                <details className="mb-1 bg-zinc-800 rounded border border-zinc-700">
+                    <summary className="cursor-pointer px-2 py-1 font-mono text-xs text-zinc-100 select-none">Arguments</summary>
+                    {argList}
+                </details>
+            )}
+            {cleanOutput && (
+                <div className="text-sm whitespace-pre-line">
+                    {cleanOutput}
+                </div>
+            )}
+            {!isDone && (
+                <div className="text-xs text-yellow-300 mt-1">Waiting for tool response...</div>
+            )}
+        </div>
+    );
+};
+
 const ChatMessage = ({ message, onCopy, copiedStates }) => {
     if (!message) return null;
     const isUser = message.role === 'user';
@@ -200,6 +252,7 @@ const ChatMessage = ({ message, onCopy, copiedStates }) => {
     }
     // Render details for each event type
     let details = null;
+    let messageClass = "";
     if (eventType === 'tool_call_sent' || isTool) {
         // Always parse arguments as JSON if possible
         let parsedArgs = message.arguments;
@@ -210,21 +263,20 @@ const ChatMessage = ({ message, onCopy, copiedStates }) => {
                 /* leave as string if parsing fails */
             }
         }
-        details = (
-            <div className="text-xs mt-1">
-                <div><span className="font-semibold">Tool Name:</span> {message.toolName || message.name}</div>
-                {parsedArgs && <div><span className="font-semibold">Arguments:</span> <pre className="inline whitespace-pre-wrap bg-muted px-1 rounded text-xs dark:bg-zinc-900 dark:text-zinc-100">{typeof parsedArgs === 'string' ? parsedArgs : JSON.stringify(parsedArgs, null, 2)}</pre></div>}
-                <div><span className="font-semibold">Status:</span> <span className={cn(
-                    message.status === 'done' ? 'text-green-600 dark:text-green-400' :
-                        message.status === 'error' ? 'text-red-600 dark:text-red-400' :
-                            'text-yellow-600 dark:text-yellow-300')}>{message.status || message.toolState || 'called'}</span></div>
-            </div>
-        );
+        const toolName = message.toolName || message.name || 'Tool';
+        const status = message.status || message.toolState || 'called';
+        details = renderToolCallCard({
+            toolName,
+            status,
+            args: parsedArgs,
+            output: '',
+            isDone: status === 'done',
+        });
+        messageClass = 'rounded-lg px-3 py-2 max-w-[420px] relative group bg-zinc-900 border border-zinc-700 text-zinc-100';
     } else if (eventType === 'tool_call_response') {
         // User-oriented tool response card
         const resp = Array.isArray(message.toolResponses) ? message.toolResponses[0] : null;
         const toolNameRaw = message.toolName || message.name || (resp && resp.toolName) || (resp && resp.name);
-        // Prettify tool name for headline
         const toolName = toolNameRaw ? toolNameRaw.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()) : 'Action';
         const status = message.status || (resp && resp.status) || 'done';
         const output = resp && (typeof resp.output === 'string' ? resp.output : JSON.stringify(resp.output, null, 2));
@@ -233,51 +285,13 @@ const ChatMessage = ({ message, onCopy, copiedStates }) => {
         if (typeof parsedArgs === 'string') {
             try { parsedArgs = JSON.parse(parsedArgs); } catch { /* ignore */ }
         }
-        // Format arguments as a readable list (no curly braces, no JSON)
-        let argList = null;
-        if (parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
-            const entries = Object.entries(parsedArgs);
-            if (entries.length > 0) {
-                argList = (
-                    <ul className="list-disc pl-5 text-xs text-zinc-100">
-                        {entries.map(([k, v]) => (
-                            <li key={k}><span className="font-semibold">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}</li>
-                        ))}
-                    </ul>
-                );
-            }
-        }
-        // Clean output: remove curly braces and do not show if empty or just '{}'
-        let cleanOutput = output;
-        if (typeof cleanOutput === 'string') {
-            cleanOutput = cleanOutput.trim();
-            if (cleanOutput === '{}' || cleanOutput === '[]') cleanOutput = '';
-            cleanOutput = cleanOutput.replace(/^[{[]\s*|\s*[}\]]$/g, '').trim();
-        }
-        details = (
-            <div className="rounded-lg px-3 py-2 max-w-[420px] relative group bg-zinc-900 border border-zinc-700 text-zinc-100 flex flex-col gap-2">
-                <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-base">{toolName} completed</span>
-                    <span className={cn(
-                        'ml-2 px-2 py-0.5 rounded text-xs font-semibold',
-                        status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' :
-                            status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' :
-                                'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200')
-                    } title="Status">{status === 'done' ? '✓' : status === 'error' ? '!' : ''}</span>
-                </div>
-                {cleanOutput && (
-                    <div className="text-sm whitespace-pre-line">
-                        {cleanOutput}
-                    </div>
-                )}
-                {argList && (
-                    <details className="mb-1 bg-zinc-800 rounded border border-zinc-700">
-                        <summary className="cursor-pointer px-2 py-1 font-mono text-xs text-zinc-100 select-none">More info</summary>
-                        {argList}
-                    </details>
-                )}
-            </div>
-        );
+        details = renderToolCallCard({
+            toolName,
+            status,
+            args: parsedArgs,
+            output,
+            isDone: status === 'done',
+        });
         messageClass = 'rounded-lg px-3 py-2 max-w-[420px] relative group bg-zinc-900 border border-zinc-700 text-zinc-100';
     } else if (eventType === 'code_interpreter_result') {
         const code = extractCode(message);
@@ -354,7 +368,6 @@ const ChatMessage = ({ message, onCopy, copiedStates }) => {
         extra = <>{extra}{renderCodeInterpreter(message.content)}</>;
     }
     // --- UI: Only show bubbles for user/tool/error, plain for assistant ---
-    let messageClass = '';
     if (eventType === 'tool_call_sent') {
         messageClass = 'rounded-lg px-3 py-1.5 max-w-[420px] relative group bg-yellow-50 border border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800';
     } else if (eventType === 'tool_call_response') {

@@ -25,6 +25,8 @@ export class Constants {
     // Solar system constants
     static sunRadius = 695700000; // Sun radius in meters
     static AU = 1.495978707e11; // Astronomical unit in meters
+    // Sun constants
+    static sunMass = 1.9885e30; // Sun mass in kg
     // Moon constants
     static moonRadius = 1737400; // Moon radius in meters
     static moonMass = 7.342e22; // Moon mass in kg

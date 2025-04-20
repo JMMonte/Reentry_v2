@@ -8,6 +8,7 @@ let lastSimTime = null;
 let timeWarp = 1; // Default time warp
 let earthPosition = { x: 0, y: 0, z: 0 };
 let moonPosition = { x: 0, y: 0, z: 0 };
+let sunPosition = { x: 0, y: 0, z: 0 };
 
 self.onmessage = function (event) {
     let messageData;
@@ -42,6 +43,7 @@ self.onmessage = function (event) {
             // Update earth/moon positions from main thread
             if (data.earthPosition) earthPosition = data.earthPosition;
             if (data.moonPosition) moonPosition = data.moonPosition;
+            if (data.sunPosition) sunPosition = data.sunPosition;
             break;
         default:
             console.error('Unknown message type:', type);
@@ -71,56 +73,77 @@ function simulationLoop() {
     lastSimTime = now;
     const warpedDeltaTime = realDeltaTime * timeWarp;
     if (warpedDeltaTime <= 0) return;
-    // Cap the maximum time step to prevent instability, but subdivide into smaller steps for high time warps
     const maxTimeStep = 1.0; // 1 second
     const numSteps = Math.ceil(warpedDeltaTime / maxTimeStep);
     const subTimeStep = warpedDeltaTime / numSteps;
+    // Helper: compute acceleration (m/s^2) due to Earth & Moon at given position array
+    function computeAccel(mass, posArr) {
+        // positions from main thread are in meters
+        const [px, py, pz] = posArr;
+        // vector from satellite to Earth
+        const dxE = earthPosition.x - px, dyE = earthPosition.y - py, dzE = earthPosition.z - pz;
+        const rE2 = dxE*dxE + dyE*dyE + dzE*dzE;
+        const rE = Math.sqrt(rE2);
+        const fE = Constants.G * mass * Constants.earthMass / rE2;
+        const uxE = dxE / rE, uyE = dyE / rE, uzE = dzE / rE;
+        // vector from satellite to Moon
+        const dxM = moonPosition.x - px, dyM = moonPosition.y - py, dzM = moonPosition.z - pz;
+        const rM2 = dxM*dxM + dyM*dyM + dzM*dzM;
+        const rM = Math.sqrt(rM2);
+        const fM = Constants.G * mass * Constants.moonMass / rM2;
+        const uxM = dxM / rM, uyM = dyM / rM, uzM = dzM / rM;
+        // vector from satellite to Sun
+        const dxS = sunPosition.x - px, dyS = sunPosition.y - py, dzS = sunPosition.z - pz;
+        const rS2 = dxS*dxS + dyS*dyS + dzS*dzS;
+        const rS = Math.sqrt(rS2);
+        const fS = Constants.G * mass * Constants.sunMass / rS2;
+        const uxS = dxS / rS, uyS = dyS / rS, uzS = dzS / rS;
+        // Sum accelerations, then divide by satellite mass
+        const ax = (fE*uxE + fM*uxM + fS*uxS) / mass;
+        const ay = (fE*uyE + fM*uyM + fS*uyS) / mass;
+        const az = (fE*uzE + fM*uzM + fS*uzS) / mass;
+        return { x: ax, y: ay, z: az };
+    }
     for (let i = 0; i < numSteps; i++) {
         satellites.forEach(satellite => {
-            // Calculate gravitational forces
-            const satPos = satellite.position;
-            // Convert Earth and Moon positions from scaled km to meters
-            const earthPosMeters = {
-                x: earthPosition.x / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
-                y: earthPosition.y / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
-                z: earthPosition.z / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters
-            };
-            const moonPosMeters = {
-                x: moonPosition.x / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
-                y: moonPosition.y / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters,
-                z: moonPosition.z / (Constants.metersToKm * Constants.scale) * Constants.kmToMeters
-            };
-            // Force from Earth (all calculations in meters)
-            const earthForce = calculateGravitationalForce(
-                satellite.mass,
-                Constants.earthMass,
-                satPos,
-                earthPosMeters
-            );
-            // Force from Moon (all calculations in meters)
-            const moonForce = calculateGravitationalForce(
-                satellite.mass,
-                Constants.moonMass,
-                satPos,
-                moonPosMeters
-            );
-            // Total acceleration (F = ma, so a = F/m) in m/s²
-            const totalAccel = {
-                x: (earthForce.x + moonForce.x) / satellite.mass,
-                y: (earthForce.y + moonForce.y) / satellite.mass,
-                z: (earthForce.z + moonForce.z) / satellite.mass
-            };
-            // Update velocity (a * dt) in m/s
-            satellite.velocity[0] += totalAccel.x * subTimeStep;
-            satellite.velocity[1] += totalAccel.y * subTimeStep;
-            satellite.velocity[2] += totalAccel.z * subTimeStep;
-            // Update position (v * dt) in meters
-            satellite.position[0] += satellite.velocity[0] * subTimeStep;
-            satellite.position[1] += satellite.velocity[1] * subTimeStep;
-            satellite.position[2] += satellite.velocity[2] * subTimeStep;
+            const m = satellite.mass;
+            const h = subTimeStep;
+            // initial state
+            const p0 = satellite.position;
+            const v0 = satellite.velocity;
+            // k1
+            const a0 = computeAccel(m, p0);
+            const k1p = [v0[0], v0[1], v0[2]];
+            const k1v = [a0.x, a0.y, a0.z];
+            // k2
+            const p1 = [p0[0] + k1p[0]*h/2, p0[1] + k1p[1]*h/2, p0[2] + k1p[2]*h/2];
+            const v1 = [v0[0] + k1v[0]*h/2, v0[1] + k1v[1]*h/2, v0[2] + k1v[2]*h/2];
+            const a1 = computeAccel(m, p1);
+            const k2p = [v1[0], v1[1], v1[2]];
+            const k2v = [a1.x, a1.y, a1.z];
+            // k3
+            const p2 = [p0[0] + k2p[0]*h/2, p0[1] + k2p[1]*h/2, p0[2] + k2p[2]*h/2];
+            const v2 = [v0[0] + k2v[0]*h/2, v0[1] + k2v[1]*h/2, v0[2] + k2v[2]*h/2];
+            const a2 = computeAccel(m, p2);
+            const k3p = [v2[0], v2[1], v2[2]];
+            const k3v = [a2.x, a2.y, a2.z];
+            // k4
+            const p3 = [p0[0] + k3p[0]*h, p0[1] + k3p[1]*h, p0[2] + k3p[2]*h];
+            const v3 = [v0[0] + k3v[0]*h, v0[1] + k3v[1]*h, v0[2] + k3v[2]*h];
+            const a3 = computeAccel(m, p3);
+            const k4p = [v3[0], v3[1], v3[2]];
+            const k4v = [a3.x, a3.y, a3.z];
+            // integrate
+            const c = h/6;
+            satellite.position[0] += c*(k1p[0] + 2*k2p[0] + 2*k3p[0] + k4p[0]);
+            satellite.position[1] += c*(k1p[1] + 2*k2p[1] + 2*k3p[1] + k4p[1]);
+            satellite.position[2] += c*(k1p[2] + 2*k2p[2] + 2*k3p[2] + k4p[2]);
+            satellite.velocity[0] += c*(k1v[0] + 2*k2v[0] + 2*k3v[0] + k4v[0]);
+            satellite.velocity[1] += c*(k1v[1] + 2*k2v[1] + 2*k3v[1] + k4v[1]);
+            satellite.velocity[2] += c*(k1v[2] + 2*k2v[2] + 2*k3v[2] + k4v[2]);
         });
     }
-    // Send all satellite updates in one message
+    // Send all satellite updates (no orbits)
     self.postMessage({
         type: 'satellitesUpdate',
         data: satellites.map(sat => ({
@@ -159,26 +182,6 @@ function addSatellite(data) {
         type: 'satelliteAdded',
         data: { id }
     });
-}
-
-function calculateGravitationalForce(mass1, mass2, pos1, pos2) {
-    const dx = pos2.x - pos1[0];
-    const dy = pos2.y - pos1[1];
-    const dz = pos2.z - pos1[2];
-
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const forceMagnitude = (Constants.G * mass1 * mass2) / (distance * distance);
-
-    // Unit vector components
-    const ux = dx / distance;
-    const uy = dy / distance;
-    const uz = dz / distance;
-
-    return {
-        x: forceMagnitude * ux,
-        y: forceMagnitude * uy,
-        z: forceMagnitude * uz
-    };
 }
 
 function removeSatellite(id) {

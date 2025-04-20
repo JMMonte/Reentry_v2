@@ -35,7 +35,10 @@ export function setupEventListeners(app) {
     });
 
     document.addEventListener('bodySelected', (event) => {
-        app.updateSelectedBody(event.detail.body);
+        const value = event.detail.body;
+        if (typeof app.updateSelectedBody === 'function') {
+            app.updateSelectedBody(value);
+        }
     });
 }
 

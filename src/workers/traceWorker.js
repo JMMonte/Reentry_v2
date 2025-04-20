@@ -8,7 +8,7 @@ const maxTracePoints = 1000;
 
 self.onmessage = function (e) {
     if (e.data.type === 'UPDATE_TRACE') {
-        const { id, position } = e.data;
+        const { id, position, seq } = e.data;
         if (id === undefined || id === null) return;
         if (!traceMap[id]) traceMap[id] = [];
         if (traceMap[id].length >= maxTracePoints) {
@@ -18,7 +18,8 @@ self.onmessage = function (e) {
         self.postMessage({
             type: 'TRACE_UPDATE',
             id,
-            tracePoints: traceMap[id].slice()
+            tracePoints: traceMap[id].slice(),
+            seq
         });
     } else if (e.data.type === 'RESET') {
         if (e.data.id) {

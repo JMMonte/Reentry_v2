@@ -90,12 +90,75 @@ export class SatelliteManager {
             this.setTimeWarp(currentTimeWarp);
             this._lastTimeWarp = currentTimeWarp;
         }
+        // Update dynamic body positions (Earth at origin, Moon) in physicsWorker for n-body
+        if (this.physicsWorker && this.workerInitialized && this.app3d.moon) {
+            // Get Moon's mesh position (km-scale) and convert to meters
+            const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
+            const factor = 1 / (Constants.metersToKm * Constants.scale);
+            const moonPosM = {
+                x: moonMesh.position.x * factor,
+                y: moonMesh.position.y * factor,
+                z: moonMesh.position.z * factor
+            };
+            // Also grab Sun position and send all bodies
+            const sunMesh = this.app3d.sun && this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun?.sunLight;
+            const sunPosM = sunMesh ? { x: sunMesh.position.x * factor, y: sunMesh.position.y * factor, z: sunMesh.position.z * factor } : { x: 0, y: 0, z: 0 };
+            this.physicsWorker.postMessage({
+                type: 'updateBodies',
+                data: { earthPosition: { x: 0, y: 0, z: 0 }, moonPosition: moonPosM, sunPosition: sunPosM }
+            });
+        }
         Object.values(this._satellites).forEach(satellite => {
             // Keep satellite.timeWarp in sync
             satellite.timeWarp = currentTimeWarp;
             if (satellite.updateSatellite) {
                 satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
             }
+        });
+        // Draw multi-body propagated orbits (Earth + Moon) via OrbitPath worker
+        const showOrbits = this.app3d.getDisplaySetting('showOrbits');
+        Object.values(this._satellites).forEach(sat => {
+            const path = sat.orbitPath;
+            if (!path) return;
+            // Toggle visibility of the path
+            path.setVisible(showOrbits);
+            if (!showOrbits) return;
+            // derive orbital period (2-body approximation)
+            const els = sat.getOrbitalElements();
+            if (!els || !els.period) return;
+            const period = els.period;
+            // define gravitational sources: Earth, Moon, and Sun
+            const factor2 = 1 / (Constants.metersToKm * Constants.scale);
+            const bodies = [ { position: new THREE.Vector3(0, 0, 0), mass: Constants.earthMass } ];
+            // Moon
+            if (this.app3d.moon) {
+                const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
+                const moonPosM = new THREE.Vector3(
+                    moonMesh.position.x * factor2,
+                    moonMesh.position.y * factor2,
+                    moonMesh.position.z * factor2
+                );
+                bodies.push({ position: moonPosM, mass: Constants.moonMass });
+            }
+            // Sun
+            if (this.app3d.sun) {
+                const sunMesh = this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun.sunLight;
+                const sunPosM = new THREE.Vector3(
+                    sunMesh.position.x * factor2,
+                    sunMesh.position.y * factor2,
+                    sunMesh.position.z * factor2
+                );
+                bodies.push({ position: sunPosM, mass: Constants.sunMass });
+            }
+            // Request propagation update from OrbitPath worker
+            path.update(
+                sat.position.clone(),
+                sat.velocity.clone(),
+                sat.id,
+                bodies,
+                period,
+                path._maxOrbitPoints
+            );
         });
     }
 
@@ -117,6 +180,7 @@ export class SatelliteManager {
         this.physicsWorker.onmessage = (event) => {
             const { type, data } = event.data;
             if (type === 'satellitesUpdate') {
+                // update each satellite's position
                 data.forEach(update => {
                     const sat = this._satellites[update.id];
                     if (sat) {
@@ -125,6 +189,7 @@ export class SatelliteManager {
                         sat.updatePosition(position, velocity);
                     }
                 });
+                // (orbit drawing now handled in updateAll)
             } else if (type === 'initialized') {
                 this.workerInitialized = true;
                 if (this._satelliteAddQueue.length > 0) {

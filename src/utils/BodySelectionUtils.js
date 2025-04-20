@@ -71,8 +71,12 @@ export const updateCameraTarget = (value, app3d, dispatchEvent = true) => {
   } else if (formattedValue === 'moon') {
     app3d.cameraControls.updateCameraTarget(app3d.moon);
   } else if (formattedValue.startsWith('satellite-')) {
-    const satelliteId = parseInt(formattedValue.split('-')[1]);
-    const satellite = app3d.satellites[satelliteId];
+    const satelliteId = parseInt(formattedValue.split('-')[1], 10);
+    // Look up satellites via getSatellites() map
+    const sats = typeof app3d.satellites.getSatellites === 'function'
+      ? app3d.satellites.getSatellites()
+      : app3d.satellites;
+    const satellite = sats?.[satelliteId];
     if (satellite) {
       app3d.cameraControls.updateCameraTarget(satellite);
     }
@@ -111,15 +115,13 @@ export const findSatellite = (identifier, satellites) => {
 };
 
 /**
- * Get satellite options for dropdown lists
- * @param {Object} satellites - The satellites object
- * @returns {Array} Array of option objects with value and text properties
+ * Produce dropdown options where value is 'satellite-<id>' and text is satellite name
  */
 export const getSatelliteOptions = (satellites) => {
   return Object.values(satellites || {})
     .filter(satellite => satellite && satellite.id != null && satellite.name)
     .map(satellite => ({
-      value: satellite.name,
+      value: `satellite-${satellite.id}`,
       text: satellite.name
     }));
 };

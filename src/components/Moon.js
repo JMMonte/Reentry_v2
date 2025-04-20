@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 import { Constants } from '../utils/Constants.js';
 import { JulianDay, RotateAroundX, RotateAroundY } from '../utils/AstronomyUtils.js';
 import moonTexture from '../assets/texture/lroc_color_poles_8k.jpg';
@@ -8,9 +7,8 @@ import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { MoonSurface } from './MoonSurface.js';
 
 export class Moon {
-    constructor(scene, world, renderer, timeUtils) {
+    constructor(scene, renderer, timeUtils) {
         this.scene = scene;
-        this.world = world;
         this.renderer = renderer;
         this.timeUtils = timeUtils;
 
@@ -34,19 +32,6 @@ export class Moon {
         this.moonMesh.receiveShadow = true;
         scene.add(this.moonMesh);
         this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.7); // Rotate 180 degrees around the y-axis
-
-        // Create the moon body
-        const moonShape = new CANNON.Sphere(Constants.moonRadius);
-        this.moonBody = new CANNON.Body({
-            mass: Constants.moonMass,
-            shape: moonShape,
-            position: new CANNON.Vec3(
-                Constants.moonInitialPosition.x,
-                Constants.moonInitialPosition.y,
-                Constants.moonInitialPosition.z
-            )
-        });
-        world.addBody(this.moonBody);
 
         // Initialize trace line
         this.initTraceLine();
@@ -248,15 +233,12 @@ export class Moon {
 
     updatePosition(currentTime) {
         const jd = JulianDay(new Date(currentTime));
-
-        // Compute Moon's position using ephemerides
         const { x, y, z } = this.getMoonPosition(jd);
-
-        // Set position in CANNON.js (meters)
-        this.moonBody.position.set(x, y, z);
-        // Convert to Three.js coordinates and set position
-        this.moonMesh.position.copy(this.moonBody.position).multiplyScalar(Constants.metersToKm * Constants.scale);
-
+        this.moonMesh.position.set(
+            x * Constants.metersToKm * Constants.scale,
+            y * Constants.metersToKm * Constants.scale,
+            z * Constants.metersToKm * Constants.scale
+        );
         this.updateTraceLine(currentTime);
     }
 

@@ -46,7 +46,8 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
     tableData,
     sendMessage,
     handleCopy,
-    turnInProgress
+    turnInProgress,
+    isWebSearchActive
   } = useChatSocket(socket);
 
   // Add restart chat handler
@@ -193,6 +194,15 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
                 copiedStates={copiedStates}
               />
             ))}
+            {/* Web-search badge */}
+            {isWebSearchActive && (
+              <div className="flex justify-start mb-2">
+                <div className="bg-gray-200 text-gray-800 rounded-lg px-3 py-1.5 inline-flex items-center gap-1" role="status" aria-live="polite">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Searching the web... 🔎</span>
+                </div>
+              </div>
+            )}
             {showChatLoader && (
               <div className="flex justify-start mb-2">
                 <div className="bg-muted rounded-lg px-3 py-1.5">

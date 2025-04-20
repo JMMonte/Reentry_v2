@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "../button";
 import { DraggableModal } from "../modal/DraggableModal";
 import { ColorPicker } from "./ColorPicker";
@@ -9,7 +9,6 @@ import PropTypes from 'prop-types';
 
 export function SatelliteDebugWindow({ satellite, earth, onBodySelect, onClose }) {
   const [orbitalElements, setOrbitalElements] = useState(null);
-  const lastUpdateTime = useRef(0);
   const updateInterval = 100; // Update every 100ms instead of every frame
 
   // Store reference to setIsOpen in satellite (for toggling from list)
@@ -27,27 +26,15 @@ export function SatelliteDebugWindow({ satellite, earth, onBodySelect, onClose }
   }, [satellite, earth]);
 
   useEffect(() => {
+    if (!satellite || !earth) return;
     const updateOrbitalElements = () => {
-      if (!satellite || !earth) return;
-      const currentTime = performance.now();
-      if (currentTime - lastUpdateTime.current < updateInterval) return;
-      lastUpdateTime.current = currentTime;
       setOrbitalElements(satellite.getOrbitalElements(earth));
     };
-    // Update initially
+    // Initial fetch
     updateOrbitalElements();
-    // Set up animation frame based updates
-    let animationFrameId;
-    const animate = () => {
-      updateOrbitalElements();
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    animate();
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
+    // Poll at fixed interval
+    const intervalId = setInterval(updateOrbitalElements, updateInterval);
+    return () => clearInterval(intervalId);
   }, [satellite, earth]);
 
   const handleFocus = () => {

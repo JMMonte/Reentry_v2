@@ -4,7 +4,7 @@ import { supabase } from '../../../supabaseClient';
 import LogoMenu from './LogoMenu';
 import BodySelector from './BodySelector';
 import TimeControls from './TimeControls';
-import { formatBodySelection, getBodyDisplayName, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
+import { getBodyDisplayName, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
 import { saveAs } from 'file-saver';
 import LZString from 'lz-string';
 import ActionButtons from './ActionButtons';
@@ -108,27 +108,10 @@ export function Navbar({
     };
   }, []);
 
+  // Propagate the dropdown's value (none, earth, moon, satellite-<id>) directly
   const handleBodyChange = (eventOrValue) => {
-    // Handle both direct value calls and event calls
     const value = typeof eventOrValue === 'object' ? eventOrValue.target.value : eventOrValue;
-
-    if (!value || value === 'none') {
-      onBodySelect('none');
-      return;
-    }
-
-    // Find the satellite by name in the satellites array
-    const satellite = findSatellite(value, satellites);
-    if (satellite) {
-      // Format the satellite ID as expected by App3D
-      const formattedValue = formatBodySelection(satellite);
-      onBodySelect(formattedValue);
-      // No direct camera update here
-    } else {
-      // For earth and moon, pass the value directly
-      onBodySelect(value);
-      // No direct camera update here
-    }
+    onBodySelect(value || 'none');
   };
 
   // --- Save/Import/Share Simulation State ---

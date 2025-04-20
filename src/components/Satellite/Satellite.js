@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
-import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { TracePath } from './TracePath.js';
 import { OrbitPath } from './OrbitPath.js';
 import { GroundTrackPath } from './GroundTrackPath.js';
@@ -23,8 +22,6 @@ export class Satellite {
         this.landed = false;
 
         // Performance optimization: Update counters
-        this.orbitUpdateCounter = 0;
-        this.orbitUpdateInterval = this.app3d.getDisplaySetting('orbitUpdateInterval') || 30;
         this.groundTrackUpdateCounter = 0;
         this.traceUpdateCounter = 0;
         this.traceUpdateInterval = this.app3d.getDisplaySetting('traceUpdateInterval') || 5;
@@ -42,6 +39,9 @@ export class Satellite {
             this.app3d.createDebugWindow(this);
         }
 
+        // Sequence counter for orbit worker messages
+        this._seq = 0;
+
         this.initializeVisuals();
 
         // Subscribe to display options changes
@@ -49,14 +49,14 @@ export class Satellite {
             const { key, value } = event.detail;
             switch (key) {
                 case 'showOrbits':
-                    if (this.orbitPath) this.orbitPath.orbitLine.visible = value;
-                    if (this.apsisVisualizer) this.apsisVisualizer.visible = value;
+                    if (this.orbitPath) this.orbitPath.setVisible(value);
+                    if (this.apsisVisualizer) this.apsisVisualizer.setVisible(value);
                     break;
                 case 'showTraces':
-                    if (this.tracePath) this.tracePath.traceLine.visible = value;
+                    if (this.tracePath) this.tracePath.setVisible(value);
                     break;
                 case 'showGroundTraces':
-                    if (this.groundTrackPath) this.groundTrackPath.groundTrackLine.visible = value;
+                    if (this.groundTrackPath) this.groundTrackPath.setVisible(value);
                     break;
                 case 'showSatVectors':
                     if (this.velocityVector) this.velocityVector.visible = value;
@@ -89,11 +89,6 @@ export class Satellite {
         // Initialize apsis visualizer
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
         this.apsisVisualizer.visible = false;
-
-        // Update initial position
-        if (this.position && this.velocity) {
-            this.updatePosition(this.position, this.velocity);
-        }
     }
 
     get groundTrackUpdateInterval() {
@@ -101,19 +96,30 @@ export class Satellite {
     }
 
     updatePosition(position, velocity) {
+        // Lazy-init scratch vectors to avoid allocations
+        if (!this._scratchScaled) {
+            this._scratchScaled = new THREE.Vector3();
+            this._scratchScaled2 = new THREE.Vector3();
+            this._scratchVelScaled = new THREE.Vector3();
+            this._scratchRelative = new THREE.Vector3();
+            this._scratchLocal = new THREE.Vector3();
+            this._lastOrbitPos = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
+            this._lastOrbitVel = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
+        }
         // Store current state (in meters)
         this.position = position.clone();
         this.velocity = velocity.clone();
 
-        // Convert from meters to scaled kilometers for visualization
-        const scaledPosition = new THREE.Vector3(
-            position.x * Constants.metersToKm * Constants.scale,
-            position.y * Constants.metersToKm * Constants.scale,
-            position.z * Constants.metersToKm * Constants.scale
+        // Convert from meters to scaled kilometers for visualization (reuse scratch vector)
+        const k = Constants.metersToKm * Constants.scale;
+        this._scratchScaled.set(
+            position.x * k,
+            position.y * k,
+            position.z * k
         );
 
         // Update mesh and vectors via visualizer
-        this.visualizer.updatePosition(scaledPosition);
+        this.visualizer.updatePosition(this._scratchScaled);
         this.visualizer.updateOrientation(this.orientation);
         this.visualizer.updateVectors(this.velocity, this.orientation);
 
@@ -121,55 +127,9 @@ export class Satellite {
         this.traceUpdateCounter++;
         if (this.traceUpdateCounter >= this.traceUpdateInterval) {
             this.traceUpdateCounter = 0;
-            this.tracePath?.update(
-                new THREE.Vector3(
-                    position.x * Constants.metersToKm * Constants.scale,
-                    position.y * Constants.metersToKm * Constants.scale,
-                    position.z * Constants.metersToKm * Constants.scale
-                ),
-                this.id
-            );
-        }
-        // Update orbit path via OrbitPath
-        this.orbitUpdateCounter++;
-        if (this.orbitUpdateCounter >= this.orbitUpdateInterval) {
-            this.orbitUpdateCounter = 0;
-            this.orbitPath?.update(
-                new THREE.Vector3(
-                    position.x / (Constants.metersToKm * Constants.scale),
-                    position.y / (Constants.metersToKm * Constants.scale),
-                    position.z / (Constants.metersToKm * Constants.scale)
-                ),
-                new THREE.Vector3(
-                    velocity.x / (Constants.metersToKm * Constants.scale),
-                    velocity.y / (Constants.metersToKm * Constants.scale),
-                    velocity.z / (Constants.metersToKm * Constants.scale)
-                ),
-                this.id,
-                {
-                    G: Constants.G,
-                    earthMass: Constants.earthMass,
-                    scale: Constants.scale,
-                    metersToKm: Constants.metersToKm
-                }
-            );
-        }
-        // Update ground track via GroundTrackPath (Earth-fixed frame, drifting with rotation)
-        this.groundTrackUpdateCounter++;
-        if (this.groundTrackUpdateCounter >= this.groundTrackUpdateInterval) {
-            this.groundTrackUpdateCounter = 0;
-            if (this.app3d.earth && this.app3d.earth.rotationGroup && this.app3d.earth.earthMesh) {
-                // Transform satellite position to local Earth frame
-                const earthCenter = this.app3d.earth.earthMesh.position;
-                const relativePosition = position.clone().multiplyScalar(Constants.metersToKm).sub(earthCenter);
-                const localPosition = relativePosition.clone().applyMatrix4(this.app3d.earth.rotationGroup.matrixWorld.clone().invert());
-                const groundPoint = localPosition.clone().normalize().multiplyScalar(Constants.earthRadius * Constants.metersToKm * Constants.scale);
-                this.groundTrackPath?.update(groundPoint);
+            if (this.tracePath && this.tracePath.traceLine.visible) {
+                this.tracePath.update(this._scratchScaled, this.id);
             }
-        }
-        // Update orbit line if needed
-        if (this.orbitPath && this.orbitPath.orbitLine.visible) {
-            this.updateOrbitLine(position, velocity);
         }
 
         // Update apsis visualizer if needed
@@ -177,38 +137,9 @@ export class Satellite {
             this.apsisVisualizer.update(position, velocity);
         }
 
-        // Notify debug window about position update, but don't force it open
+        // Notify debug window about position update
         if (this.debugWindow?.onPositionUpdate) {
             this.debugWindow.onPositionUpdate();
-        }
-    }
-
-    updateOrbitLine(position, velocity) {
-        const mu = Constants.G * Constants.earthMass;
-        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
-
-        if (!orbitalElements) {
-            console.warn('No orbital elements calculated');
-            return;
-        }
-
-        // Compute orbit points
-        const orbitPoints = PhysicsUtils.computeOrbit(orbitalElements, mu, 180);
-
-        // Update orbit line geometry
-        if (orbitPoints && orbitPoints.length > 0) {
-            this.orbitPath.orbitLine.geometry.setFromPoints(orbitPoints);
-            this.orbitPath.orbitLine.geometry.computeBoundingSphere();
-        }
-
-        // Update apsis visualizer
-        if (this.apsisVisualizer && this.apsisVisualizer.visible) {
-            this.apsisVisualizer.update(position, velocity);
-        }
-
-        // Force visibility update
-        if (this.orbitPath) {
-            this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
         }
     }
 
@@ -329,19 +260,27 @@ export class Satellite {
     }
 
     dispose() {
+        // Remove and dispose visualizer
         if (this.visualizer) {
             this.visualizer.removeFromScene(this.scene);
             this.visualizer.dispose();
         }
+        // Remove and dispose trace path
         if (this.tracePath) {
+            this.scene.remove(this.tracePath.traceLine);
             this.tracePath.dispose();
         }
+        // Remove and dispose orbit path
         if (this.orbitPath) {
+            this.scene.remove(this.orbitPath.orbitLine);
             this.orbitPath.dispose();
         }
+        // Remove and dispose ground track path
         if (this.groundTrackPath) {
+            this.app3d.earth.rotationGroup.remove(this.groundTrackPath.groundTrackLine);
             this.groundTrackPath.dispose();
         }
+        // Dispose apsis visualizer
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
         }
@@ -383,5 +322,29 @@ export class Satellite {
         } else {
             this.dispose();
         }
+    }
+
+    /**
+     * Update ground track after earth rotation (called from App3D.updateScene)
+     */
+    updateGroundTrack() {
+        if (!this.groundTrackPath || !this.groundTrackPath.groundTrackLine.visible) return;
+        if (this.app3d.earth && this.app3d.earth.rotationGroup && this.app3d.earth.earthMesh) {
+            // Compute current ground point
+            const rel = this.position.clone().multiplyScalar(Constants.metersToKm);
+            const earthCenter = this.app3d.earth.earthMesh.position;
+            const local = rel.sub(earthCenter)
+                .applyMatrix4(this.app3d.earth.rotationGroup.matrixWorld.clone().invert())
+                .normalize()
+                .multiplyScalar(Constants.earthRadius * Constants.metersToKm * Constants.scale);
+            this.groundTrackPath.update(local);
+        }
+    }
+
+    /**
+     * Provide mesh for camera targeting (used by CameraControls.getBodyPosition)
+     */
+    getMesh() {
+        return this.visualizer?.mesh || null;
     }
 }

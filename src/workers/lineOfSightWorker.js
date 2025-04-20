@@ -1,11 +1,12 @@
 // Worker for calculating line of sight between satellites
-import * as THREE from 'three';
+// Removed heavy THREE import, keeping only Constants for math
 import { Constants } from '../utils/Constants.js';
 
 let satellites = [];
 let moonPosition = { x: 0, y: 0, z: 0 };
 const EARTH_RADIUS = Constants.earthRadius * Constants.metersToKm; // in km
 const ATMOSPHERE_HEIGHT = 100; // 100 km
+const MOON_RADIUS = Constants.moonRadius * Constants.metersToKm * Constants.scale;
 
 self.onmessage = function (e) {
     if (e.data.type === 'UPDATE_SATELLITES') {
@@ -20,78 +21,43 @@ self.onmessage = function (e) {
     }
 };
 
+// Compute line of sight using plain JS vector math
 function calculateLineOfSight() {
     const connections = [];
-    const MOON_RADIUS = Constants.moonRadius * Constants.metersToKm * Constants.scale;
-    // For each pair of satellites
     for (let i = 0; i < satellites.length; i++) {
         for (let j = i + 1; j < satellites.length; j++) {
-            const sat1 = satellites[i];
-            const sat2 = satellites[j];
-
-            // Create vectors for the satellites (positions are already in km)
-            const pos1 = new THREE.Vector3(
-                sat1.position.x,
-                sat1.position.y,
-                sat1.position.z
-            );
-            const pos2 = new THREE.Vector3(
-                sat2.position.x,
-                sat2.position.y,
-                sat2.position.z
-            );
-
-            // Calculate direction vector between satellites
-            const direction = new THREE.Vector3().subVectors(pos2, pos1);
-            const distance = direction.length();
-
-            // Check intersection with Earth and atmosphere
-            const earthCenter = new THREE.Vector3(0, 0, 0);
-            const intersectsEarth = checkSphereIntersection(pos1, direction.normalize(), earthCenter, EARTH_RADIUS, distance);
-            const intersectsAtmosphere = checkSphereIntersection(pos1, direction.normalize(), earthCenter, EARTH_RADIUS + ATMOSPHERE_HEIGHT, distance);
-
-            // Check intersection with Moon
-            const moonCenter = new THREE.Vector3(moonPosition.x, moonPosition.y, moonPosition.z);
-            const intersectsMoon = checkSphereIntersection(pos1, direction, moonCenter, MOON_RADIUS, distance);
-
-            // Add connection if it doesn't intersect Earth or Moon
-            if (!intersectsEarth && !intersectsMoon) {
+            const a = satellites[i], b = satellites[j];
+            const ox = a.position.x, oy = a.position.y, oz = a.position.z;
+            const dx = b.position.x - ox, dy = b.position.y - oy, dz = b.position.z - oz;
+            const dist = Math.hypot(dx, dy, dz);
+            if (dist <= 0) continue;
+            const invD = 1 / dist;
+            const rdx = dx * invD, rdy = dy * invD, rdz = dz * invD;
+            const hitEarth = sphereIntersect(ox, oy, oz, rdx, rdy, rdz, 0, 0, 0, EARTH_RADIUS, dist);
+            const hitAtmos = sphereIntersect(ox, oy, oz, rdx, rdy, rdz, 0, 0, 0, EARTH_RADIUS + ATMOSPHERE_HEIGHT, dist);
+            const hitMoon = sphereIntersect(ox, oy, oz, rdx, rdy, rdz, moonPosition.x, moonPosition.y, moonPosition.z, MOON_RADIUS, dist);
+            if (!hitEarth && !hitMoon) {
                 connections.push({
-                    from: sat1.id,
-                    to: sat2.id,
-                    points: [
-                        [pos1.x, pos1.y, pos1.z],
-                        [pos2.x, pos2.y, pos2.z]
-                    ],
-                    color: intersectsAtmosphere ? 'red' : 'green'
+                    from: a.id,
+                    to: b.id,
+                    points: [[ox, oy, oz], [b.position.x, b.position.y, b.position.z]],
+                    color: hitAtmos ? 'red' : 'green'
                 });
             }
         }
     }
-
-    // Send the connections back to the main thread
-    self.postMessage({
-        type: 'CONNECTIONS_UPDATED',
-        connections: connections
-    });
+    self.postMessage({ type: 'CONNECTIONS_UPDATED', connections });
 }
 
-function checkSphereIntersection(rayOrigin, rayDirection, sphereCenter, sphereRadius, maxDistance) {
-    // Calculate coefficients for quadratic equation
-    const oc = rayOrigin.clone().sub(sphereCenter);
-    const a = rayDirection.dot(rayDirection);
-    const b = 2.0 * oc.dot(rayDirection);
-    const c = oc.dot(oc) - sphereRadius * sphereRadius;
-    const discriminant = b * b - 4 * a * c;
-
-    if (discriminant < 0) {
-        return false;
-    }
-
-    // Calculate intersection points
-    const t1 = (-b - Math.sqrt(discriminant)) / (2.0 * a);
-    const t2 = (-b + Math.sqrt(discriminant)) / (2.0 * a);
-
-    // Check if intersection points are within the line segment
+// Ray-sphere intersection: returns true if the ray intersects the sphere within maxDistance
+function sphereIntersect(ox, oy, oz, dx, dy, dz, cx, cy, cz, radius, maxDistance) {
+    const ocx = ox - cx, ocy = oy - cy, ocz = oz - cz;
+    const b = 2 * (ocx * dx + ocy * dy + ocz * dz);
+    const c = ocx * ocx + ocy * ocy + ocz * ocz - radius * radius;
+    const disc = b * b - 4 * c;
+    if (disc < 0) return false;
+    const sd = Math.sqrt(disc);
+    const t1 = (-b - sd) * 0.5;
+    const t2 = (-b + sd) * 0.5;
     return (t1 > 0 && t1 < maxDistance) || (t2 > 0 && t2 < maxDistance);
 }
