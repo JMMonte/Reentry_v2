@@ -1,0 +1,3 @@
+[submodule "external/precomputed_atmosphere"]
+	path = external/precomputed_atmosphere
+	url = https://github.com/ebruneton/precomputed_atmospheric_scattering.git
