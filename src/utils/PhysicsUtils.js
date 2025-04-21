@@ -222,109 +222,64 @@ export class PhysicsUtils {
         raan,
         trueAnomaly
     ) {
-        // Constants
+        // Convert all angles from degrees to radians
+        const a = semiMajorAxis;
+        const e = eccentricity;
+        const i = THREE.MathUtils.degToRad(inclination);
+        const omega = THREE.MathUtils.degToRad(argumentOfPeriapsis);
+        const Omega = THREE.MathUtils.degToRad(raan);
+        const f = THREE.MathUtils.degToRad(trueAnomaly);
+
+        // Standard gravitational parameter
         const mu = Constants.earthGravitationalParameter;
 
-        // Convert angles from degrees to radians if necessary
-        const iRad = THREE.MathUtils.degToRad(inclination);
-        const raanRad = THREE.MathUtils.degToRad(raan);
-        const argPeriapsisRad = THREE.MathUtils.degToRad(argumentOfPeriapsis);
-        const trueAnomalyRad = THREE.MathUtils.degToRad(trueAnomaly);
+        // Distance from focus to satellite
+        const p = a * (1 - e * e);
+        const r = p / (1 + e * Math.cos(f));
 
-        // Earth's obliquity in radians (approximately 23.44 degrees)
-        const earthObliquity = THREE.MathUtils.degToRad(23.44);
-
-        // Perifocal coordinates
-        const p = semiMajorAxis * (1 - eccentricity * eccentricity);
-        if (p <= 0) {
-            console.error('Invalid value for p:', p);
-            return {
-                positionECI: new THREE.Vector3(),
-                velocityECI: new THREE.Vector3(),
-            };
-        }
-
-        const r = p / (1 + eccentricity * Math.cos(trueAnomalyRad));
-        const xP = r * Math.cos(trueAnomalyRad);
-        const yP = r * Math.sin(trueAnomalyRad);
-        const zP = 0;
-
-        const positionPerifocal = new THREE.Vector3(xP, yP, zP);
+        // Position in perifocal coordinates
+        const x_p = r * Math.cos(f);
+        const y_p = r * Math.sin(f);
+        const z_p = 0;
 
         // Velocity in perifocal coordinates
-        const h = Math.sqrt(
-            mu * semiMajorAxis * (1 - eccentricity * eccentricity)
-        );
-        if (isNaN(h) || h <= 0) {
-            console.error('Invalid value for h:', h);
-            return {
-                positionECI: new THREE.Vector3(),
-                velocityECI: new THREE.Vector3(),
-            };
-        }
+        const h = Math.sqrt(mu * p);
+        const vx_p = -mu / h * Math.sin(f);
+        const vy_p = mu / h * (e + Math.cos(f));
+        const vz_p = 0;
 
-        const sqrtMuOverP = Math.sqrt(mu / p);
-        if (isNaN(sqrtMuOverP) || sqrtMuOverP <= 0) {
-            console.error('Invalid value for sqrtMuOverP:', sqrtMuOverP);
-            return {
-                positionECI: new THREE.Vector3(),
-                velocityECI: new THREE.Vector3(),
-            };
-        }
+        // Build rotation matrix: perifocal -> ECI
+        // R = Rz(-Omega) * Rx(-i) * Rz(-omega)
+        const cosO = Math.cos(Omega), sinO = Math.sin(Omega);
+        const cosi = Math.cos(i), sini = Math.sin(i);
+        const cosw = Math.cos(omega), sinw = Math.sin(omega);
 
-        const vxP = -sqrtMuOverP * Math.sin(trueAnomalyRad);
-        const vyP = sqrtMuOverP * (eccentricity + Math.cos(trueAnomalyRad));
-        const vzP = 0;
+        // Rotation matrix elements
+        const R11 = cosO * cosw - sinO * sinw * cosi;
+        const R12 = -cosO * sinw - sinO * cosw * cosi;
+        const R13 = sinO * sini;
+        const R21 = sinO * cosw + cosO * sinw * cosi;
+        const R22 = -sinO * sinw + cosO * cosw * cosi;
+        const R23 = -cosO * sini;
+        const R31 = sinw * sini;
+        const R32 = cosw * sini;
+        const R33 = cosi;
 
-        const velocityPerifocal = new THREE.Vector3(vxP, vyP, vzP);
-
-        // Rotation matrices
-        const R1 = new THREE.Matrix4().makeRotationZ(-raanRad);
-        const R2 = new THREE.Matrix4().makeRotationX(-iRad);
-        const R3 = new THREE.Matrix4().makeRotationZ(-argPeriapsisRad);
-
-        // Earth's obliquity rotation matrix
-        const R_obliquity = new THREE.Matrix4().makeRotationX(earthObliquity);
-
-        // Flip Y and Z coordinates to handle the Three.js coordinate system
-        const flipYzMatrix = new THREE.Matrix4().set(
-            1, 0, 0, 0,
-            0, 0, 1, 0,
-            0, -1, 0, 0,
-            0, 0, 0, 1
+        // Position in ECI
+        const positionECI = new THREE.Vector3(
+            R11 * x_p + R12 * y_p + R13 * z_p,
+            R21 * x_p + R22 * y_p + R23 * z_p,
+            R31 * x_p + R32 * y_p + R33 * z_p
         );
 
-        // Total rotation matrix including Earth's obliquity
-        const rotationMatrix = new THREE.Matrix4()
-            .multiplyMatrices(flipYzMatrix, R_obliquity)
-            .multiply(R3)
-            .multiply(R2)
-            .multiply(R1);
+        // Velocity in ECI
+        const velocityECI = new THREE.Vector3(
+            R11 * vx_p + R12 * vy_p + R13 * vz_p,
+            R21 * vx_p + R22 * vy_p + R23 * vz_p,
+            R31 * vx_p + R32 * vy_p + R33 * vz_p
+        );
 
-        // Convert to ECI coordinates with Earth's tilt
-        const positionECI = positionPerifocal.applyMatrix4(rotationMatrix);
-        const velocityECI = velocityPerifocal.applyMatrix4(rotationMatrix);
-
-        if (
-            isNaN(positionECI.x) ||
-            isNaN(positionECI.y) ||
-            isNaN(positionECI.z) ||
-            isNaN(velocityECI.x) ||
-            isNaN(velocityECI.y) ||
-            isNaN(velocityECI.z)
-        ) {
-            console.error('Invalid ECI coordinates:', positionECI, velocityECI);
-            return {
-                positionECI: new THREE.Vector3(),
-                velocityECI: new THREE.Vector3(),
-            };
-        }
-
-        // Return the position and velocity in ECI frame
-        return {
-            positionECI: new THREE.Vector3(positionECI.x, positionECI.y, positionECI.z),
-            velocityECI: new THREE.Vector3(velocityECI.x, velocityECI.y, velocityECI.z),
-        };
+        return { positionECI, velocityECI };
     }
 
     static orbitalVelocityAtAnomaly(orbitalElements, trueAnomaly, mu) {

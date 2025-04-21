@@ -9,3 +9,8 @@ venv/
 **/.DS_Store
 .env*.local
 pnpm-lock.yaml
+.next
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local

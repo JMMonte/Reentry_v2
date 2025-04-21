@@ -179,6 +179,35 @@ export function handleToolCallSent({ setMessages, socket, outstandingToolCalls, 
                             })
                         };
                     }
+                    if (name === 'createSatelliteFromOrbitalElements' && parsedArgs) {
+                        const getVal = (keys) => {
+                            for (const key of keys) {
+                                if (parsedArgs[key] != null) return parsedArgs[key];
+                            }
+                            return undefined;
+                        };
+                        const parseNum = (v) => typeof v === 'string' ? parseFloat(v) : v;
+                        const semiMajorAxisRaw = getVal(['semiMajorAxis', 'SMA', 'sma', 'a']);
+                        const eccentricityRaw = getVal(['eccentricity', 'Ecc', 'ecc', 'e']);
+                        const inclinationRaw = getVal(['inclination', 'Inc', 'i']);
+                        const raanRaw = getVal(['raan', 'LAN', 'lan', 'longitudeOfAscendingNode']);
+                        const argumentOfPeriapsisRaw = getVal(['argumentOfPeriapsis', 'AoP', 'argPer', 'w']);
+                        const trueAnomalyRaw = getVal(['trueAnomaly', 'TA', 'f', 'theta']);
+                        const massRaw = parsedArgs.mass;
+                        const sizeRaw = parsedArgs.size;
+                        const nameRaw = parsedArgs.name;
+                        parsedArgs = {
+                            semiMajorAxis: parseNum(semiMajorAxisRaw),
+                            eccentricity: parseNum(eccentricityRaw),
+                            inclination: parseNum(inclinationRaw),
+                            raan: parseNum(raanRaw),
+                            argumentOfPeriapsis: parseNum(argumentOfPeriapsisRaw),
+                            trueAnomaly: parseNum(trueAnomalyRaw),
+                            ...(massRaw != null ? { mass: parseNum(massRaw) } : {}),
+                            ...(sizeRaw != null ? { size: parseNum(sizeRaw) } : {}),
+                            ...(nameRaw != null ? { name: nameRaw } : {}),
+                        };
+                    }
                     const output = await windowApi[name](parsedArgs);
                     socket.emit('tool_response', [{ call_id: toolCallId, name, output }]);
                     outstandingToolCalls.current.add(toolCallId);

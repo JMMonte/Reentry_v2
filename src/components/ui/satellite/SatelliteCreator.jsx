@@ -27,11 +27,19 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
     });
 
     const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: parseFloat(value) || value,
-        }));
+        const { name: field, value, type } = e.target;
+        setFormData(prev => {
+            if (type === 'number') {
+                const parsed = parseFloat(value);
+                return {
+                    ...prev,
+                    // If parsed is NaN, keep previous; otherwise use parsed
+                    [field]: isNaN(parsed) ? prev[field] : parsed
+                };
+            }
+            // For text inputs (e.g. name), keep the raw value
+            return { ...prev, [field]: value };
+        });
     };
 
     const handleSliderChange = (name, value) => {
@@ -173,7 +181,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
             <form onSubmit={handleSubmit} className="space-y-0.5 mb-0">
                 <div className="flex flex-col gap-y-2">
                     {renderField("name", "Name", "text")}
-                    {renderField("mass", "Mass", "number", 1, 1000, 1, "kg")}
+                    {renderField("mass", "Mass", "number", 1, 1000000, 1, "kg")}
                     {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
                     {mode === 'latlon' && (
                         <>

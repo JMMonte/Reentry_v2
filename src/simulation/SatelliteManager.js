@@ -216,24 +216,30 @@ export class SatelliteManager {
             this.physicsWorker = null;
             this.workerInitialized = false;
         }
+        // Clear any pending satellite additions
+        this._satelliteAddQueue = [];
     }
 
     _addSatelliteToWorker(satellite) {
         if (!this.physicsWorker || !this.workerInitialized) return;
+        // Debug: log what's sent to physics worker
+        const posM = {
+            x: satellite.position.x / (Constants.metersToKm * Constants.scale),
+            y: satellite.position.y / (Constants.metersToKm * Constants.scale),
+            z: satellite.position.z / (Constants.metersToKm * Constants.scale)
+        };
+        const velM = {
+            x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
+            y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
+            z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
+        };
+
         this.physicsWorker.postMessage({
             type: 'addSatellite',
             data: {
                 id: satellite.id,
-                position: {
-                    x: satellite.position.x / (Constants.metersToKm * Constants.scale),
-                    y: satellite.position.y / (Constants.metersToKm * Constants.scale),
-                    z: satellite.position.z / (Constants.metersToKm * Constants.scale)
-                },
-                velocity: {
-                    x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
-                    y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
-                    z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
-                },
+                position: posM,
+                velocity: velM,
                 mass: satellite.mass
             }
         });
@@ -245,6 +251,8 @@ export class SatelliteManager {
     dispose() {
         Object.values(this._satellites).forEach(sat => sat.dispose());
         this._satellites = {};
+        // Clear any pending satellite additions
+        this._satelliteAddQueue = [];
         this._cleanupPhysicsWorker();
     }
 

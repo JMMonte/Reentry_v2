@@ -2,13 +2,12 @@ import * as THREE from 'three';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { Constants } from '../utils/Constants.js';
 
+// Add a session-wide unique ID counter
+let nextSatelliteId = 0;
+
 export async function createSatellite(app, params) {
-    // Generate new unique ID using SatelliteManager's internal state
-    let id = 0;
-    const satellitesObj = app.satellites.getSatellites ? app.satellites.getSatellites() : {};
-    while (satellitesObj[id]) {
-        id++;
-    }
+    // Assign a unique session-wide ID (never reused)
+    const id = nextSatelliteId++;
 
     const brightColors = [
         0xFF0000, 0xFF4D00, 0xFF9900, 0xFFCC00, 0xFFFF00,  // Bright primary
@@ -124,6 +123,7 @@ export function createSatelliteFromLatLon(app, params) {
 }
 
 export function createSatelliteFromLatLonCircular(app, params) {
+    console.log('[DEBUG LatLonCircular] createSatelliteFromLatLonCircular params:', params);
     const { earth } = app;
     const {
         latitude,
@@ -155,6 +155,7 @@ export function createSatelliteFromLatLonCircular(app, params) {
         earthQuaternion,
         tiltQuaternion
     );
+    console.log('[DEBUG LatLonCircular] positionECEF:', positionECEF, 'velocityECEF:', velocityECEF);
 
     const scaledPosition = new THREE.Vector3(
         positionECEF.x * Constants.metersToKm * Constants.scale,
@@ -178,6 +179,7 @@ export function createSatelliteFromLatLonCircular(app, params) {
 }
 
 export function createSatelliteFromOrbitalElements(app, params) {
+
     const {
         semiMajorAxis,
         eccentricity,
