@@ -222,7 +222,7 @@ export class SatelliteManager {
 
     _addSatelliteToWorker(satellite) {
         if (!this.physicsWorker || !this.workerInitialized) return;
-        // Debug: log what's sent to physics worker
+        // Convert back to meters for physics worker
         const posM = {
             x: satellite.position.x / (Constants.metersToKm * Constants.scale),
             y: satellite.position.y / (Constants.metersToKm * Constants.scale),
@@ -233,7 +233,6 @@ export class SatelliteManager {
             y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
             z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
         };
-
         this.physicsWorker.postMessage({
             type: 'addSatellite',
             data: {

@@ -26,7 +26,7 @@ export class Sun {
         this.sunLight = new THREE.PointLight(0xffffff, 40000000.0, 0);
         this.sunLight.decay = 1;
         this.sunLight.position.copy(this.sun.position);
-        this.sunLight.castShadow = true;
+        this.sunLight.castShadow = false;
         this.scene.add(this.sunLight);
 
         // Add lens flare

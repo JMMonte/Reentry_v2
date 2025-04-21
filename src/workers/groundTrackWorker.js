@@ -28,6 +28,5 @@ self.onmessage = function (e) {
         } else {
             groundTraceMap = {};
         }
-        console.log('[groundTrackWorker] Reset ground trace map');
     }
 };

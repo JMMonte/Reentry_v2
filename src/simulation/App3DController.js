@@ -8,6 +8,14 @@ import { setupExternalApi } from './externalApi.js';
 export class App3DController {
     constructor(initialState) {
         this.app3d = new App3D();
+        // Ensure we clean up workers and resources on page refresh/unload
+        window.addEventListener('beforeunload', () => {
+            try {
+                this.dispose();
+            } catch (err) {
+                console.error('Error disposing App3DController on unload', err);
+            }
+        });
         setupExternalApi(this.app3d);
         this.ready = false;
         this._readyCallbacks = [];

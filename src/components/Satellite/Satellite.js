@@ -96,6 +96,8 @@ export class Satellite {
     }
 
     updatePosition(position, velocity) {
+        // Mark that we've received real physics state
+        this.initialized = true;
         // Lazy-init scratch vectors to avoid allocations
         if (!this._scratchScaled) {
             this._scratchScaled = new THREE.Vector3();
@@ -190,20 +192,22 @@ export class Satellite {
     }
 
     getOrbitalElements() {
+        // Only compute after receiving first physics update
+        if (!this.initialized) return null;
         if (!this.position || !this.velocity) return null;
-
+        // Gravitational parameter
         const mu = Constants.G * Constants.earthMass;
+        // Debug: log intermediate orbital variables
+        const r_mag = this.position.length();
+        const v2 = this.velocity.lengthSq();
+        const energy = (v2 / 2) - (mu / r_mag);
+        // Prepare vectors
         const r = this.position.clone();
         const v = this.velocity.clone();
 
         // Calculate specific angular momentum
         const h = new THREE.Vector3().crossVectors(r, v);
         const h_mag = h.length();
-
-        // Calculate specific orbital energy
-        const v2 = v.lengthSq();
-        const r_mag = r.length();
-        const energy = (v2 / 2) - (mu / r_mag);
 
         // Calculate semi-major axis (in meters)
         const sma = -mu / (2 * energy);
@@ -285,7 +289,6 @@ export class Satellite {
             this.apsisVisualizer.dispose();
         }
 
-        console.log('[Satellite.dispose] Disposing satellite', this.id);
         // Only dispatch satelliteDeleted event after cleanup
         document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
     }

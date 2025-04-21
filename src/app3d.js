@@ -121,6 +121,10 @@ class App3D extends EventTarget {
             this._setupControls();
             this._setupCameraControls();
             this._setupPhysicsWorld();
+            // Pre-initialize physics worker so it's ready before any satellite creation
+            if (this.satellites && typeof this.satellites._initPhysicsWorker === 'function') {
+                this.satellites._initPhysicsWorker();
+            }
             this._setupSettings();
             this._setupEventAndSocketListeners();
             this._setupTimeAndBodyControls();
@@ -236,6 +240,12 @@ class App3D extends EventTarget {
             this.moon.updateRotation(currentTime);
         }
         if (this.vectors) this.vectors.updateVectors();
+        // Update satellite ground tracks
+        if (this.satellites) {
+            Object.values(this.satellites.getSatellites()).forEach(sat => {
+                if (sat.updateGroundTrack) sat.updateGroundTrack();
+            });
+        }
         // Update satellite connections every frame if enabled
         if (this._connectionsEnabled) {
             this._updateConnectionsWorkerSatellites();
@@ -437,6 +447,10 @@ class App3D extends EventTarget {
         if (this._lineOfSightWorker) {
             this._lineOfSightWorker.terminate();
             this._lineOfSightWorker = null;
+        }
+        // Dispose all satellites and their workers (including physics and shared orbit workers)
+        if (this._satellites) {
+            this._satellites.dispose();
         }
         console.log('Disposing App3D...');
         this._isInitialized = false;

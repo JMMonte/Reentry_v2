@@ -5,6 +5,13 @@ import { Constants } from '../utils/Constants.js';
 // Add a session-wide unique ID counter
 let nextSatelliteId = 0;
 
+/**
+ * Reset the session-wide satellite ID counter (useful for HMR or page reload cleanup).
+ */
+export function resetSatelliteIdCounter() {
+    nextSatelliteId = 0;
+}
+
 export async function createSatellite(app, params) {
     // Assign a unique session-wide ID (never reused)
     const id = nextSatelliteId++;
@@ -41,7 +48,7 @@ export async function createSatellite(app, params) {
     if (newSatellite.orbitLine) newSatellite.orbitLine.visible = showOrbits;
     if (newSatellite.apsisVisualizer) newSatellite.apsisVisualizer.visible = showOrbits;
     if (newSatellite.traceLine) newSatellite.traceLine.visible = showTraces;
-    if (newSatellite.groundTrack) newSatellite.groundTrack.visible = showGroundTraces;
+    if (newSatellite.groundTrackPath) newSatellite.groundTrackPath.setVisible(showGroundTraces);
     if (newSatellite.velocityVector) newSatellite.velocityVector.visible = showSatVectors;
     if (newSatellite.orientationVector) newSatellite.orientationVector.visible = showSatVectors;
 
@@ -123,7 +130,6 @@ export function createSatelliteFromLatLon(app, params) {
 }
 
 export function createSatelliteFromLatLonCircular(app, params) {
-    console.log('[DEBUG LatLonCircular] createSatelliteFromLatLonCircular params:', params);
     const { earth } = app;
     const {
         latitude,
@@ -135,6 +141,7 @@ export function createSatelliteFromLatLonCircular(app, params) {
         size,
         name
     } = params;
+
 
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
     const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
@@ -155,7 +162,6 @@ export function createSatelliteFromLatLonCircular(app, params) {
         earthQuaternion,
         tiltQuaternion
     );
-    console.log('[DEBUG LatLonCircular] positionECEF:', positionECEF, 'velocityECEF:', velocityECEF);
 
     const scaledPosition = new THREE.Vector3(
         positionECEF.x * Constants.metersToKm * Constants.scale,
@@ -179,7 +185,6 @@ export function createSatelliteFromLatLonCircular(app, params) {
 }
 
 export function createSatelliteFromOrbitalElements(app, params) {
-
     const {
         semiMajorAxis,
         eccentricity,
@@ -201,6 +206,7 @@ export function createSatelliteFromOrbitalElements(app, params) {
         raan,
         trueAnomaly
     );
+
 
     const scaledPosition = new THREE.Vector3(
         positionECI.x * Constants.metersToKm * Constants.scale,

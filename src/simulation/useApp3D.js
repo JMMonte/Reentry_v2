@@ -10,7 +10,12 @@ export function useApp3D(initialState) {
         setController(ctrl);
         ctrl.onReady(() => setReady(true));
         ctrl.initialize();
-        return () => ctrl.dispose();
+        // Clean up on unmount or HMR
+        const cleanup = () => ctrl.dispose();
+        if (import.meta.hot) {
+            import.meta.hot.dispose(cleanup);
+        }
+        return cleanup;
     }, [initialState]);
 
     return { controller, ready };

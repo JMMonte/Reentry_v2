@@ -5,10 +5,10 @@ import { Constants } from '../utils/Constants.js';
 
 export function setupCamera() {
     const camera = new THREE.PerspectiveCamera(
-        42,
-        window.innerWidth / window.innerHeight,
-        10,
-        Constants.kmToMeters * 4e6
+        42, // Field of view
+        window.innerWidth / window.innerHeight, // Aspect ratio
+        10, // Near clipping plane
+        Constants.kmToMeters * 4e10 // Far clipping plane
     );
     camera.position.set(1000, 7000, 20000).multiplyScalar(Constants.scale);
     camera.lookAt(new THREE.Vector3(0, 0, 0));
@@ -73,7 +73,7 @@ export function setupRenderer(canvas) {
 export function setupControls(camera, renderer) {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.minDistance = 100 * Constants.metersToKm * Constants.scale * 2;
-    controls.maxDistance = 50000000 * Constants.scale;
+    controls.maxDistance = 500000000 * Constants.scale;
     return controls;
 }
 

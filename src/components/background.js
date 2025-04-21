@@ -89,29 +89,11 @@ export class BackgroundStars {
 
         this.stars = new THREE.Points(this.starGeometry, starMaterial);
         this.stars.renderOrder = -1; // Render stars first
+        this.stars.frustumCulled = false; // Always render stars regardless of frustum culling
         this.scene.add(this.stars);
-
-        this.updateStarPositions();
-    }
-
-    updateStarPositions() {
-        const cameraPosition = new THREE.Vector3().setFromMatrixPosition(this.camera.matrixWorld);
-        
-        this.starGeometry.attributes.position.array.forEach((_, i) => {
-            const starPosition = new THREE.Vector3(
-                this.starPositions[i * 3],
-                this.starPositions[i * 3 + 1],
-                this.starPositions[i * 3 + 2]
-            );
-
-            // Offset star position by camera position
-            starPosition.add(cameraPosition);
-
-            this.starGeometry.attributes.position.setXYZ(i, starPosition.x, starPosition.y, starPosition.z);
-        });
-
-        this.starGeometry.attributes.position.needsUpdate = true;
-
-        requestAnimationFrame(this.updateStarPositions.bind(this));
+        // Update stars position each frame to match camera position (cheap per-frame update)
+        this.stars.onBeforeRender = (renderer, scene, camera) => {
+            this.stars.position.copy(camera.position);
+        };
     }
 }
