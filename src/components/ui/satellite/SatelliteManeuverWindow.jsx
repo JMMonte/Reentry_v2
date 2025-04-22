@@ -96,11 +96,14 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
                 if (!dvLocal) {
                     dvLocal = dvWorld.clone();
                 }
-                // Round to avoid tiny floating errors
-                const rvx = Math.round(dvLocal.x);
-                const rvy = Math.round(dvLocal.y);
-                const rvz = Math.round(dvLocal.z);
-                setVx(rvx.toString()); setVy(rvy.toString()); setVz(rvz.toString());
+                // Quantize local ΔV to two decimal places to reduce floating noise
+                const decimals = 2;
+                const rvx = parseFloat(dvLocal.x.toFixed(decimals));
+                const rvy = parseFloat(dvLocal.y.toFixed(decimals));
+                const rvz = parseFloat(dvLocal.z.toFixed(decimals));
+                setVx(rvx.toString());
+                setVy(rvy.toString());
+                setVz(rvz.toString());
             }
         } else {
             setTimeMode('offset'); setOffsetSec('0');
@@ -226,12 +229,14 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
     }, [timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, satellite]);
 
     const handleSave = () => {
+        // grab fresh simulated time to avoid stale state
+        const simNow = satellite.app3d.timeUtils.getSimulatedTime();
         let executeTime;
         if (timeMode === 'offset') {
             const offset = parseFloat(offsetSec) || 0;
-            executeTime = new Date(simTime.getTime() + offset * 1000);
+            executeTime = new Date(simNow.getTime() + offset * 1000);
         } else {
-            executeTime = new Date(simTime);
+            executeTime = new Date(simNow);
             executeTime.setUTCHours(hours, minutes, seconds, milliseconds);
         }
         // convert raw orbitPoints to Vector3 for basis calculation
@@ -243,7 +248,7 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
         const elData = satellite.getOrbitalElements();
         const per = elData?.period;
         if (pts && pts.length > 0 && per) {
-            const dt = (executeTime.getTime() - simTime.getTime()) / 1000;
+            const dt = (executeTime.getTime() - simNow.getTime()) / 1000;
             let frac = dt / per;
             frac = ((frac % 1) + 1) % 1;
             const idx = Math.floor(frac * pts.length);
