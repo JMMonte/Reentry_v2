@@ -1,4 +1,8 @@
 precision highp float;
+#include <common>
+#undef PI
+#define PI 3.14159265359
+#include <logdepthbuf_pars_fragment>
 
 // Uniform variables for customization
 uniform vec3 lightPosition;     // Position of the light source
@@ -13,7 +17,6 @@ varying vec4 vWorldPosition;    // World space position
 varying vec3 viewRay;           // View space ray direction
 
 // Mathematical constants
-const float PI = 3.14159265359;
 const float MAX = 10000.0;
 
 // Ray-sphere intersection function
@@ -44,9 +47,9 @@ float phase_ray(float cc) {
     return (3.0 / 16.0 / PI) * (1.0 + cc);
 }
 
-// Constants for scattering calculations
-const int NUM_OUT_SCATTER = 4;  // Reduced from 8
-const int NUM_IN_SCATTER = 6;   // Reduced from 12
+// Constants for scattering calculations (aggressive performance)
+const int NUM_OUT_SCATTER = 4;  // minimal samples
+const int NUM_IN_SCATTER = 4;   // minimal samples
 
 // Calculate the horizon line gradient
 float calculateHorizonGradient(vec3 position, vec3 rayDir) {
@@ -232,4 +235,5 @@ void main() {
     float finalAlpha = mix(0.284, 0.898, gl_FragColor.a);
     finalAlpha *= mix(1.2, 1.0, finalHorizonGrad); // Stronger opacity near ground
     gl_FragColor.a = clamp(finalAlpha, 0.0, 1.0);
+    #include <logdepthbuf_fragment>
 }

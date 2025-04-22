@@ -29,40 +29,20 @@ export class Sun {
         this.sunLight.castShadow = false;
         this.scene.add(this.sunLight);
 
-        // Add lens flare
-        const lensflare = new Lensflare();
-        this.sunLight.add(lensflare);
-
-        // Load textures
+        // Add official lens flare effect
         const textureLoader = new THREE.TextureLoader();
-        const loadTexture = (url, size, distance, color) => {
-            textureLoader.load(url, (texture) => {
-                lensflare.addElement(new LensflareElement(texture, size, distance, color));
-            });
-        };
-
-        // Main flare
-        loadTexture(
-            '/assets/texture/lensflare/lensflare0.png',
-            700,
-            0,
-            new THREE.Color(0xffffff).multiplyScalar(1.5)
-        );
-
-        // Secondary flares
-        loadTexture(
-            '/assets/texture/lensflare/lensflare2.png',
-            512,
-            0.6,
-            new THREE.Color(0xffffff).multiplyScalar(1.5)
-        );
-
-        // Additional flares
-        const flare3Color = new THREE.Color(0xffffff).multiplyScalar(1.5);
-        loadTexture('/assets/texture/lensflare/lensflare3.png', 60, 0.7, flare3Color);
-        loadTexture('/assets/texture/lensflare/lensflare3.png', 70, 0.9, flare3Color);
-        loadTexture('/assets/texture/lensflare/lensflare3.png', 120, 1.0, flare3Color);
-        loadTexture('/assets/texture/lensflare/lensflare3.png', 70, 1.1, flare3Color);
+        const lensflare = new Lensflare();
+        [
+            { url: '/assets/texture/lensflare/lensflare0.png', size: 700, distance: 0.0 },
+            { url: '/assets/texture/lensflare/lensflare2.png', size: 512, distance: 0.6 },
+            { url: '/assets/texture/lensflare/lensflare3.png', size: 60, distance: 0.7 },
+            { url: '/assets/texture/lensflare/lensflare3.png', size: 70, distance: 0.9 },
+            { url: '/assets/texture/lensflare/lensflare3.png', size: 120, distance: 1.0 }
+        ].forEach(spec => {
+            const tex = textureLoader.load(spec.url);
+            lensflare.addElement(new LensflareElement(tex, spec.size, spec.distance, new THREE.Color(0xffffff)));
+        });
+        this.sunLight.add(lensflare);
     }
 
     updatePosition() {

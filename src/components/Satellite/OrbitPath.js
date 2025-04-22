@@ -6,10 +6,10 @@ export class OrbitPath {
         // Sequence numbering to drop stale updates
         this._seq = 0;
         this._lastSeq = -Infinity;
-        // Preallocate buffer for orbit points (max 180 points)
-        this._maxOrbitPoints = 180;
+        // Start with zero-length buffer; will rebuild per update
+        this._maxOrbitPoints = 0;
         const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(this._maxOrbitPoints * 3);
+        const positions = new Float32Array(0);
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setDrawRange(0, 0);
         this.orbitLine = new THREE.Line(
@@ -23,6 +23,7 @@ export class OrbitPath {
         );
         this.orbitLine.frustumCulled = false;
         this.orbitLine.visible = false;
+
         // Use a shared worker across all OrbitPath instances
         if (!OrbitPath.sharedWorker) {
             OrbitPath.sharedWorker = new Worker(
@@ -39,13 +40,25 @@ export class OrbitPath {
     }
 
     update(position, velocity, id, bodies = [], period, numPoints = this._maxOrbitPoints) {
+        // Store period and number of points for simulation data window
+        this._period = period;
+        this._numPoints = numPoints;
         this._currentId = id;
+        // Store Earth position for distance calculations
+        if (bodies.length > 0) {
+            const bp = bodies[0].position;
+            this._earthPosition = new THREE.Vector3(bp.x, bp.y, bp.z);
+        } else {
+            this._earthPosition = new THREE.Vector3(0, 0, 0);
+        }
         OrbitPath.handlers[id] = this._handleMessage;
         const seq = ++this._seq;
         const serialBodies = bodies.map(body => ({
             position: { x: body.position.x, y: body.position.y, z: body.position.z },
             mass: body.mass
         }));
+        // Read current perturbation scale from UI settings
+        const perturbationScale = window.app3d?.getDisplaySetting('perturbationScale') ?? 1.0;
         this.worker.postMessage({
             type: 'UPDATE_ORBIT',
             id,
@@ -54,6 +67,7 @@ export class OrbitPath {
             bodies: serialBodies,
             period,
             numPoints,
+            perturbationScale,
             seq
         });
     }
@@ -106,20 +120,36 @@ export class OrbitPath {
             // Don't update geometry when hidden
             if (!this.orbitLine.visible) return;
             const pts = e.data.orbitPoints;
-            const geom = this.orbitLine.geometry;
-            const attr = geom.attributes.position;
-            const arr = attr.array;
-            const count = Math.min(pts.length, this._maxOrbitPoints);
-            // Update positions
+            // Store orbit points for simulation data window
+            this.orbitPoints = pts;
+            // Emit orbit data update event for UI
+            document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
+                detail: {
+                    id: this._currentId,
+                    orbitPoints: pts,
+                    period: this._period,
+                    numPoints: this._numPoints
+                }
+            }));
+            const count = pts.length;
+            // Rebuild geometry to match incoming points
+            this._maxOrbitPoints = count;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setDrawRange(0, count);
+            this.orbitLine.geometry.dispose();
+            this.orbitLine.geometry = geometry;
+            // Fill positions
+            const array = geometry.attributes.position.array;
             for (let i = 0; i < count; i++) {
                 const pt = pts[i];
                 const idx = i * 3;
-                arr[idx]     = pt.x;
-                arr[idx + 1] = pt.y;
-                arr[idx + 2] = pt.z;
+                array[idx] = pt.x;
+                array[idx + 1] = pt.y;
+                array[idx + 2] = pt.z;
             }
-            geom.setDrawRange(0, count);
-            attr.needsUpdate = true;
+            geometry.attributes.position.needsUpdate = true;
         }
     };
 } 

@@ -10,6 +10,7 @@ import { DraggableModal } from './ui/modal/DraggableModal';
 import SatelliteCreator from './ui/satellite/SatelliteCreator';
 import PropTypes from 'prop-types';
 import { ResetPasswordModal } from './ui/auth/ResetPasswordModal';
+import { SimulationWindow } from './ui/simulation/SimulationWindow';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -175,7 +176,8 @@ export function Layout({
     satelliteListWindowProps,
     satelliteCreatorModalProps,
     shareModalProps,
-    authModalProps
+    authModalProps,
+    simulationWindowProps
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {
@@ -222,6 +224,7 @@ export function Layout({
                 <SatelliteCreatorModal {...satelliteCreatorModalProps} />
                 <ShareModal {...shareModalProps} />
                 <AuthModal {...authModalProps} />
+                <SimulationWindow {...simulationWindowProps} />
                 <ResetPasswordModal isOpen={resetModalOpen} onClose={() => setResetModalOpen(false)} showToast={showToast} />
             </ModalPortal>
             <Toast ref={toastRef} />
@@ -238,5 +241,10 @@ Layout.propTypes = {
     satelliteListWindowProps: PropTypes.object.isRequired,
     satelliteCreatorModalProps: PropTypes.object.isRequired,
     shareModalProps: PropTypes.object.isRequired,
-    authModalProps: PropTypes.object.isRequired
+    authModalProps: PropTypes.object.isRequired,
+    simulationWindowProps: PropTypes.shape({
+        isOpen: PropTypes.bool.isRequired,
+        onClose: PropTypes.func.isRequired,
+        satellites: PropTypes.array
+    }).isRequired
 }; 

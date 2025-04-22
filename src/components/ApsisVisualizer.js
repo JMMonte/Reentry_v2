@@ -51,51 +51,56 @@ export class ApsisVisualizer {
         // Don't set initial visibility - let it be controlled by display options
     }
 
-    update(position, velocity) {
-        const mu = Constants.earthGravitationalParameter;
-        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
-        
-        if (!orbitalElements) {
-            console.warn('No orbital elements calculated');
-            return null;
-        }
-
-        const { h, e, i, omega, w } = orbitalElements;
-
-        // Calculate distances in meters
-        const rPeriapsis = (h * h / (mu * (1 + e)));
-        const rApoapsis = e < 1 ? (h * h / (mu * (1 - e))) : null;
-
-        // Convert to visualization scale
-        const scaleFactor = Constants.metersToKm * Constants.scale;
-        
-        // Update periapsis position
-        const periapsisVector = new THREE.Vector3(rPeriapsis * scaleFactor, 0, 0);
-        this.rotateVector(periapsisVector, i, omega, w);
-        this.periapsisMesh.position.copy(periapsisVector);
-
-        // Update apoapsis position if orbit is elliptical
-        if (rApoapsis !== null && e < 1) {
-            const apoapsisVector = new THREE.Vector3(-rApoapsis * scaleFactor, 0, 0);
-            this.rotateVector(apoapsisVector, i, omega, w);
-            this.apoapsisMesh.position.copy(apoapsisVector);
-            
-            // Add apoapsis to scene only for elliptical orbits
-            if (!this.apoapsisMesh.parent) {
-                this.scene.add(this.apoapsisMesh);
-            }
+    update(position, velocity, apsisData) {
+        // Use apsis data from physics worker if available, else fallback to local calculation
+        let inc, lan, aop, rPeriWorld, rApoWorld, periapsisAltitude, apoapsisAltitude;
+        if (apsisData) {
+            // Convert angles (degrees) to radians
+            inc = THREE.MathUtils.degToRad(apsisData.inclination);
+            lan = THREE.MathUtils.degToRad(apsisData.longitudeOfAscendingNode);
+            aop = THREE.MathUtils.degToRad(apsisData.argumentOfPeriapsis);
+            // Radial distances from debug are in km; convert to world units
+            rPeriWorld = apsisData.periapsisRadial * Constants.scale;
+            rApoWorld = apsisData.apoapsisRadial != null ? apsisData.apoapsisRadial * Constants.scale : null;
+            periapsisAltitude = apsisData.periapsisAltitude;
+            apoapsisAltitude = apsisData.apoapsisAltitude;
         } else {
-            // Remove apoapsis from scene for non-elliptical orbits
-            if (this.apoapsisMesh.parent) {
-                this.scene.remove(this.apoapsisMesh);
+            // Fallback to local calculation
+            const mu = Constants.earthGravitationalParameter;
+            const result = PhysicsUtils.calculateApsis(position, velocity, mu);
+            if (!result) {
+                console.warn('No apsis data calculated');
+                return null;
             }
+            const { orbitalElements, rPeriapsis, rApoapsis, periapsisAltitude: _pAlt, apoapsisAltitude: _aAlt } = result;
+            inc = orbitalElements.i;
+            lan = orbitalElements.omega;
+            aop = orbitalElements.w;
+            const scaleFactor = Constants.metersToKm * Constants.scale;
+            rPeriWorld = rPeriapsis * scaleFactor;
+            rApoWorld = rApoapsis != null ? rApoapsis * scaleFactor : null;
+            periapsisAltitude = _pAlt;
+            apoapsisAltitude = _aAlt;
         }
 
-        // Return altitudes in kilometers
-        return {
-            periapsisAltitude: (rPeriapsis - Constants.earthRadius) * Constants.metersToKm,
-            apoapsisAltitude: rApoapsis ? (rApoapsis - Constants.earthRadius) * Constants.metersToKm : null
-        };
+        // Update periapsis mesh position
+        const periapsisVector = new THREE.Vector3(rPeriWorld, 0, 0);
+        this.rotateVector(periapsisVector, inc, lan, aop);
+        this.periapsisMesh.position.copy(periapsisVector);
+        this.periapsisMesh.visible = true;
+
+        // Update apoapsis mesh position
+        if (rApoWorld != null) {
+            const apoapsisVector = new THREE.Vector3(-rApoWorld, 0, 0);
+            this.rotateVector(apoapsisVector, inc, lan, aop);
+            this.apoapsisMesh.position.copy(apoapsisVector);
+            if (!this.apoapsisMesh.parent) this.scene.add(this.apoapsisMesh);
+            this.apoapsisMesh.visible = true;
+        } else {
+            if (this.apoapsisMesh.parent) this.scene.remove(this.apoapsisMesh);
+        }
+
+        return { periapsisAltitude, apoapsisAltitude };
     }
 
     rotateVector(vector, inclination, longAscNode, argPeriapsis) {

@@ -195,6 +195,7 @@ export function addEarthPoints(app) {
 }
 
 export function setupPostProcessing(app) {
+    // Single composer with render + bloom pass for performance
     const renderPass = new RenderPass(app.scene, app.camera);
     const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -203,13 +204,11 @@ export function setupPostProcessing(app) {
         0.99
     );
     bloomPass.renderToScreen = true;
+    // lower resolution for bloom to reduce work
     bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2);
 
-    app.sceneManager.composers.bloom = new EffectComposer(app._renderer);
-    app.sceneManager.composers.bloom.addPass(renderPass);
-    app.sceneManager.composers.bloom.addPass(bloomPass);
-
-    app.sceneManager.composers.final = new EffectComposer(app._renderer);
-    app.sceneManager.composers.final.addPass(renderPass);
-    app.sceneManager.composers.final.addPass(app.sceneManager.composers.bloom);
+    const composer = new EffectComposer(app._renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+    app.sceneManager.composers.final = composer;
 }

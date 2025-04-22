@@ -18,7 +18,8 @@ import {
   Map,
   Moon,
   Link,
-  CheckSquare
+  CheckSquare,
+  Loader2
 } from 'lucide-react';
 import { DraggableModal } from '../modal/DraggableModal';
 import PropTypes from 'prop-types';
@@ -30,10 +31,10 @@ export const defaultSettings = {
   showSatVectors: { value: false, name: 'Sat Vectors', icon: Circle },
   showSurfaceLines: { value: true, name: 'Surface Lines', icon: Mountain },
   showOrbits: { value: true, name: 'Sat Orbits', icon: Circle },
-  showTraces: { value: true, name: 'Sat Traces', icon: LineChart },
   showGroundTraces: { value: false, name: 'Ground Traces', icon: MapPin },
   orbitUpdateInterval: { value: 30, name: 'Orbit Update Rate', icon: Circle, type: 'number', min: 1, max: 120, step: 1 },
-  traceUpdateInterval: { value: 5, name: 'Trace Update Rate', icon: LineChart, type: 'number', min: 1, max: 60, step: 1 },
+  physicsTimeStep: { value: 0.05, name: 'Physics Time-step', icon: Settings2, type: 'number', min: 0.01, max: 1, step: 0.01 },
+  perturbationScale: { value: 1.0, name: 'Perturbation Scale', icon: LineChart, type: 'number', min: 0, max: 1, step: 0.05 },
   showCities: { value: false, name: 'Cities', icon: Building2 },
   showAirports: { value: false, name: 'Airports', icon: Plane },
   showSpaceports: { value: false, name: 'Spaceports', icon: Rocket },
@@ -45,8 +46,10 @@ export const defaultSettings = {
   showMoonTraces: { value: false, name: 'Moon Traces', icon: LineChart },
   showMoonSurfaceLines: { value: false, name: 'Moon Surface Lines', icon: Mountain },
   showSatConnections: { value: false, name: 'Sat Connections', icon: Link },
-  ambientLight: { value: 0.1, name: 'Ambient Light', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05 },
+  ambientLight: { value: 0.01, name: 'Ambient Light', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05 },
   groundTrackUpdateInterval: { value: 5, name: 'Ground Track Update Rate', icon: LineChart, type: 'number', min: 1, max: 60, step: 1 },
+  orbitPredictionInterval: { value: 1, name: 'Amount of predicted periods', icon: Circle, type: 'number', min: 0, max: 1000, step: 0.1 },
+  orbitPointsPerPeriod: { value: 60, name: 'Orbit Points per Period', icon: Circle, type: 'number', min: 10, max: 10000, step: 10 },
 };
 
 // Group settings by category
@@ -57,7 +60,7 @@ const categories = [
   },
   {
     name: 'Satellites',
-    keys: ['showSatVectors', 'showOrbits', 'showTraces', 'showGroundTraces', 'groundTrackUpdateInterval', 'orbitUpdateInterval', 'traceUpdateInterval'],
+    keys: ['showSatVectors', 'showOrbits', 'showGroundTraces', 'groundTrackUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'orbitUpdateInterval', 'physicsTimeStep', 'perturbationScale'],
   },
   {
     name: 'Ground',
@@ -127,6 +130,20 @@ Accordion.propTypes = {
 export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
   const [position, setPosition] = useState({ x: 40, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
+  const [loadingKeys, setLoadingKeys] = useState({});
+
+  // Clear loading state when the updated setting is applied
+  React.useEffect(() => {
+    Object.entries(loadingKeys).forEach(([key, pendingVal]) => {
+      if (settings[key] === pendingVal) {
+        setLoadingKeys(prev => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+    });
+  }, [settings]);
 
   return (
     <DraggableModal
@@ -174,27 +191,32 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
                   </div>
                   <div className="pr-2">
                     {setting.type === 'number' ? (
-                      <Input
-                        type="number"
-                        size="sm"
-                        className="text-xs h-5 w-12"
-                        min={setting.min}
-                        max={setting.max}
-                        step={setting.step}
-                        value={
-                          (() => {
-                            const v = settings[key] !== undefined ? settings[key] : setting.value;
-                            if (typeof v === 'number' && !Number.isInteger(v)) {
-                              return v.toFixed(3);
-                            }
-                            return v;
-                          })()
-                        }
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          onSettingChange(key, val === '' ? '' : parseFloat(val));
-                        }}
-                      />
+                      <div className="flex items-center">
+                        <Input
+                          type="number"
+                          size="sm"
+                          className="text-xs h-5 w-12"
+                          min={setting.min}
+                          max={setting.max}
+                          step={setting.step}
+                          value={
+                            (() => {
+                              const v = settings[key] !== undefined ? settings[key] : setting.value;
+                              if (typeof v === 'number' && !Number.isInteger(v)) {
+                                return v.toFixed(3);
+                              }
+                              return v;
+                            })()
+                          }
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const parsed = raw === '' ? '' : parseFloat(raw);
+                            setLoadingKeys(prev => ({ ...prev, [key]: parsed }));
+                            onSettingChange(key, parsed);
+                          }}
+                        />
+                        {key in loadingKeys && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+                      </div>
                     ) : setting.type === 'range' ? (
                       <input
                         type="range"

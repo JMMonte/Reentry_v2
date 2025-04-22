@@ -205,10 +205,11 @@ export class PhysicsUtils {
         const correctionQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
         positionECI.applyQuaternion(correctionQuaternion);
         velocityENU.applyQuaternion(correctionQuaternion);
-        positionECI.applyQuaternion(tiltQuaternion);
-        velocityENU.applyQuaternion(tiltQuaternion);
+        // Apply Earth's rotation then axial tilt, matching earth group transform order
         positionECI.applyQuaternion(earthQuaternion);
         velocityENU.applyQuaternion(earthQuaternion);
+        positionECI.applyQuaternion(tiltQuaternion);
+        velocityENU.applyQuaternion(tiltQuaternion);
         const position = new THREE.Vector3(positionECI.x, positionECI.y, positionECI.z);
         const velocityECEF = new THREE.Vector3(velocityENU.x, velocityENU.y, velocityENU.z);
         return { positionECEF: position, velocityECEF: velocityECEF };
@@ -552,5 +553,81 @@ export class PhysicsUtils {
             );
         }
         return points;
+    }
+
+    // Calculate periapsis and apoapsis radii from orbital elements
+    static calculateApsidesFromElements(elements, mu) {
+        if (!elements) return null;
+        const { h, e } = elements;
+        const rPeriapsis = (h * h / (mu * (1 + e)));
+        const rApoapsis = e < 1 ? (h * h / (mu * (1 - e))) : null;
+        return { rPeriapsis, rApoapsis };
+    }
+
+    // Calculate orbital elements, apsis radii, and altitudes from state vectors
+    static calculateApsis(position, velocity, mu) {
+        const elements = this.calculateOrbitalElements(position, velocity, mu);
+        if (!elements) return null;
+        const apsides = this.calculateApsidesFromElements(elements, mu);
+        if (!apsides) return null;
+        const { rPeriapsis, rApoapsis } = apsides;
+        const periapsisAltitude = (rPeriapsis - Constants.earthRadius) * Constants.metersToKm;
+        const apoapsisAltitude = rApoapsis !== null ? (rApoapsis - Constants.earthRadius) * Constants.metersToKm : null;
+        return { orbitalElements: elements, rPeriapsis, rApoapsis, periapsisAltitude, apoapsisAltitude };
+    }
+
+    // Calculate orbital elements with detailed apsis data (centralized for debug/UI)
+    static calculateDetailedOrbitalElements(position, velocity, mu) {
+        // Based on Satellite.getOrbitalElements
+        const r_mag = position.length();
+        const v2 = velocity.lengthSq();
+        const energy = (v2 / 2) - (mu / r_mag);
+        const r = position.clone();
+        const v = velocity.clone();
+        // Specific angular momentum
+        const hVec = new THREE.Vector3().crossVectors(r, v);
+        const h_mag = hVec.length();
+        // Semi-major axis in meters
+        const sma = -mu / (2 * energy);
+        // Eccentricity vector
+        const ev = new THREE.Vector3()
+            .crossVectors(v, hVec)
+            .divideScalar(mu)
+            .sub(r.clone().divideScalar(r_mag));
+        const ecc = ev.length();
+        // Inclination in degrees
+        const inc = Math.acos(hVec.z / h_mag) * (180 / Math.PI);
+        // Node vector
+        const n = new THREE.Vector3(0, 0, 1).cross(hVec);
+        const n_mag = n.length();
+        // Longitude of ascending node in degrees
+        let lan = Math.acos(n.x / n_mag) * (180 / Math.PI);
+        if (n.y < 0) lan = 360 - lan;
+        // Argument of periapsis in degrees
+        let aop = Math.acos(n.dot(ev) / (n_mag * ecc)) * (180 / Math.PI);
+        if (ev.z < 0) aop = 360 - aop;
+        // True anomaly in degrees
+        let ta = Math.acos(ev.dot(r) / (ecc * r_mag)) * (180 / Math.PI);
+        if (r.dot(v) < 0) ta = 360 - ta;
+        // Orbital period in seconds
+        const period = 2 * Math.PI * Math.sqrt(Math.pow(sma, 3) / mu);
+        // Periapsis and apoapsis distances in meters
+        const rPeriapsis = sma * (1 - ecc);
+        const rApoapsis = sma * (1 + ecc);
+        return {
+            semiMajorAxis: sma * Constants.metersToKm,
+            eccentricity: ecc,
+            inclination: inc,
+            longitudeOfAscendingNode: lan,
+            argumentOfPeriapsis: aop,
+            trueAnomaly: ta,
+            period: period,
+            specificAngularMomentum: h_mag,
+            specificOrbitalEnergy: energy,
+            periapsisAltitude: (rPeriapsis - Constants.earthRadius) * Constants.metersToKm,
+            apoapsisAltitude: (rApoapsis - Constants.earthRadius) * Constants.metersToKm,
+            periapsisRadial: rPeriapsis * Constants.metersToKm,
+            apoapsisRadial: rApoapsis * Constants.metersToKm
+        };
     }
 }

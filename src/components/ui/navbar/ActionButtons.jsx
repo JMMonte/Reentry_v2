@@ -1,10 +1,10 @@
 import React from 'react';
 import { Button } from '../button';
-import { Rocket, Settings2, MessageSquare, List, Share2 } from 'lucide-react';
+import { Rocket, Settings2, MessageSquare, List, Share2, Activity } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
 import PropTypes from 'prop-types';
 
-function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onChatToggle, onSatelliteListToggle, handleShareToggle }) {
+function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onChatToggle, onSatelliteListToggle, handleShareToggle, onSimulationToggle }) {
     return (
         <>
             <TooltipProvider>
@@ -80,6 +80,21 @@ function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onCha
                     <TooltipContent>Share State</TooltipContent>
                 </Tooltip>
             </TooltipProvider>
+            {/* Simulation Data Button */}
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={onSimulationToggle}
+                        >
+                            <Activity className="h-4 w-4" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Simulation</TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
         </>
     );
 }
@@ -90,6 +105,7 @@ ActionButtons.propTypes = {
     onChatToggle: PropTypes.func.isRequired,
     onSatelliteListToggle: PropTypes.func.isRequired,
     handleShareToggle: PropTypes.func.isRequired,
+    onSimulationToggle: PropTypes.func.isRequired,
 };
 
 export default ActionButtons; 

@@ -40,6 +40,7 @@ export function Navbar({
   onSatelliteListToggle,
   onDisplayOptionsToggle,
   onSatelliteCreatorToggle,
+  onSimulationToggle,
   selectedBody,
   onBodySelect,
   timeWarp,
@@ -186,6 +187,7 @@ export function Navbar({
           onChatToggle={onChatToggle}
           onSatelliteListToggle={onSatelliteListToggle}
           handleShareToggle={handleShareToggle}
+          onSimulationToggle={onSimulationToggle}
         />
         {/* Login/Profile Button */}
         <UserMenu
@@ -204,6 +206,7 @@ Navbar.propTypes = {
   onSatelliteListToggle: PropTypes.func.isRequired,
   onDisplayOptionsToggle: PropTypes.func.isRequired,
   onSatelliteCreatorToggle: PropTypes.func.isRequired,
+  onSimulationToggle: PropTypes.func.isRequired,
   selectedBody: PropTypes.string.isRequired,
   onBodySelect: PropTypes.func.isRequired,
   timeWarp: PropTypes.number.isRequired,

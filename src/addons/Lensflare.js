@@ -17,7 +17,15 @@ import {
 
 class Lensflare extends Mesh {
     constructor() {
-        super(Lensflare.Geometry, new MeshBasicMaterial({ opacity: 0, transparent: true }));
+        super(
+            Lensflare.Geometry,
+            new MeshBasicMaterial({
+                opacity: 0,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false
+            })
+        );
 
         this.isLensflare = true;
         this.type = 'Lensflare';
@@ -108,7 +116,8 @@ class Lensflare extends Mesh {
             fragmentShader: shader.fragmentShader,
             blending: AdditiveBlending,
             transparent: true,
-            depthWrite: false
+            depthWrite: false,
+            depthTest: false
         });
 
         const mesh2 = new Mesh(geometry, material2);

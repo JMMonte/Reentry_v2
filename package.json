@@ -71,6 +71,7 @@
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.2",
+    "recharts": "^2.15.3",
     "run": "^1.5.0",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
@@ -78,6 +79,7 @@
     "stats.js": "^0.17.0",
     "tailwind-merge": "^2.5.5",
     "three": "^0.168.0",
+    "three-custom-shader-material": "^6.3.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {

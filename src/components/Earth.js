@@ -13,7 +13,9 @@ import geojsonDataObservatories from '../config/observatories.json';
 export class Earth {
     constructor(scene, renderer, timeManager, textureManager) {
         this.timeManager = timeManager;
-        this.MESH_RES = 128;
+        this.MESH_RES = 64; // base resolution for planet
+        this.ATMOSPHERE_RES = 64; // further reduced resolution for atmosphere
+        this.CLOUD_RES = 64; // further reduced resolution for cloud layer
         this.EARTH_RADIUS = Constants.earthRadius * Constants.scale * Constants.metersToKm;
         this.ATMOSPHERE_RADIUS = this.EARTH_RADIUS + 4;
         this.SIDEREAL_DAY_IN_SECONDS = 86164;
@@ -36,7 +38,8 @@ export class Earth {
         this.rotationGroup = new THREE.Group();
         this.tiltGroup.add(this.rotationGroup);
         scene.add(this.tiltGroup);
-        this.tiltGroup.rotation.x = THREE.MathUtils.degToRad(23.5);
+        // Apply Earth's axial tilt around Z axis to align equatorial plane
+        this.tiltGroup.rotation.z = THREE.MathUtils.degToRad(Constants.earthInclination);
     }
 
     initializeMaterials() {
@@ -85,7 +88,6 @@ export class Earth {
             blending: THREE.CustomBlending,
             blendEquation: THREE.AddEquation,
             blendSrc: THREE.SrcAlphaFactor,
-            blendDst: THREE.OneMinusSrcAlphaFactor,
             uniforms: {
                 lightPosition: { value: new THREE.Vector3(1.0, 0.0, 0.0) },
                 lightIntensity: { value: 4.0 },
@@ -102,15 +104,15 @@ export class Earth {
         this.earthGeometry = new THREE.SphereGeometry(scaledRadius, this.MESH_RES, this.MESH_RES);
         this.earthMesh = new THREE.Mesh(this.earthGeometry, this.earthMaterial);
 
-        const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS, this.MESH_RES, this.MESH_RES);
+        const atmosphereGeometry = new THREE.SphereGeometry(this.ATMOSPHERE_RADIUS, this.ATMOSPHERE_RES, this.ATMOSPHERE_RES);
         this.atmosphereMesh = new THREE.Mesh(atmosphereGeometry, this.atmosphereMaterial);
 
         const cloudRadius = this.EARTH_RADIUS + 0.1;
-        const cloudGeometry = new THREE.SphereGeometry(cloudRadius, this.MESH_RES, this.MESH_RES);
+        const cloudGeometry = new THREE.SphereGeometry(cloudRadius, this.CLOUD_RES, this.CLOUD_RES);
         this.cloudMesh = new THREE.Mesh(cloudGeometry, this.cloudMaterial);
 
-        // Set render order
-        this.atmosphereMesh.renderOrder = -1;  // Render atmosphere first
+        // Set render order: atmosphere first, then Earth, then clouds
+        this.atmosphereMesh.renderOrder = -1;  // Atmosphere first (behind Earth geometry)
         this.earthMesh.renderOrder = 0;        // Then Earth
         this.cloudMesh.renderOrder = 1;        // Then clouds
 

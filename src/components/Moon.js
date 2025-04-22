@@ -239,7 +239,10 @@ export class Moon {
             y * Constants.metersToKm * Constants.scale,
             z * Constants.metersToKm * Constants.scale
         );
-        this.updateTraceLine(currentTime);
+        // Only update the trace when it is visible (showMoonTraces setting)
+        if (this.traceLine && this.traceLine.visible) {
+            this.updateTraceLine(currentTime);
+        }
     }
 
     updateTraceLine(currentTime) {

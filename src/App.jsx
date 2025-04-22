@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, createContext, useRef } from 'react';
+import React, { useState, useEffect, createContext, useRef } from 'react';
 import { getSocket } from './socket';
 import { ThemeProvider } from './components/theme-provider';
 import { Layout } from './components/Layout';
@@ -92,6 +92,7 @@ function App3DMain() {
   const [shareUrl, setShareUrl] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isSimulationOpen, setIsSimulationOpen] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
   const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
   const { controller } = useApp3D(importedState);
@@ -203,7 +204,6 @@ function App3DMain() {
       controller.app3d.updateSelectedBody(selectedBody);
     }
   }, [selectedBody, controller]);
-  const navbarSatellites = useMemo(() => satellites, [satellites]);
   const onCreateSatellite = async (params) => {
     try {
       let satellite;
@@ -288,6 +288,7 @@ function App3DMain() {
     onSatelliteListToggle: () => setIsSatelliteListVisible(!isSatelliteListVisible),
     onDisplayOptionsToggle: () => setIsDisplayOptionsOpen(!isDisplayOptionsOpen),
     onSatelliteCreatorToggle: () => setIsSatelliteModalOpen(!isSatelliteModalOpen),
+    onSimulationToggle: () => setIsSimulationOpen(!isSimulationOpen),
     isChatVisible,
     isSatelliteListVisible,
     isDisplayOptionsOpen,
@@ -299,7 +300,7 @@ function App3DMain() {
     simulatedTime,
     onSimulatedTimeChange: handleSimulatedTimeChange,
     app3DRef: { current: app3d },
-    satellites: Object.values(navbarSatellites),
+    satellites: Object.values(satellites),
     onShareState: undefined,
     onImportState: handleImportState,
     shareModalOpen,
@@ -307,7 +308,9 @@ function App3DMain() {
     setShareUrl,
     isAuthOpen,
     setIsAuthOpen,
-    setAuthMode
+    setAuthMode,
+    simulationOpen: isSimulationOpen,
+    setSimulationOpen: setIsSimulationOpen
   };
   const chatModalProps = {
     isOpen: isChatVisible,
@@ -366,6 +369,7 @@ function App3DMain() {
           satelliteCreatorModalProps={satelliteCreatorModalProps}
           shareModalProps={shareModalProps}
           authModalProps={authModalProps}
+          simulationWindowProps={{ isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), satellites: Object.values(satellites) }}
         >
           {/* Main app content (canvas, etc.) */}
           <canvas id="three-canvas" className="absolute inset-0 z-0" />

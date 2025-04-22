@@ -41,13 +41,11 @@ export async function createSatellite(app, params) {
     // Apply display settings after creation
     const displaySettings = app.displaySettingsManager?.settings || app.displaySettings || {};
     const showOrbits = displaySettings.showOrbits;
-    const showTraces = displaySettings.showTraces;
     const showGroundTraces = displaySettings.showGroundTraces;
     const showSatVectors = displaySettings.showSatVectors;
 
     if (newSatellite.orbitLine) newSatellite.orbitLine.visible = showOrbits;
     if (newSatellite.apsisVisualizer) newSatellite.apsisVisualizer.visible = showOrbits;
-    if (newSatellite.traceLine) newSatellite.traceLine.visible = showTraces;
     if (newSatellite.groundTrackPath) newSatellite.groundTrackPath.setVisible(showGroundTraces);
     if (newSatellite.velocityVector) newSatellite.velocityVector.visible = showSatVectors;
     if (newSatellite.orientationVector) newSatellite.orientationVector.visible = showSatVectors;
@@ -55,16 +53,6 @@ export async function createSatellite(app, params) {
     // Force initial updates
     if (newSatellite.orbitLine && newSatellite.orbitLine.visible) {
         newSatellite.updateOrbitLine(params.position, params.velocity);
-    }
-    if (newSatellite.traceLine && newSatellite.traceLine.visible) {
-        const scaledPosition = new THREE.Vector3(
-            params.position.x * Constants.metersToKm * Constants.scale,
-            params.position.y * Constants.metersToKm * Constants.scale,
-            params.position.z * Constants.metersToKm * Constants.scale
-        );
-        newSatellite.tracePoints.push(scaledPosition.clone());
-        newSatellite.traceLine.geometry.setFromPoints(newSatellite.tracePoints);
-        newSatellite.traceLine.geometry.computeBoundingSphere();
     }
 
     // Create debug window
@@ -104,29 +92,23 @@ export function createSatelliteFromLatLon(app, params) {
         velocity * Constants.kmToMeters,
         azimuth,
         angleOfAttack,
-        earthQuaternion,
-        tiltQuaternion
+        tiltQuaternion,
+        earthQuaternion
     );
 
-    const scaledPosition = new THREE.Vector3(
+    // Scale ECEF coordinates for Three.js world space
+    const finalPosition = new THREE.Vector3(
         positionECEF.x * Constants.metersToKm * Constants.scale,
         positionECEF.y * Constants.metersToKm * Constants.scale,
         positionECEF.z * Constants.metersToKm * Constants.scale
     );
-
-    const scaledVelocity = new THREE.Vector3(
+    const finalVelocity = new THREE.Vector3(
         velocityECEF.x * Constants.metersToKm * Constants.scale,
         velocityECEF.y * Constants.metersToKm * Constants.scale,
         velocityECEF.z * Constants.metersToKm * Constants.scale
     );
 
-    return createSatellite(app, {
-        position: scaledPosition,
-        velocity: scaledVelocity,
-        mass,
-        size,
-        name
-    });
+    return createSatellite(app, { position: finalPosition, velocity: finalVelocity, mass, size, name });
 }
 
 export function createSatelliteFromLatLonCircular(app, params) {
@@ -141,7 +123,6 @@ export function createSatelliteFromLatLonCircular(app, params) {
         size,
         name
     } = params;
-
 
     const earthQuaternion = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
     const tiltQuaternion = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
@@ -159,32 +140,27 @@ export function createSatelliteFromLatLonCircular(app, params) {
         orbitalVelocity,
         azimuth,
         angleOfAttack,
-        earthQuaternion,
-        tiltQuaternion
+        tiltQuaternion,
+        earthQuaternion
     );
 
-    const scaledPosition = new THREE.Vector3(
+    // Scale ECEF coordinates for Three.js world space
+    const finalPosition = new THREE.Vector3(
         positionECEF.x * Constants.metersToKm * Constants.scale,
         positionECEF.y * Constants.metersToKm * Constants.scale,
         positionECEF.z * Constants.metersToKm * Constants.scale
     );
-
-    const scaledVelocity = new THREE.Vector3(
+    const finalVelocity = new THREE.Vector3(
         velocityECEF.x * Constants.metersToKm * Constants.scale,
         velocityECEF.y * Constants.metersToKm * Constants.scale,
         velocityECEF.z * Constants.metersToKm * Constants.scale
     );
 
-    return createSatellite(app, {
-        position: scaledPosition,
-        velocity: scaledVelocity,
-        mass,
-        size,
-        name
-    });
+    return createSatellite(app, { position: finalPosition, velocity: finalVelocity, mass, size, name });
 }
 
 export function createSatelliteFromOrbitalElements(app, params) {
+    const { earth } = app;
     const {
         semiMajorAxis,
         eccentricity,
@@ -197,16 +173,15 @@ export function createSatelliteFromOrbitalElements(app, params) {
         name
     } = params;
 
-    // Note: PhysicsUtils expects argumentOfPeriapsis before RAAN
+    // Calculate position/velocity in ECI frame using true orbital elements
     const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
         semiMajorAxis * Constants.kmToMeters,
         eccentricity,
-        -inclination, // Invert inclination
+        inclination, // Use actual inclination for prograde/retrograde
         argumentOfPeriapsis,
         raan,
         trueAnomaly
     );
-
 
     const scaledPosition = new THREE.Vector3(
         positionECI.x * Constants.metersToKm * Constants.scale,
@@ -220,9 +195,25 @@ export function createSatelliteFromOrbitalElements(app, params) {
         velocityECI.z * Constants.metersToKm * Constants.scale
     );
 
+    // single declaration for both quaternions:
+    const tiltQuat = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
+    const earthQuat = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
+    const correctionQuat = new THREE.Quaternion()
+        .setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI/2);
+
+    const finalPosition = scaledPosition.clone()
+        .applyQuaternion(correctionQuat)
+        .applyQuaternion(earthQuat)
+        .applyQuaternion(tiltQuat);
+
+    const finalVelocity = scaledVelocity.clone()
+        .applyQuaternion(correctionQuat)
+        .applyQuaternion(earthQuat)
+        .applyQuaternion(tiltQuat);
+
     return createSatellite(app, {
-        position: scaledPosition,
-        velocity: scaledVelocity,
+        position: finalPosition,
+        velocity: finalVelocity,
         mass,
         size,
         name

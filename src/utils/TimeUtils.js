@@ -13,6 +13,8 @@ export class TimeUtils {
         this.updateDerivedTimes();
         this.AU = Constants.AU;
         this.isInitialized = false;
+        this._lastDispatch = 0;
+        this._dispatchInterval = 100; // ms between timeUpdate events
     }
 
     validateAndFixSimulatedTime() {
@@ -47,14 +49,18 @@ export class TimeUtils {
         // Update derived times
         this.updateDerivedTimes();
 
-        // Dispatch time update event
-        document.dispatchEvent(new CustomEvent('timeUpdate', {
-            detail: { 
-                simulatedTime: this.simulatedTime.toISOString(),
-                timeWarp: this.timeWarp,
-                deltaTime: this.deltaTime
-            }
-        }));
+        // Dispatch time update events at limited frequency
+        const now = timestamp;
+        if (now - this._lastDispatch >= this._dispatchInterval) {
+            document.dispatchEvent(new CustomEvent('timeUpdate', {
+                detail: { 
+                    simulatedTime: this.simulatedTime.toISOString(),
+                    timeWarp: this.timeWarp,
+                    deltaTime: this.deltaTime
+                }
+            }));
+            this._lastDispatch = now;
+        }
     }
 
     setTimeWarp(value) {

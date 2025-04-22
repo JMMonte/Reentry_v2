@@ -32,9 +32,9 @@ const EventBadge = ({ type, status }) => {
     const info = map[type] || { label: type, color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200' };
     // Add a checkmark for tool_call_sent if status is done
     return (
-        <span className={cn('px-2 py-0.5 rounded text-xs font-semibold mr-2 flex items-center gap-1', info.color)}>
+        <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
             {info.label}
-            {type === 'tool_call_sent' && status === 'done' && <Check className="w-3 h-3 text-green-500 dark:text-green-300 ml-1" />}
+            {type === 'tool_call_sent' && status === 'done' && <Check className="w-3 h-3 text-muted-foreground" />}
         </span>
     );
 };
@@ -99,9 +99,9 @@ const renderToolCallCard = ({ toolName, status, args, output, isDone }) => {
         const entries = Object.entries(args);
         if (entries.length > 0) {
             argList = (
-                <ul className="list-disc pl-5 text-xs text-zinc-100">
+                <ul className="list-disc pl-4 text-[10px] font-mono text-muted-foreground">
                     {entries.map(([k, v]) => (
-                        <li key={k}><span className="font-semibold">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}</li>
+                        <li key={k}><span className="font-semibold">{k}:</span> <span className="font-mono">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span></li>
                     ))}
                 </ul>
             );
@@ -115,29 +115,24 @@ const renderToolCallCard = ({ toolName, status, args, output, isDone }) => {
         cleanOutput = cleanOutput.replace(/^[{[]\s*|\s*[}\]]$/g, '').trim();
     }
     return (
-        <div className="rounded-lg px-3 py-2 max-w-[420px] relative group bg-zinc-900 border border-zinc-700 text-zinc-100 flex flex-col gap-2">
-            <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-base">{toolName}</span>
-                <span className={cn(
-                    'ml-2 px-2 py-0.5 rounded text-xs font-semibold',
-                    status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' :
-                    status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' :
-                    'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200')
-                } title="Status">{status === 'done' ? '✓' : status === 'error' ? '!' : ''} {status}</span>
+        <div className="mt-1 space-y-1">
+            <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold">{toolName}</span>
+                <span className="text-[10px] text-muted-foreground">{status === 'done' ? '✓' : status === 'error' ? '!' : ''} {status}</span>
             </div>
             {argList && (
-                <details className="mb-1 bg-zinc-800 rounded border border-zinc-700">
-                    <summary className="cursor-pointer px-2 py-1 font-mono text-xs text-zinc-100 select-none">Arguments</summary>
+                <details className="mb-1">
+                    <summary className="cursor-pointer font-mono text-[10px] text-muted-foreground select-none">Arguments</summary>
                     {argList}
                 </details>
             )}
             {cleanOutput && (
-                <div className="text-sm whitespace-pre-line">
+                <div className="text-[10px] font-mono whitespace-pre-line">
                     {cleanOutput}
                 </div>
             )}
             {!isDone && (
-                <div className="text-xs text-yellow-300 mt-1">Waiting for tool response...</div>
+                <div className="text-[8px] text-muted-foreground">Waiting for tool response...</div>
             )}
         </div>
     );

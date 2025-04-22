@@ -49,7 +49,7 @@ export class SceneManager {
         setupScene(this.app);
         // Setup scene details (Earth, Sun, Moon, etc.)
         await setupSceneDetails(this.app);
-        // Post-processing
+        // Setup optimized post-processing
         setupPostProcessing(this.app);
         // Radial grid
         this.radialGrid = new RadialGrid(this.scene);

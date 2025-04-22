@@ -80,7 +80,14 @@ export class SimulationStateManager {
                     params.position && typeof params.position.x === 'number' && typeof params.position.y === 'number' && typeof params.position.z === 'number' &&
                     params.velocity && typeof params.velocity.x === 'number' && typeof params.velocity.y === 'number' && typeof params.velocity.z === 'number'
                 ) {
-                    this.createSatellite(params);
+                    // Create satellite and initialize visuals with first update
+                    const sat = this.createSatellite(params);
+                    if (sat) {
+                        // Positions and velocities from saved state are in meters
+                        const pos = new THREE.Vector3(params.position.x, params.position.y, params.position.z);
+                        const vel = new THREE.Vector3(params.velocity.x, params.velocity.y, params.velocity.z);
+                        sat.updatePosition(pos, vel);
+                    }
                 } else {
                     console.warn('Skipped satellite with invalid position/velocity:', params);
                 }

@@ -12,6 +12,7 @@ export function setupCamera() {
     );
     camera.position.set(1000, 7000, 20000).multiplyScalar(Constants.scale);
     camera.lookAt(new THREE.Vector3(0, 0, 0));
+    camera.logarithmicDepthBuffer = true;
     return camera;
 }
 
@@ -45,7 +46,8 @@ export function setupRenderer(canvas) {
         const renderer = new THREE.WebGLRenderer({
             canvas: canvas,
             context: gl,
-            ...contextAttributes
+            ...contextAttributes,
+            logarithmicDepthBuffer: true
         });
 
         // Check if context was created successfully

@@ -1,10 +1,12 @@
 precision highp float;
+#include <common>
+#undef PI
+#define PI 3.14159265359
+#include <logdepthbuf_pars_vertex>
 
 varying vec4 vWorldPosition;
 varying float fov;
 varying vec3 viewRay;
-
-const float PI = 3.14159265359;
 
 void main() {
     vWorldPosition = modelMatrix * vec4(position, 1.0);
@@ -18,5 +20,6 @@ void main() {
     viewRay = vec3(tempViewRay.x, tempViewRay.y, -1.0);
 
     gl_Position = clipSpacePos;
+    #include <logdepthbuf_vertex>
     fov = 2.0 * atan(1.0 / projectionMatrix[1][1]) * (180.0 / PI);
 }

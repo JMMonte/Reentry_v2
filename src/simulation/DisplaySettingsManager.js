@@ -79,11 +79,6 @@ export class DisplaySettingsManager {
                     if (sat.apsisVisualizer?.setVisible) sat.apsisVisualizer.setVisible(value);
                 });
                 break;
-            case 'showTraces':
-                Object.values(app3d.satellites.getSatellites()).forEach(sat => {
-                    if (sat.tracePath?.setVisible) sat.tracePath.setVisible(value);
-                });
-                break;
             case 'showGroundTraces':
                 Object.values(app3d.satellites.getSatellites()).forEach(sat => {
                     if (sat.groundTrackPath?.setVisible) sat.groundTrackPath.setVisible(value);

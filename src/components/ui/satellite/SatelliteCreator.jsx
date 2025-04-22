@@ -49,6 +49,38 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         }));
     };
 
+    const presets = [
+        { label: 'ISS', mode: 'orbital', values: { name: 'ISS', semiMajorAxis: 6778, eccentricity: 0.0007, inclination: 51.6, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Geostationary', mode: 'orbital', values: { name: 'Geostationary', semiMajorAxis: 42164, eccentricity: 0, inclination: 0, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Molniya', mode: 'orbital', values: { name: 'Molniya', semiMajorAxis: 26600, eccentricity: 0.74, inclination: 63.4, raan: 0, argumentOfPeriapsis: 270, trueAnomaly: 0 } },
+        { label: 'Low Earth', mode: 'latlon', values: { name: 'Low Earth', latitude: 0, longitude: 0, altitude: 400, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'High Earth', mode: 'latlon', values: { name: 'High Earth', latitude: 0, longitude: 0, altitude: 1000, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'GPS', mode: 'latlon', values: { name: 'GPS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Galileo', mode: 'latlon', values: { name: 'Galileo', latitude: 0, longitude: 0, altitude: 23222, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Beidou', mode: 'latlon', values: { name: 'Beidou', latitude: 0, longitude: 0, altitude: 21528, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'IRNSS', mode: 'latlon', values: { name: 'IRNSS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'QZSS', mode: 'latlon', values: { name: 'QZSS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'NavIC', mode: 'latlon', values: { name: 'NavIC', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'GLONASS', mode: 'latlon', values: { name: 'GLONASS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'SBAS', mode: 'latlon', values: { name: 'SBAS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Hubble', mode: 'latlon', values: { name: 'Hubble', latitude: 0, longitude: 0, altitude: 547, velocity: 7.66, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Earth/Moon Lagrange 1', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 1', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Earth/Moon Lagrange 2', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 2', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Earth/Moon Lagrange 3', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 3', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Earth/Moon Lagrange 4', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 4', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
+        { label: 'Earth/Moon Lagrange 5', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 5', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
+        
+
+
+    ];
+    const handlePreset = (preset) => {
+        setMode(preset.mode);
+        setFormData(prev => ({
+            ...prev,
+            ...preset.values,
+        }));
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
@@ -146,7 +178,7 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                         inputClassName="w-full"
                         min={min}
                         max={max}
-                        step={step}
+                        step="any"
                         size="sm"
                         required
                     />
@@ -169,6 +201,12 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
 
     return (
         <div className="text-xs p-4">
+            {/* General satellite properties */}
+            <div className="flex flex-col gap-y-2 mb-4">
+                {renderField("name", "Name", "text")}
+                {renderField("mass", "Mass", "number", 1, 1000000, 1, "kg")}
+                {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
+            </div>
             <div className="mb-2">
                 <Tabs value={mode} onValueChange={setMode}>
                     <TabsList className="flex justify-center gap-0 text-xs mb-2">
@@ -178,11 +216,18 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                     </TabsList>
                 </Tabs>
             </div>
+            <details className="mb-2">
+                <summary className="cursor-pointer text-sm font-medium">Templates</summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                    {presets.map(preset => (
+                        <Button key={preset.label} size="sm" variant="outline" onClick={() => handlePreset(preset)}>
+                            {preset.label}
+                        </Button>
+                    ))}
+                </div>
+            </details>
             <form onSubmit={handleSubmit} className="space-y-0.5 mb-0">
                 <div className="flex flex-col gap-y-2">
-                    {renderField("name", "Name", "text")}
-                    {renderField("mass", "Mass", "number", 1, 1000000, 1, "kg")}
-                    {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
                     {mode === 'latlon' && (
                         <>
                             {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}

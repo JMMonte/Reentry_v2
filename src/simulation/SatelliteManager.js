@@ -16,6 +16,8 @@ export class SatelliteManager {
         this.physicsWorker = null;
         this.workerInitialized = false;
         this._lastTimeWarp = undefined;
+        // track last time orbits were updated for throttling
+        this._lastOrbitUpdateTime = 0;
     }
 
     /**
@@ -36,9 +38,6 @@ export class SatelliteManager {
             }
             if (satellite.apsisVisualizer && typeof satellite.apsisVisualizer.setVisible === 'function') {
                 satellite.apsisVisualizer.setVisible(dsm.getSetting('showOrbits'));
-            }
-            if (satellite.traceLine) {
-                satellite.traceLine.visible = dsm.getSetting('showTraces');
             }
             if (satellite.groundTrack && typeof satellite.groundTrack.setVisible === 'function') {
                 satellite.groundTrack.setVisible(dsm.getSetting('showGroundTraces'));
@@ -92,17 +91,21 @@ export class SatelliteManager {
         }
         // Update dynamic body positions (Earth at origin, Moon) in physicsWorker for n-body
         if (this.physicsWorker && this.workerInitialized && this.app3d.moon) {
-            // Get Moon's mesh position (km-scale) and convert to meters
+            // Get absolute world positions for Moon and Sun (km-scale) and convert to meters
             const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
+            const worldMoon = new THREE.Vector3();
+            moonMesh.getWorldPosition(worldMoon);
             const factor = 1 / (Constants.metersToKm * Constants.scale);
-            const moonPosM = {
-                x: moonMesh.position.x * factor,
-                y: moonMesh.position.y * factor,
-                z: moonMesh.position.z * factor
-            };
-            // Also grab Sun position and send all bodies
+            const moonPosM = { x: worldMoon.x * factor, y: worldMoon.y * factor, z: worldMoon.z * factor };
             const sunMesh = this.app3d.sun && this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun?.sunLight;
-            const sunPosM = sunMesh ? { x: sunMesh.position.x * factor, y: sunMesh.position.y * factor, z: sunMesh.position.z * factor } : { x: 0, y: 0, z: 0 };
+            let sunPosM;
+            if (sunMesh) {
+                const worldSun = new THREE.Vector3();
+                sunMesh.getWorldPosition(worldSun);
+                sunPosM = { x: worldSun.x * factor, y: worldSun.y * factor, z: worldSun.z * factor };
+            } else {
+                sunPosM = { x: 0, y: 0, z: 0 };
+            }
             this.physicsWorker.postMessage({
                 type: 'updateBodies',
                 data: { earthPosition: { x: 0, y: 0, z: 0 }, moonPosition: moonPosM, sunPosition: sunPosM }
@@ -115,40 +118,72 @@ export class SatelliteManager {
                 satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
             }
         });
-        // Draw multi-body propagated orbits (Earth + Moon) via OrbitPath worker
+        // Draw multi-body propagated orbits (Earth + Moon) via OrbitPath worker (throttled)
         const showOrbits = this.app3d.getDisplaySetting('showOrbits');
+        const nowPerf = performance.now();
+        // Treat Orbit Update Rate as updates per second and compute interval in ms
+        const orbitUpdateRate = this.app3d.getDisplaySetting('orbitUpdateInterval');
+        const orbitIntervalMs = 1000 / orbitUpdateRate;
+        const shouldUpdatePaths = showOrbits && (!this._lastOrbitUpdateTime || nowPerf - this._lastOrbitUpdateTime >= orbitIntervalMs);
         Object.values(this._satellites).forEach(sat => {
             const path = sat.orbitPath;
             if (!path) return;
             // Toggle visibility of the path
             path.setVisible(showOrbits);
-            if (!showOrbits) return;
+            if (!shouldUpdatePaths) return;
             // derive orbital period (2-body approximation)
             const els = sat.getOrbitalElements();
-            if (!els || !els.period) return;
-            const period = els.period;
+            if (!els) return;
+            // Determine prediction window in seconds: user-specified number of periods
+            const predictionPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
+            let periodSec;
+            if (typeof predictionPeriods === 'number' && predictionPeriods > 0) {
+                const basePeriod = els.period;
+                if (Number.isFinite(basePeriod) && basePeriod > 0) {
+                    // Elliptical orbit: scale by number of periods
+                    periodSec = basePeriod * predictionPeriods;
+                } else {
+                    // Hyperbolic or undefined period: fallback to 1 day per period unit
+                    const fallbackDay = 24 * 3600;
+                    periodSec = fallbackDay * predictionPeriods;
+                }
+            } else {
+                // Default to one full period
+                periodSec = els.period;
+            }
             // define gravitational sources: Earth, Moon, and Sun
             const factor2 = 1 / (Constants.metersToKm * Constants.scale);
-            const bodies = [ { position: new THREE.Vector3(0, 0, 0), mass: Constants.earthMass } ];
+            const bodies = [];
+
+            // Earth
+            bodies.push({ position: new THREE.Vector3(0, 0, 0), mass: Constants.earthMass });
+
             // Moon
-            if (this.app3d.moon) {
-                const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
-                const moonPosM = new THREE.Vector3(
-                    moonMesh.position.x * factor2,
-                    moonMesh.position.y * factor2,
-                    moonMesh.position.z * factor2
-                );
-                bodies.push({ position: moonPosM, mass: Constants.moonMass });
-            }
+            const moonMesh = (this.app3d.moon?.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon?.moonMesh) || { position: new THREE.Vector3(0, 0, 0) };
+            const moonPosM = new THREE.Vector3(
+                moonMesh.position.x * factor2,
+                moonMesh.position.y * factor2,
+                moonMesh.position.z * factor2
+            );
+            bodies.push({ position: moonPosM, mass: Constants.moonMass });
+
             // Sun
-            if (this.app3d.sun) {
-                const sunMesh = this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun.sunLight;
-                const sunPosM = new THREE.Vector3(
-                    sunMesh.position.x * factor2,
-                    sunMesh.position.y * factor2,
-                    sunMesh.position.z * factor2
-                );
-                bodies.push({ position: sunPosM, mass: Constants.sunMass });
+            const sunMesh = (this.app3d.sun?.sun ? this.app3d.sun.sun : this.app3d.sun?.sunLight) || { position: new THREE.Vector3(0, 0, 0) };
+            const sunPosM = new THREE.Vector3(
+                sunMesh.position.x * factor2,
+                sunMesh.position.y * factor2,
+                sunMesh.position.z * factor2
+            );
+            bodies.push({ position: sunPosM, mass: Constants.sunMass });
+
+            // Compute number of points based on user setting and predicted periods
+            const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
+            let numPoints;
+            if (typeof pointsPerPeriod === 'number' && pointsPerPeriod > 0) {
+                // allow as many points as requested (dynamic resizing will handle buffer growth)
+                numPoints = Math.ceil(pointsPerPeriod * (predictionPeriods > 0 ? predictionPeriods : 1));
+            } else {
+                numPoints = path._maxOrbitPoints;
             }
             // Request propagation update from OrbitPath worker
             path.update(
@@ -156,10 +191,12 @@ export class SatelliteManager {
                 sat.velocity.clone(),
                 sat.id,
                 bodies,
-                period,
-                path._maxOrbitPoints
+                periodSec,
+                numPoints
             );
         });
+        // update last orbit update timestamp after performing updates
+        if (shouldUpdatePaths) this._lastOrbitUpdateTime = nowPerf;
     }
 
     /**
@@ -186,7 +223,9 @@ export class SatelliteManager {
                     if (sat) {
                         const position = new THREE.Vector3(update.position[0], update.position[1], update.position[2]);
                         const velocity = new THREE.Vector3(update.velocity[0], update.velocity[1], update.velocity[2]);
-                        sat.updatePosition(position, velocity);
+                        // Pass through debug data for UI
+                        const debug = update.debug;
+                        sat.updatePosition(position, velocity, debug);
                     }
                 });
                 // (orbit drawing now handled in updateAll)
@@ -198,14 +237,16 @@ export class SatelliteManager {
                 }
             }
         };
-        // Initialize worker
+        // Initialize worker with simulation constants and initial timestep/perturbation scale
         this.physicsWorker.postMessage({
             type: 'init',
             data: {
                 earthMass: Constants.earthMass,
                 moonMass: Constants.moonMass,
                 G: Constants.G,
-                scale: Constants.scale
+                scale: Constants.scale,
+                timeStep: this.app3d.getDisplaySetting('physicsTimeStep'),
+                perturbationScale: this.app3d.getDisplaySetting('perturbationScale')
             }
         });
     }
@@ -222,16 +263,17 @@ export class SatelliteManager {
 
     _addSatelliteToWorker(satellite) {
         if (!this.physicsWorker || !this.workerInitialized) return;
-        // Convert back to meters for physics worker
+        // Convert from scaled Three.js units (km*scale) to meters for physics worker
+        const factor = 1 / (Constants.metersToKm * Constants.scale);
         const posM = {
-            x: satellite.position.x / (Constants.metersToKm * Constants.scale),
-            y: satellite.position.y / (Constants.metersToKm * Constants.scale),
-            z: satellite.position.z / (Constants.metersToKm * Constants.scale)
+            x: satellite.position.x * factor,
+            y: satellite.position.y * factor,
+            z: satellite.position.z * factor
         };
         const velM = {
-            x: satellite.velocity.x / (Constants.metersToKm * Constants.scale),
-            y: satellite.velocity.y / (Constants.metersToKm * Constants.scale),
-            z: satellite.velocity.z / (Constants.metersToKm * Constants.scale)
+            x: satellite.velocity.x * factor,
+            y: satellite.velocity.y * factor,
+            z: satellite.velocity.z * factor
         };
         this.physicsWorker.postMessage({
             type: 'addSatellite',
@@ -275,6 +317,26 @@ export class SatelliteManager {
     setTimeWarp(value) {
         if (this.physicsWorker && this.workerInitialized) {
             this.physicsWorker.postMessage({ type: 'setTimeWarp', data: { value } });
+        }
+    }
+
+    /**
+     * Update the physics worker's integration time step.
+     * @param {number} value
+     */
+    setPhysicsTimeStep(value) {
+        if (this.physicsWorker && this.workerInitialized) {
+            this.physicsWorker.postMessage({ type: 'setTimeStep', data: { value } });
+        }
+    }
+
+    /**
+     * Update the physics worker's third-body perturbation scale.
+     * @param {number} value
+     */
+    setPerturbationScale(value) {
+        if (this.physicsWorker && this.workerInitialized) {
+            this.physicsWorker.postMessage({ type: 'setPerturbationScale', data: { value } });
         }
     }
 } 

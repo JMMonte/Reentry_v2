@@ -41,7 +41,7 @@ export function ColorPicker({ color, onChange }) {
           }}
         />
       </PopoverTrigger>
-      <PopoverContent className="w-[160px] p-1" align="end">
+      <PopoverContent className="w-[160px] p-1 z-[100000]" align="end">
         <div className="grid grid-cols-5 gap-1">
           {colors.map((c) => (
             <Button

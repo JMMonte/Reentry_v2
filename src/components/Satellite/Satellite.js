@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
+import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
-import { TracePath } from './TracePath.js';
 import { OrbitPath } from './OrbitPath.js';
 import { GroundTrackPath } from './GroundTrackPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
@@ -23,8 +23,6 @@ export class Satellite {
 
         // Performance optimization: Update counters
         this.groundTrackUpdateCounter = 0;
-        this.traceUpdateCounter = 0;
-        this.traceUpdateInterval = this.app3d.getDisplaySetting('traceUpdateInterval') || 5;
 
         // Initialize orientation quaternion
         this.orientation = new THREE.Quaternion();
@@ -42,6 +40,9 @@ export class Satellite {
         // Sequence counter for orbit worker messages
         this._seq = 0;
 
+        // Smoothing for display to reduce visual oscillation
+        this._smoothedScaled = null;
+
         this.initializeVisuals();
 
         // Subscribe to display options changes
@@ -51,9 +52,6 @@ export class Satellite {
                 case 'showOrbits':
                     if (this.orbitPath) this.orbitPath.setVisible(value);
                     if (this.apsisVisualizer) this.apsisVisualizer.setVisible(value);
-                    break;
-                case 'showTraces':
-                    if (this.tracePath) this.tracePath.setVisible(value);
                     break;
                 case 'showGroundTraces':
                     if (this.groundTrackPath) this.groundTrackPath.setVisible(value);
@@ -71,10 +69,6 @@ export class Satellite {
         this.visualizer = new SatelliteVisualizer(this.color, this.orientation, this.app3d);
         this.visualizer.addToScene(this.scene);
 
-        // Replace trace line/worker with TracePath
-        this.tracePath = new TracePath(this.color);
-        this.scene.add(this.tracePath.traceLine);
-        this.tracePath.traceLine.visible = this.app3d.getDisplaySetting('showTraces');
 
         // Replace orbit line/worker with OrbitPath
         this.orbitPath = new OrbitPath(this.color);
@@ -88,14 +82,19 @@ export class Satellite {
 
         // Initialize apsis visualizer
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
-        this.apsisVisualizer.visible = false;
+        // Initial visibility from display options
+        this.apsisVisualizer.setVisible(this.app3d.getDisplaySetting('showOrbits'));
     }
 
     get groundTrackUpdateInterval() {
         return this.app3d.getDisplaySetting('groundTrackUpdateInterval') || 10;
     }
 
-    updatePosition(position, velocity) {
+    updatePosition(position, velocity, debug) {
+        // Store latest debug data if provided
+        if (debug) {
+            this.debug = debug;
+        }
         // Mark that we've received real physics state
         this.initialized = true;
         // Lazy-init scratch vectors to avoid allocations
@@ -120,28 +119,49 @@ export class Satellite {
             position.z * k
         );
 
+        // Exponential smoothing for visual display
+        const alpha = 0.7;
+        if (!this._smoothedScaled) {
+            this._smoothedScaled = this._scratchScaled.clone();
+        } else {
+            this._smoothedScaled.lerp(this._scratchScaled, alpha);
+        }
+
         // Update mesh and vectors via visualizer
-        this.visualizer.updatePosition(this._scratchScaled);
+        this.visualizer.updatePosition(this._smoothedScaled);
         this.visualizer.updateOrientation(this.orientation);
         this.visualizer.updateVectors(this.velocity, this.orientation);
 
-        // Update trace via TracePath
-        this.traceUpdateCounter++;
-        if (this.traceUpdateCounter >= this.traceUpdateInterval) {
-            this.traceUpdateCounter = 0;
-            if (this.tracePath && this.tracePath.traceLine.visible) {
-                this.tracePath.update(this._scratchScaled, this.id);
-            }
-        }
-
-        // Update apsis visualizer if needed
-        if (this.apsisVisualizer && this.apsisVisualizer.visible) {
-            this.apsisVisualizer.update(position, velocity);
+        // Update apsis visualizer using worker-provided apsisData
+        if (this.apsisVisualizer) {
+            this.apsisVisualizer.update(position, velocity, this.debug?.apsisData);
         }
 
         // Notify debug window about position update
         if (this.debugWindow?.onPositionUpdate) {
             this.debugWindow.onPositionUpdate();
+        }
+
+        // Dispatch simulation data update with drag and perturbation info
+        try {
+            // Use debug data from physics worker attached earlier
+            const dbg = debug || this.debug || {};
+            const drag = dbg.dragData || { altitude: null, density: null, relativeVelocity: null, dragAcceleration: null };
+            // Perturbation data supplied by physics worker
+            const pert = dbg.perturbation || null;
+            const elements = this.getOrbitalElements();
+            const altitude = drag.altitude ?? this.getSurfaceAltitude();
+            const velocityVal = this.getSpeed();
+            // Compute latitude and longitude (approximate)
+            const rNorm = this.position.clone().normalize();
+            const lat = Math.asin(rNorm.y) * (180 / Math.PI);
+            const lon = Math.atan2(this.position.z, this.position.x) * (180 / Math.PI);
+            const simTime = this.app3d.timeUtils.getSimulatedTime().toISOString();
+            document.dispatchEvent(new CustomEvent('simulationDataUpdate', {
+                detail: { id: this.id, simulatedTime: simTime, altitude, velocity: velocityVal, lat, lon, elements, dragData: drag, perturbation: pert }
+            }));
+        } catch (err) {
+            console.error('Error dispatching simulationDataUpdate with debug:', err);
         }
     }
 
@@ -167,7 +187,6 @@ export class Satellite {
 
     setVisible(visible) {
         this.visualizer.setVisible(visible);
-        this.tracePath?.setVisible(visible && window.app3d.getDisplaySetting('showTraces'));
         this.orbitPath?.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
         this.groundTrackPath?.setVisible(visible && window.app3d.getDisplaySetting('showGroundTraces'));
         // Show apsis markers only if orbit is visible
@@ -195,56 +214,38 @@ export class Satellite {
         // Only compute after receiving first physics update
         if (!this.initialized) return null;
         if (!this.position || !this.velocity) return null;
-        // Gravitational parameter
+        // Use orbital elements from physics worker debug if available
+        if (this.debug?.apsisData) {
+            return this.debug.apsisData;
+        }
         const mu = Constants.G * Constants.earthMass;
-        // Debug: log intermediate orbital variables
         const r_mag = this.position.length();
         const v2 = this.velocity.lengthSq();
         const energy = (v2 / 2) - (mu / r_mag);
-        // Prepare vectors
         const r = this.position.clone();
         const v = this.velocity.clone();
-
-        // Calculate specific angular momentum
         const h = new THREE.Vector3().crossVectors(r, v);
         const h_mag = h.length();
-
-        // Calculate semi-major axis (in meters)
         const sma = -mu / (2 * energy);
-
-        // Calculate eccentricity vector
         const ev = new THREE.Vector3()
             .crossVectors(v, h)
             .divideScalar(mu)
             .sub(r.clone().divideScalar(r_mag));
-
         const ecc = ev.length();
-
-        // Calculate inclination
         const inc = Math.acos(h.z / h_mag) * (180 / Math.PI);
-
-        // Calculate node vector (points to ascending node)
         const n = new THREE.Vector3(0, 0, 1).cross(h);
         const n_mag = n.length();
-
-        // Calculate longitude of ascending node (Ω)
         let lan = Math.acos(n.x / n_mag) * (180 / Math.PI);
         if (n.y < 0) lan = 360 - lan;
-
-        // Calculate argument of periapsis (ω)
         let aop = Math.acos(n.dot(ev) / (n_mag * ecc)) * (180 / Math.PI);
         if (ev.z < 0) aop = 360 - aop;
-
-        // Calculate true anomaly (ν)
         let ta = Math.acos(ev.dot(r) / (ecc * r_mag)) * (180 / Math.PI);
         if (r.dot(v) < 0) ta = 360 - ta;
-
-        // Calculate orbital period
         const period = 2 * Math.PI * Math.sqrt(Math.pow(sma, 3) / mu);
-
-        // Calculate periapsis and apoapsis distances (in meters)
-        const periapsis = sma * (1 - ecc);
-        const apoapsis = sma * (1 + ecc);
+        // Centralize apsis calculation
+        const apsides = PhysicsUtils.calculateApsidesFromElements({ h: h_mag, e: ecc }, mu) || {};
+        const rPeriapsis = apsides.rPeriapsis;
+        const rApoapsis = apsides.rApoapsis;
 
         return {
             semiMajorAxis: sma * Constants.metersToKm,
@@ -256,10 +257,10 @@ export class Satellite {
             period: period,
             specificAngularMomentum: h_mag,
             specificOrbitalEnergy: energy,
-            periapsisAltitude: (periapsis - Constants.earthRadius) * Constants.metersToKm,
-            apoapsisAltitude: (apoapsis - Constants.earthRadius) * Constants.metersToKm,
-            periapsisRadial: periapsis * Constants.metersToKm,
-            apoapsisRadial: apoapsis * Constants.metersToKm
+            periapsisAltitude: (rPeriapsis - Constants.earthRadius) * Constants.metersToKm,
+            apoapsisAltitude: rApoapsis !== null ? (rApoapsis - Constants.earthRadius) * Constants.metersToKm : null,
+            periapsisRadial: rPeriapsis * Constants.metersToKm,
+            apoapsisRadial: rApoapsis !== null ? rApoapsis * Constants.metersToKm : null
         };
     }
 
@@ -268,11 +269,6 @@ export class Satellite {
         if (this.visualizer) {
             this.visualizer.removeFromScene(this.scene);
             this.visualizer.dispose();
-        }
-        // Remove and dispose trace path
-        if (this.tracePath) {
-            this.scene.remove(this.tracePath.traceLine);
-            this.tracePath.dispose();
         }
         // Remove and dispose orbit path
         if (this.orbitPath) {
@@ -302,9 +298,6 @@ export class Satellite {
         this.color = color;
 
         this.visualizer.setColor(color);
-        if (this.tracePath?.traceLine) {
-            this.tracePath.traceLine.material.color.set(color);
-        }
         if (this.orbitPath?.orbitLine) {
             this.orbitPath.orbitLine.material.color.set(color);
         }
@@ -349,5 +342,80 @@ export class Satellite {
      */
     getMesh() {
         return this.visualizer?.mesh || null;
+    }
+
+    /**
+     * Compute current gravitational acceleration and force on this satellite.
+     * @returns {{acceleration: THREE.Vector3, force: THREE.Vector3}}
+     */
+    getPerturbation() {
+        if (!this.position) return null;
+        // positions are in meters
+        const G = Constants.G;
+        const r = this.position.clone();
+        // Earth acceleration
+        const muE = G * Constants.earthMass;
+        const rMagE = r.length();
+        const aEarth = r.clone().multiplyScalar(-muE / Math.pow(rMagE, 3));
+        // Moon acceleration
+        let aMoon = new THREE.Vector3();
+        if (this.app3d.moon) {
+            const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
+            // Use world position to get absolute coordinates
+            const moonWorldPos = new THREE.Vector3();
+            moonMesh.getWorldPosition(moonWorldPos);
+            // Convert from Three.js units (km*scale) to meters
+            const moonPosM = moonWorldPos.multiplyScalar(1 / (Constants.scale * Constants.metersToKm));
+            const relM = moonPosM.clone().sub(r);
+            const rMagM = relM.length();
+            if (rMagM > 0) {
+                const muM = G * Constants.moonMass;
+                aMoon = relM.multiplyScalar(muM / Math.pow(rMagM, 3));
+            }
+        }
+        // Sun acceleration
+        let aSun = new THREE.Vector3();
+        if (this.app3d.sun) {
+            const sunMesh = this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun.sunLight;
+            // Use world position for absolute coordinates
+            const sunWorldPos = new THREE.Vector3();
+            sunMesh.getWorldPosition(sunWorldPos);
+            // Convert from Three.js units (km*scale) to meters
+            const sunPosM = sunWorldPos.multiplyScalar(1 / (Constants.scale * Constants.metersToKm));
+            const relS = sunPosM.clone().sub(r);
+            const rMagS = relS.length();
+            if (rMagS > 0) {
+                const muS = G * Constants.sunMass;
+                aSun = relS.multiplyScalar(muS / Math.pow(rMagS, 3));
+            }
+        }
+        // Total acceleration (do not mutate individual vectors)
+        const totalAcc = new THREE.Vector3()
+            .add(aEarth)
+            .add(aMoon)
+            .add(aSun);
+        // Forces per body
+        const forceEarth = aEarth.clone().multiplyScalar(this.mass);
+        const forceMoon = aMoon.clone().multiplyScalar(this.mass);
+        const forceSun = aSun.clone().multiplyScalar(this.mass);
+        const totalForce = new THREE.Vector3()
+            .add(forceEarth)
+            .add(forceMoon)
+            .add(forceSun);
+        // Return breakdown
+        return {
+            acc: {
+                total: totalAcc,
+                earth: aEarth,
+                moon: aMoon,
+                sun: aSun
+            },
+            force: {
+                total: totalForce,
+                earth: forceEarth,
+                moon: forceMoon,
+                sun: forceSun
+            }
+        };
     }
 }
