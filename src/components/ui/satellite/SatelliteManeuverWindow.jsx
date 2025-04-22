@@ -66,7 +66,42 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
             setTimeMode('datetime');
             const t = node.time;
             setHours(t.getUTCHours()); setMinutes(t.getUTCMinutes()); setSeconds(t.getUTCSeconds()); setMilliseconds(t.getUTCMilliseconds());
-            setVx(node.deltaV.x.toString()); setVy(node.deltaV.y.toString()); setVz(node.deltaV.z.toString());
+            // Compute local basis-projected deltaV for editing
+            {
+                const dvWorld = node.deltaV.clone();
+                const pts = satellite.orbitPath.orbitPoints || [];    
+                const per = satellite.getOrbitalElements()?.period;
+                let dvLocal;
+                if (pts.length > 1 && per) {
+                    const nowSim = satellite.app3d.timeUtils.getSimulatedTime();
+                    const dt = (t.getTime() - nowSim.getTime()) / 1000;
+                    let frac = dt / per;
+                    frac = ((frac % 1) + 1) % 1;
+                    const idx = Math.floor(frac * pts.length);
+                    const ptObj = pts[idx];
+                    const nextObj = pts[(idx + 1) % pts.length];
+                    if (ptObj && nextObj) {
+                        const ptVec = new THREE.Vector3(ptObj.x, ptObj.y, ptObj.z);
+                        const nextVec = new THREE.Vector3(nextObj.x, nextObj.y, nextObj.z);
+                        const vHat = nextVec.clone().sub(ptVec).normalize();
+                        const rHat = ptVec.clone().normalize();
+                        const hHat = new THREE.Vector3().crossVectors(rHat, vHat).normalize();
+                        dvLocal = new THREE.Vector3(
+                            dvWorld.dot(vHat),
+                            dvWorld.dot(rHat),
+                            dvWorld.dot(hHat)
+                        );
+                    }
+                }
+                if (!dvLocal) {
+                    dvLocal = dvWorld.clone();
+                }
+                // Round to avoid tiny floating errors
+                const rvx = Math.round(dvLocal.x);
+                const rvy = Math.round(dvLocal.y);
+                const rvz = Math.round(dvLocal.z);
+                setVx(rvx.toString()); setVy(rvy.toString()); setVz(rvz.toString());
+            }
         } else {
             setTimeMode('offset'); setOffsetSec('0');
             setHours(simTime.getUTCHours()); setMinutes(simTime.getUTCMinutes()); setSeconds(simTime.getUTCSeconds()); setMilliseconds(simTime.getUTCMilliseconds());
