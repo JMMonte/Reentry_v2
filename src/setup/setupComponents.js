@@ -7,7 +7,7 @@ export function setupCamera() {
     const camera = new THREE.PerspectiveCamera(
         42, // Field of view
         window.innerWidth / window.innerHeight, // Aspect ratio
-        10, // Near clipping plane
+        0.1, // Near clipping plane
         Constants.kmToMeters * 4e10 // Far clipping plane
     );
     camera.position.set(1000, 7000, 20000).multiplyScalar(Constants.scale);

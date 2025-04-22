@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import starData from '../config/BSC.json';
 
-const RADIUS = 5e5; // Radius of the sphere
-const STAR_SCALE = RADIUS * 0.12e-5;
+const RADIUS = 9.4607e14; // ~1000 light-years in sim units (1 unit = 10km)
+const STAR_SCALE = 0.7; // Base multiplier for star point sizes
 
 // Function to convert RA and DEC to Cartesian coordinates
 function convertToCartesian(ra, dec, radius = RADIUS) {
@@ -91,9 +91,5 @@ export class BackgroundStars {
         this.stars.renderOrder = -1; // Render stars first
         this.stars.frustumCulled = false; // Always render stars regardless of frustum culling
         this.scene.add(this.stars);
-        // Update stars position each frame to match camera position (cheap per-frame update)
-        this.stars.onBeforeRender = (renderer, scene, camera) => {
-            this.stars.position.copy(camera.position);
-        };
     }
 }
