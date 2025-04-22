@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Button } from "../button";
 import { DraggableModal } from "../modal/DraggableModal";
 import { ColorPicker } from "./ColorPicker";
-import { Focus, Trash2 } from "lucide-react";
+import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { Constants } from '../../../utils/Constants';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 
-export function SatelliteDebugWindow({ satellite, onBodySelect, onClose }) {
+export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenManeuver }) {
   const [apsisData, setApsisData] = useState(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [dragData, setDragData] = useState(null);
@@ -162,6 +162,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose }) {
   if (!satellite) return null;
 
   return (
+    <>
     <DraggableModal
       title={satellite.name || `Satellite ${satellite.id}`}
       isOpen={true}
@@ -180,6 +181,9 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose }) {
       }
       rightElement={
         <div className="flex gap-1">
+          <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => onOpenManeuver(satellite)}>
+            <Plus className="h-4 w-4" />
+          </Button>
           <Button variant="ghost" size="icon" className="w-8 h-8" onClick={handleFocus}>
             <Focus className="h-4 w-4" />
           </Button>
@@ -280,6 +284,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose }) {
         )}
       </div>
     </DraggableModal>
+    </>
   );
 }
 
@@ -287,4 +292,5 @@ SatelliteDebugWindow.propTypes = {
   satellite: PropTypes.object,
   onBodySelect: PropTypes.func,
   onClose: PropTypes.func,
+  onOpenManeuver: PropTypes.func,
 };

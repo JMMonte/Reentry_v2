@@ -130,11 +130,11 @@ export class Earth {
         this.earthSurface.addLongitudeLines();
         this.earthSurface.addCountryBorders();
         this.earthSurface.addStates();
-        this.earthSurface.addPoints(geojsonDataCities, this.earthSurface.materials.cityPoint, 'cities');
-        this.earthSurface.addPoints(geojsonDataAirports, this.earthSurface.materials.airportPoint, 'airports');
-        this.earthSurface.addPoints(geojsonDataSpaceports, this.earthSurface.materials.spaceportPoint, 'spaceports');
-        this.earthSurface.addPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
-        this.earthSurface.addPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
+        this.earthSurface.addInstancedPoints(geojsonDataCities, this.earthSurface.materials.cityPoint, 'cities');
+        this.earthSurface.addInstancedPoints(geojsonDataAirports, this.earthSurface.materials.airportPoint, 'airports');
+        this.earthSurface.addInstancedPoints(geojsonDataSpaceports, this.earthSurface.materials.spaceportPoint, 'spaceports');
+        this.earthSurface.addInstancedPoints(geojsonDataGroundStations, this.earthSurface.materials.groundStationPoint, 'groundStations');
+        this.earthSurface.addInstancedPoints(geojsonDataObservatories, this.earthSurface.materials.observatoryPoint, 'observatories');
     }
 
     addLightSource() {

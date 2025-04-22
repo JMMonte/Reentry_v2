@@ -76,6 +76,11 @@ export class SimulationLoop {
             this.cameraControls.updateCameraPosition();
         }
 
+        // Fade radial grid labels based on camera distance
+        if (this.sceneManager.radialGrid && typeof this.sceneManager.radialGrid.updateFading === 'function') {
+            this.sceneManager.radialGrid.updateFading(this.sceneManager.camera);
+        }
+
         // Render
         if (this.sceneManager.composers.final) {
             this.sceneManager.composers.final.render();

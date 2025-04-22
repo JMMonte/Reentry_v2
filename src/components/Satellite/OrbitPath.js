@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Constants } from '../../utils/Constants.js';
 
 export class OrbitPath {
     constructor(color) {
@@ -44,6 +45,8 @@ export class OrbitPath {
         this._period = period;
         this._numPoints = numPoints;
         this._currentId = id;
+        // Save current position for geometry origin
+        this._currentPosition = position.clone();
         // Store Earth position for distance calculations
         if (bodies.length > 0) {
             const bp = bodies[0].position;
@@ -120,7 +123,7 @@ export class OrbitPath {
             // Don't update geometry when hidden
             if (!this.orbitLine.visible) return;
             const pts = e.data.orbitPoints;
-            // Store orbit points for simulation data window
+            // Store orbit points for simulation data window (predicted points only)
             this.orbitPoints = pts;
             // Emit orbit data update event for UI
             document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
@@ -131,20 +134,29 @@ export class OrbitPath {
                     numPoints: this._numPoints
                 }
             }));
-            const count = pts.length;
-            // Rebuild geometry to match incoming points
-            this._maxOrbitPoints = count;
+            // Include current position as first point and then predicted points
+            const k = Constants.metersToKm * Constants.scale;
+            const origin = this._currentPosition.clone().multiplyScalar(k);
+            const count = pts.length + 1;
+            // Update max orbit points (predicted only, for future updates)
+            this._maxOrbitPoints = pts.length;
+            // Rebuild geometry to match incoming points plus current position
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(count * 3);
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setDrawRange(0, count);
             this.orbitLine.geometry.dispose();
             this.orbitLine.geometry = geometry;
-            // Fill positions
+            // Fill positions: first current position, then predicted orbit
             const array = geometry.attributes.position.array;
-            for (let i = 0; i < count; i++) {
+            // current position
+            array[0] = origin.x;
+            array[1] = origin.y;
+            array[2] = origin.z;
+            // predicted points
+            for (let i = 0; i < pts.length; i++) {
                 const pt = pts[i];
-                const idx = i * 3;
+                const idx = (i + 1) * 3;
                 array[idx] = pt.x;
                 array[idx + 1] = pt.y;
                 array[idx + 2] = pt.z;

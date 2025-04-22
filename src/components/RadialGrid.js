@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer';
 import { Constants } from '../utils/Constants';
 import { OrbitalRegimes } from '../utils/OrbitalRegimes';
 
@@ -10,6 +9,7 @@ export class RadialGrid {
         this.group.name = 'radialGrid';
         this.scene.add(this.group);
         this.labels = [];  // Store labels so we don't recreate them
+        this.labelsSprites = []; // Store sprite labels for fading
         
         this.createGrid();
         this.createLabels();
@@ -160,68 +160,66 @@ export class RadialGrid {
         this.createLabel('Hill Sphere', Constants.earthRadius + Constants.earthHillSphere);
     }
 
+    // Create a simple text sprite with white text
+    createTextSprite(text) {
+        // Set up canvas for text
+        const fontSize = 16; // use smaller font for simpler rendering
+        const font = `${fontSize}px sans-serif`;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.font = font;
+        // Measure and size canvas
+        const metrics = ctx.measureText(text);
+        const textWidth = Math.ceil(metrics.width);
+        const textHeight = fontSize;
+        canvas.width = textWidth;
+        canvas.height = textHeight;
+        // Render text
+        ctx.font = font;
+        ctx.fillStyle = '#ffffff';
+        ctx.textBaseline = 'top';
+        ctx.fillText(text, 0, 0);
+        // Create texture and sprite
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, sizeAttenuation: false });
+        const sprite = new THREE.Sprite(material);
+        // Keep sprite at constant screen size, using pixelScale to reduce size
+        const pixelScale = 0.0005; // fraction of pixel dimensions for on-screen size
+        sprite.scale.set(textWidth * pixelScale, textHeight * pixelScale, 1);
+        return sprite;
+    }
+
+    // Replace createLabel to use sprite-based text
     createLabel(text, radius) {
-        const div = document.createElement('div');
-        div.className = 'orbital-regime-label';
-        
-        // Create inner elements for basic and detailed views
-        const basicView = document.createElement('span');
-        basicView.textContent = text;
-        basicView.style.display = 'block';
-        
-        const detailedView = document.createElement('span');
-        // radius already includes Earth's radius, so subtract it for altitude
-        const altitudeKm = ((radius - Constants.earthRadius) / Constants.kmToMeters).toFixed(0);
-        const radialKm = (radius / Constants.kmToMeters).toFixed(0);
-        detailedView.textContent = `${text}\nAltitude: ${altitudeKm} km\nRadial: ${radialKm} km`;
-        detailedView.style.display = 'none';
-        detailedView.style.whiteSpace = 'pre-line';
-        
-        div.appendChild(basicView);
-        div.appendChild(detailedView);
+        const sprite = this.createTextSprite(text);
+        const scaledRadius = radius * Constants.metersToKm * Constants.scale;
+        sprite.position.set(scaledRadius, 0, 0);
+        sprite.layers.set(1);
+        this.group.add(sprite);
+        this.labelsSprites.push(sprite);
+    }
 
-        // Base styles
-        div.style.color = '#ffffff';
-        div.style.fontSize = '8px';
-        div.style.fontWeight = '500';
-        div.style.padding = '1px 3px';
-        div.style.background = 'rgba(0, 0, 0, 0.8)';
-        div.style.borderRadius = '2px';
-        div.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-        div.style.backdropFilter = 'blur(2px)';
-        div.style.userSelect = 'none';
-        div.style.lineHeight = '1.2';
-        div.style.letterSpacing = '0.2px';
-        div.style.cursor = 'pointer';
-        div.style.pointerEvents = 'auto';  // Enable pointer events only on the label
-        
-        // Hover effects
-        div.addEventListener('pointerenter', (e) => {
-            e.stopPropagation();  // Prevent event from reaching OrbitControls
-            div.style.fontSize = '10px';
-            div.style.padding = '3px 5px';
-            div.style.background = 'rgba(0, 0, 0, 0.9)';
-            div.style.border = '1px solid rgba(255, 255, 255, 0.3)';
-            basicView.style.display = 'none';
-            detailedView.style.display = 'block';
+    /**
+     * Fade labels based on camera distance: fully visible until fadeStart,
+     * then fade out to zero at fadeEnd.
+     */
+    updateFading(camera) {
+        const distance = camera.position.length();
+        const maxRadius = (Constants.earthRadius + Constants.earthHillSphere) * Constants.metersToKm * Constants.scale;
+        const fadeStart = maxRadius * 0.05;
+        const fadeEnd = maxRadius * 0.2;
+        let opacity = 1;
+        if (distance > fadeStart) {
+            if (distance >= fadeEnd) opacity = 0;
+            else opacity = 1 - (distance - fadeStart) / (fadeEnd - fadeStart);
+        }
+        this.labelsSprites.forEach(sprite => {
+            const mat = sprite.material;
+            mat.opacity = opacity;
+            mat.transparent = true;
+            mat.needsUpdate = true;
         });
-        
-        div.addEventListener('pointerleave', (e) => {
-            e.stopPropagation();  // Prevent event from reaching OrbitControls
-            div.style.fontSize = '8px';
-            div.style.padding = '1px 3px';
-            div.style.background = 'rgba(0, 0, 0, 0.8)';
-            div.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-            basicView.style.display = 'block';
-            detailedView.style.display = 'none';
-        });
-
-        const label = new CSS2DObject(div);
-        label.element.style.pointerEvents = 'auto';  // Enable pointer events on the label element
-        const scaledRadius = (radius * Constants.metersToKm * Constants.scale);
-        label.position.set(scaledRadius, 0, 0);
-        label.layers.set(1);  // Set to layer 1 for occlusion
-        this.group.add(label);
     }
 
     setVisible(visible) {

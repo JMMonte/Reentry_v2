@@ -114,6 +114,12 @@ export class DisplaySettingsManager {
             case 'showMoonSurfaceLines':
                 if (app3d.moon?.setSurfaceDetailsVisible) app3d.moon.setSurfaceDetailsVisible(value);
                 break;
+            case 'enableFXAA':
+                // Enable or disable the FXAA pass
+                if (app3d.sceneManager?.composers?.fxaaPass) {
+                    app3d.sceneManager.composers.fxaaPass.enabled = value;
+                }
+                break;
             // Add more settings as needed
         }
     }

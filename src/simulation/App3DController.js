@@ -35,6 +35,10 @@ export class App3DController {
         if (this._initialState) {
             try {
                 this.app3d.importSimulationState(this._initialState);
+                // Ensure camera follows the loaded focused body
+                if (this._initialState.camera && typeof this._initialState.camera.focusedBody === 'string') {
+                    this.app3d.updateSelectedBody(this._initialState.camera.focusedBody);
+                }
             } catch (err) {
                 console.error('Failed to import initial simulation state:', err);
             }

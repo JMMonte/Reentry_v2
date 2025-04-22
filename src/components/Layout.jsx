@@ -11,6 +11,7 @@ import SatelliteCreator from './ui/satellite/SatelliteCreator';
 import PropTypes from 'prop-types';
 import { ResetPasswordModal } from './ui/auth/ResetPasswordModal';
 import { SimulationWindow } from './ui/simulation/SimulationWindow';
+import { SatelliteManeuverWindow } from './ui/satellite/SatelliteManeuverWindow';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -106,8 +107,8 @@ function SatelliteCreatorModal({ isOpen, onClose, onCreate }) {
             title="Create Satellite"
             isOpen={isOpen}
             onClose={onClose}
-            defaultWidth={400}
-            defaultHeight={500}
+            defaultWidth={350}
+            defaultHeight={550}
             minWidth={300}
             minHeight={300}
             resizable={true}
@@ -177,13 +178,16 @@ export function Layout({
     satelliteCreatorModalProps,
     shareModalProps,
     authModalProps,
-    simulationWindowProps
+    simulationWindowProps,
+    earthPointModalProps
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {
         toastRef.current?.showToast(msg);
     };
     const [resetModalOpen, setResetModalOpen] = useState(false);
+    const [maneuverSat, setManeuverSat] = useState(null);
+    const handleOpenManeuver = (satellite) => setManeuverSat(satellite);
 
     // Open reset modal if URL contains type=recovery and access_token
     useEffect(() => {
@@ -218,13 +222,47 @@ export function Layout({
                         earth={earth}
                         onBodySelect={onBodySelect}
                         onClose={onClose}
+                        onOpenManeuver={handleOpenManeuver}
                     />
                 ))}
-                <SatelliteListWindow {...satelliteListWindowProps} />
+                <SatelliteListWindow {...satelliteListWindowProps} onOpenManeuver={handleOpenManeuver} />
                 <SatelliteCreatorModal {...satelliteCreatorModalProps} />
                 <ShareModal {...shareModalProps} />
                 <AuthModal {...authModalProps} />
                 <SimulationWindow {...simulationWindowProps} />
+                {maneuverSat && (
+                    <SatelliteManeuverWindow
+                        satellite={maneuverSat}
+                        onClose={() => setManeuverSat(null)}
+                    />
+                )}
+                {/* Render a modal for each selected point */}
+                {earthPointModalProps?.openModals?.map(({ feature, category }, idx) => {
+                    const featureProps = feature.properties || {};
+                    const name = featureProps.name || featureProps.NAME || category;
+                    return (
+                        <DraggableModal
+                            key={`pointmodal-${category}-${idx}`}
+                            title={name}
+                            isOpen={true}
+                            onClose={() => earthPointModalProps.onToggle(feature, category)}
+                            defaultWidth={300}
+                            defaultHeight={200}
+                            minWidth={200}
+                            minHeight={100}
+                            resizable={true}
+                        >
+                            <div className="space-y-1">
+                                {Object.entries(featureProps).map(([key, val]) => (
+                                    <div key={key} className="flex items-center justify-between px-2 py-1 text-[11px] text-muted-foreground">
+                                        <span className="font-semibold">{key}</span>
+                                        <span>{String(val)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </DraggableModal>
+                    );
+                })}
                 <ResetPasswordModal isOpen={resetModalOpen} onClose={() => setResetModalOpen(false)} showToast={showToast} />
             </ModalPortal>
             <Toast ref={toastRef} />
@@ -246,5 +284,14 @@ Layout.propTypes = {
         isOpen: PropTypes.bool.isRequired,
         onClose: PropTypes.func.isRequired,
         satellites: PropTypes.array
-    }).isRequired
+    }).isRequired,
+    earthPointModalProps: PropTypes.shape({
+        openModals: PropTypes.arrayOf(
+            PropTypes.shape({
+                feature: PropTypes.object.isRequired,
+                category: PropTypes.string.isRequired
+            })
+        ).isRequired,
+        onToggle: PropTypes.func.isRequired
+    })
 }; 

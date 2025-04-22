@@ -100,9 +100,8 @@ function App3DMain() {
   const [checkedInitialState, setCheckedInitialState] = useState(false);
   const ignoreNextHashChange = React.useRef(false);
   const toastRef = useRef();
-  const showToast = (msg) => {
-    toastRef.current?.showToast(msg);
-  };
+  const [openPointModals, setOpenPointModals] = useState([]);
+  const showToast = (msg) => { toastRef.current?.showToast(msg); };
   useEffect(() => { setCheckedInitialState(true); }, []);
   useEffect(() => {
     const onHashChange = () => {
@@ -232,7 +231,8 @@ function App3DMain() {
   };
   const handleShareViaEmail = () => {
     const subject = encodeURIComponent('Check out this simulation state!');
-    const body = encodeURIComponent(`Open this link to load the simulation state:\n${shareUrl}`);
+    const body = encodeURIComponent(`Open this link to load the simulation state:
+${shareUrl}`);
     window.open(`mailto:?subject=${subject}&body=${body}`);
   };
   useEffect(() => {
@@ -281,6 +281,22 @@ function App3DMain() {
     reader.readAsText(file);
     event.target.value = '';
   };
+  // Toggle modals on point click: open or close per feature & category
+  useEffect(() => {
+    const onPointClick = (e) => {
+      const { feature, category } = e.detail;
+      setOpenPointModals(prev => {
+        const exists = prev.find(m => m.feature === feature && m.category === category);
+        if (exists) {
+          return prev.filter(m => !(m.feature === feature && m.category === category));
+        } else {
+          return [...prev, { feature, category }];
+        }
+      });
+    };
+    window.addEventListener('earthPointClick', onPointClick);
+    return () => window.removeEventListener('earthPointClick', onPointClick);
+  }, []);
   if (!checkedInitialState) return null;
   // Build props for Layout
   const navbarProps = {
@@ -357,6 +373,19 @@ function App3DMain() {
     setMode: setAuthMode,
     onSignupSuccess: showToast
   };
+  const earthPointModalProps = {
+    openModals: openPointModals,
+    onToggle: (feature, category) => {
+      setOpenPointModals(prev => {
+        const exists = prev.find(m => m.feature === feature && m.category === category);
+        if (exists) {
+          return prev.filter(m => !(m.feature === feature && m.category === category));
+        } else {
+          return [...prev, { feature, category }];
+        }
+      });
+    }
+  };
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <ToastContext.Provider value={{ showToast }}>
@@ -370,6 +399,7 @@ function App3DMain() {
           shareModalProps={shareModalProps}
           authModalProps={authModalProps}
           simulationWindowProps={{ isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), satellites: Object.values(satellites) }}
+          earthPointModalProps={earthPointModalProps}
         >
           {/* Main app content (canvas, etc.) */}
           <canvas id="three-canvas" className="absolute inset-0 z-0" />

@@ -6,8 +6,11 @@ class EarthSurface {
     constructor(mesh, earthRadius) {
         this.scene = mesh;
         this.earthRadius = earthRadius;
-        this.heightOffset = 0.5;
+        this.heightOffset = 0.01;
         this.radius = this.earthRadius + this.heightOffset;
+
+        // create a shared circle sprite for point markers
+        this.circleTexture = this.createCircleTexture(64);
 
         // Centralize materials
         this.materials = {
@@ -53,6 +56,8 @@ class EarthSurface {
             }),
             cityPoint: new THREE.PointsMaterial({
                 color: 0x00A5FF,
+                map: this.circleTexture,
+                alphaTest: 0.5,
                 transparent: true,
                 depthWrite: true,
                 depthTest: true,
@@ -61,10 +66,12 @@ class EarthSurface {
                 blendSrc: THREE.SrcAlphaFactor,
                 blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
-                size: 5
+                size: 4
             }),
             airportPoint: new THREE.PointsMaterial({
                 color: 0xFF0000,
+                map: this.circleTexture,
+                alphaTest: 0.5,
                 transparent: true,
                 depthWrite: true,
                 depthTest: true,
@@ -73,10 +80,12 @@ class EarthSurface {
                 blendSrc: THREE.SrcAlphaFactor,
                 blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
-                size: 5
+                size: 4
             }),
             spaceportPoint: new THREE.PointsMaterial({
                 color: 0xFFD700,
+                map: this.circleTexture,
+                alphaTest: 0.5,
                 transparent: true,
                 depthWrite: true,
                 depthTest: true,
@@ -85,10 +94,12 @@ class EarthSurface {
                 blendSrc: THREE.SrcAlphaFactor,
                 blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
-                size: 5
+                size: 4
             }),
             groundStationPoint: new THREE.PointsMaterial({
                 color: 0x00FF00,
+                map: this.circleTexture,
+                alphaTest: 0.5,
                 transparent: true,
                 depthWrite: true,
                 depthTest: true,
@@ -97,10 +108,12 @@ class EarthSurface {
                 blendSrc: THREE.SrcAlphaFactor,
                 blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
-                size: 5
+                size: 4
             }),
             observatoryPoint: new THREE.PointsMaterial({
                 color: 0xFF00FF,
+                map: this.circleTexture,
+                alphaTest: 0.5,
                 transparent: true,
                 depthWrite: true,
                 depthTest: true,
@@ -109,7 +122,7 @@ class EarthSurface {
                 blendSrc: THREE.SrcAlphaFactor,
                 blendDst: THREE.OneMinusSrcAlphaFactor,
                 sizeAttenuation: false,
-                size: 5
+                size: 4
             })
         };
 
@@ -189,9 +202,47 @@ class EarthSurface {
 
         pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(pointPositions, 3));
         const points = new THREE.Points(pointGeometry, material);
+        // store feature list and category for raycast picking
+        points.userData = { features: geojsonData.features, category };
         points.renderOrder = 3;
         this.scene.add(points);
         this.points[category].push(points);
+    }
+
+    addInstancedPoints(geojsonData, material, category, dotRadius = 0.05) {
+        // create a small sphere geometry for instancing
+        const instCount = geojsonData.features.length;
+        const sphereGeo = new THREE.SphereGeometry(dotRadius, 6, 6);
+        // use a mesh material with same blending and map settings
+        const meshMat = new THREE.MeshBasicMaterial({
+            color: material.color,
+            map: material.map,
+            alphaTest: material.alphaTest,
+            transparent: material.transparent,
+            depthWrite: material.depthWrite,
+            depthTest: material.depthTest,
+            blending: material.blending,
+            blendEquation: material.blendEquation,
+            blendSrc: material.blendSrc,
+            blendDst: material.blendDst
+        });
+        const inst = new THREE.InstancedMesh(sphereGeo, meshMat, instCount);
+        inst.renderOrder = 3;
+        inst.userData = { features: geojsonData.features, category };
+        const tempObj = new THREE.Object3D();
+        for (let i = 0; i < instCount; i++) {
+            const feat = geojsonData.features[i];
+            const [lon, lat] = feat.geometry.coordinates;
+            const phi = THREE.MathUtils.degToRad(90 - lat);
+            const theta = THREE.MathUtils.degToRad(lon);
+            const pos = new THREE.Vector3().setFromSphericalCoords(this.earthRadius + this.heightOffset, phi, theta);
+            tempObj.position.copy(pos);
+            tempObj.updateMatrix();
+            inst.setMatrixAt(i, tempObj.matrix);
+        }
+        inst.instanceMatrix.needsUpdate = true;
+        this.scene.add(inst);
+        this.points[category].push(inst);
     }
 
     createTextTexture(text) {
@@ -201,6 +252,20 @@ class EarthSurface {
         context.fillStyle = 'rgba(255, 255, 255, 1.0)';
         context.fillText(text, 0, 20);
         const texture = new THREE.CanvasTexture(canvas);
+        return texture;
+    }
+
+    // add a method to generate a circular sprite texture
+    createCircleTexture(size = 64) {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
         return texture;
     }
 

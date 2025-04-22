@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
-import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
 import { OrbitPath } from './OrbitPath.js';
 import { GroundTrackPath } from './GroundTrackPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
+import { ManeuverNode } from './ManeuverNode.js';
 
 export class Satellite {
     constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name }) {
@@ -19,10 +19,6 @@ export class Satellite {
         this.velocity = velocity.clone();
         this.initialized = false;
         this.updateBuffer = [];
-        this.landed = false;
-
-        // Performance optimization: Update counters
-        this.groundTrackUpdateCounter = 0;
 
         // Initialize orientation quaternion
         this.orientation = new THREE.Quaternion();
@@ -37,13 +33,13 @@ export class Satellite {
             this.app3d.createDebugWindow(this);
         }
 
-        // Sequence counter for orbit worker messages
-        this._seq = 0;
-
         // Smoothing for display to reduce visual oscillation
         this._smoothedScaled = null;
 
         this.initializeVisuals();
+        this.maneuverNodes = [];
+        this.maneuverGroup = new THREE.Group();
+        this.scene.add(this.maneuverGroup);
 
         // Subscribe to display options changes
         this.app3d.addEventListener('displaySettingChanged', (event) => {
@@ -86,10 +82,6 @@ export class Satellite {
         this.apsisVisualizer.setVisible(this.app3d.getDisplaySetting('showOrbits'));
     }
 
-    get groundTrackUpdateInterval() {
-        return this.app3d.getDisplaySetting('groundTrackUpdateInterval') || 10;
-    }
-
     updatePosition(position, velocity, debug) {
         // Store latest debug data if provided
         if (debug) {
@@ -97,15 +89,9 @@ export class Satellite {
         }
         // Mark that we've received real physics state
         this.initialized = true;
-        // Lazy-init scratch vectors to avoid allocations
+        // Lazy-init only the needed scratch vector
         if (!this._scratchScaled) {
             this._scratchScaled = new THREE.Vector3();
-            this._scratchScaled2 = new THREE.Vector3();
-            this._scratchVelScaled = new THREE.Vector3();
-            this._scratchRelative = new THREE.Vector3();
-            this._scratchLocal = new THREE.Vector3();
-            this._lastOrbitPos = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
-            this._lastOrbitVel = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
         }
         // Store current state (in meters)
         this.position = position.clone();
@@ -163,6 +149,9 @@ export class Satellite {
         } catch (err) {
             console.error('Error dispatching simulationDataUpdate with debug:', err);
         }
+
+        // Update maneuver nodes positions
+        this.maneuverNodes.forEach(node => node.update());
     }
 
     updateSatellite() {
@@ -211,57 +200,8 @@ export class Satellite {
     }
 
     getOrbitalElements() {
-        // Only compute after receiving first physics update
-        if (!this.initialized) return null;
-        if (!this.position || !this.velocity) return null;
-        // Use orbital elements from physics worker debug if available
-        if (this.debug?.apsisData) {
-            return this.debug.apsisData;
-        }
-        const mu = Constants.G * Constants.earthMass;
-        const r_mag = this.position.length();
-        const v2 = this.velocity.lengthSq();
-        const energy = (v2 / 2) - (mu / r_mag);
-        const r = this.position.clone();
-        const v = this.velocity.clone();
-        const h = new THREE.Vector3().crossVectors(r, v);
-        const h_mag = h.length();
-        const sma = -mu / (2 * energy);
-        const ev = new THREE.Vector3()
-            .crossVectors(v, h)
-            .divideScalar(mu)
-            .sub(r.clone().divideScalar(r_mag));
-        const ecc = ev.length();
-        const inc = Math.acos(h.z / h_mag) * (180 / Math.PI);
-        const n = new THREE.Vector3(0, 0, 1).cross(h);
-        const n_mag = n.length();
-        let lan = Math.acos(n.x / n_mag) * (180 / Math.PI);
-        if (n.y < 0) lan = 360 - lan;
-        let aop = Math.acos(n.dot(ev) / (n_mag * ecc)) * (180 / Math.PI);
-        if (ev.z < 0) aop = 360 - aop;
-        let ta = Math.acos(ev.dot(r) / (ecc * r_mag)) * (180 / Math.PI);
-        if (r.dot(v) < 0) ta = 360 - ta;
-        const period = 2 * Math.PI * Math.sqrt(Math.pow(sma, 3) / mu);
-        // Centralize apsis calculation
-        const apsides = PhysicsUtils.calculateApsidesFromElements({ h: h_mag, e: ecc }, mu) || {};
-        const rPeriapsis = apsides.rPeriapsis;
-        const rApoapsis = apsides.rApoapsis;
-
-        return {
-            semiMajorAxis: sma * Constants.metersToKm,
-            eccentricity: ecc,
-            inclination: inc,
-            longitudeOfAscendingNode: lan,
-            argumentOfPeriapsis: aop,
-            trueAnomaly: ta,
-            period: period,
-            specificAngularMomentum: h_mag,
-            specificOrbitalEnergy: energy,
-            periapsisAltitude: (rPeriapsis - Constants.earthRadius) * Constants.metersToKm,
-            apoapsisAltitude: rApoapsis !== null ? (rApoapsis - Constants.earthRadius) * Constants.metersToKm : null,
-            periapsisRadial: rPeriapsis * Constants.metersToKm,
-            apoapsisRadial: rApoapsis !== null ? rApoapsis * Constants.metersToKm : null
-        };
+        // Rely on apsisData computed by the physics worker
+        return this.debug?.apsisData || null;
     }
 
     dispose() {
@@ -284,14 +224,17 @@ export class Satellite {
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
         }
+        // Dispose maneuver nodes
+        if (this.maneuverNodes) {
+            this.maneuverNodes.forEach(node => node.dispose());
+            this.maneuverNodes = [];
+        }
+        if (this.maneuverGroup) {
+            this.scene.remove(this.maneuverGroup);
+        }
 
         // Only dispatch satelliteDeleted event after cleanup
         document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
-    }
-
-    getAltitude(earth) {
-        if (!earth || !this.position) return 0;
-        return (this.position.length() - earth.radius) * Constants.metersToKm;
     }
 
     setColor(color) {
@@ -302,14 +245,6 @@ export class Satellite {
             this.orbitPath.orbitLine.material.color.set(color);
         }
         this.groundTrackPath?.setColor(color);
-    }
-
-    setGroundTraceVisible(visible) {
-        this.groundTrackPath?.setVisible(visible);
-    }
-
-    updateVectors() {
-        this.visualizer.updateVectors(this.velocity, this.orientation);
     }
 
     delete() {
@@ -345,77 +280,22 @@ export class Satellite {
     }
 
     /**
-     * Compute current gravitational acceleration and force on this satellite.
-     * @returns {{acceleration: THREE.Vector3, force: THREE.Vector3}}
+     * Add a maneuver node to this satellite
+     * @param {Date} time for maneuver execution
+     * @param {THREE.Vector3} deltaV vector in m/s
      */
-    getPerturbation() {
-        if (!this.position) return null;
-        // positions are in meters
-        const G = Constants.G;
-        const r = this.position.clone();
-        // Earth acceleration
-        const muE = G * Constants.earthMass;
-        const rMagE = r.length();
-        const aEarth = r.clone().multiplyScalar(-muE / Math.pow(rMagE, 3));
-        // Moon acceleration
-        let aMoon = new THREE.Vector3();
-        if (this.app3d.moon) {
-            const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
-            // Use world position to get absolute coordinates
-            const moonWorldPos = new THREE.Vector3();
-            moonMesh.getWorldPosition(moonWorldPos);
-            // Convert from Three.js units (km*scale) to meters
-            const moonPosM = moonWorldPos.multiplyScalar(1 / (Constants.scale * Constants.metersToKm));
-            const relM = moonPosM.clone().sub(r);
-            const rMagM = relM.length();
-            if (rMagM > 0) {
-                const muM = G * Constants.moonMass;
-                aMoon = relM.multiplyScalar(muM / Math.pow(rMagM, 3));
-            }
-        }
-        // Sun acceleration
-        let aSun = new THREE.Vector3();
-        if (this.app3d.sun) {
-            const sunMesh = this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun.sunLight;
-            // Use world position for absolute coordinates
-            const sunWorldPos = new THREE.Vector3();
-            sunMesh.getWorldPosition(sunWorldPos);
-            // Convert from Three.js units (km*scale) to meters
-            const sunPosM = sunWorldPos.multiplyScalar(1 / (Constants.scale * Constants.metersToKm));
-            const relS = sunPosM.clone().sub(r);
-            const rMagS = relS.length();
-            if (rMagS > 0) {
-                const muS = G * Constants.sunMass;
-                aSun = relS.multiplyScalar(muS / Math.pow(rMagS, 3));
-            }
-        }
-        // Total acceleration (do not mutate individual vectors)
-        const totalAcc = new THREE.Vector3()
-            .add(aEarth)
-            .add(aMoon)
-            .add(aSun);
-        // Forces per body
-        const forceEarth = aEarth.clone().multiplyScalar(this.mass);
-        const forceMoon = aMoon.clone().multiplyScalar(this.mass);
-        const forceSun = aSun.clone().multiplyScalar(this.mass);
-        const totalForce = new THREE.Vector3()
-            .add(forceEarth)
-            .add(forceMoon)
-            .add(forceSun);
-        // Return breakdown
-        return {
-            acc: {
-                total: totalAcc,
-                earth: aEarth,
-                moon: aMoon,
-                sun: aSun
-            },
-            force: {
-                total: totalForce,
-                earth: forceEarth,
-                moon: forceMoon,
-                sun: forceSun
-            }
-        };
+    addManeuverNode(time, deltaV) {
+        const node = new ManeuverNode({ satellite: this, time, deltaV });
+        this.maneuverNodes.push(node);
+        return node;
+    }
+
+    /**
+     * Remove a maneuver node
+     * @param {ManeuverNode} node
+     */
+    removeManeuverNode(node) {
+        node.dispose();
+        this.maneuverNodes = this.maneuverNodes.filter(n => n !== node);
     }
 }

@@ -18,6 +18,8 @@ export class SatelliteManager {
         this._lastTimeWarp = undefined;
         // track last time orbits were updated for throttling
         this._lastOrbitUpdateTime = 0;
+        // Pre-calculate conversion factor from world units (km*scale) to meters for physics worker
+        this._toMetersFactor = 1 / (Constants.metersToKm * Constants.scale);
     }
 
     /**
@@ -27,22 +29,8 @@ export class SatelliteManager {
      */
     addSatellite(params) {
         const satellite = new Satellite({ ...params, scene: this.app3d.scene, app3d: this.app3d });
-        // Inherit display settings from the simulation
-        const dsm = this.app3d.displaySettingsManager;
-        if (dsm) {
-            if (typeof satellite.setVectorsVisible === 'function') {
-                satellite.setVectorsVisible(dsm.getSetting('showSatVectors'));
-            }
-            if (satellite.orbitLine) {
-                satellite.orbitLine.visible = dsm.getSetting('showOrbits');
-            }
-            if (satellite.apsisVisualizer && typeof satellite.apsisVisualizer.setVisible === 'function') {
-                satellite.apsisVisualizer.setVisible(dsm.getSetting('showOrbits'));
-            }
-            if (satellite.groundTrack && typeof satellite.groundTrack.setVisible === 'function') {
-                satellite.groundTrack.setVisible(dsm.getSetting('showGroundTraces'));
-            }
-        }
+        // Apply display settings to the new satellite
+        this._applyDisplaySettings(satellite);
         // Set initial timeWarp
         if (this.app3d && this.app3d.timeUtils) {
             satellite.timeWarp = this.app3d.timeUtils.timeWarp;
@@ -67,6 +55,15 @@ export class SatelliteManager {
         if (satellite) {
             satellite.dispose();
             delete this._satellites[id];
+
+            // Remove from add queue so it won't be added to the worker later
+            this._satelliteAddQueue = this._satelliteAddQueue.filter(sat => sat.id !== id);
+
+            // Notify physics worker to remove the satellite from simulation
+            if (this.physicsWorker && this.workerInitialized) {
+                this.physicsWorker.postMessage({ type: 'removeSatellite', data: { id } });
+            }
+
             this._updateSatelliteList();
             this._checkPhysicsWorkerNeeded();
         }
@@ -95,7 +92,7 @@ export class SatelliteManager {
             const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
             const worldMoon = new THREE.Vector3();
             moonMesh.getWorldPosition(worldMoon);
-            const factor = 1 / (Constants.metersToKm * Constants.scale);
+            const factor = this._toMetersFactor;
             const moonPosM = { x: worldMoon.x * factor, y: worldMoon.y * factor, z: worldMoon.z * factor };
             const sunMesh = this.app3d.sun && this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun?.sunLight;
             let sunPosM;
@@ -152,7 +149,7 @@ export class SatelliteManager {
                 periodSec = els.period;
             }
             // define gravitational sources: Earth, Moon, and Sun
-            const factor2 = 1 / (Constants.metersToKm * Constants.scale);
+            const factor2 = this._toMetersFactor;
             const bodies = [];
 
             // Earth
@@ -263,8 +260,8 @@ export class SatelliteManager {
 
     _addSatelliteToWorker(satellite) {
         if (!this.physicsWorker || !this.workerInitialized) return;
-        // Convert from scaled Three.js units (km*scale) to meters for physics worker
-        const factor = 1 / (Constants.metersToKm * Constants.scale);
+        // Convert from scaled world units to meters using cached factor
+        const factor = this._toMetersFactor;
         const posM = {
             x: satellite.position.x * factor,
             y: satellite.position.y * factor,
@@ -337,6 +334,27 @@ export class SatelliteManager {
     setPerturbationScale(value) {
         if (this.physicsWorker && this.workerInitialized) {
             this.physicsWorker.postMessage({ type: 'setPerturbationScale', data: { value } });
+        }
+    }
+
+    /**
+     * Apply display settings from DisplaySettingsManager to a satellite.
+     * @private
+     */
+    _applyDisplaySettings(satellite) {
+        const dsm = this.app3d.displaySettingsManager;
+        if (!dsm) return;
+        if (typeof satellite.setVectorsVisible === 'function') {
+            satellite.setVectorsVisible(dsm.getSetting('showSatVectors'));
+        }
+        if (satellite.orbitLine) {
+            satellite.orbitLine.visible = dsm.getSetting('showOrbits');
+        }
+        if (satellite.apsisVisualizer && typeof satellite.apsisVisualizer.setVisible === 'function') {
+            satellite.apsisVisualizer.setVisible(dsm.getSetting('showOrbits'));
+        }
+        if (satellite.groundTrack && typeof satellite.groundTrack.setVisible === 'function') {
+            satellite.groundTrack.setVisible(dsm.getSetting('showGroundTraces'));
         }
     }
 } 

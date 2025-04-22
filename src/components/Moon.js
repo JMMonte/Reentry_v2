@@ -7,10 +7,8 @@ import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { MoonSurface } from './MoonSurface.js';
 
 export class Moon {
-    constructor(scene, renderer, timeUtils) {
+    constructor(scene) {
         this.scene = scene;
-        this.renderer = renderer;
-        this.timeUtils = timeUtils;
 
         const textureLoader = new THREE.TextureLoader();
         // Create the moon mesh
@@ -23,8 +21,6 @@ export class Moon {
             map: textureLoader.load(moonTexture),
             bumpMap: textureLoader.load(moonBump),
             bumpScale: 3.9,
-            // displacementMap: textureLoader.load(moonBump),
-            // displacementScale: 5.9,
         });
         this.moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
 
@@ -47,11 +43,6 @@ export class Moon {
         // Add Moon surface contours
         this.moonSurface = new MoonSurface(this.moonMesh, Constants.moonRadius * Constants.metersToKm * Constants.scale);
         this.moonSurface.setVisibility(true);
-
-        // Make moonSurface accessible to UI
-        window.moonSurface = this.moonSurface;  // Temporary for UI controls
-
-        this.moonSurface.setVisibility(true);
     }
 
     initTraceLine() {
@@ -62,7 +53,6 @@ export class Moon {
         this.scene.add(this.traceLine);
 
         this.dynamicPositions = [];
-        this.creationTimes = [];
         this.maxTracePoints = 10000;
     }
 
@@ -218,19 +208,6 @@ export class Moon {
         return { x, y, z };
     }
 
-    solveKepler(M, e) {
-        let E = M;
-        let delta = 1;
-        const tolerance = 1e-6;
-
-        while (Math.abs(delta) > tolerance) {
-            delta = E - e * Math.sin(E) - M;
-            E = E - delta / (1 - e * Math.cos(E));
-        }
-
-        return E;
-    }
-
     updatePosition(currentTime) {
         const jd = JulianDay(new Date(currentTime));
         const { x, y, z } = this.getMoonPosition(jd);
@@ -241,18 +218,16 @@ export class Moon {
         );
         // Only update the trace when it is visible (showMoonTraces setting)
         if (this.traceLine && this.traceLine.visible) {
-            this.updateTraceLine(currentTime);
+            this.updateTraceLine();
         }
     }
 
-    updateTraceLine(currentTime) {
+    updateTraceLine() {
         const currentPosition = new THREE.Vector3().copy(this.moonMesh.position);
         this.dynamicPositions.push(currentPosition);
-        this.creationTimes.push(currentTime);
 
         if (this.dynamicPositions.length > this.maxTracePoints) {
             this.dynamicPositions.shift();
-            this.creationTimes.shift();
         }
 
         const positions = new Float32Array(this.dynamicPositions.length * 3);
@@ -298,31 +273,5 @@ export class Moon {
 
     setTraceVisible(visible) {
         this.traceLine.visible = visible;
-    }
-
-    getCurrentOrbitalParameters(currentTime) {
-        const jd = JulianDay(new Date(currentTime));
-        const { x, y, z } = this.getMoonPosition(jd);
-
-        const position = new THREE.Vector3(x, y, z);
-        const velocity = new THREE.Vector3(
-            this.moonBody.velocity.x,
-            this.moonBody.velocity.y,
-            this.moonBody.velocity.z
-        );
-
-        const mu = Constants.G * Constants.earthMass;
-        const orbitalElements = PhysicsUtils.calculateOrbitalElements(position, velocity, mu);
-
-        return {
-            position: { x, y, z },
-            velocity: velocity.toArray(),
-            semiMajorAxis: orbitalElements.a,
-            eccentricity: orbitalElements.e,
-            inclination: orbitalElements.i,
-            ascendingNode: orbitalElements.omega,
-            argumentOfPeriapsis: orbitalElements.w,
-            trueAnomaly: orbitalElements.trueAnomaly
-        };
     }
 }

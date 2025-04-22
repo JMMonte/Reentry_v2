@@ -50,28 +50,14 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
     };
 
     const presets = [
-        { label: 'ISS', mode: 'orbital', values: { name: 'ISS', semiMajorAxis: 6778, eccentricity: 0.0007, inclination: 51.6, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Geostationary', mode: 'orbital', values: { name: 'Geostationary', semiMajorAxis: 42164, eccentricity: 0, inclination: 0, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Molniya', mode: 'orbital', values: { name: 'Molniya', semiMajorAxis: 26600, eccentricity: 0.74, inclination: 63.4, raan: 0, argumentOfPeriapsis: 270, trueAnomaly: 0 } },
-        { label: 'Low Earth', mode: 'latlon', values: { name: 'Low Earth', latitude: 0, longitude: 0, altitude: 400, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'High Earth', mode: 'latlon', values: { name: 'High Earth', latitude: 0, longitude: 0, altitude: 1000, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'GPS', mode: 'latlon', values: { name: 'GPS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Galileo', mode: 'latlon', values: { name: 'Galileo', latitude: 0, longitude: 0, altitude: 23222, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Beidou', mode: 'latlon', values: { name: 'Beidou', latitude: 0, longitude: 0, altitude: 21528, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'IRNSS', mode: 'latlon', values: { name: 'IRNSS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'QZSS', mode: 'latlon', values: { name: 'QZSS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'NavIC', mode: 'latlon', values: { name: 'NavIC', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'GLONASS', mode: 'latlon', values: { name: 'GLONASS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'SBAS', mode: 'latlon', values: { name: 'SBAS', latitude: 0, longitude: 0, altitude: 20200, velocity: 3.07, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Hubble', mode: 'latlon', values: { name: 'Hubble', latitude: 0, longitude: 0, altitude: 547, velocity: 7.66, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Earth/Moon Lagrange 1', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 1', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Earth/Moon Lagrange 2', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 2', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Earth/Moon Lagrange 3', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 3', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Earth/Moon Lagrange 4', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 4', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
-        { label: 'Earth/Moon Lagrange 5', mode: 'latlon', values: { name: 'Earth/Moon Lagrange 5', latitude: 0, longitude: 0, altitude: 322000, velocity: 1.022, azimuth: 0, angleOfAttack: 0 } },
-        
-
-
+        { label: 'ISS', mode: 'orbital', values: { name: 'ISS', mass: 419725, size: 1, semiMajorAxis: 6778, eccentricity: 0.0007, inclination: 51.6, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Geostationary', mode: 'orbital', values: { name: 'Geostationary', mass: 5000, size: 3, semiMajorAxis: 42164, eccentricity: 0, inclination: 0, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Molniya', mode: 'orbital', values: { name: 'Molniya', mass: 2200, size: 2, semiMajorAxis: 26600, eccentricity: 0.74, inclination: 63.4, raan: 0, argumentOfPeriapsis: 270, trueAnomaly: 0 } },
+        { label: 'Sun-Synchronous', mode: 'orbital', values: { name: 'Sun-Synchronous', mass: 1000, size: 1, semiMajorAxis: 6978, eccentricity: 0.001, inclination: 98, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'GPS IIF', mode: 'orbital', values: { name: 'GPS IIF', mass: 1630, size: 1, semiMajorAxis: 26560, eccentricity: 0.01, inclination: 55, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Hubble', mode: 'orbital', values: { name: 'Hubble', mass: 11110, size: 1.5, semiMajorAxis: 6918, eccentricity: 0.0005, inclination: 28.5, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Iridium', mode: 'orbital', values: { name: 'Iridium', mass: 700, size: 0.5, semiMajorAxis: 7151, eccentricity: 0.0002, inclination: 86.4, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'LEO Satellite', mode: 'latlon', values: { name: 'LEO Satellite', mass: 1200, size: 1, latitude: 0, longitude: 0, altitude: 400, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
     ];
     const handlePreset = (preset) => {
         setMode(preset.mode);

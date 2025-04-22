@@ -8,6 +8,8 @@ import { BackgroundStars } from '../components/background.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 import {
     earthTexture,
@@ -195,8 +197,21 @@ export function addEarthPoints(app) {
 }
 
 export function setupPostProcessing(app) {
-    // Single composer with render + bloom pass for performance
+    // Single composer with FXAA, render, and bloom passes for lightweight antialiasing
+    const composer = new EffectComposer(app._renderer);
+    // Render pass
     const renderPass = new RenderPass(app.scene, app.camera);
+    composer.addPass(renderPass);
+    // FXAA anti-aliasing pass (cheap)
+    const fxaaPass = new ShaderPass(FXAAShader);
+    const pixelRatio = app.renderer.getPixelRatio();
+    fxaaPass.material.uniforms['resolution'].value.set(
+        1 / (window.innerWidth * pixelRatio),
+        1 / (window.innerHeight * pixelRatio)
+    );
+    composer.addPass(fxaaPass);
+    app.sceneManager.composers.fxaaPass = fxaaPass;
+    // Bloom pass (low resolution for performance)
     const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
         0.3,
@@ -204,11 +219,7 @@ export function setupPostProcessing(app) {
         0.99
     );
     bloomPass.renderToScreen = true;
-    // lower resolution for bloom to reduce work
     bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2);
-
-    const composer = new EffectComposer(app._renderer);
-    composer.addPass(renderPass);
     composer.addPass(bloomPass);
     app.sceneManager.composers.final = composer;
 }

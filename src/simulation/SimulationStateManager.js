@@ -73,71 +73,79 @@ export class SimulationStateManager {
      */
     importState(state) {
         console.log('Importing state:', state);
-        if (state && Array.isArray(state.satellites)) {
+        // Clear existing satellites and physics
+        this.satellites.dispose();
+        // Restore simulation time
+        if (state.simulatedTime) {
+            this.app.timeUtils.setSimulatedTime(state.simulatedTime);
+        }
+        // Restore time warp for simulation and physics
+        if (state.timeWarp !== undefined) {
+            this.app.timeUtils.setTimeWarp(state.timeWarp);
+            this.satellites.setTimeWarp(state.timeWarp);
+        }
+        // Restore display settings
+        if (state.displaySettings && this.app.displaySettingsManager) {
+            Object.entries(state.displaySettings).forEach(([key, value]) => {
+                this.app.displaySettingsManager.updateSetting(key, value);
+            });
+            if (this.app.displaySettingsManager.getSetting('showSatConnections')) {
+                this.app._handleShowSatConnectionsChange(true);
+                this.app._updateConnectionsWorkerSatellites();
+            }
+        }
+        // Create satellites
+        if (state.satellites && Array.isArray(state.satellites)) {
             state.satellites.forEach(params => {
                 if (
-                    params &&
                     params.position && typeof params.position.x === 'number' && typeof params.position.y === 'number' && typeof params.position.z === 'number' &&
                     params.velocity && typeof params.velocity.x === 'number' && typeof params.velocity.y === 'number' && typeof params.velocity.z === 'number'
                 ) {
-                    // Create satellite and initialize visuals with first update
-                    const sat = this.createSatellite(params);
-                    if (sat) {
-                        // Positions and velocities from saved state are in meters
-                        const pos = new THREE.Vector3(params.position.x, params.position.y, params.position.z);
-                        const vel = new THREE.Vector3(params.velocity.x, params.velocity.y, params.velocity.z);
-                        sat.updatePosition(pos, vel);
-                    }
+                    this.createSatellite(params);
                 } else {
                     console.warn('Skipped satellite with invalid position/velocity:', params);
                 }
             });
         }
-        // Restore camera and focus state if present
-        if (state && state.camera) {
-            const { position, target, spherical, focusedBody } = state.camera;
+        // Restore camera state from saved state
+        if (state.camera) {
             const camControls = this.app.cameraControls;
-            if (camControls && position && target && spherical) {
-                // Set camera position
-                camControls.camera.position.set(position.x, position.y, position.z);
-                // Set controls target
-                camControls.controls.target.set(target.x, target.y, target.z);
-                // Set spherical coordinates
-                camControls.spherical.radius = spherical.radius;
-                camControls.spherical.phi = spherical.phi;
-                camControls.spherical.theta = spherical.theta;
-                camControls.sphericalRadius = spherical.radius;
-                camControls.sphericalPhi = spherical.phi;
-                camControls.sphericalTheta = spherical.theta;
-                camControls.controls.update();
+            const controls = camControls.controls;
+            const camera = camControls.camera;
+            // Set control target
+            if (state.camera.target) {
+                controls.target.set(
+                    state.camera.target.x,
+                    state.camera.target.y,
+                    state.camera.target.z
+                );
             }
-            // Restore focused body
-            if (typeof focusedBody !== 'undefined' && camControls) {
-                // Use the same logic as updateSelectedBody
-                if (!focusedBody || focusedBody === 'none') {
-                    camControls.clearCameraTarget();
-                } else if (focusedBody === 'earth') {
-                    camControls.updateCameraTarget(this.app.earth);
-                } else if (focusedBody === 'moon') {
-                    camControls.updateCameraTarget(this.app.moon);
-                } else if (typeof focusedBody === 'string' && focusedBody.startsWith('satellite-')) {
-                    const satelliteId = parseInt(focusedBody.split('-')[1]);
-                    const satellite = this.app.satellites.getSatellites()[satelliteId];
-                    if (satellite) {
-                        camControls.updateCameraTarget(satellite);
-                    }
-                }
+            // Set camera position
+            if (state.camera.position) {
+                camera.position.set(
+                    state.camera.position.x,
+                    state.camera.position.y,
+                    state.camera.position.z
+                );
             }
-        }
-        // Restore display settings if present
-        if (state && state.displaySettings && this.app.displaySettingsManager) {
-            Object.entries(state.displaySettings).forEach(([key, value]) => {
-                this.app.displaySettingsManager.updateSetting(key, value);
-            });
-            // Ensure satellite connections are enabled if toggle is on
-            if (this.app.displaySettingsManager.getSetting('showSatConnections')) {
-                this.app._handleShowSatConnectionsChange(true);
-                this.app._updateConnectionsWorkerSatellites();
+            // Restore spherical coordinates for orbit controls
+            if (state.camera.spherical) {
+                camControls.sphericalRadius = state.camera.spherical.radius;
+                camControls.sphericalPhi = state.camera.spherical.phi;
+                camControls.sphericalTheta = state.camera.spherical.theta;
+                camControls.spherical.set(
+                    state.camera.spherical.radius,
+                    state.camera.spherical.phi,
+                    state.camera.spherical.theta
+                );
+            }
+            // Apply control update
+            controls.update();
+            // Focus the loaded body if specified, otherwise clear target
+            if (state.camera.focusedBody) {
+                this.app.updateSelectedBody(state.camera.focusedBody);
+            } else {
+                camControls.clearCameraTarget();
             }
         }
         // Add more state import logic as needed
@@ -207,7 +215,13 @@ export class SimulationStateManager {
         if (this.app.displaySettingsManager) {
             displaySettings = { ...this.app.displaySettingsManager.settings };
         }
-        return { satellites, camera, displaySettings };
+        return {
+            satellites,
+            camera,
+            displaySettings,
+            simulatedTime: this.app.timeUtils.getSimulatedTime().toISOString(),
+            timeWarp: this.app.timeUtils.timeWarp
+        };
     }
 
     /**

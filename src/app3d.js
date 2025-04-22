@@ -119,6 +119,25 @@ class App3D extends EventTarget {
             // Delegate all scene/camera/renderer/radialGrid setup to SceneManager
             await this.sceneManager.init();
             this._addConnectionsGroup();
+            // --- start point picking setup ---
+            this.raycaster = new THREE.Raycaster();
+            this.raycaster.params.Points.threshold = 1;
+            this.pickablePoints = [];
+            const pts = this.earth?.earthSurface?.points;
+            if (pts) Object.values(pts).forEach(arr => arr.forEach(p => this.pickablePoints.push(p)));
+            // throttle pointermove: only one raycast per animation frame
+            this._pickScheduled = false;
+            this._throttledOnPointerMove = (event) => {
+                if (this._pickScheduled) return;
+                this._pickScheduled = true;
+                requestAnimationFrame(() => {
+                    this._onPointerMove(event);
+                    this._pickScheduled = false;
+                });
+            };
+            this.canvas.addEventListener('pointermove', this._throttledOnPointerMove);
+            this.canvas.addEventListener('pointerdown', this._onPointerDown.bind(this));
+            // --- end point picking setup ---
             // Controls and other setup
             this._setupControls();
             this._setupCameraControls();
@@ -449,6 +468,43 @@ class App3D extends EventTarget {
         // Window resize
         this._eventHandlers.resize = this.onWindowResize.bind(this);
         window.addEventListener('resize', this._eventHandlers.resize);
+    }
+
+    // handle pointer hover to change cursor over points
+    _onPointerMove(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+            ((event.clientX - rect.left) / rect.width) * 2 - 1,
+            -((event.clientY - rect.top) / rect.height) * 2 + 1
+        );
+        this.raycaster.setFromCamera(mouse, this.camera);
+        let hit = false;
+        this.pickablePoints.forEach(points => {
+            const intersects = this.raycaster.intersectObject(points, false);
+            if (intersects.length) hit = true;
+        });
+        document.body.style.cursor = hit ? 'pointer' : '';
+    }
+
+    // handle pointer click to dispatch point info event
+    _onPointerDown(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+            ((event.clientX - rect.left) / rect.width) * 2 - 1,
+            -((event.clientY - rect.top) / rect.height) * 2 + 1
+        );
+        this.raycaster.setFromCamera(mouse, this.camera);
+        for (const points of this.pickablePoints) {
+            const intersects = this.raycaster.intersectObject(points, false);
+            if (intersects.length) {
+                const intersect = intersects[0];
+                const idx = intersect.index;
+                const { features, category } = points.userData;
+                const feature = features[idx];
+                window.dispatchEvent(new CustomEvent('earthPointClick', { detail: { feature, category } }));
+                break;
+            }
+        }
     }
 
     removeEventListeners() {

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import { DraggableModal } from "../modal/DraggableModal";
 import { Button } from "../button";
 import { Focus, MonitorX, MonitorCheck, Trash2 } from "lucide-react";
@@ -6,7 +7,7 @@ import { ColorPicker } from "./ColorPicker";
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import PropTypes from 'prop-types';
 
-export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect, debugWindows, app3d }) {
+export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect, debugWindows, app3d, onOpenManeuver }) {
     // Open automatically when first satellite is created
     useEffect(() => {
         if (satellites.length > 0 && !isOpen) {
@@ -47,6 +48,7 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
     if (!isOpen) return null;
 
     return (
+        <>
         <DraggableModal
             title="Satellites"
             isOpen={isOpen}
@@ -78,6 +80,15 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="w-6 h-6"
+                                        onClick={() => onOpenManeuver(satellite)}
+                                        title="Add Maneuver Node"
+                                    >
+                                        <Plus className="h-3 w-3" />
+                                    </Button>
                                     <Button
                                         variant="ghost"
                                         size="icon"
@@ -119,6 +130,7 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
                 )}
             </div>
         </DraggableModal>
+        </>
     );
 }
 
@@ -135,5 +147,6 @@ SatelliteListWindow.propTypes = {
         removeDebugWindow: PropTypes.func,
         createDebugWindow: PropTypes.func,
         removeSatellite: PropTypes.func
-    })
+    }),
+    onOpenManeuver: PropTypes.func.isRequired
 };

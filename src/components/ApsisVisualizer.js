@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants';
-import { PhysicsUtils } from '../utils/PhysicsUtils';
 
 export class ApsisVisualizer {
     constructor(scene, color) {
@@ -52,42 +51,26 @@ export class ApsisVisualizer {
     }
 
     update(position, velocity, apsisData) {
-        // Use apsis data from physics worker if available, else fallback to local calculation
-        let inc, lan, aop, rPeriWorld, rApoWorld, periapsisAltitude, apoapsisAltitude;
-        if (apsisData) {
-            // Convert angles (degrees) to radians
-            inc = THREE.MathUtils.degToRad(apsisData.inclination);
-            lan = THREE.MathUtils.degToRad(apsisData.longitudeOfAscendingNode);
-            aop = THREE.MathUtils.degToRad(apsisData.argumentOfPeriapsis);
-            // Radial distances from debug are in km; convert to world units
-            rPeriWorld = apsisData.periapsisRadial * Constants.scale;
-            rApoWorld = apsisData.apoapsisRadial != null ? apsisData.apoapsisRadial * Constants.scale : null;
-            periapsisAltitude = apsisData.periapsisAltitude;
-            apoapsisAltitude = apsisData.apoapsisAltitude;
-        } else {
-            // Fallback to local calculation
-            const mu = Constants.earthGravitationalParameter;
-            const result = PhysicsUtils.calculateApsis(position, velocity, mu);
-            if (!result) {
-                console.warn('No apsis data calculated');
-                return null;
-            }
-            const { orbitalElements, rPeriapsis, rApoapsis, periapsisAltitude: _pAlt, apoapsisAltitude: _aAlt } = result;
-            inc = orbitalElements.i;
-            lan = orbitalElements.omega;
-            aop = orbitalElements.w;
-            const scaleFactor = Constants.metersToKm * Constants.scale;
-            rPeriWorld = rPeriapsis * scaleFactor;
-            rApoWorld = rApoapsis != null ? rApoapsis * scaleFactor : null;
-            periapsisAltitude = _pAlt;
-            apoapsisAltitude = _aAlt;
+        // Use apsis data from physics worker
+        if (!apsisData) {
+            console.warn('No apsisData from physics worker');
+            return null;
         }
+        let inc, lan, aop, rPeriWorld, rApoWorld, periapsisAltitude, apoapsisAltitude;
+        // Convert angles (degrees) to radians
+        inc = THREE.MathUtils.degToRad(apsisData.inclination);
+        lan = THREE.MathUtils.degToRad(apsisData.longitudeOfAscendingNode);
+        aop = THREE.MathUtils.degToRad(apsisData.argumentOfPeriapsis);
+        // Radial distances from debug are in km; convert to world units
+        rPeriWorld = apsisData.periapsisRadial * Constants.scale;
+        rApoWorld = apsisData.apoapsisRadial != null ? apsisData.apoapsisRadial * Constants.scale : null;
+        periapsisAltitude = apsisData.periapsisAltitude;
+        apoapsisAltitude = apsisData.apoapsisAltitude;
 
         // Update periapsis mesh position
         const periapsisVector = new THREE.Vector3(rPeriWorld, 0, 0);
         this.rotateVector(periapsisVector, inc, lan, aop);
         this.periapsisMesh.position.copy(periapsisVector);
-        this.periapsisMesh.visible = true;
 
         // Update apoapsis mesh position
         if (rApoWorld != null) {
@@ -95,7 +78,6 @@ export class ApsisVisualizer {
             this.rotateVector(apoapsisVector, inc, lan, aop);
             this.apoapsisMesh.position.copy(apoapsisVector);
             if (!this.apoapsisMesh.parent) this.scene.add(this.apoapsisMesh);
-            this.apoapsisMesh.visible = true;
         } else {
             if (this.apoapsisMesh.parent) this.scene.remove(this.apoapsisMesh);
         }
