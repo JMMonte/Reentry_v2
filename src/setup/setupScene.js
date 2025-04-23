@@ -103,7 +103,7 @@ export async function setupSceneDetails(app) {
         new BackgroundStars(app.scene, app.camera);
         app.earth = new Earth(app.scene, app.renderer, app.timeUtils, app.textureManager);
         app.sun = new Sun(app.scene, app.timeUtils);
-        app.moon = new Moon(app.scene, app.renderer, app.timeUtils);
+        app.moon = new Moon(app.scene, app.earth, app.timeUtils);
         app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);
 
         // Add earth points after Earth is initialized

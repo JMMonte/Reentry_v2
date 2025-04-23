@@ -3,11 +3,18 @@ import { Constants } from '../utils/Constants';
 import { OrbitalRegimes } from '../utils/OrbitalRegimes';
 
 export class RadialGrid {
-    constructor(scene) {
+    /**
+     * Create a radial grid attached to an optional parentGroup (e.g., Earth Tilt Group). 
+     * @param {THREE.Scene} scene - The Three.js scene.
+     * @param {THREE.Object3D} [parentGroup] - Optional parent group to attach the grid to.
+     */
+    constructor(scene, parentGroup) {
         this.scene = scene;
+        // Attach to provided parentGroup or fall back to scene
+        this.parentGroup = parentGroup || scene;
         this.group = new THREE.Group();
         this.group.name = 'radialGrid';
-        this.scene.add(this.group);
+        this.parentGroup.add(this.group);
         this.labels = [];  // Store labels so we don't recreate them
         this.labelsSprites = []; // Store sprite labels for fading
         
@@ -233,6 +240,7 @@ export class RadialGrid {
                 object.material.dispose();
             }
         });
-        this.scene.remove(this.group);
+        // Remove group from its parent
+        this.parentGroup.remove(this.group);
     }
 }

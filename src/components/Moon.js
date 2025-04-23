@@ -4,11 +4,14 @@ import { JulianDay, RotateAroundX, RotateAroundY } from '../utils/AstronomyUtils
 import moonTexture from '../assets/texture/lroc_color_poles_8k.jpg';
 import moonBump from '../assets/texture/ldem_16_uint.jpg';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { inertialToWorld } from '../utils/FrameTransforms.js';
 import { MoonSurface } from './MoonSurface.js';
 
 export class Moon {
-    constructor(scene) {
+    constructor(scene, earth, timeManager) {
         this.scene = scene;
+        this.earth = earth;
+        this.timeManager = timeManager;
 
         const textureLoader = new THREE.TextureLoader();
         // Create the moon mesh
@@ -27,7 +30,6 @@ export class Moon {
         this.moonMesh.castShadow = true;
         this.moonMesh.receiveShadow = true;
         scene.add(this.moonMesh);
-        this.moonMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.7); // Rotate 180 degrees around the y-axis
 
         // Initialize trace line
         this.initTraceLine();
@@ -73,24 +75,33 @@ export class Moon {
 
     initOrbitLine() {
         const orbitPoints = [];
-        const pointsCount = 1000; // Number of points to plot
-
-        // Generate points along the orbit
-        const startTime = new Date(); // Start date is the current date
-        const endTime = new Date(startTime.getTime() + (365 * 24 * 60 * 60 * 1000)); // End date is 1 year from the current date
-        const timeStep = (endTime - startTime) / pointsCount; // Time step in milliseconds
-
-        for (let i = 0; i <= pointsCount; i++) {
-            const currentTime = new Date(startTime.getTime() + i * timeStep);
-            const jd = JulianDay(currentTime);
-            const { x, y, z } = this.getMoonPosition(jd);
-
-            // Scale positions to Three.js units (km to meters, apply simulation scale)
-            orbitPoints.push(new THREE.Vector3(
-                x * Constants.metersToKm * Constants.scale,
-                y * Constants.metersToKm * Constants.scale,
-                z * Constants.metersToKm * Constants.scale
-            ));
+        const pointsCount = 360; // one point per degree
+        const a = Constants.semiMajorAxis;   // semi-major axis in meters (already in meters)
+        const e = Constants.eccentricity;    // orbital eccentricity
+        // Orbital elements in degrees
+        const iDeg = THREE.MathUtils.radToDeg(Constants.inclination);
+        const omegaDeg = THREE.MathUtils.radToDeg(Constants.argumentOfPeriapsis);
+        const raanDeg = THREE.MathUtils.radToDeg(Constants.ascendingNode);
+        for (let j = 0; j <= pointsCount; j++) {
+            // sample true anomaly
+            const fDeg = (j / pointsCount) * 360;
+            // Compute inertial state vectors
+            const { positionECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
+                a,
+                e,
+                iDeg,
+                omegaDeg,
+                raanDeg,
+                fDeg
+            );
+            // Convert to world coords in inertial frame (ecliptic plane horizontal)
+            const { position } = inertialToWorld(
+                this.earth,
+                positionECI,
+                new THREE.Vector3(),
+                { referenceFrame: 'inertial' }
+            );
+            orbitPoints.push(position);
         }
 
         // Create the orbit line
@@ -169,7 +180,7 @@ export class Moon {
         // In practice, use a library or API to get accurate positions
         // This example generates a simple elliptical orbit for illustration
 
-        const a = Constants.semiMajorAxis; // Semi-major axis in m
+        const a = Constants.semiMajorAxis;    // semi-major axis in meters (already in meters)
         const e = Constants.eccentricity; // Orbital eccentricity
         const inclination = Constants.inclination; // Inclination in radians
         const ascendingNode = Constants.ascendingNode; // Longitude of ascending node in radians
@@ -209,14 +220,45 @@ export class Moon {
     }
 
     updatePosition(currentTime) {
-        const jd = JulianDay(new Date(currentTime));
-        const { x, y, z } = this.getMoonPosition(jd);
-        this.moonMesh.position.set(
-            x * Constants.metersToKm * Constants.scale,
-            y * Constants.metersToKm * Constants.scale,
-            z * Constants.metersToKm * Constants.scale
+        const jdDays = JulianDay(new Date(currentTime));
+        const a = Constants.semiMajorAxis;    // semi-major axis in meters (already in meters)
+        const e = Constants.eccentricity;
+        // mean motion rad/sec
+        const mu = Constants.earthGravitationalParameter;
+        const n = Math.sqrt(mu / Math.pow(a, 3));
+        const tSec = jdDays * Constants.secondsInDay;
+        const M = n * tSec; // rad
+        const ERad = PhysicsUtils.solveKeplersEquation(M, e);
+        const fDeg = THREE.MathUtils.radToDeg(
+            2 * Math.atan2(
+                Math.sqrt(1 + e) * Math.sin(ERad / 2),
+                Math.sqrt(1 - e) * Math.cos(ERad / 2)
+            )
         );
-        // Only update the trace when it is visible (showMoonTraces setting)
+        // Orbital elements in degrees
+        const iDeg = THREE.MathUtils.radToDeg(Constants.inclination);
+        const omegaDeg = THREE.MathUtils.radToDeg(Constants.argumentOfPeriapsis);
+        const raanDeg = THREE.MathUtils.radToDeg(Constants.ascendingNode);
+        const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
+            a,
+            e,
+            iDeg,
+            omegaDeg,
+            raanDeg,
+            fDeg
+        );
+        // Map state into world coords (inertial reference)
+        const { position, velocity } = inertialToWorld(
+            this.earth,
+            positionECI,
+            velocityECI,
+            { referenceFrame: 'inertial' }
+        );
+        // Update Moon mesh
+        this.moonMesh.position.copy(position);
+        // Optionally store velocity for debug
+        this.moonMesh.userData.velocity = velocity;
+        // Update trace line if visible
         if (this.traceLine && this.traceLine.visible) {
             this.updateTraceLine();
         }

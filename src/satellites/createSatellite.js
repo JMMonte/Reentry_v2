@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { Constants } from '../utils/Constants.js';
+import { inertialToWorld } from '../utils/FrameTransforms.js';
 
 // Add a session-wide unique ID counter
 let nextSatelliteId = 0;
@@ -168,52 +169,33 @@ export function createSatelliteFromOrbitalElements(app, params) {
         raan,
         argumentOfPeriapsis,
         trueAnomaly,
+        referenceFrame = 'equatorial',
         mass,
         size,
         name
     } = params;
 
-    // Calculate position/velocity in ECI frame using true orbital elements
+    // 1) get inertial ECI state
     const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
         semiMajorAxis * Constants.kmToMeters,
         eccentricity,
-        inclination, // Use actual inclination for prograde/retrograde
+        inclination,
         argumentOfPeriapsis,
         raan,
         trueAnomaly
     );
-
-    const scaledPosition = new THREE.Vector3(
-        positionECI.x * Constants.metersToKm * Constants.scale,
-        positionECI.y * Constants.metersToKm * Constants.scale,
-        positionECI.z * Constants.metersToKm * Constants.scale
+    // 2) convert to world coords for the chosen body
+    const { position, velocity } = inertialToWorld(
+        earth,
+        positionECI,
+        velocityECI,
+        { referenceFrame }
     );
 
-    const scaledVelocity = new THREE.Vector3(
-        velocityECI.x * Constants.metersToKm * Constants.scale,
-        velocityECI.y * Constants.metersToKm * Constants.scale,
-        velocityECI.z * Constants.metersToKm * Constants.scale
-    );
-
-    // single declaration for both quaternions:
-    const tiltQuat = earth?.tiltGroup?.quaternion || new THREE.Quaternion();
-    const earthQuat = earth?.rotationGroup?.quaternion || new THREE.Quaternion();
-    const correctionQuat = new THREE.Quaternion()
-        .setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI/2);
-
-    const finalPosition = scaledPosition.clone()
-        .applyQuaternion(correctionQuat)
-        .applyQuaternion(earthQuat)
-        .applyQuaternion(tiltQuat);
-
-    const finalVelocity = scaledVelocity.clone()
-        .applyQuaternion(correctionQuat)
-        .applyQuaternion(earthQuat)
-        .applyQuaternion(tiltQuat);
-
+    // 3) hand off to generic creator
     return createSatellite(app, {
-        position: finalPosition,
-        velocity: finalVelocity,
+        position,
+        velocity,
         mass,
         size,
         name

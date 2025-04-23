@@ -1,5 +1,6 @@
 // app3d.js
 import * as THREE from 'three';
+import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer';
 import Stats from 'stats.js';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { TextureManager } from './managers/textureManager.js';
@@ -118,6 +119,28 @@ class App3D extends EventTarget {
             this._setupRenderer();
             // Delegate all scene/camera/renderer/radialGrid setup to SceneManager
             await this.sceneManager.init();
+            // Add Three.js axis helper at origin
+            this.axisHelper = new THREE.AxesHelper(1000);
+            this.axisHelper.position.set(0, 0, 0);
+            this.axisHelper.visible = this.displaySettingsManager.getSetting('showAxis');
+            this.scene.add(this.axisHelper);
+            // Add axis labels using CSS2DObject
+            const axisLength = 1000;
+            ['X', 'Y', 'Z'].forEach((axis) => {
+              const dir = new THREE.Vector3(
+                axis === 'X' ? axisLength : 0,
+                axis === 'Y' ? axisLength : 0,
+                axis === 'Z' ? axisLength : 0
+              );
+              const div = document.createElement('div');
+              div.className = 'axis-label';
+              div.textContent = axis;
+              div.style.color = axis === 'X' ? '#ff0000' : axis === 'Y' ? '#00ff00' : '#0000ff';
+              div.style.fontSize = '14px';
+              const label = new CSS2DObject(div);
+              label.position.copy(dir);
+              this.axisHelper.add(label);
+            });
             this._addConnectionsGroup();
             // --- start point picking setup ---
             this.raycaster = new THREE.Raycaster();

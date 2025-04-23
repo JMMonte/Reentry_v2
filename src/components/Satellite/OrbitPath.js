@@ -97,19 +97,69 @@ export class OrbitPath {
         if (this.worker) {
             this.worker.postMessage({ type: 'RESET', id: this._currentId });
         }
-        // Unregister handler and terminate shared worker if none remain
+        // Unregister handler but keep shared worker alive
         delete OrbitPath.handlers[this._currentId];
-        if (Object.keys(OrbitPath.handlers).length === 0 && OrbitPath.sharedWorker) {
-            OrbitPath.sharedWorker.terminate();
-            OrbitPath.sharedWorker = null;
-            OrbitPath.handlers = {};
-        }
     }
 
     // Static dispatcher for shared worker messages
     static _dispatchMessage(e) {
         const handler = OrbitPath.handlers && OrbitPath.handlers[e.data.id];
         if (handler) handler(e);
+    }
+
+    /**
+     * Resample orbit points by arc length, with optional subdivision for high-eccentricity orbits.
+     * @param {Array<{x:number,y:number,z:number}>} pts raw orbit points
+     * @param {number} [targetCount=pts.length] desired number of output points
+     * @returns {Array<{x:number,y:number,z:number}>} uniformly spaced resampled points
+     */
+    _resampleArcLength(pts, targetCount = pts.length) {
+        if (!pts || pts.length < 2 || targetCount < 2) return pts;
+        // Convert to Vector3 array
+        const vecs = pts.map(p => new THREE.Vector3(p.x, p.y, p.z));
+        // Compute total arc length over raw points
+        let total = 0;
+        const segLengths = [];
+        for (let i = 0; i < vecs.length - 1; i++) {
+            const d = vecs[i].distanceTo(vecs[i+1]);
+            segLengths.push(d);
+            total += d;
+        }
+        const threshold = total / (targetCount - 1);
+        // Subdivide segments longer than threshold
+        const subdiv = [vecs[0].clone()];
+        for (let i = 0; i < vecs.length - 1; i++) {
+            const p0 = vecs[i], p1 = vecs[i+1];
+            const d = segLengths[i];
+            const n = threshold > 0 ? Math.ceil(d / threshold) : 1;
+            for (let j = 1; j <= n; j++) {
+                const t = j / n;
+                subdiv.push(p0.clone().lerp(p1, t));
+            }
+        }
+        // Build cumulative distances on subdivided points
+        const cum = [0];
+        for (let i = 0; i < subdiv.length - 1; i++) {
+            cum.push(cum[i] + subdiv[i].distanceTo(subdiv[i+1]));
+        }
+        // Sample targetCount points evenly along total arc
+        const resampled = [];
+        for (let k = 0; k < targetCount; k++) {
+            const s = (k / (targetCount - 1)) * total;
+            // find segment index where cum >= s
+            let idx = cum.findIndex(c => c >= s);
+            if (idx === -1) {
+                resampled.push(subdiv[subdiv.length - 1].clone());
+            } else if (idx === 0) {
+                resampled.push(subdiv[0].clone());
+            } else {
+                const s0 = cum[idx - 1];
+                const seg = cum[idx] - s0;
+                const t = seg > 0 ? (s - s0) / seg : 0;
+                resampled.push(subdiv[idx - 1].clone().lerp(subdiv[idx], t));
+            }
+        }
+        return resampled.map(v => ({ x: v.x, y: v.y, z: v.z }));
     }
 
     // Register handler for this satellite ID
@@ -122,8 +172,9 @@ export class OrbitPath {
             this._lastSeq = seq;
             // Don't update geometry when hidden
             if (!this.orbitLine.visible) return;
+            // Use pre-resampled uniform points from worker
             const pts = e.data.orbitPoints;
-            // Store orbit points for simulation data window (predicted points only)
+            // Store orbit points (already uniform spatial density)
             this.orbitPoints = pts;
             // Emit orbit data update event for UI
             document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
@@ -140,20 +191,24 @@ export class OrbitPath {
             const count = pts.length + 1;
             // Update max orbit points (predicted only, for future updates)
             this._maxOrbitPoints = pts.length;
-            // Rebuild geometry to match incoming points plus current position
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(count * 3);
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            // Rebuild or update geometry to match incoming points plus current position
+            let geometry = this.orbitLine.geometry;
+            let positionAttr = geometry.attributes.position;
+            if (!positionAttr || positionAttr.count !== count) {
+                // Replace or create position attribute if size changed
+                const positions = new Float32Array(count * 3);
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                positionAttr = geometry.attributes.position;
+            }
+            // Update draw range
             geometry.setDrawRange(0, count);
-            this.orbitLine.geometry.dispose();
-            this.orbitLine.geometry = geometry;
             // Fill positions: first current position, then predicted orbit
-            const array = geometry.attributes.position.array;
+            const array = positionAttr.array;
             // current position
             array[0] = origin.x;
             array[1] = origin.y;
             array[2] = origin.z;
-            // predicted points
+            // predicted points (resampled)
             for (let i = 0; i < pts.length; i++) {
                 const pt = pts[i];
                 const idx = (i + 1) * 3;
@@ -161,7 +216,7 @@ export class OrbitPath {
                 array[idx + 1] = pt.y;
                 array[idx + 2] = pt.z;
             }
-            geometry.attributes.position.needsUpdate = true;
+            positionAttr.needsUpdate = true;
         }
     };
 } 

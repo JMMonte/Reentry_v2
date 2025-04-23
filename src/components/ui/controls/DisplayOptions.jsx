@@ -28,6 +28,7 @@ import PropTypes from 'prop-types';
 export const defaultSettings = {
   showGrid: { value: true, name: 'Grid', icon: Grid },
   showVectors: { value: false, name: 'Vectors', icon: Move },
+  showAxis: { value: false, name: 'Axis', icon: Move },
   enableFXAA: { value: true, name: 'Anti-Aliasing (FXAA)', icon: Settings2 },
   showSurfaceLines: { value: true, name: 'Terrain Lines', icon: Mountain },
   showCities: { value: false, name: 'Cities', icon: Building2 },
@@ -57,7 +58,7 @@ export const defaultSettings = {
 const categories = [
   {
     name: 'Rendering',
-    keys: ['showGrid', 'showVectors', 'enableFXAA'],
+    keys: ['showGrid', 'showVectors', 'showAxis', 'enableFXAA'],
   },
   {
     name: 'Map Features',

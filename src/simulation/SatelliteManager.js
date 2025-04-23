@@ -140,8 +140,8 @@ export class SatelliteManager {
                     // Elliptical orbit: scale by number of periods
                     periodSec = basePeriod * predictionPeriods;
                 } else {
-                    // Hyperbolic or undefined period: fallback to 1 day per period unit
-                    const fallbackDay = 24 * 3600;
+                    // Hyperbolic or undefined period: fallback to one week per period unit
+                    const fallbackDay = Constants.secondsInDay * 7;
                     periodSec = fallbackDay * predictionPeriods;
                 }
             } else {

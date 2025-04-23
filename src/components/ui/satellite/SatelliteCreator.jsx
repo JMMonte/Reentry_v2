@@ -5,6 +5,7 @@ import { Input } from '../input';
 import { Slider } from '../slider';
 import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import PropTypes from 'prop-types';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 
 const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
     const [mode, setMode] = useState('latlon');
@@ -24,6 +25,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
         argumentOfPeriapsis: 0,
         trueAnomaly: 0,
         angleOfAttack: 0,
+        referenceFrame: 'equatorial',
     });
 
     useImperativeHandle(ref, () => ({
@@ -87,6 +89,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     raan: params.raan,
                     argumentOfPeriapsis: params.argumentOfPeriapsis,
                     trueAnomaly: params.trueAnomaly,
+                    referenceFrame: params.referenceFrame,
                     mass: params.mass,
                     size: params.size,
                     name: params.name || undefined
@@ -214,6 +217,28 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                             {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
                             {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
                             {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
+                            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                                <Label htmlFor="referenceFrame" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                    Reference:
+                                </Label>
+                                <div className="col-span-9">
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button size="sm" className="h-6 text-xs w-full text-left py-0 px-1">
+                                                {formData.referenceFrame === 'ecliptic' ? 'Ecliptic' : 'Equatorial'}
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent sideOffset={4}>
+                                            <DropdownMenuItem onSelect={() => setFormData(prev => ({ ...prev, referenceFrame: 'equatorial' }))}>
+                                                Equatorial
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onSelect={() => setFormData(prev => ({ ...prev, referenceFrame: 'ecliptic' }))}>
+                                                Ecliptic
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+                            </div>
                         </>
                     )}
                     {mode === 'circular' && (

@@ -51,7 +51,7 @@ export class SceneManager {
         await setupSceneDetails(this.app);
         // Setup optimized post-processing
         setupPostProcessing(this.app);
-        // Radial grid
+        // Radial grid aligned with ecliptic plane (world XZ plane)
         this.radialGrid = new RadialGrid(this.scene);
         this.radialGrid.setVisible(this.app.displaySettingsManager.getSetting('showGrid'));
     }

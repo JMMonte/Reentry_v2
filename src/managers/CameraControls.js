@@ -12,6 +12,7 @@ class CameraControls {
         this.sphericalRadius = 0;
         this.sphericalPhi = 0;
         this.sphericalTheta = 0;
+        this.panOffset = new THREE.Vector3();
 
         this.updateSphericalFromCamera();
 
@@ -19,6 +20,10 @@ class CameraControls {
 
         this.controls.addEventListener('change', () => {
             this.updateSphericalFromCamera();
+            if (this.followingBody) {
+                const bodyPos = this.getBodyPosition(this.followingBody);
+                this.panOffset.copy(this.controls.target).sub(bodyPos);
+            }
         });
     }
 
@@ -39,16 +44,17 @@ class CameraControls {
             if (targetPosition) {
                 this.targetPosition.copy(targetPosition);
 
+                const smoothFactor = 0.1; // Adjust this value for smoother transitions
+                const desiredTarget = new THREE.Vector3().copy(this.targetPosition).add(this.panOffset);
                 if (this.needsSmoothTransition) {
-                    const smoothFactor = 0.1; // Adjust this value for smoother transitions
-                    this.controls.target.lerp(this.targetPosition, smoothFactor);
+                    this.controls.target.lerp(desiredTarget, smoothFactor);
 
-                    if (this.controls.target.distanceTo(this.targetPosition) < 0.01) {
-                        this.controls.target.copy(this.targetPosition);
+                    if (this.controls.target.distanceTo(desiredTarget) < 0.01) {
+                        this.controls.target.copy(desiredTarget);
                         this.needsSmoothTransition = false;
                     }
                 } else {
-                    this.controls.target.copy(this.targetPosition);
+                    this.controls.target.copy(desiredTarget);
                 }
 
                 this.spherical.set(this.sphericalRadius, this.sphericalPhi, this.sphericalTheta);
@@ -67,6 +73,7 @@ class CameraControls {
             const targetPosition = this.getBodyPosition(body);
             if (targetPosition) {
                 this.initialOffset.copy(this.camera.position).sub(this.controls.target);
+                this.panOffset.set(0, 0, 0);
                 this.controls.target.copy(targetPosition);
                 this.camera.position.copy(targetPosition).add(this.initialOffset);
                 this.controls.update();

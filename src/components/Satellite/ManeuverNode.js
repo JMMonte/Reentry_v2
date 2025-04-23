@@ -60,6 +60,13 @@ export class ManeuverNode {
         };
         this.app3d.addEventListener('displaySettingChanged', this._predVisibilityHandler);
         this.predictedOrbit.setVisible(this.app3d.getDisplaySetting('showOrbits'));
+        // Update predicted orbit when user changes prediction parameters
+        this._paramChangeHandler = (e) => {
+            if (e.detail.key === 'orbitPredictionInterval' || e.detail.key === 'orbitPointsPerOrbit') {
+                this.update();
+            }
+        };
+        this.app3d.addEventListener('displaySettingChanged', this._paramChangeHandler);
     }
 
     _initVisual() {
@@ -154,12 +161,30 @@ export class ManeuverNode {
         const velVec = new THREE.Vector3(velArr[0], velArr[1], velArr[2]);
         const posVec = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
         const bodiesForWorker = bodiesAll.map(b => ({ position: new THREE.Vector3(b.position.x, b.position.y, b.position.z), mass: b.mass }));
-        // Compute window and resolution
-        const basePeriod = this.satellite.getOrbitalElements()?.period || 0;
+        // Compute period window: try Keplerian period after burn, then original, then one-day fallback
+        const mu = Constants.G * Constants.earthMass;
+        const rMag = posVec.length();
+        const vMag = velVec.length();
+        const energy = 0.5 * vMag * vMag - mu / rMag;
+        let keplerPeriod = 0;
+        if (energy < 0) {
+            const a = -mu / (2 * energy);
+            if (a > 0) keplerPeriod = 2 * Math.PI * Math.sqrt(a * a * a / mu);
+        }
+        const origPeriod = this.satellite.getOrbitalElements()?.period;
+        let basePeriod;
+        if (keplerPeriod > 0) {
+            basePeriod = keplerPeriod;
+        } else if (typeof origPeriod === 'number' && origPeriod > 0) {
+            basePeriod = origPeriod;
+        } else {
+            basePeriod = 24 * 3600; // one-day fallback in seconds
+        }
         const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
-        const windowSeconds = basePeriod * (typeof predPeriods === 'number' && predPeriods > 0 ? predPeriods : 1);
+        const periodFactor = (typeof predPeriods === 'number' && predPeriods > 0) ? predPeriods : 1;
+        const windowSeconds = basePeriod * periodFactor;
         const ptsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
-        const numPts = Math.ceil(ptsPerPeriod * (typeof predPeriods === 'number' && predPeriods > 0 ? predPeriods : 1));
+        const numPts = Math.ceil(ptsPerPeriod * periodFactor);
         // Issue path update
         this.predictedOrbit.update(
             posVec,
@@ -169,10 +194,15 @@ export class ManeuverNode {
             windowSeconds,
             numPts
         );
-        // Arrow orientation along post-burn velocity
-        const dirNorm = velVec.clone().normalize();
-        this.arrow.visible = dirNorm.lengthSq() > 0;
-        if (this.arrow.visible) this.arrow.setDirection(dirNorm);
+        // Arrow orientation along deltaV direction
+        const dvMag = this.deltaV.length();
+        if (dvMag > 0) {
+            const dvHat = this.deltaV.clone().normalize();
+            this.arrow.visible = true;
+            this.arrow.setDirection(dvHat);
+        } else {
+            this.arrow.visible = false;
+        }
     }
 
     dispose() {
@@ -200,6 +230,7 @@ export class ManeuverNode {
             // Remove listeners
             document.removeEventListener('orbitDataUpdate', this._predOrbitHandler);
             this.app3d.removeEventListener('displaySettingChanged', this._predVisibilityHandler);
+            this.app3d.removeEventListener('displaySettingChanged', this._paramChangeHandler);
         }
     }
 } 

@@ -120,6 +120,12 @@ export class DisplaySettingsManager {
                     app3d.sceneManager.composers.fxaaPass.enabled = value;
                 }
                 break;
+            case 'showAxis': {
+                if (app3d.axisHelper) {
+                    app3d.axisHelper.visible = value;
+                }
+                break;
+            }
             // Add more settings as needed
         }
     }
