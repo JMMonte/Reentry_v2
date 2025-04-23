@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import * as handlers from './ChatSocketEventHandlers';
+import { eventHandlerFactories } from './ChatSocketEventHandlers';
 import { maybeEndTurn, handleCopy } from './chatHistoryUtils';
 
 export function useChatSocket(socket) {
@@ -21,21 +21,23 @@ export function useChatSocket(socket) {
     // Add state to track web-search activity
     const [isWebSearchActive, setIsWebSearchActive] = useState(false);
 
-    // --- Event Handlers (bound with state/refs) ---
-    const eventHandlers = {
-        conversation_start: handlers.handleConversationStart({ setMessages, setTurnInProgress }),
-        answer_start: handlers.handleAnswerStart({ setMessages, setIsLoading }),
-        message: handlers.handleMessage({ setMessages, setIsLoading }),
-        answer_end: handlers.handleAnswerEnd({ setMessages, setIsLoading, previousResponseId }),
-        conversation_end: handlers.handleConversationEnd({ setMessages, conversationEndReceived, maybeEndTurn: () => maybeEndTurn({ outstandingToolCalls, conversationEndReceived, setTurnInProgress }) }),
-        tool_call_sent: handlers.handleToolCallSent({ setMessages, socket, outstandingToolCalls, windowApi: window.api }),
-        tool_call_response: handlers.handleToolCallResponse({ setMessages, outstandingToolCalls, maybeEndTurn: () => maybeEndTurn({ outstandingToolCalls, conversationEndReceived, setTurnInProgress }) }),
-        error: handlers.handleError({ setIsLoading, setMessages }),
-        threadCreated: handlers.handleThreadCreated({ setThreadId }),
-        runCompleted: handlers.handleRunCompleted({ setIsLoading }),
-        connect: handlers.handleConnect({ setIsConnected }),
-        disconnect: handlers.handleDisconnect({ setIsConnected, setIsLoading })
+    // --- Event Handlers (bound with state/refs) dynamically ---
+    const deps = {
+        setMessages,
+        setTurnInProgress,
+        setIsLoading,
+        setIsConnected,
+        setThreadId,
+        socket,
+        outstandingToolCalls,
+        windowApi: window.api,
+        previousResponseId,
+        conversationEndReceived,
+        maybeEndTurn: () => maybeEndTurn({ outstandingToolCalls, conversationEndReceived, setTurnInProgress })
     };
+    const eventHandlers = Object.fromEntries(
+        Object.entries(eventHandlerFactories).map(([event, factory]) => [event, factory(deps)])
+    );
 
     useEffect(() => {
         if (!socket) return;

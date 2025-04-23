@@ -12,13 +12,18 @@ All visuals implemented from scratch. Physics running in cannon-es latest versio
 ## Features
 
 - Realistic 3D rendering of the Earth-Moon system and the Sun with orbit controls.
-- Realtime physics simulation for spacecraft navigation.
-- GUI for real-time interaction, satellite creation, and visualization adjustments.
-- Dynamic data visualization of satellite metrics such as altitude, velocity, atmospheric drag, and acceleration.
-- Customizable time warp features to speed up or slow down the simulation by many orders of magnitude.
-- AI assistant for orbital mechanics guidance (connects to separate server).
-- Runs on the browser in high performance (trying to make it even faster).
-- Tested on iPhone at 60fps. (let me know how it performs on your machine 🙂).
+- Real-time physics simulation for spacecraft and satellite dynamics.
+- Interactive maneuver node planning and execution, allowing you to set burn points and preview trajectory changes.
+- AI-powered orbital mechanics assistant with chat-based guidance for planning maneuvers and understanding orbital parameters.
+- Advanced satellite creation options: import orbital elements, set latitude/longitude positions (circular or custom orbits).
+- Dynamic data visualization: real-time charts of altitude, velocity, drag, acceleration, and other metrics.
+- Configurable time warp for speeding up or slowing down the simulation by multiple orders of magnitude.
+- Satellite network visualization: live line-of-sight connections and network topology between satellites.
+- Ground track mapping with adjustable update intervals to visualize satellite footprints.
+- Customizable display settings: toggle axis, grid, vectors, ground tracks, and connections.
+- Save and load simulation states via JSON import/export to replicate or share scenarios.
+- React-friendly event API for integrating custom UI components.
+- High-performance browser rendering, tested on desktops and mobile devices at 60fps.
 
 ## To-do
 
@@ -65,7 +70,7 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
    Edit the `.env` file to configure the socket server URL:
 
    - For local development, point to your locally running server: `VITE_SOCKET_SERVER_URL=http://localhost:4000` or `http://localhost:1234` (these are the allowed dev origins)
-   - For production, point to the Railway server: `VITE_SOCKET_SERVER_URL=https://reentry-server.up.railway.app`
+   - For production, point to a Railway server
 
 4. Start the development server:
 
@@ -77,11 +82,13 @@ This will run the application on `http://localhost:1234`.
 
 ## Usage
 
-1. **Navigating the Scene**: Use the mouse for orbiting around objects, zooming in and out. Also works with touch screens(drag, pinch, etc).
-2. **Interacting with GUI**: Adjust simulation parameters like time warp, object visibility, and physics variables through the GUI.
-3. **Viewing Data**: Real-time data for satellites can be viewed and analyzed via the integrated chart system (wip).
-4. **Create and manage Spacecraft**: launch satellites from specific locations on Earth to any orbit. Currently only allows for only the first orbit implementation, working on multi-impulse capabilities.
-5. **AI Assistant**: Access the orbital mechanics AI assistant through the chat interface, which connects to the backend server.
+1. **Navigating the Scene**: Use the mouse or touch gestures for orbiting, zooming, and panning around objects.
+2. **Interacting with GUI**: Adjust simulation parameters like time warp, display settings, and physics variables in real time.
+3. **Viewing Data**: Monitor real-time charts for satellite metrics such as altitude, velocity, drag, and acceleration.
+4. **Create and Manage Spacecraft**: Launch satellites using latitude/longitude, orbital elements, or circular orbits; set up and adjust maneuver nodes to plan burns and preview trajectory changes.
+5. **AI Assistant**: Engage the integrated chat-based orbital mechanics AI for guidance on planning maneuvers, understanding orbital dynamics, and optimizing trajectories.
+6. **Satellite Networks & Ground Tracks**: Visualize line-of-sight connections, network topologies, and ground tracks with configurable update intervals.
+7. **Save & Load**: Export and import simulation states using JSON to replicate or share scenarios.
 
 ## Related Repositories
 

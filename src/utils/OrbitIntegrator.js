@@ -151,13 +151,18 @@ export function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbati
     let pos = pos0.slice();
     let vel = vel0.slice();
     const points = [];
+    let lastProgressTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     for (let i = 0; i < numPoints; i++) {
         const { pos: newPos, vel: newVel } = adaptiveIntegrate(pos, vel, dt, bodies, perturbationScale);
         pos = newPos;
         vel = newVel;
-        // Report incremental progress
+        // Throttle progress updates to at most every 100ms or on last step
         if (typeof onProgress === 'function') {
-            onProgress((i + 1) / numPoints);
+            const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            if (i === numPoints - 1 || now - lastProgressTime > 100) {
+                onProgress((i + 1) / numPoints);
+                lastProgressTime = now;
+            }
         }
         const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
         if (r <= Constants.earthRadius + ATMOSPHERE_CUTOFF_ALTITUDE) {

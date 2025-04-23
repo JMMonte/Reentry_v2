@@ -308,4 +308,19 @@ export function handleDisconnect({ setIsConnected, setIsLoading }) {
         setIsConnected(false);
         setIsLoading(false);
     };
-} 
+}
+
+export const eventHandlerFactories = {
+    conversation_start: handleConversationStart,
+    answer_start: handleAnswerStart,
+    message: handleMessage,
+    answer_end: handleAnswerEnd,
+    conversation_end: handleConversationEnd,
+    tool_call_sent: handleToolCallSent,
+    tool_call_response: handleToolCallResponse,
+    error: handleError,
+    threadCreated: handleThreadCreated,
+    runCompleted: handleRunCompleted,
+    connect: handleConnect,
+    disconnect: handleDisconnect
+}; 
