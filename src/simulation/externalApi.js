@@ -66,6 +66,22 @@ export function setupExternalApi(app3d) {
                 result: `Simulated code output for: ${code ? code.slice(0, 30) + (code.length > 30 ? '...' : '') : '[no code]'}`,
                 files: files ? files.map(f => ({ name: f.name, size: f.data.length })) : []
             };
+        },
+        /**
+         * Get the current Moon orbital elements
+         * @returns {Object} Orbital elements: semiMajorAxis, eccentricity, inclination, ascendingNode, argumentOfPeriapsis
+         */
+        getMoonOrbit: () => {
+            const Constants = app3d?.constructor?.Constants || window.Constants || {};
+            const moon = app3d?.moon;
+            // Prefer live values from moon instance if available, else fallback to Constants
+            return {
+                semiMajorAxis: (moon && moon.semiMajorAxis) || Constants.semiMajorAxis || 384400000,
+                eccentricity: (moon && moon.eccentricity) || Constants.eccentricity || 0.0549,
+                inclination: (moon && moon.inclination) || Constants.inclination || (5.145 * Math.PI / 180),
+                ascendingNode: (moon && moon.ascendingNode) || Constants.ascendingNode || (-11.26064 * Math.PI / 180),
+                argumentOfPeriapsis: (moon && moon.argumentOfPeriapsis) || Constants.argumentOfPeriapsis || (318.15 * Math.PI / 180)
+            };
         }
     };
 } 

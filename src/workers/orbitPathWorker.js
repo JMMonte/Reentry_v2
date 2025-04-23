@@ -70,7 +70,7 @@ self.onmessage = async function (e) {
         const initPos = [position.x, position.y, position.z];
         const initVel = [velocity.x, velocity.y, velocity.z];
         // bodies: array of {position:{x,y,z}, mass}
-        const rawPts = propagateOrbit(
+        const rawPts = await propagateOrbit(
             initPos,
             initVel,
             bodies,

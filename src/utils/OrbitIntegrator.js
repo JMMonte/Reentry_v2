@@ -146,29 +146,22 @@ export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0
  * Generate an orbit path via multiple adaptiveIntegrate steps.
  * Returns an array of THREE.Vector3 in Three.js units (m→km→scale).
  */
-export function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbationScale = 1.0, onProgress) {
+export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbationScale = 1.0, onProgress) {
     const dt = period / numPoints;
     let pos = pos0.slice();
     let vel = vel0.slice();
     const points = [];
-    let lastProgressTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    // Batch size for yielding to event loop (~20 chunks)
+    const batchSize = Math.max(1, Math.floor(numPoints / 20));
     for (let i = 0; i < numPoints; i++) {
         const { pos: newPos, vel: newVel } = adaptiveIntegrate(pos, vel, dt, bodies, perturbationScale);
         pos = newPos;
         vel = newVel;
-        // Throttle progress updates to at most every 100ms or on last step
-        if (typeof onProgress === 'function') {
-            const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-            if (i === numPoints - 1 || now - lastProgressTime > 100) {
-                onProgress((i + 1) / numPoints);
-                lastProgressTime = now;
-            }
-        }
         const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
         if (r <= Constants.earthRadius + ATMOSPHERE_CUTOFF_ALTITUDE) {
-            // continue inside atmosphere with fixed-step integrator
-            const atmPts = propagateAtmosphere(pos, vel, bodies, 300, 1); // max 300s, 1s step
+            const atmPts = propagateAtmosphere(pos, vel, bodies, 300, 1);
             points.push(...atmPts);
+            if (typeof onProgress === 'function') onProgress(1);
             break;
         }
         points.push(
@@ -178,6 +171,12 @@ export function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbati
                 pos[2] * Constants.metersToKm * Constants.scale
             )
         );
+        // Report progress and yield in batches
+        if (typeof onProgress === 'function' && ((i + 1) % batchSize === 0 || i === numPoints - 1)) {
+            onProgress((i + 1) / numPoints);
+            // Yield control to allow message handling
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
     }
     return points;
 }
