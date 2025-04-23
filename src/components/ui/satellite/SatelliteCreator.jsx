@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { Button } from '../button';
 import { Label } from '../label';
 import { Input } from '../input';
@@ -6,7 +6,7 @@ import { Slider } from '../slider';
 import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import PropTypes from 'prop-types';
 
-const SatelliteCreator = ({ onCreateSatellite }) => {
+const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
     const [mode, setMode] = useState('latlon');
     const [formData, setFormData] = useState({
         name: '',
@@ -25,6 +25,16 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         trueAnomaly: 0,
         angleOfAttack: 0,
     });
+
+    useImperativeHandle(ref, () => ({
+        applyPreset: (preset) => {
+            setMode(preset.mode);
+            setFormData(prev => ({
+                ...prev,
+                ...preset.values,
+            }));
+        }
+    }));
 
     const handleInputChange = (e) => {
         const { name: field, value, type } = e.target;
@@ -46,24 +56,6 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
         setFormData(prev => ({
             ...prev,
             [name]: value,
-        }));
-    };
-
-    const presets = [
-        { label: 'ISS', mode: 'orbital', values: { name: 'ISS', mass: 419725, size: 1, semiMajorAxis: 6778, eccentricity: 0.0007, inclination: 51.6, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Geostationary', mode: 'orbital', values: { name: 'Geostationary', mass: 5000, size: 3, semiMajorAxis: 42164, eccentricity: 0, inclination: 0, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Molniya', mode: 'orbital', values: { name: 'Molniya', mass: 2200, size: 2, semiMajorAxis: 26600, eccentricity: 0.74, inclination: 63.4, raan: 0, argumentOfPeriapsis: 270, trueAnomaly: 0 } },
-        { label: 'Sun-Synchronous', mode: 'orbital', values: { name: 'Sun-Synchronous', mass: 1000, size: 1, semiMajorAxis: 6978, eccentricity: 0.001, inclination: 98, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'GPS IIF', mode: 'orbital', values: { name: 'GPS IIF', mass: 1630, size: 1, semiMajorAxis: 26560, eccentricity: 0.01, inclination: 55, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Hubble', mode: 'orbital', values: { name: 'Hubble', mass: 11110, size: 1.5, semiMajorAxis: 6918, eccentricity: 0.0005, inclination: 28.5, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Iridium', mode: 'orbital', values: { name: 'Iridium', mass: 700, size: 0.5, semiMajorAxis: 7151, eccentricity: 0.0002, inclination: 86.4, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'LEO Satellite', mode: 'latlon', values: { name: 'LEO Satellite', mass: 1200, size: 1, latitude: 0, longitude: 0, altitude: 400, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
-    ];
-    const handlePreset = (preset) => {
-        setMode(preset.mode);
-        setFormData(prev => ({
-            ...prev,
-            ...preset.values,
         }));
     };
 
@@ -202,16 +194,6 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
                     </TabsList>
                 </Tabs>
             </div>
-            <details className="mb-2">
-                <summary className="cursor-pointer text-sm font-medium">Templates</summary>
-                <div className="mt-2 flex flex-wrap gap-2">
-                    {presets.map(preset => (
-                        <Button key={preset.label} size="sm" variant="outline" onClick={() => handlePreset(preset)}>
-                            {preset.label}
-                        </Button>
-                    ))}
-                </div>
-            </details>
             <form onSubmit={handleSubmit} className="space-y-0.5 mb-0">
                 <div className="flex flex-col gap-y-2">
                     {mode === 'latlon' && (
@@ -252,7 +234,9 @@ const SatelliteCreator = ({ onCreateSatellite }) => {
             </form>
         </div>
     );
-};
+});
+
+SatelliteCreator.displayName = 'SatelliteCreator';
 
 SatelliteCreator.propTypes = {
     onCreateSatellite: PropTypes.func.isRequired

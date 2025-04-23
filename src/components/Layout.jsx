@@ -12,6 +12,8 @@ import PropTypes from 'prop-types';
 import { ResetPasswordModal } from './ui/auth/ResetPasswordModal';
 import { SimulationWindow } from './ui/simulation/SimulationWindow';
 import { SatelliteManeuverWindow } from './ui/satellite/SatelliteManeuverWindow';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { Button } from './ui/button';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -102,6 +104,40 @@ Toast.propTypes = {};
 
 // SatelliteCreatorModal
 function SatelliteCreatorModal({ isOpen, onClose, onCreate }) {
+    // Presets and handler for dropdown
+    const presets = [
+        { label: 'ISS', mode: 'orbital', values: { name: 'ISS', mass: 419725, size: 1, semiMajorAxis: 6778, eccentricity: 0.0007, inclination: 51.6, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Geostationary', mode: 'orbital', values: { name: 'Geostationary', mass: 5000, size: 3, semiMajorAxis: 42164, eccentricity: 0, inclination: 0, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Molniya', mode: 'orbital', values: { name: 'Molniya', mass: 2200, size: 2, semiMajorAxis: 26600, eccentricity: 0.74, inclination: 63.4, raan: 0, argumentOfPeriapsis: 270, trueAnomaly: 0 } },
+        { label: 'Sun-Synchronous', mode: 'orbital', values: { name: 'Sun-Synchronous', mass: 1000, size: 1, semiMajorAxis: 6978, eccentricity: 0.001, inclination: 98, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'GPS IIF', mode: 'orbital', values: { name: 'GPS IIF', mass: 1630, size: 1, semiMajorAxis: 26560, eccentricity: 0.01, inclination: 55, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Hubble', mode: 'orbital', values: { name: 'Hubble', mass: 11110, size: 1.5, semiMajorAxis: 6918, eccentricity: 0.0005, inclination: 28.5, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'Iridium', mode: 'orbital', values: { name: 'Iridium', mass: 700, size: 0.5, semiMajorAxis: 7151, eccentricity: 0.0002, inclination: 86.4, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
+        { label: 'LEO Satellite', mode: 'latlon', values: { name: 'LEO Satellite', mass: 1200, size: 1, latitude: 0, longitude: 0, altitude: 400, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
+    ];
+    const satelliteCreatorRef = React.useRef();
+    const handlePreset = (preset) => {
+        if (satelliteCreatorRef.current && satelliteCreatorRef.current.applyPreset) {
+            satelliteCreatorRef.current.applyPreset(preset);
+        }
+    };
+    // Dropdown for header
+    const dropdown = (
+        <div className="mr-2">
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">Templates</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    {presets.map(preset => (
+                        <DropdownMenuItem key={preset.label} onSelect={() => handlePreset(preset)}>
+                            {preset.label}
+                        </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+            </DropdownMenu>
+        </div>
+    );
     return (
         <DraggableModal
             title="Create Satellite"
@@ -112,8 +148,9 @@ function SatelliteCreatorModal({ isOpen, onClose, onCreate }) {
             minWidth={300}
             minHeight={300}
             resizable={true}
+            rightElement={dropdown}
         >
-            <SatelliteCreator onCreateSatellite={onCreate} />
+            <SatelliteCreator ref={satelliteCreatorRef} onCreateSatellite={onCreate} />
         </DraggableModal>
     );
 }
