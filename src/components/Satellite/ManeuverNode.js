@@ -21,6 +21,10 @@ export class ManeuverNode {
         this.predictionId = `${this.satellite.id}-maneuverPred-${ManeuverNode._predCount}`;
         this.predictedOrbit = new OrbitPath(this.satellite.color);
         this.scene.add(this.predictedOrbit.orbitLine);
+        // Atmosphere crossing markers
+        this._atmMarkers = [];
+        this._atmMarkerGroup = new THREE.Group();
+        this.scene.add(this._atmMarkerGroup);
         // Make predicted orbit line dashed
         this.predictedOrbit.orbitLine.material = new THREE.LineDashedMaterial({
             color: this.satellite.color,
@@ -49,6 +53,34 @@ export class ManeuverNode {
                 }
                 geom.setAttribute('lineDistance', new THREE.BufferAttribute(lineDistances, 1));
                 geom.attributes.lineDistance.needsUpdate = true;
+                // Detect atmosphere entry/exit (100 km above surface)
+                const pts = e.detail.orbitPoints.map(p => new THREE.Vector3(p.x, p.y, p.z));
+                const boundary = (Constants.earthRadius + 100000) * Constants.metersToKm * Constants.scale;
+                // clear previous markers
+                this._atmMarkers.forEach(m => { this._atmMarkerGroup.remove(m); m.geometry.dispose(); m.material.dispose(); });
+                this._atmMarkers = [];
+                let inside = false;
+                let entryPos, exitPos;
+                for (let i = 1; i < pts.length; i++) {
+                    const r0 = pts[i-1].length();
+                    const r1 = pts[i].length();
+                    if (!inside && r0 > boundary && r1 <= boundary) {
+                        entryPos = pts[i].clone(); inside = true;
+                    }
+                    if (inside && r0 <= boundary && r1 > boundary) {
+                        exitPos = pts[i].clone(); break;
+                    }
+                }
+                [entryPos, exitPos].forEach(pos => {
+                    if (pos) {
+                        const sphereGeom = new THREE.SphereGeometry(1, 8, 8);
+                        const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+                        const marker = new THREE.Mesh(sphereGeom, sphereMat);
+                        marker.position.copy(pos);
+                        this._atmMarkerGroup.add(marker);
+                        this._atmMarkers.push(marker);
+                    }
+                });
             }
         };
         document.addEventListener('orbitDataUpdate', this._predOrbitHandler);
@@ -131,28 +163,46 @@ export class ManeuverNode {
         })();
         const bodiesAll = [earthBody, moonBody, sunBody];
         const pertScale = window.app3d?.getDisplaySetting('perturbationScale') ?? 1.0;
-        // Initial MKS state arrays from current satellite state
+        // Initial state vectors (in km*scale)
         let prevTime = simTime;
         let posArr = [this.satellite.position.x, this.satellite.position.y, this.satellite.position.z];
         let velArr = [this.satellite.velocity.x, this.satellite.velocity.y, this.satellite.velocity.z];
-        // Collect maneuvers up to this one (including preview node)
+        // Process all maneuver burns up to this node in order
         const allNodes = [...this.satellite.maneuverNodes];
         if (!allNodes.includes(this)) allNodes.push(this);
         allNodes.sort((a, b) => a.time - b.time);
-        // Integrate forward and apply each burn
+        let dvWorldThis = new THREE.Vector3();
         for (const nd of allNodes) {
             if (nd.time.getTime() > this.time.getTime()) break;
+            // Integrate orbital motion until this burn
             const dtSeg = (nd.time.getTime() - prevTime.getTime()) / 1000;
             if (dtSeg > 0) {
-                const result = adaptiveIntegrate(posArr, velArr, dtSeg, bodiesAll, pertScale);
-                posArr = result.pos;
-                velArr = result.vel;
+                const res = adaptiveIntegrate(posArr, velArr, dtSeg, bodiesAll, pertScale);
+                posArr = res.pos;
+                velArr = res.vel;
             }
-            // Apply ΔV in m/s
-            velArr[0] += nd.deltaV.x;
-            velArr[1] += nd.deltaV.y;
-            velArr[2] += nd.deltaV.z;
+            // Compute instantaneous orbital frame at burn time
+            const posVec = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
+            const velVec = new THREE.Vector3(velArr[0], velArr[1], velArr[2]);
+            const vHat = velVec.clone().normalize();    // prograde
+            const rHat = posVec.clone().normalize();    // radial
+            const hHat = new THREE.Vector3().crossVectors(rHat, vHat).normalize(); // normal
+            // Use user-defined localDV at this node
+            const localDV = nd.localDV ? nd.localDV.clone() : new THREE.Vector3();
+            // Convert local DV to world DV
+            const dvWorld = new THREE.Vector3()
+                .addScaledVector(vHat, localDV.x)
+                .addScaledVector(rHat, localDV.y)
+                .addScaledVector(hHat, localDV.z);
+            // Apply burn to velocity
+            velArr[0] += dvWorld.x;
+            velArr[1] += dvWorld.y;
+            velArr[2] += dvWorld.z;
             prevTime = nd.time;
+            // If this is the current node, store its world DV for arrow
+            if (nd === this) dvWorldThis.copy(dvWorld);
+            // Also copy to node.deltaV for consistent world DV
+            nd.deltaV.copy(dvWorld);
         }
         // Update node position in Three.js units
         const scaleK = Constants.metersToKm * Constants.scale;
@@ -185,23 +235,24 @@ export class ManeuverNode {
         const windowSeconds = basePeriod * periodFactor;
         const ptsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
         const numPts = Math.ceil(ptsPerPeriod * periodFactor);
-        // Issue path update
-        this.predictedOrbit.update(
-            posVec,
-            velVec,
-            this.predictionId,
-            bodiesForWorker,
-            windowSeconds,
-            numPts
-        );
-        // Arrow orientation along deltaV direction
-        const dvMag = this.deltaV.length();
-        if (dvMag > 0) {
-            const dvHat = this.deltaV.clone().normalize();
-            this.arrow.visible = true;
-            this.arrow.setDirection(dvHat);
-        } else {
-            this.arrow.visible = false;
+        // Update predicted orbit from post-burn state (throttled)
+        const nowPerf = performance.now();
+        if (!this._lastPredTime || nowPerf - this._lastPredTime > 100) {
+            this.predictedOrbit.update(
+                posVec,
+                velVec,
+                this.predictionId,
+                bodiesForWorker,
+                windowSeconds,
+                numPts
+            );
+            this._lastPredTime = nowPerf;
+        }
+        // Arrow orientation: use the computed world ΔV vector for this node
+        const mag = dvWorldThis.length();
+        this.arrow.visible = mag > 0;
+        if (mag > 0) {
+            this.arrow.setDirection(dvWorldThis.clone().normalize());
         }
     }
 
@@ -227,6 +278,11 @@ export class ManeuverNode {
         if (this.predictedOrbit) {
             this.scene.remove(this.predictedOrbit.orbitLine);
             this.predictedOrbit.dispose();
+            // Remove atmosphere markers
+            if (this._atmMarkerGroup) {
+                this.scene.remove(this._atmMarkerGroup);
+                this._atmMarkers.forEach(m => { m.geometry.dispose(); m.material.dispose(); });
+            }
             // Remove listeners
             document.removeEventListener('orbitDataUpdate', this._predOrbitHandler);
             this.app3d.removeEventListener('displaySettingChanged', this._predVisibilityHandler);

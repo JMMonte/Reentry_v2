@@ -71,6 +71,16 @@ export class SimulationLoop {
             this.app.updateScene(currentTime);
         }
 
+        // Preview node: update its position, arrow, and predicted orbit if present
+        if (this.app.previewNode) {
+            try {
+                this.app.previewNode.update();
+                this.app.previewNode.predictedOrbit.setVisible(true);
+            } catch (e) {
+                console.warn('Preview node update error:', e);
+            }
+        }
+
         // Update camera controls
         if (this.cameraControls && typeof this.cameraControls.updateCameraPosition === 'function') {
             this.cameraControls.updateCameraPosition();

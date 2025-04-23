@@ -44,7 +44,7 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
             defaultPosition={{ x: 20, y: 80 }}
             resizable={true}
             defaultWidth={500}
-            defaultHeight={400}
+            defaultHeight={470}
             minWidth={350}
             minHeight={200}
         >

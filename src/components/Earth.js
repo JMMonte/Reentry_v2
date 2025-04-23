@@ -17,7 +17,7 @@ export class Earth {
         this.ATMOSPHERE_RES = 64; // further reduced resolution for atmosphere
         this.CLOUD_RES = 64; // further reduced resolution for cloud layer
         this.EARTH_RADIUS = Constants.earthRadius * Constants.scale * Constants.metersToKm;
-        this.ATMOSPHERE_RADIUS = this.EARTH_RADIUS + 4;
+        this.ATMOSPHERE_RADIUS = this.EARTH_RADIUS + 10;
         this.SIDEREAL_DAY_IN_SECONDS = 86164;
         this.DAYS_IN_YEAR = 365.25;
         this.EARTH_MASS = Constants.earthMass;

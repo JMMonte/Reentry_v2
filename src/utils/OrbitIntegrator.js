@@ -40,7 +40,7 @@ export function computeAccel(pos, bodies, perturbationScale = 1.0) {
 }
 
 // Atmospheric drag constants and model
-const ATMOSPHERE_CUTOFF_ALTITUDE = 1000000; // 1000 km in meters
+const ATMOSPHERE_CUTOFF_ALTITUDE = 40000; // 100 km in meters
 const DEFAULT_BALLISTIC_COEFFICIENT = 100; // kg/m^2, typical satellite ballistic coefficient
 
 /**
@@ -146,7 +146,7 @@ export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0
  * Generate an orbit path via multiple adaptiveIntegrate steps.
  * Returns an array of THREE.Vector3 in Three.js units (m→km→scale).
  */
-export function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbationScale = 1.0) {
+export function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbationScale = 1.0, onProgress) {
     const dt = period / numPoints;
     let pos = pos0.slice();
     let vel = vel0.slice();
@@ -155,7 +155,17 @@ export function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbati
         const { pos: newPos, vel: newVel } = adaptiveIntegrate(pos, vel, dt, bodies, perturbationScale);
         pos = newPos;
         vel = newVel;
-        // Convert to Three.js coordinates (km * scale)
+        // Report incremental progress
+        if (typeof onProgress === 'function') {
+            onProgress((i + 1) / numPoints);
+        }
+        const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
+        if (r <= Constants.earthRadius + ATMOSPHERE_CUTOFF_ALTITUDE) {
+            // continue inside atmosphere with fixed-step integrator
+            const atmPts = propagateAtmosphere(pos, vel, bodies, 300, 1); // max 300s, 1s step
+            points.push(...atmPts);
+            break;
+        }
         points.push(
             new THREE.Vector3(
                 pos[0] * Constants.metersToKm * Constants.scale,
@@ -165,6 +175,34 @@ export function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbati
         );
     }
     return points;
+}
+
+// Simple fixed-step atmospheric propagation (Euler), returns Three.Vector3 points
+export function propagateAtmosphere(pos0, vel0, bodies, maxSeconds = 300, dt = 1, ballisticCoefficient = DEFAULT_BALLISTIC_COEFFICIENT) {
+    let pos = pos0.slice();
+    let vel = vel0.slice();
+    const pts = [];
+    const steps = Math.ceil(maxSeconds / dt);
+    for (let i = 0; i < steps; i++) {
+        // gravity + drag
+        const grav = computeAccel(pos, bodies, 1.0);
+        const drag = computeDragAcceleration(pos, vel, ballisticCoefficient);
+        // semi-implicit Euler
+        vel[0] += (grav[0] + drag[0]) * dt;
+        vel[1] += (grav[1] + drag[1]) * dt;
+        vel[2] += (grav[2] + drag[2]) * dt;
+        pos[0] += vel[0] * dt;
+        pos[1] += vel[1] * dt;
+        pos[2] += vel[2] * dt;
+        const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
+        if (r <= Constants.earthRadius) break;
+        pts.push(new THREE.Vector3(
+            pos[0] * Constants.metersToKm * Constants.scale,
+            pos[1] * Constants.metersToKm * Constants.scale,
+            pos[2] * Constants.metersToKm * Constants.scale
+        ));
+    }
+    return pts;
 }
 
 // Export drag computation for satellite debug display

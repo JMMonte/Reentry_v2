@@ -7,7 +7,7 @@ import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { ManeuverNode } from './ManeuverNode.js';
 
 export class Satellite {
-    constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name }) {
+    constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name, referenceBody = 'earth' }) {
         this.app3d = app3d;
         this.scene = scene;
         this.id = id;
@@ -19,6 +19,9 @@ export class Satellite {
         this.velocity = velocity.clone();
         this.initialized = false;
         this.updateBuffer = [];
+
+        // Store reference body for attachments (e.g., ground track)
+        this.referenceBody = referenceBody;
 
         // Initialize orientation quaternion
         this.orientation = new THREE.Quaternion();
@@ -65,15 +68,14 @@ export class Satellite {
         this.visualizer = new SatelliteVisualizer(this.color, this.orientation, this.app3d);
         this.visualizer.addToScene(this.scene);
 
-
         // Replace orbit line/worker with OrbitPath
         this.orbitPath = new OrbitPath(this.color);
         this.scene.add(this.orbitPath.orbitLine);
         this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
 
-        // Replace ground track with GroundTrackPath
+        // Create and attach ground track path (always to main scene)
         this.groundTrackPath = new GroundTrackPath(this.color, this.id);
-        this.app3d.earth.rotationGroup.add(this.groundTrackPath.groundTrackLine);
+        this.scene.add(this.groundTrackPath.groundTrackLine);
         this.groundTrackPath.groundTrackLine.visible = this.app3d.getDisplaySetting('showGroundTraces');
 
         // Initialize apsis visualizer
@@ -217,7 +219,6 @@ export class Satellite {
         }
         // Remove and dispose ground track path
         if (this.groundTrackPath) {
-            this.app3d.earth.rotationGroup.remove(this.groundTrackPath.groundTrackLine);
             this.groundTrackPath.dispose();
         }
         // Dispose apsis visualizer

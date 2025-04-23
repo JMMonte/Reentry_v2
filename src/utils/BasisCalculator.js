@@ -11,22 +11,23 @@ export class BasisCalculator {
      * @returns {THREE.Vector3} local delta-V components [vHat, rHat, hHat]
      */
     static computeLocal(dvWorld, pts, periodSec, targetTime, simTime) {
+        // approximate instantaneous basis from orbit samples
         if (!pts || pts.length < 2 || periodSec <= 0) return dvWorld.clone();
         const dt = (targetTime.getTime() - simTime.getTime()) / 1000;
         const frac = ((dt / periodSec) % 1 + 1) % 1;
-        const idx = Math.floor(frac * pts.length);
-        const pt = new THREE.Vector3(pts[idx].x, pts[idx].y, pts[idx].z);
-        const next = pts[(idx + 1) % pts.length];
-        if (!next) return dvWorld.clone();
-        const nxt = new THREE.Vector3(next.x, next.y, next.z);
-        const vHat = nxt.clone().sub(pt).normalize();
-        const rHat = pt.clone().normalize();
-        const hHat = new THREE.Vector3().crossVectors(rHat, vHat).normalize();
-        return new THREE.Vector3(
-            dvWorld.dot(vHat),
-            dvWorld.dot(rHat),
-            dvWorld.dot(hHat)
-        );
+        const len = pts.length;
+        const fIndex = frac * (len - 1);
+        const idx = Math.floor(fIndex);
+        const nextIdx = Math.min(idx + 1, len - 1);
+        const subFrac = fIndex - idx;
+        const p0 = new THREE.Vector3(pts[idx].x, pts[idx].y, pts[idx].z);
+        const p1 = new THREE.Vector3(pts[nextIdx].x, pts[nextIdx].y, pts[nextIdx].z);
+        // interpolated position on conic
+        const posInterp = p0.clone().lerp(p1, subFrac);
+        // approximate instantaneous velocity vector
+        const dtSeg = periodSec / (len - 1);
+        const velInterp = p1.clone().sub(p0).divideScalar(dtSeg);
+        return BasisCalculator.computeLocalExact(dvWorld, posInterp, velInterp);
     }
 
     /**
@@ -39,22 +40,21 @@ export class BasisCalculator {
      * @returns {THREE.Vector3} world delta-V
      */
     static computeWorld(dvLocal, pts, periodSec, targetTime, simTime) {
+        // approximate world DV via instantaneous basis from orbit samples
         if (!pts || pts.length < 2 || periodSec <= 0) return dvLocal.clone();
         const dt = (targetTime.getTime() - simTime.getTime()) / 1000;
         const frac = ((dt / periodSec) % 1 + 1) % 1;
-        const idx = Math.floor(frac * pts.length);
-        const pt = new THREE.Vector3(pts[idx].x, pts[idx].y, pts[idx].z);
-        const next = pts[(idx + 1) % pts.length];
-        if (!next) return dvLocal.clone();
-        const nxt = new THREE.Vector3(next.x, next.y, next.z);
-        const vHat = nxt.clone().sub(pt).normalize();
-        const rHat = pt.clone().normalize();
-        const hHat = new THREE.Vector3().crossVectors(rHat, vHat).normalize();
-        const dvWorld = new THREE.Vector3();
-        dvWorld.addScaledVector(vHat, dvLocal.x)
-            .addScaledVector(rHat, dvLocal.y)
-            .addScaledVector(hHat, dvLocal.z);
-        return dvWorld;
+        const len = pts.length;
+        const fIndex = frac * (len - 1);
+        const idx = Math.floor(fIndex);
+        const nextIdx = Math.min(idx + 1, len - 1);
+        const subFrac = fIndex - idx;
+        const p0 = new THREE.Vector3(pts[idx].x, pts[idx].y, pts[idx].z);
+        const p1 = new THREE.Vector3(pts[nextIdx].x, pts[nextIdx].y, pts[nextIdx].z);
+        const posInterp = p0.clone().lerp(p1, subFrac);
+        const dtSeg = periodSec / (len - 1);
+        const velInterp = p1.clone().sub(p0).divideScalar(dtSeg);
+        return BasisCalculator.computeWorldExact(dvLocal, posInterp, velInterp);
     }
 
     /**

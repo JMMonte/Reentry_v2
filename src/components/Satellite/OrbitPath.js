@@ -25,6 +25,38 @@ export class OrbitPath {
         this.orbitLine.frustumCulled = false;
         this.orbitLine.visible = false;
 
+        // Create spinner-based orbit-loading indicator
+        if (typeof document !== 'undefined' && !document.getElementById('orbit-path-loader')) {
+            // Add spinner keyframes
+            if (!document.getElementById('orbit-path-spinner-style')) {
+                const style = document.createElement('style');
+                style.id = 'orbit-path-spinner-style';
+                style.textContent = `@keyframes orbitPathSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
+                document.head.appendChild(style);
+            }
+            // Loader container
+            const loader = document.createElement('div');
+            loader.id = 'orbit-path-loader';
+            Object.assign(loader.style, {
+                position: 'absolute', bottom: '10px', left: '10px',
+                display: 'none', alignItems: 'center',
+                padding: '4px 8px', background: 'rgba(0,0,0,0.6)',
+                color: '#fff', fontSize: '12px', borderRadius: '4px',
+                zIndex: '1000'
+            });
+            // Spinner element
+            const spinner = document.createElement('div');
+            spinner.id = 'orbit-path-spinner';
+            Object.assign(spinner.style, {
+                width: '16px', height: '16px',
+                border: '2px solid #fff', borderTop: '2px solid transparent',
+                borderRadius: '50%', marginRight: '8px',
+                animation: 'orbitPathSpin 1s linear infinite'
+            });
+            loader.appendChild(spinner);
+            document.body.appendChild(loader);
+        }
+
         // Use a shared worker across all OrbitPath instances
         if (!OrbitPath.sharedWorker) {
             OrbitPath.sharedWorker = new Worker(
@@ -103,6 +135,16 @@ export class OrbitPath {
 
     // Static dispatcher for shared worker messages
     static _dispatchMessage(e) {
+        // Hide loader once data arrives
+        if (e.data.type === 'ORBIT_PATH_UPDATE') {
+            const loader = document.getElementById('orbit-path-loader');
+            if (loader) loader.style.display = 'none';
+        }
+        if (e.data.type === 'ORBIT_PATH_PROGRESS') {
+            const loader = document.getElementById('orbit-path-loader');
+            if (loader) loader.style.display = 'flex';
+            return;
+        }
         const handler = OrbitPath.handlers && OrbitPath.handlers[e.data.id];
         if (handler) handler(e);
     }

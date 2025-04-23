@@ -1,4 +1,4 @@
-import App3D from '../app3d.js';
+import App3D from '../App3D.js';
 import { setupExternalApi } from './externalApi.js';
 
 /**

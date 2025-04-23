@@ -70,7 +70,18 @@ self.onmessage = async function (e) {
         const initPos = [position.x, position.y, position.z];
         const initVel = [velocity.x, velocity.y, velocity.z];
         // bodies: array of {position:{x,y,z}, mass}
-        const rawPts = propagateOrbit(initPos, initVel, bodies, period, numPoints, perturbationScale);
+        const rawPts = propagateOrbit(
+            initPos,
+            initVel,
+            bodies,
+            period,
+            numPoints,
+            perturbationScale,
+            (progress) => {
+                // Send intermediate progress back to main thread
+                self.postMessage({ type: 'ORBIT_PATH_PROGRESS', id, progress, seq });
+            }
+        );
         const spacedPts = resampleArcLength(rawPts, numPoints);
         orbitPathMap[id] = spacedPts.map(pt => ({ x: pt.x, y: pt.y, z: pt.z }));
         self.postMessage({

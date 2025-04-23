@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { ManeuverNode } from '../../../components/Satellite/ManeuverNode.js';
-import { BasisCalculator } from '../../../utils/BasisCalculator.js';
+import { ManeuverNodeModel } from '../../../models/ManeuverNodeModel.js';
 
 export function useManeuverWindow(satellite) {
     // Initial and current simulated time
@@ -31,8 +31,13 @@ export function useManeuverWindow(satellite) {
     const [multA, setMultA] = useState('1');
     const [multN, setMultN] = useState('1');
 
-    // Maneuver nodes and selection
-    const [nodes, setNodes] = useState([...satellite.maneuverNodes]);
+    // Maneuver nodes (sorted by time) and selection
+    const [nodes, setNodes] = useState(() =>
+        satellite.maneuverNodes
+            .slice()
+            .sort((a, b) => a.time.getTime() - b.time.getTime())
+            .map(n => new ManeuverNodeModel(n, satellite, simTime))
+    );
     const [selectedIndex, setSelectedIndex] = useState(null);
     const previewNodeRef = useRef(null);
 
@@ -50,13 +55,20 @@ export function useManeuverWindow(satellite) {
         return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     };
 
-    // Determine which orbit path to use for a given node index
+    // Determine which orbit path to use at a node index (chained post-burn orbits)
     const getCompositePath = (idx) => {
-        if (idx > 0 && nodes[idx - 1]?.predictedOrbit) {
-            return nodes[idx - 1].predictedOrbit;
-        }
-        return satellite.orbitPath;
+        const sorted = satellite.maneuverNodes.slice().sort((a, b) => a.time.getTime() - b.time.getTime());
+        return idx > 0 && sorted[idx - 1]?.predictedOrbit
+            ? sorted[idx - 1].predictedOrbit
+            : satellite.orbitPath;
     };
+
+    // Helper to build UI models array sorted by maneuver time
+    const buildNodeModels = () =>
+        satellite.maneuverNodes
+            .slice() // copy
+            .sort((a, b) => a.time.getTime() - b.time.getTime())
+            .map(n => new ManeuverNodeModel(n, satellite, currentSimTime));
 
     // Sync currentSimTime every second
     useEffect(() => {
@@ -66,40 +78,32 @@ export function useManeuverWindow(satellite) {
         return () => clearInterval(interval);
     }, [satellite]);
 
-    // Refresh nodes list when satellite changes
+    // Refresh and rebuild node models on satellite change, updating 3D nodes in time order for nested orbits
     useEffect(() => {
-        setNodes([...satellite.maneuverNodes]);
+        // Update all real node predicted orbits sequentially
+        satellite.maneuverNodes
+            .slice()
+            .sort((a, b) => a.time.getTime() - b.time.getTime())
+            .forEach(n3d => n3d.update());
+        // Rebuild UI models sorted by time
+        setNodes(buildNodeModels());
         if (selectedIndex != null && selectedIndex >= satellite.maneuverNodes.length) {
             setSelectedIndex(null);
         }
     }, [satellite]);
 
+    // NOTE: localDV for nested nodes computed per selection, so no bulk update here
+
     // Load execution time and local DV when selection changes
     useEffect(() => {
         if (selectedIndex != null && nodes[selectedIndex]) {
-            const node = nodes[selectedIndex];
+            const model = nodes[selectedIndex];
             setTimeMode('datetime');
-            const t = node.time;
+            const t = model.time;
             setHours(t.getUTCHours()); setMinutes(t.getUTCMinutes()); setSeconds(t.getUTCSeconds()); setMilliseconds(t.getUTCMilliseconds());
-            if (node.localDV) {
-                setVx(node.localDV.x.toFixed(2));
-                setVy(node.localDV.y.toFixed(2));
-                setVz(node.localDV.z.toFixed(2));
-            } else {
-                const path = getCompositePath(selectedIndex);
-                const per = path._period || 0;
-                const dvWorld = node.deltaV.clone();
-                const dvLocal = BasisCalculator.computeLocal(
-                    dvWorld,
-                    path.orbitPoints,
-                    per,
-                    t,
-                    satellite.app3d.timeUtils.getSimulatedTime()
-                );
-                setVx(dvLocal.x.toFixed(2));
-                setVy(dvLocal.y.toFixed(2));
-                setVz(dvLocal.z.toFixed(2));
-            }
+            // Use stored localDV for editing
+            const local = model.localDV || new THREE.Vector3();
+            setVx(local.x.toFixed(2)); setVy(local.y.toFixed(2)); setVz(local.z.toFixed(2));
         } else {
             setTimeMode('offset'); setOffsetSec('0');
             setHours(simTime.getUTCHours()); setMinutes(simTime.getUTCMinutes()); setSeconds(simTime.getUTCSeconds()); setMilliseconds(simTime.getUTCMilliseconds());
@@ -111,132 +115,72 @@ export function useManeuverWindow(satellite) {
     useEffect(() => {
         const initNode = new ManeuverNode({ satellite, time: new Date(simTime), deltaV: new THREE.Vector3() });
         previewNodeRef.current = initNode;
-        // style preview white
-        if (initNode.mesh && initNode.mesh.material) {
-            initNode.mesh.material.color.set(0xffffff);
-            initNode.mesh.material.opacity = 0.8;
-            initNode.mesh.material.transparent = true;
-        }
-        if (initNode.arrow) {
-            if (initNode.arrow.line) initNode.arrow.line.material.color.set(0xffffff);
-            if (initNode.arrow.cone) initNode.arrow.cone.material.color.set(0xffffff);
-        }
-        return () => { initNode.dispose(); previewNodeRef.current = null; };
+        // Register preview node on App3D for central loop
+        satellite.app3d.previewNode = initNode;
+        // Style preview mesh, arrow, and orbit white
+        const white = 0xffffff;
+        initNode.mesh.material.color.set(white);
+        initNode.mesh.material.opacity = 0.8;
+        initNode.mesh.material.transparent = true;
+        if (initNode.arrow.line) initNode.arrow.line.material.color.set(white);
+        if (initNode.arrow.cone) initNode.arrow.cone.material.color.set(white);
+        if (initNode.predictedOrbit.orbitLine.material) initNode.predictedOrbit.orbitLine.material.color.set(white);
+
+        return () => {
+            // Cleanup preview node
+            initNode.dispose();
+            previewNodeRef.current = null;
+            delete satellite.app3d.previewNode;
+        };
     }, [satellite]);
 
-    // Live-update world DV for selected node when inputs change
+    // Sync preview node state when inputs change
     useEffect(() => {
-        if (selectedIndex == null) return;
-        const node = nodes[selectedIndex];
+        const node = previewNodeRef.current;
         if (!node) return;
+        // Compute execution time
+        const now = satellite.app3d.timeUtils.getSimulatedTime();
         let execTime;
         if (timeMode === 'offset') {
-            execTime = new Date(satellite.app3d.timeUtils.getSimulatedTime().getTime() + (parseFloat(offsetSec) || 0) * 1000);
+            execTime = new Date(now.getTime() + (parseFloat(offsetSec) || 0) * 1000);
         } else {
-            execTime = new Date(satellite.app3d.timeUtils.getSimulatedTime());
+            execTime = new Date(now);
             execTime.setUTCHours(hours, minutes, seconds, milliseconds);
         }
-        const path = getCompositePath(selectedIndex);
-        const pts = path.orbitPoints || [];
-        let predInt2 = satellite.app3d.getDisplaySetting('orbitPredictionInterval');
-        if (!predInt2 || predInt2 <= 0) predInt2 = 1;
-        const per = (path._period || 0) / predInt2;
-        const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
-        let dvWorld = new THREE.Vector3();
-        if (pts.length > 1 && per > 0) {
-            const dt = (execTime.getTime() - simTime.getTime()) / 1000;
-            const frac = ((dt / per) % 1 + 1) % 1;
-            const idx = Math.floor(frac * pts.length);
-            const pt = new THREE.Vector3(pts[idx].x, pts[idx].y, pts[idx].z);
-            const nxt = new THREE.Vector3(pts[(idx + 1) % pts.length].x, pts[(idx + 1) % pts.length].y, pts[(idx + 1) % pts.length].z);
-            const vHat = nxt.clone().sub(pt).normalize();
-            const rHat = pt.clone().normalize();
-            const hHat = new THREE.Vector3().crossVectors(rHat, vHat).normalize();
-            dvWorld.addScaledVector(vHat, dvLocal.x).addScaledVector(rHat, dvLocal.y).addScaledVector(hHat, dvLocal.z);
-        } else {
-            dvWorld.copy(dvLocal);
-        }
-        node.deltaV.copy(dvWorld);
-        node.update();
-    }, [timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, selectedIndex, nodes]);
+        node.time = execTime;
+        // Set local DV for preview
+        node.localDV = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
+    }, [timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz]);
 
-    // Continuously update preview ManeuverNode
-    useEffect(() => {
-        let frameId;
-        const loop = () => {
-            const node = previewNodeRef.current;
-            if (node) {
-                const currentSim = satellite.app3d.timeUtils.getSimulatedTime();
-                node.time = timeMode === 'offset'
-                    ? new Date(currentSim.getTime() + (parseFloat(offsetSec) || 0) * 1000)
-                    : (() => { const d = new Date(currentSim); d.setUTCHours(hours, minutes, seconds, milliseconds); return d; })();
-                const previewIdx = selectedIndex != null ? selectedIndex : nodes.length;
-                const path = getCompositePath(previewIdx);
-                const per = path._period || 0;
-                const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
-                const dvWorld = BasisCalculator.computeWorld(dvLocal, path.orbitPoints, per, node.time, currentSim);
-                node.deltaV.copy(dvWorld);
-                node.update();
-            }
-            frameId = requestAnimationFrame(loop);
-        };
-        loop();
-        return () => cancelAnimationFrame(frameId);
-    }, [timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, satellite, nodes, selectedIndex]);
-
-    // Hide all real nodes' predicted orbits while window open
-    useEffect(() => {
-        const show = satellite.app3d.getDisplaySetting('showOrbits');
-        satellite.maneuverNodes.forEach(n => n.predictedOrbit.setVisible(false));
-        return () => satellite.maneuverNodes.forEach(n => n.predictedOrbit.setVisible(show));
-    }, [satellite]);
-
-    // Show only selected node's predicted orbit
-    useEffect(() => {
-        satellite.maneuverNodes.forEach((n, i) => n.predictedOrbit.setVisible(i === selectedIndex));
-    }, [selectedIndex, satellite]);
-
-    // Hide preview path when editing real node
-    useEffect(() => {
-        const prev = previewNodeRef.current;
-        if (prev && prev.predictedOrbit) prev.predictedOrbit.setVisible(selectedIndex == null);
-    }, [selectedIndex]);
-
-    // Save and Delete handlers
+    // Save or update a maneuver node
     const handleSave = () => {
         const simNow = satellite.app3d.timeUtils.getSimulatedTime();
-        let executeTime;
-        if (timeMode === 'offset') {
-            executeTime = new Date(simNow.getTime() + (parseFloat(offsetSec) || 0) * 1000);
-        } else {
-            executeTime = new Date(simNow);
-            executeTime.setUTCHours(hours, minutes, seconds, milliseconds);
-        }
-        const path = getCompositePath(selectedIndex != null ? selectedIndex : nodes.length);
-        const per = path._period || 0;
+        // Compute execution Date
+        const executeTime = timeMode === 'offset'
+            ? new Date(simNow.getTime() + (parseFloat(offsetSec) || 0) * 1000)
+            : (() => { const d = new Date(simNow); d.setUTCHours(hours, minutes, seconds, milliseconds); return d; })();
+        // Local DV vector from UI inputs
         const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
-        const finalDV = previewNodeRef.current ? previewNodeRef.current.deltaV.clone() : BasisCalculator.computeWorld(dvLocal, path.orbitPoints, per, executeTime, simNow);
+        // Remove old or create new
         if (selectedIndex != null) {
-            const old = nodes[selectedIndex];
-            satellite.removeManeuverNode(old);
-            const created = satellite.addManeuverNode(executeTime, finalDV);
-            created.localDV = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
-            created.update();
-            setNodes(prev => { const arr = [...prev]; arr[selectedIndex] = created; return arr; });
-        } else {
-            const created = satellite.addManeuverNode(executeTime, finalDV);
-            created.localDV = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
-            created.update();
-            setNodes(prev => [...prev, created]);
-            setSelectedIndex(null);
+            const oldModel = nodes[selectedIndex];
+            satellite.removeManeuverNode(oldModel.node3D);
         }
+        const newNode3D = satellite.addManeuverNode(executeTime, dvLocal.clone());
+        newNode3D.localDV = dvLocal.clone();
+        newNode3D.update();
+        // Sort and rebuild UI models
+        satellite.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
+        setNodes(buildNodeModels());
+        setSelectedIndex(null);
     };
 
     const handleDelete = () => {
         if (selectedIndex != null) {
-            const node = nodes[selectedIndex];
-            satellite.removeManeuverNode(node);
-            setNodes(prev => prev.filter(n => n !== node));
+            const modelToDelete = nodes[selectedIndex];
+            satellite.removeManeuverNode(modelToDelete.node3D);
+            satellite.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
+            setNodes(buildNodeModels());
             setSelectedIndex(null);
         }
     };

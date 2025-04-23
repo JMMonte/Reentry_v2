@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 
 export function ManeuverNodeList({ nodes, selectedIndex, onSelect, onNew, currentSimTime, formatTimeDelta }) {
     return (
-        <div className="w-1/3 border-r p-2 overflow-auto">
+        <>
             <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-semibold">Nodes</span>
                 <Button size="icon" variant="ghost" onClick={onNew} title="New Node">
@@ -21,14 +21,14 @@ export function ManeuverNodeList({ nodes, selectedIndex, onSelect, onNew, curren
                         onClick={() => onSelect(i)}
                     >
                         <div>{node.time.toISOString()}</div>
-                        <div>ΔV: {node.deltaV.x.toFixed(1)},{node.deltaV.y.toFixed(1)},{node.deltaV.z.toFixed(1)}</div>
+                        <div>ΔV: {node.localDV.x.toFixed(1)},{node.localDV.y.toFixed(1)},{node.localDV.z.toFixed(1)}</div>
                         <div className="text-[10px] text-muted-foreground">
                             In: {formatTimeDelta(node.time.getTime() - currentSimTime.getTime())}
                         </div>
                     </div>
                 ))
             )}
-        </div>
+        </>
     );
 }
 
