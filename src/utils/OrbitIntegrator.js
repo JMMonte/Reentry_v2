@@ -79,7 +79,7 @@ function computeDragAcceleration(pos, vel, ballisticCoefficient = DEFAULT_BALLIS
  * perturbationScale: factor for non-central bodies
  * Returns { pos: [x,y,z], vel: [vx,vy,vz] }
  */
-export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0, absTol = 1e-6, relTol = 1e-6) {
+export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0, absTol = 1e-6, relTol = 1e-6, sensitivityScale = 1.0) {
     let t = 0;
     // Use dynamic time step from Constants if set, fallback to 0.1s
     const maxStep = Constants.timeStep !== undefined ? Constants.timeStep : 0.1;
@@ -121,12 +121,16 @@ export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0
         const errVel = [vel1[0] - (vel[0] + a2[0] * dt),
         vel1[1] - (vel[1] + a2[1] * dt),
         vel1[2] - (vel[2] + a2[2] * dt)];
-        // Compute norm
+        // Compute norm with dynamic tolerance based on force magnitude
         let errMax = 0;
+        // Calculate magnitude of the first stage acceleration (gravity + drag)
+        const accMag = Math.sqrt(a1[0]*a1[0] + a1[1]*a1[1] + a1[2]*a1[2]);
+        // Adjust absolute tolerance based on acceleration magnitude
+        const dynamicAbsTol = absTol / (1 + sensitivityScale * accMag);
         for (let j = 0; j < 3; j++) {
-            const scp = absTol + relTol * Math.max(Math.abs(pos[j]), Math.abs(pos1[j]));
+            const scp = dynamicAbsTol + relTol * Math.max(Math.abs(pos[j]), Math.abs(pos1[j]));
             errMax = Math.max(errMax, Math.abs(errPos[j]) / scp);
-            const scv = absTol + relTol * Math.max(Math.abs(vel[j]), Math.abs(vel1[j]));
+            const scv = dynamicAbsTol + relTol * Math.max(Math.abs(vel[j]), Math.abs(vel1[j]));
             errMax = Math.max(errMax, Math.abs(errVel[j]) / scv);
         }
         // Step control

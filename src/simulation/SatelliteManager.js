@@ -20,6 +20,8 @@ export class SatelliteManager {
         this._lastOrbitUpdateTime = 0;
         // Pre-calculate conversion factor from world units (km*scale) to meters for physics worker
         this._toMetersFactor = 1 / (Constants.metersToKm * Constants.scale);
+        // Default scale for dynamic integration tolerance based on force magnitude
+        this.sensitivityScale = 1.0;
     }
 
     /**
@@ -108,91 +110,67 @@ export class SatelliteManager {
                 data: { earthPosition: { x: 0, y: 0, z: 0 }, moonPosition: moonPosM, sunPosition: sunPosM }
             });
         }
+        // Update satellites
         Object.values(this._satellites).forEach(satellite => {
-            // Keep satellite.timeWarp in sync
             satellite.timeWarp = currentTimeWarp;
             if (satellite.updateSatellite) {
                 satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
             }
         });
-        // Draw multi-body propagated orbits (Earth + Moon) via OrbitPath worker (throttled)
+        
+        // Throttled orbit path updates
         const showOrbits = this.app3d.getDisplaySetting('showOrbits');
         const nowPerf = performance.now();
-        // Treat Orbit Update Rate as updates per second and compute interval in ms
         const orbitUpdateRate = this.app3d.getDisplaySetting('orbitUpdateInterval');
         const orbitIntervalMs = 1000 / orbitUpdateRate;
         const shouldUpdatePaths = showOrbits && (!this._lastOrbitUpdateTime || nowPerf - this._lastOrbitUpdateTime >= orbitIntervalMs);
-        Object.values(this._satellites).forEach(sat => {
-            const path = sat.orbitPath;
-            if (!path) return;
-            // Toggle visibility of the path
-            path.setVisible(showOrbits);
-            if (!shouldUpdatePaths) return;
-            // derive orbital period (2-body approximation)
-            const els = sat.getOrbitalElements();
-            if (!els) return;
-            // Determine prediction window in seconds: user-specified number of periods
-            const predictionPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
-            let periodSec;
-            if (typeof predictionPeriods === 'number' && predictionPeriods > 0) {
-                const basePeriod = els.period;
-                if (Number.isFinite(basePeriod) && basePeriod > 0) {
-                    // Elliptical orbit: scale by number of periods
-                    periodSec = basePeriod * predictionPeriods;
-                } else {
-                    // Hyperbolic or undefined period: fallback to one week per period unit
-                    const fallbackDay = Constants.secondsInDay * 7;
-                    periodSec = fallbackDay * predictionPeriods;
-                }
-            } else {
-                // Default to one full period
-                periodSec = els.period;
-            }
-            // define gravitational sources: Earth, Moon, and Sun
-            const factor2 = this._toMetersFactor;
-            const bodies = [];
-
-            // Earth
-            bodies.push({ position: new THREE.Vector3(0, 0, 0), mass: Constants.earthMass });
-
-            // Moon
-            const moonMesh = (this.app3d.moon?.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon?.moonMesh) || { position: new THREE.Vector3(0, 0, 0) };
-            const moonPosM = new THREE.Vector3(
+        // Predefine gravity bodies once
+        const factor2 = this._toMetersFactor;
+        const earthBody = { position: new THREE.Vector3(0, 0, 0), mass: Constants.earthMass };
+        let moonPosM = new THREE.Vector3();
+        if (this.app3d.moon) {
+            const moonMesh = this.app3d.moon.getMesh?.() || this.app3d.moon.moonMesh;
+            moonPosM.set(
                 moonMesh.position.x * factor2,
                 moonMesh.position.y * factor2,
                 moonMesh.position.z * factor2
             );
-            bodies.push({ position: moonPosM, mass: Constants.moonMass });
-
-            // Sun
-            const sunMesh = (this.app3d.sun?.sun ? this.app3d.sun.sun : this.app3d.sun?.sunLight) || { position: new THREE.Vector3(0, 0, 0) };
-            const sunPosM = new THREE.Vector3(
+        }
+        const moonBody = { position: moonPosM, mass: Constants.moonMass };
+        let sunPosM = new THREE.Vector3();
+        if (this.app3d.sun) {
+            const sunMesh = this.app3d.sun.getMesh?.() || this.app3d.sun.sunLight;
+            sunPosM.set(
                 sunMesh.position.x * factor2,
                 sunMesh.position.y * factor2,
                 sunMesh.position.z * factor2
             );
-            bodies.push({ position: sunPosM, mass: Constants.sunMass });
-
-            // Compute number of points based on user setting and predicted periods
-            const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
-            let numPoints;
-            if (typeof pointsPerPeriod === 'number' && pointsPerPeriod > 0) {
-                // allow as many points as requested (dynamic resizing will handle buffer growth)
-                numPoints = Math.ceil(pointsPerPeriod * (predictionPeriods > 0 ? predictionPeriods : 1));
+        }
+        const sunBody = { position: sunPosM, mass: Constants.sunMass };
+        Object.values(this._satellites).forEach(sat => {
+            const path = sat.orbitPath;
+            if (!path) return;
+            path.setVisible(showOrbits);
+            if (!shouldUpdatePaths) return;
+            const els = sat.getOrbitalElements();
+            if (!els) return;
+            const predictionPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
+            let periodSec;
+            if (predictionPeriods > 0) {
+                const basePeriod = els.period;
+                periodSec = (basePeriod > 0 && isFinite(basePeriod))
+                    ? basePeriod * predictionPeriods
+                    : Constants.secondsInDay * 7 * predictionPeriods;
             } else {
-                numPoints = path._maxOrbitPoints;
+                periodSec = els.period;
             }
-            // Request propagation update from OrbitPath worker
-            path.update(
-                sat.position.clone(),
-                sat.velocity.clone(),
-                sat.id,
-                bodies,
-                periodSec,
-                numPoints
-            );
+            const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
+            const numPoints = (pointsPerPeriod > 0)
+                ? Math.ceil(pointsPerPeriod * (predictionPeriods > 0 ? predictionPeriods : 1))
+                : path._maxOrbitPoints;
+            path.update(sat.position.clone(), sat.velocity.clone(), sat.id,
+                [earthBody, moonBody, sunBody], periodSec, numPoints);
         });
-        // update last orbit update timestamp after performing updates
         if (shouldUpdatePaths) this._lastOrbitUpdateTime = nowPerf;
     }
 
@@ -243,7 +221,8 @@ export class SatelliteManager {
                 G: Constants.G,
                 scale: Constants.scale,
                 timeStep: this.app3d.getDisplaySetting('physicsTimeStep'),
-                perturbationScale: this.app3d.getDisplaySetting('perturbationScale')
+                perturbationScale: this.app3d.getDisplaySetting('perturbationScale'),
+                sensitivityScale: this.sensitivityScale
             }
         });
     }
@@ -338,6 +317,17 @@ export class SatelliteManager {
     }
 
     /**
+     * Update the physics worker's dynamic sensitivity scale for adaptive integrator.
+     * @param {number} value
+     */
+    setSensitivityScale(value) {
+        this.sensitivityScale = value;
+        if (this.physicsWorker && this.workerInitialized) {
+            this.physicsWorker.postMessage({ type: 'setSensitivityScale', data: { value } });
+        }
+    }
+
+    /**
      * Apply display settings from DisplaySettingsManager to a satellite.
      * @private
      */
@@ -352,9 +342,6 @@ export class SatelliteManager {
         }
         if (satellite.apsisVisualizer && typeof satellite.apsisVisualizer.setVisible === 'function') {
             satellite.apsisVisualizer.setVisible(dsm.getSetting('showOrbits'));
-        }
-        if (satellite.groundTrack && typeof satellite.groundTrack.setVisible === 'function') {
-            satellite.groundTrack.setVisible(dsm.getSetting('showGroundTraces'));
         }
     }
 } 

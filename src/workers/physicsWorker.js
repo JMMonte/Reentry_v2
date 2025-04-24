@@ -14,6 +14,8 @@ let moonPosition = { x: 0, y: 0, z: 0 };
 let sunPosition = { x: 0, y: 0, z: 0 };
 // Scale factor for third-body perturbations (Moon and Sun)
 let perturbationScale = 1.0;
+// Scale factor for dynamic integration tolerance based on force magnitude
+let sensitivityScale = 1.0;
 
 self.onmessage = function (event) {
     let messageData;
@@ -54,6 +56,10 @@ self.onmessage = function (event) {
             // Scale for Moon/Sun perturbations (0 to 1)
             perturbationScale = Number(data.value);
             break;
+        case 'setSensitivityScale':
+            // Scale for dynamic integration tolerance based on force magnitude
+            sensitivityScale = Number(data.value);
+            break;
         case 'setTimeStep':
             // Update integration time step (in seconds) for adaptive integrator
             Constants.timeStep = Number(data.value);
@@ -71,6 +77,7 @@ function initPhysics(data) {
     if (data.moonPosition) moonPosition = data.moonPosition;
     // Set initial perturbation scale if provided
     if (data.perturbationScale !== undefined) perturbationScale = Number(data.perturbationScale);
+    if (data.sensitivityScale !== undefined) sensitivityScale = Number(data.sensitivityScale);
     // Notify that initialization is complete
     self.postMessage({
         type: 'initialized'
@@ -98,7 +105,17 @@ function simulationLoop() {
     satellites.forEach(satellite => {
         const posArr = satellite.position;
         const velArr = satellite.velocity;
-        const { pos, vel } = adaptiveIntegrate(posArr, velArr, warpedDeltaTime, bodiesArray, perturbationScale);
+        // Use dynamic sensitivityScale for adaptive integration tolerance
+        const { pos, vel } = adaptiveIntegrate(
+            posArr,
+            velArr,
+            warpedDeltaTime,
+            bodiesArray,
+            perturbationScale,
+            undefined, // use default absolute tolerance
+            undefined, // use default relative tolerance
+            sensitivityScale
+        );
         satellite.position = pos;
         satellite.velocity = vel;
 

@@ -123,11 +123,12 @@ DropdownMenuCheckboxItem.propTypes = {
   checked: PropTypes.bool
 };
 
-const DropdownMenuRadioItem = React.forwardRef(({ className, children, checked, ...props }, ref) => (
+const DropdownMenuRadioItem = React.forwardRef(({ className, children, checked, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
       "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      inset && "pl-8",
       className
     )}
     checked={checked}
@@ -143,7 +144,8 @@ DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName
 DropdownMenuRadioItem.propTypes = {
   className: PropTypes.string,
   children: PropTypes.node,
-  checked: PropTypes.bool
+  checked: PropTypes.bool,
+  inset: PropTypes.bool
 };
 
 const DropdownMenuLabel = React.forwardRef(({ className, ...props }, ref) => (

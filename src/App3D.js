@@ -51,8 +51,6 @@ class App3D extends EventTarget {
         this._satelliteConnections = new THREE.Group();
         this._connections = [];
         this._connectionsEnabled = false;
-        // throttle ground trace updates
-        this._lastGroundTraceUpdateTime = 0;
 
         // Managers
         this._satellites = new SatelliteManager(this);
@@ -287,17 +285,6 @@ class App3D extends EventTarget {
         if (this.vectors && this.displaySettingsManager.getSetting('showVectors')) {
             this.vectors.updateVectors();
         }
-        // Throttled ground trace updates
-        const showGT = this.displaySettingsManager.getSetting('showGroundTraces');
-        const gtIntervalMs = this.displaySettingsManager.getSetting('groundTrackUpdateInterval') * 1000;
-        const nowGT = performance.now();
-        if (showGT && this.satellites &&
-            (!this._lastGroundTraceUpdateTime || nowGT - this._lastGroundTraceUpdateTime >= gtIntervalMs)) {
-            Object.values(this.satellites.getSatellites()).forEach(sat => {
-                if (sat.updateGroundTrack) sat.updateGroundTrack();
-            });
-            this._lastGroundTraceUpdateTime = nowGT;
-        }
         // Update satellite connections every frame if enabled
         if (this._connectionsEnabled) {
             this._updateConnectionsWorkerSatellites();
@@ -382,6 +369,9 @@ class App3D extends EventTarget {
         } else if (key === 'physicsTimeStep') {
             // Update physics worker integration step
             this.satellites.setPhysicsTimeStep(value);
+        } else if (key === 'sensitivityScale') {
+            // Update physics worker dynamic sensitivity scale
+            this.satellites.setSensitivityScale(value);
         }
     }
 

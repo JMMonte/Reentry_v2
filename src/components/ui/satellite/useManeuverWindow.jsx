@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { ManeuverNode } from '../../../components/Satellite/ManeuverNode.js';
 import { ManeuverNodeModel } from '../../../models/ManeuverNodeModel.js';
+import { Constants } from '../../../utils/Constants.js';
 
 export function useManeuverWindow(satellite) {
     // Initial and current simulated time
@@ -43,6 +44,117 @@ export function useManeuverWindow(satellite) {
 
     // Computed magnitude
     const dvMag = Math.hypot(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
+
+    // Hohmann transfer mode state
+    const [maneuverMode, setManeuverMode] = useState('manual');
+    // Target orbit shape: circular | elliptical | moon
+    const [shapeType, setShapeType] = useState('circular');
+    // Circular and elliptical orbit presets
+    const presets = [
+        { name: '200 km (LEO)', altitude: 200 },
+        { name: '35786 km (GEO)', altitude: 35786 }
+    ];
+    const [selectedPreset, setSelectedPreset] = useState(presets[0].altitude);
+    const [customRadiusKm, setCustomRadiusKm] = useState('');
+    // Elliptical orbit presets
+    const ellipticalPresets = [
+        { name: 'GTO', periapsis: 250, apoapsis: 35786 },
+        { name: 'Molniya', periapsis: 500, apoapsis: 40000 }
+    ];
+    const [selectedEllPreset, setSelectedEllPreset] = useState(ellipticalPresets[0]);
+    // For elliptical shape: periapsis and apoapsis in km
+    const [ellPeriKm, setEllPeriKm] = useState('');
+    const [ellApoKm, setEllApoKm] = useState('');
+    // Plane change angle in degrees
+    const [planeChangeDeg, setPlaneChangeDeg] = useState('0');
+    // State to hold Hohmann transfer summary details
+    const [hohmannDetails, setHohmannDetails] = useState(null);
+
+    // Generate Hohmann transfer nodes
+    const generateHohmann = () => {
+        // Clear any existing maneuver nodes before generating new transfer
+        satellite.maneuverNodes.slice().forEach(node => satellite.removeManeuverNode(node));
+
+        const simNow = satellite.app3d.timeUtils.getSimulatedTime();
+        // Current radius in meters
+        const r1 = satellite.position.length();
+        let r_target_pe, r_target_ap;
+        if (shapeType === 'moon') {
+            // Target the Moon's actual position for TLI
+            const jd = satellite.app3d.timeUtils.getJulianDate();
+            const moonPos = satellite.app3d.moon.getMoonPosition(jd);
+            const moonVec = new THREE.Vector3(moonPos.x, moonPos.y, moonPos.z);
+            r_target_ap = moonVec.length();
+            r_target_pe = r_target_ap;
+        } else if (shapeType === 'circular') {
+            // Use custom radius if provided, else preset radius
+            const customAlt = parseFloat(customRadiusKm);
+            r_target_ap = (!isNaN(customAlt) && customAlt > 0)
+                ? customAlt * Constants.kmToMeters + Constants.earthRadius
+                : presets.find(p => p.altitude === selectedPreset).altitude * Constants.kmToMeters + Constants.earthRadius;
+            r_target_pe = r_target_ap;
+        } else { // elliptical
+            const peri = parseFloat(ellPeriKm) || 0;
+            const apo = parseFloat(ellApoKm) || 0;
+            r_target_pe = peri * Constants.kmToMeters + Constants.earthRadius;
+            r_target_ap = apo * Constants.kmToMeters + Constants.earthRadius;
+        }
+        const mu = Constants.earthGravitationalParameter;
+        // Velocities for circular orbit assumption at current
+        const v1 = Math.sqrt(mu / r1);
+        // Plane change delta-V
+        const planeRad = (parseFloat(planeChangeDeg) || 0) * (Math.PI / 180);
+        const dv_plane = 2 * v1 * Math.sin(planeRad / 2);
+        // Transfer ellipse semi-major axis
+        const aTrans = (r1 + r_target_ap) / 2;
+        const vTrans1 = Math.sqrt(mu * (2 / r1 - 1 / aTrans));
+        const dv1 = vTrans1 - v1;
+        // Compute second burn delta-V only for non-lunar transfers
+        let dv2 = 0;
+        if (shapeType !== 'moon') {
+            const aTarget = (r_target_pe + r_target_ap) / 2;
+            const vTarget = Math.sqrt(mu * (2 / r_target_ap - 1 / aTarget));
+            const vTrans2 = Math.sqrt(mu * (2 / r_target_ap - 1 / aTrans));
+            dv2 = vTarget - vTrans2;
+        }
+        // Burn times: time to reach apogee of transfer ellipse
+        const transferTime = Math.PI * Math.sqrt((aTrans ** 3) / mu);
+        const time1 = new Date(simNow);
+        const time2 = new Date(simNow.getTime() + transferTime * 1000);
+        // Compute additional orbit metrics
+        const altitude1Km = (r1 - Constants.earthRadius) * Constants.metersToKm;
+        const altitudeTargetKm = (r_target_ap - Constants.earthRadius) * Constants.metersToKm;
+        const aTransKm = aTrans * Constants.metersToKm;
+        const eTrans = (r_target_ap - r1) / (r_target_ap + r1);
+        // Compute final target orbit semi-major axis and period
+        const aTarget = (r_target_pe + r_target_ap) / 2;
+        const finalPeriod = 2 * Math.PI * Math.sqrt(Math.pow(aTarget, 3) / mu);
+        const aTargetKm = aTarget * Constants.metersToKm;
+        // Time until burns in seconds
+        const dt1Sec = (time1.getTime() - simNow.getTime()) / 1000;
+        const dt2Sec = (time2.getTime() - simNow.getTime()) / 1000;
+        // Prepare Hohmann transfer summary details
+        const totalDv = Math.abs(dv1) + Math.abs(dv_plane) + (shapeType !== 'moon' ? Math.abs(dv2) : 0);
+        setHohmannDetails({
+            dv1, dv2, dv_plane, transferTime, time1, time2, totalDv,
+            altitude1Km, altitudeTargetKm, aTransKm, eTrans, dt1Sec, dt2Sec, aTargetKm, finalPeriod
+        });
+        // Add first burn node
+        if (Math.abs(dv1) > 1e-6 || Math.abs(dv_plane) > 1e-6) {
+            const node1 = satellite.addManeuverNode(time1, new THREE.Vector3(dv1, 0, dv_plane));
+            node1.localDV = new THREE.Vector3(dv1, 0, dv_plane);
+            node1.update();
+        }
+        // Add second burn node only for non-lunar transfers
+        if (shapeType !== 'moon' && Math.abs(dv2) > 1e-6) {
+            const node2 = satellite.addManeuverNode(time2, new THREE.Vector3(dv2, 0, 0));
+            node2.localDV = new THREE.Vector3(dv2, 0, 0);
+            node2.update();
+        }
+        // Refresh UI list
+        satellite.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
+        setNodes(buildNodeModels());
+    };
 
     // Helper to format time deltas
     const formatTimeDelta = (deltaMs) => {
@@ -111,11 +223,11 @@ export function useManeuverWindow(satellite) {
         }
     }, [selectedIndex]);
 
-    // Create and dispose preview ManeuverNode on satellite change
+    // Create and dispose preview ManeuverNode only in manual mode
     useEffect(() => {
+        if (maneuverMode !== 'manual') return;
         const initNode = new ManeuverNode({ satellite, time: new Date(simTime), deltaV: new THREE.Vector3() });
         previewNodeRef.current = initNode;
-        // Register preview node on App3D for central loop
         satellite.app3d.previewNode = initNode;
         // Style preview mesh, arrow, and orbit white
         const white = 0xffffff;
@@ -127,12 +239,11 @@ export function useManeuverWindow(satellite) {
         if (initNode.predictedOrbit.orbitLine.material) initNode.predictedOrbit.orbitLine.material.color.set(white);
 
         return () => {
-            // Cleanup preview node
             initNode.dispose();
             previewNodeRef.current = null;
             delete satellite.app3d.previewNode;
         };
-    }, [satellite]);
+    }, [satellite, maneuverMode]);
 
     // Sync preview node state when inputs change
     useEffect(() => {
@@ -185,6 +296,25 @@ export function useManeuverWindow(satellite) {
         }
     };
 
+    // Compute additional details for Moon TLI
+    const computeMoonTransferDetails = () => {
+        // placeholder for optimal plane change/time adjustment calculations
+        console.log('Computing Moon TLI details...');
+    };
+
+    // Reset Hohmann summary when mode or shapeType changes
+    useEffect(() => {
+        setHohmannDetails(null);
+    }, [maneuverMode, shapeType]);
+
+    // Initialize elliptical parameters when elliptical preset is selected
+    useEffect(() => {
+        if (shapeType === 'elliptical') {
+            setEllPeriKm(selectedEllPreset.periapsis);
+            setEllApoKm(selectedEllPreset.apoapsis);
+        }
+    }, [selectedEllPreset, shapeType]);
+
     return {
         currentSimTime,
         simTime,
@@ -209,6 +339,21 @@ export function useManeuverWindow(satellite) {
         nodes, selectedIndex, setSelectedIndex,
         formatTimeDelta,
         handleSave, handleDelete,
-        getCompositePath
+        getCompositePath,
+        // Hohmann transfer exports
+        maneuverMode, setManeuverMode,
+        shapeType, setShapeType,
+        presets,
+        selectedPreset, setSelectedPreset,
+        customRadiusKm, setCustomRadiusKm,
+        ellPeriKm, setEllPeriKm,
+        ellApoKm, setEllApoKm,
+        planeChangeDeg, setPlaneChangeDeg,
+        generateHohmann,
+        hohmannDetails,
+        // Elliptical presets and compute function
+        ellipticalPresets,
+        selectedEllPreset, setSelectedEllPreset,
+        computeMoonTransferDetails
     };
 } 

@@ -13,6 +13,8 @@ export class SimulationLoop {
      */
     constructor({ app, satellites, sceneManager, cameraControls, timeUtils, stats }) {
         this.app = app;
+        // Timestamp for throttling preview node updates
+        this._lastPreviewUpdateTime = 0;
         this.satellites = satellites;
         this.sceneManager = sceneManager;
         this.cameraControls = cameraControls;
@@ -21,6 +23,9 @@ export class SimulationLoop {
         this._running = false;
         this._lastTime = performance.now();
         this._frameId = null;
+        // Timestamps for throttling UI updates
+        this._lastFadingTime = 0;
+        this._lastLabelTime = 0;
     }
 
     /** Start the animation/simulation loop. */
@@ -73,12 +78,18 @@ export class SimulationLoop {
 
         // Preview node: update its position, arrow, and predicted orbit if present
         if (this.app.previewNode) {
-            try {
-                this.app.previewNode.update();
-                this.app.previewNode.predictedOrbit.setVisible(true);
-            } catch (e) {
-                console.warn('Preview node update error:', e);
+            const nowPv = performance.now();
+            // Throttle preview updates to 10 Hz
+            if (!this._lastPreviewUpdateTime || nowPv - this._lastPreviewUpdateTime > 100) {
+                try {
+                    this.app.previewNode.update();
+                } catch (e) {
+                    console.warn('Preview node update error:', e);
+                }
+                this._lastPreviewUpdateTime = nowPv;
             }
+            // Always ensure it's visible
+            this.app.previewNode.predictedOrbit.setVisible(true);
         }
 
         // Update camera controls
@@ -86,21 +97,27 @@ export class SimulationLoop {
             this.cameraControls.updateCameraPosition();
         }
 
-        // Fade radial grid labels based on camera distance
+        // Throttle fading of radial grid labels (max ~10Hz)
         if (this.sceneManager.radialGrid && typeof this.sceneManager.radialGrid.updateFading === 'function') {
-            this.sceneManager.radialGrid.updateFading(this.sceneManager.camera);
+            if (!this._lastFadingTime || timestamp - this._lastFadingTime > 100) {
+                this.sceneManager.radialGrid.updateFading(this.sceneManager.camera);
+                this._lastFadingTime = timestamp;
+            }
         }
 
-        // Render
+        // Render scene
         if (this.sceneManager.composers.final) {
             this.sceneManager.composers.final.render();
         } else if (this.sceneManager.renderer && this.sceneManager.scene && this.sceneManager.camera) {
             this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }
 
-        // Render labels
+        // Throttle label rendering (max ~10Hz)
         if (this.sceneManager.labelRenderer) {
-            this.sceneManager.labelRenderer.render(this.sceneManager.scene, this.sceneManager.camera);
+            if (!this._lastLabelTime || timestamp - this._lastLabelTime > 100) {
+                this.sceneManager.labelRenderer.render(this.sceneManager.scene, this.sceneManager.camera);
+                this._lastLabelTime = timestamp;
+            }
         }
 
         if (this.stats) this.stats.end();

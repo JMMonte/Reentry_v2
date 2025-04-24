@@ -9,7 +9,6 @@ import {
   Circle,
   Mountain,
   LineChart,
-  MapPin,
   Building2,
   Plane,
   Rocket,
@@ -19,9 +18,11 @@ import {
   Moon,
   Link,
   CheckSquare,
-  Loader2
+  Loader2,
+  Info
 } from 'lucide-react';
 import { DraggableModal } from '../modal/DraggableModal';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../tooltip';
 import PropTypes from 'prop-types';
 
 // Default settings with display options metadata
@@ -44,13 +45,24 @@ export const defaultSettings = {
   showSatVectors: { value: false, name: 'Satellite Vectors', icon: Circle },
   showOrbits: { value: true, name: 'Satellite Orbits', icon: Circle },
   showSatConnections: { value: false, name: 'Satellite Connections', icon: Link },
-  showGroundTraces: { value: false, name: 'Ground Tracks', icon: MapPin },
-  orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (s)', icon: Circle, type: 'number', min: 1, max: 120, step: 1 },
-  groundTrackUpdateInterval: { value: 5, name: 'Ground Track Interval (s)', icon: LineChart, type: 'number', min: 1, max: 60, step: 1 },
-  orbitPredictionInterval: { value: 1, name: 'Prediction Periods', icon: Circle, type: 'number', min: 0, max: 1000, step: 0.1 },
-  orbitPointsPerPeriod: { value: 60, name: 'Points per Orbit', icon: Circle, type: 'number', min: 10, max: 10000, step: 10 },
-  physicsTimeStep: { value: 0.05, name: 'Physics Timestep (s)', icon: Settings2, type: 'number', min: 0.01, max: 1, step: 0.01 },
-  perturbationScale: { value: 1.0, name: 'Perturbation Strength', icon: LineChart, type: 'number', min: 0, max: 1, step: 0.05 },
+  orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (s)', icon: Circle, type: 'number', min: 1, max: 120, step: 1,
+    description: 'Seconds between orbit path recalculation for each satellite.'
+  },
+  orbitPredictionInterval: { value: 1, name: 'Prediction Periods', icon: Circle, type: 'number', min: 0, max: 1000, step: 0.1,
+    description: 'Number of orbital periods ahead to simulate for orbit predictions.'
+  },
+  orbitPointsPerPeriod: { value: 60, name: 'Points per Orbit', icon: Circle, type: 'number', min: 10, max: 10000, step: 10,
+    description: 'Number of sample points per orbital period when drawing orbit paths.'
+  },
+  physicsTimeStep: { value: 0.05, name: 'Physics Timestep (s)', icon: Settings2, type: 'number', min: 0.01, max: 1, step: 0.01,
+    description: 'Integration time step in seconds. Smaller values increase accuracy but slow down simulation.'
+  },
+  perturbationScale: { value: 1.0, name: 'Perturbation Strength', icon: LineChart, type: 'number', min: 0, max: 1, step: 0.05,
+    description: 'Scale for Moon/Sun gravitational perturbations (0–1). Minimal impact on performance.'
+  },
+  sensitivityScale: { value: 1.0, name: 'Sensitivity Scale', icon: LineChart, type: 'number', min: 0, max: 10, step: 0.1,
+    description: `Higher values tighten the integrator's error tolerance in high-force areas (e.g. atmosphere), increasing accuracy but slowing propagation; lower values speed up simulation with less accuracy.`
+  },
   ambientLight: { value: 0.01, name: 'Ambient Light Intensity', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05 },
 };
 
@@ -74,11 +86,11 @@ const categories = [
   },
   {
     name: 'Satellites',
-    keys: ['showOrbits', 'showSatVectors', 'showGroundTraces', 'showSatConnections'],
+    keys: ['showOrbits', 'showSatVectors', 'showSatConnections'],
   },
   {
     name: 'Simulation',
-    keys: ['orbitUpdateInterval', 'groundTrackUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'physicsTimeStep', 'perturbationScale'],
+    keys: ['orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'physicsTimeStep', 'perturbationScale', 'sensitivityScale'],
   },
   {
     name: 'Lighting',
@@ -152,102 +164,114 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
   }, [settings]);
 
   return (
-    <DraggableModal
-      title="Display Options"
-      isOpen={isOpen}
-      onClose={() => onOpenChange(false)}
-      defaultPosition={position}
-      onPositionChange={setPosition}
-      resizable={true}
-      defaultWidth="auto"
-      defaultHeight={600}
-      minWidth={0}
-      minHeight={300}
-      rightElement={
-        <Button
-          variant="ghost"
-          size="icon"
-          className="w-8 h-8 mr-2"
-          onClick={() => {
-            const allTrue = Object.entries(defaultSettings).every(([key, setting]) =>
-              setting.type === 'range' ? true : settings[key]
-            );
-            Object.entries(defaultSettings).forEach(([key, setting]) => {
-              if (setting.type !== 'range') {
-                onSettingChange(key, !allTrue);
-              }
-            });
-          }}
-        >
-          <CheckSquare className="h-4 w-4" />
-        </Button>
-      }
-    >
-      <Accordion sections={categories} openIndexes={openIdxs} setOpenIndexes={setOpenIdxs}>
-        {(idx) => (
-          <div className="space-y-1">
-            {categories[idx].keys.map((key) => {
-              const setting = defaultSettings[key];
-              if (!setting) return null;
-              return (
-                <div key={key} className="flex items-center justify-between px-2 py-1 text-xs">
-                  <div className="flex items-center gap-1">
-                    {React.createElement(setting.icon, { className: "h-3 w-3" })}
-                    <span className="text-[11px] text-muted-foreground">{setting.name}</span>
-                  </div>
-                  <div className="pr-2">
-                    {setting.type === 'number' ? (
-                      <div className="flex items-center">
-                        <Input
-                          type="number"
-                          size="sm"
-                          className="text-xs h-5 w-12"
+    <TooltipProvider>
+      <DraggableModal
+        title="Display Options"
+        isOpen={isOpen}
+        onClose={() => onOpenChange(false)}
+        defaultPosition={position}
+        onPositionChange={setPosition}
+        resizable={true}
+        defaultWidth="auto"
+        defaultHeight={600}
+        minWidth={0}
+        minHeight={300}
+        rightElement={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-8 h-8 mr-2"
+            onClick={() => {
+              const allTrue = Object.entries(defaultSettings).every(([key, setting]) =>
+                setting.type === 'range' ? true : settings[key]
+              );
+              Object.entries(defaultSettings).forEach(([key, setting]) => {
+                if (setting.type !== 'range') {
+                  onSettingChange(key, !allTrue);
+                }
+              });
+            }}
+          >
+            <CheckSquare className="h-4 w-4" />
+          </Button>
+        }
+      >
+        <Accordion sections={categories} openIndexes={openIdxs} setOpenIndexes={setOpenIdxs}>
+          {(idx) => (
+            <div className="space-y-1">
+              {categories[idx].keys.map((key) => {
+                const setting = defaultSettings[key];
+                if (!setting) return null;
+                return (
+                  <div key={key} className="flex items-center justify-between px-2 py-1 text-xs">
+                    <div className="flex items-center gap-1">
+                      {React.createElement(setting.icon, { className: "h-3 w-3" })}
+                      <span className="text-[11px] text-muted-foreground">{setting.name}</span>
+                      {setting.description && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent sideOffset={4} className="z-[9999]">
+                            {setting.description}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                    <div className="pr-2">
+                      {setting.type === 'number' ? (
+                        <div className="flex items-center">
+                          <Input
+                            type="number"
+                            size="sm"
+                            className="text-xs h-5 w-12"
+                            min={setting.min}
+                            max={setting.max}
+                            step={setting.step}
+                            value={
+                              (() => {
+                                const v = settings[key] !== undefined ? settings[key] : setting.value;
+                                if (typeof v === 'number' && !Number.isInteger(v)) {
+                                  return v.toFixed(3);
+                                }
+                                return v;
+                              })()
+                            }
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const parsed = raw === '' ? '' : parseFloat(raw);
+                              setLoadingKeys(prev => ({ ...prev, [key]: parsed }));
+                              onSettingChange(key, parsed);
+                            }}
+                          />
+                          {key in loadingKeys && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+                        </div>
+                      ) : setting.type === 'range' ? (
+                        <input
+                          type="range"
+                          className="h-1 w-20"
                           min={setting.min}
                           max={setting.max}
                           step={setting.step}
-                          value={
-                            (() => {
-                              const v = settings[key] !== undefined ? settings[key] : setting.value;
-                              if (typeof v === 'number' && !Number.isInteger(v)) {
-                                return v.toFixed(3);
-                              }
-                              return v;
-                            })()
-                          }
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            const parsed = raw === '' ? '' : parseFloat(raw);
-                            setLoadingKeys(prev => ({ ...prev, [key]: parsed }));
-                            onSettingChange(key, parsed);
-                          }}
+                          value={settings[key] !== undefined ? settings[key] : setting.value}
+                          onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
                         />
-                        {key in loadingKeys && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
-                      </div>
-                    ) : setting.type === 'range' ? (
-                      <input
-                        type="range"
-                        className="h-1 w-20"
-                        min={setting.min}
-                        max={setting.max}
-                        step={setting.step}
-                        value={settings[key] !== undefined ? settings[key] : setting.value}
-                        onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
-                      />
-                    ) : (
-                      <Switch
-                        className="scale-[0.6]"
-                        checked={settings[key] || false}
-                        onCheckedChange={(checked) => onSettingChange(key, checked)}
-                      />
-                    )}
+                      ) : (
+                        <Switch
+                          className="scale-[0.6]"
+                          checked={settings[key] || false}
+                          onCheckedChange={(checked) => onSettingChange(key, checked)}
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Accordion>
-    </DraggableModal>
+                );
+              })}
+            </div>
+          )}
+        </Accordion>
+      </DraggableModal>
+    </TooltipProvider>
   );
 }
 

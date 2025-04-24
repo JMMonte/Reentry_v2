@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
 import { OrbitPath } from './OrbitPath.js';
-import { GroundTrackPath } from './GroundTrackPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { ManeuverNode } from './ManeuverNode.js';
 
@@ -44,6 +43,9 @@ export class Satellite {
         this.maneuverGroup = new THREE.Group();
         this.scene.add(this.maneuverGroup);
 
+        // Throttle simulationDataUpdate events
+        this._lastSimDataDispatch = 0;
+
         // Subscribe to display options changes
         this.app3d.addEventListener('displaySettingChanged', (event) => {
             const { key, value } = event.detail;
@@ -51,9 +53,6 @@ export class Satellite {
                 case 'showOrbits':
                     if (this.orbitPath) this.orbitPath.setVisible(value);
                     if (this.apsisVisualizer) this.apsisVisualizer.setVisible(value);
-                    break;
-                case 'showGroundTraces':
-                    if (this.groundTrackPath) this.groundTrackPath.setVisible(value);
                     break;
                 case 'showSatVectors':
                     if (this.velocityVector) this.velocityVector.visible = value;
@@ -72,11 +71,6 @@ export class Satellite {
         this.orbitPath = new OrbitPath(this.color);
         this.scene.add(this.orbitPath.orbitLine);
         this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
-
-        // Create and attach ground track path (always to main scene)
-        this.groundTrackPath = new GroundTrackPath(this.color, this.id);
-        this.scene.add(this.groundTrackPath.groundTrackLine);
-        this.groundTrackPath.groundTrackLine.visible = this.app3d.getDisplaySetting('showGroundTraces');
 
         // Initialize apsis visualizer
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
@@ -132,22 +126,24 @@ export class Satellite {
 
         // Dispatch simulation data update with drag and perturbation info
         try {
-            // Use debug data from physics worker attached earlier
-            const dbg = debug || this.debug || {};
-            const drag = dbg.dragData || { altitude: null, density: null, relativeVelocity: null, dragAcceleration: null };
-            // Perturbation data supplied by physics worker
-            const pert = dbg.perturbation || null;
-            const elements = this.getOrbitalElements();
-            const altitude = drag.altitude ?? this.getSurfaceAltitude();
-            const velocityVal = this.getSpeed();
-            // Compute latitude and longitude (approximate)
-            const rNorm = this.position.clone().normalize();
-            const lat = Math.asin(rNorm.y) * (180 / Math.PI);
-            const lon = Math.atan2(this.position.z, this.position.x) * (180 / Math.PI);
-            const simTime = this.app3d.timeUtils.getSimulatedTime().toISOString();
-            document.dispatchEvent(new CustomEvent('simulationDataUpdate', {
-                detail: { id: this.id, simulatedTime: simTime, altitude, velocity: velocityVal, lat, lon, elements, dragData: drag, perturbation: pert }
-            }));
+            // Throttle data events to ~10Hz
+            const nowEvt = Date.now();
+            if (!this._lastSimDataDispatch || nowEvt - this._lastSimDataDispatch > 100) {
+                const dbg = debug || this.debug || {};
+                const drag = dbg.dragData || { altitude: null, density: null, relativeVelocity: null, dragAcceleration: null };
+                const pert = dbg.perturbation || null;
+                const elements = this.getOrbitalElements();
+                const altitude = drag.altitude ?? this.getSurfaceAltitude();
+                const velocityVal = this.getSpeed();
+                const rNorm = this.position.clone().normalize();
+                const lat = Math.asin(rNorm.y) * (180 / Math.PI);
+                const lon = Math.atan2(this.position.z, this.position.x) * (180 / Math.PI);
+                const simTimeStr = this.app3d.timeUtils.getSimulatedTime().toISOString();
+                document.dispatchEvent(new CustomEvent('simulationDataUpdate', {
+                    detail: { id: this.id, simulatedTime: simTimeStr, altitude, velocity: velocityVal, lat, lon, elements, dragData: drag, perturbation: pert }
+                }));
+                this._lastSimDataDispatch = nowEvt;
+            }
         } catch (err) {
             console.error('Error dispatching simulationDataUpdate with debug:', err);
         }
@@ -179,7 +175,6 @@ export class Satellite {
     setVisible(visible) {
         this.visualizer.setVisible(visible);
         this.orbitPath?.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
-        this.groundTrackPath?.setVisible(visible && window.app3d.getDisplaySetting('showGroundTraces'));
         // Show apsis markers only if orbit is visible
         this.apsisVisualizer.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
     }
@@ -217,10 +212,6 @@ export class Satellite {
             this.scene.remove(this.orbitPath.orbitLine);
             this.orbitPath.dispose();
         }
-        // Remove and dispose ground track path
-        if (this.groundTrackPath) {
-            this.groundTrackPath.dispose();
-        }
         // Dispose apsis visualizer
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
@@ -245,7 +236,6 @@ export class Satellite {
         if (this.orbitPath?.orbitLine) {
             this.orbitPath.orbitLine.material.color.set(color);
         }
-        this.groundTrackPath?.setColor(color);
     }
 
     delete() {
@@ -253,23 +243,6 @@ export class Satellite {
             this.app3d.satellites.removeSatellite(this.id);
         } else {
             this.dispose();
-        }
-    }
-
-    /**
-     * Update ground track after earth rotation (called from App3D.updateScene)
-     */
-    updateGroundTrack() {
-        if (!this.groundTrackPath || !this.groundTrackPath.groundTrackLine.visible) return;
-        if (this.app3d.earth && this.app3d.earth.rotationGroup && this.app3d.earth.earthMesh) {
-            // Compute current ground point
-            const rel = this.position.clone().multiplyScalar(Constants.metersToKm);
-            const earthCenter = this.app3d.earth.earthMesh.position;
-            const local = rel.sub(earthCenter)
-                .applyMatrix4(this.app3d.earth.rotationGroup.matrixWorld.clone().invert())
-                .normalize()
-                .multiplyScalar(Constants.earthRadius * Constants.metersToKm * Constants.scale);
-            this.groundTrackPath.update(local);
         }
     }
 
