@@ -1,7 +1,7 @@
 {
-  "name": "reentry_v2",
+  "name": "darksun",
   "version": "1.0.0",
-  "description": "A space simulation for orbital mechanics, interplanetary travel, and reentry vehicles using Three.js and Cannon.js.",
+  "description": "Darksun is a space simulation for orbital mechanics, interplanetary travel, and reentry vehicles using Three.js and a physics engine made to run on the web.",
   "type": "module",
   "engines": {
     "node": "20.x"

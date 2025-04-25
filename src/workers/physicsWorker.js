@@ -64,6 +64,14 @@ self.onmessage = function (event) {
             // Update integration time step (in seconds) for adaptive integrator
             Constants.timeStep = Number(data.value);
             break;
+        case 'setBallisticCoefficient':
+            // Update drag ballistic coefficient
+            Constants.ballisticCoefficient = Number(data.value);
+            break;
+        case 'setAtmosphereCutoffAltitude':
+            // Update atmosphere cutoff altitude for drag
+            Constants.atmosphereCutoffAltitude = Number(data.value);
+            break;
         default:
             console.error('Unknown message type:', type);
     }
@@ -103,6 +111,9 @@ function simulationLoop() {
         { position: sunPosition, mass: Constants.sunMass }
     ];
     satellites.forEach(satellite => {
+        // Override global ballistic coefficient for this satellite
+        Constants.ballisticCoefficient = satellite.ballisticCoefficient;
+        // Now adaptiveIntegrate and computeDragAcceleration will use per-satellite bc
         const posArr = satellite.position;
         const velArr = satellite.velocity;
         // Use dynamic sensitivityScale for adaptive integration tolerance
@@ -127,7 +138,7 @@ function simulationLoop() {
         const vAtmX = -omega * pos[1];
         const vAtmY = omega * pos[0];
         const relativeVelocity = { x: vel[0] - vAtmX, y: vel[1] - vAtmY, z: vel[2] };
-        const dragArr = computeDragAcceleration(posArr, velArr);
+        const dragArr = computeDragAcceleration(posArr, velArr, satellite.ballisticCoefficient);
         const dragAcceleration = { x: dragArr[0], y: dragArr[1], z: dragArr[2] };
 
         // Compute apsis data
@@ -211,6 +222,11 @@ function addSatellite(data) {
         position: posArray,
         velocity: velArray
     };
+    // Derive ballistic coefficient per satellite: mass / (Cd * cross-sectional area)
+    // Assume drag coefficient Cd = 2.2 for a sphere
+    const area = Math.PI * size * size;
+    const Cd = 2.2;
+    satellite.ballisticCoefficient = mass / (Cd * area);
 
     satellites.push(satellite);
 

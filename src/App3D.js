@@ -367,10 +367,8 @@ class App3D extends EventTarget {
         if (key === 'showSatConnections') {
             this._handleShowSatConnectionsChange(value);
         } else if (key === 'physicsTimeStep') {
-            // Update physics worker integration step
             this.satellites.setPhysicsTimeStep(value);
         } else if (key === 'sensitivityScale') {
-            // Update physics worker dynamic sensitivity scale
             this.satellites.setSensitivityScale(value);
         }
     }

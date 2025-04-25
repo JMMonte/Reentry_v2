@@ -13,6 +13,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
         name: '',
         mass: 100,
         size: 1,
+        ballisticCoefficient: 100,
         latitude: 0,
         longitude: 0,
         altitude: 400,
@@ -28,13 +29,27 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
         referenceFrame: 'equatorial',
     });
 
+    const handlePresetBC = (value) => {
+        setFormData(prev => ({ ...prev, ballisticCoefficient: value }));
+    };
+
     useImperativeHandle(ref, () => ({
         applyPreset: (preset) => {
             setMode(preset.mode);
-            setFormData(prev => ({
-                ...prev,
-                ...preset.values,
-            }));
+            setFormData(prev => {
+                // Merge preset values
+                const merged = { ...prev, ...preset.values };
+                // Derive BC if preset didn't include one
+                const mass = merged.mass;
+                const size = merged.size;
+                const area = Math.PI * size * size;
+                const Cd = 2.2;
+                const derivedBC = mass / (Cd * area);
+                return {
+                    ...merged,
+                    ballisticCoefficient: merged.ballisticCoefficient ?? derivedBC
+                };
+            });
         }
     }));
 
@@ -65,7 +80,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
         e.preventDefault();
         try {
             const params = { ...formData };
-            
+
             // Map the parameters based on the mode
             if (mode === 'latlon') {
                 await onCreateSatellite({
@@ -78,6 +93,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     angleOfAttack: params.angleOfAttack,
                     mass: params.mass,
                     size: params.size,
+                    ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined
                 });
             } else if (mode === 'orbital') {
@@ -92,6 +108,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     referenceFrame: params.referenceFrame,
                     mass: params.mass,
                     size: params.size,
+                    ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined
                 });
             } else if (mode === 'circular') {
@@ -104,10 +121,11 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     angleOfAttack: params.angleOfAttack,
                     mass: params.mass,
                     size: params.size,
+                    ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined
                 });
             }
-            
+
             setFormData(prev => ({
                 ...prev,
                 name: ''  // Reset only the name field after successful creation
@@ -180,6 +198,19 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
         );
     };
 
+    // Label for BC Presets dropdown
+    const bcLabel = (() => {
+        const bc = formData.ballisticCoefficient;
+        if (bc === 30) return 'CubeSat (30)';
+        if (bc === 100) return 'Standard (100)';
+        if (bc === 500) return 'LargeSat (500)';
+        if (bc === 40) return 'Space Capsule (40)';
+        return `Custom (${bc})`;
+    })();
+
+    // Label for Reference dropdown
+    const rfLabel = formData.referenceFrame === 'ecliptic' ? 'Ecliptic' : 'Equatorial';
+
     return (
         <div className="text-xs p-4">
             {/* General satellite properties */}
@@ -187,6 +218,28 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                 {renderField("name", "Name", "text")}
                 {renderField("mass", "Mass", "number", 1, 1000000, 1, "kg")}
                 {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
+                {renderField("ballisticCoefficient", "Ballistic Coeff", "number", 1, 1000, 1, "kg/m²")}
+                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-1 mt-2">
+                    <Label htmlFor="bc-presets" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                        BC Presets:
+                    </Label>
+                    <div className="col-span-6">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="justify-start">
+                                    {bcLabel}
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                                <DropdownMenuItem onSelect={() => handlePresetBC(30)}>CubeSat (30)</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => handlePresetBC(100)}>Standard (100) — typical small-satellite BC</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => handlePresetBC(500)}>LargeSat (500)</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => handlePresetBC(40)}>Space Capsule (40)</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                    <div className="col-span-3" />
+                </div>
             </div>
             <div className="mb-2">
                 <Tabs value={mode} onValueChange={setMode}>
@@ -217,15 +270,15 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                             {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
                             {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
                             {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
-                            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-1 mt-2">
                                 <Label htmlFor="referenceFrame" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
                                     Reference:
                                 </Label>
-                                <div className="col-span-9">
+                                <div className="col-span-6">
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
-                                            <Button size="sm" className="h-6 text-xs w-full text-left py-0 px-1">
-                                                {formData.referenceFrame === 'ecliptic' ? 'Ecliptic' : 'Equatorial'}
+                                            <Button variant="ghost" size="sm" className="justify-start">
+                                                {rfLabel}
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent sideOffset={4}>
@@ -238,6 +291,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                                         </DropdownMenuContent>
                                     </DropdownMenu>
                                 </div>
+                                <div className="col-span-3" />
                             </div>
                         </>
                     )}

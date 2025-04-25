@@ -51,8 +51,8 @@ export const defaultSettings = {
   showSatConnections: { value: false, name: 'Satellite Connections', icon: Link,
     description: 'Show lines connecting satellites with other satellites.'
   },
-  orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (s)', icon: Circle, type: 'number', min: 1, max: 120, step: 1,
-    description: 'Seconds between orbit path recalculation for each satellite.'
+  orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (Hz)', icon: Circle, type: 'number', min: 1, max: 120, step: 1,
+    description: 'Number of orbit path recalculations per second (updates per second) while the simulation is running.'
   },
   orbitPredictionInterval: { value: 1, name: 'Prediction Periods', icon: Circle, type: 'number', min: 0, max: 1000, step: 0.1,
     description: 'Number of orbital periods ahead to simulate for orbit predictions.'
@@ -60,7 +60,7 @@ export const defaultSettings = {
   orbitPointsPerPeriod: { value: 60, name: 'Points per Orbit', icon: Circle, type: 'number', min: 10, max: 10000, step: 10,
     description: 'Number of sample points per orbital period when drawing orbit paths.'
   },
-  physicsTimeStep: { value: 0.05, name: 'Physics Timestep (s)', icon: Settings2, type: 'number', min: 0.01, max: 1, step: 0.01,
+  physicsTimeStep: { value: 0.05, name: 'Physics Timestep (Hz)', icon: Settings2, type: 'number', min: 0.01, max: 1, step: 0.01,
     description: 'Integration time step in seconds. Smaller values increase accuracy but slow down simulation.'
   },
   perturbationScale: { value: 1.0, name: 'Perturbation Strength', icon: LineChart, type: 'number', min: 0, max: 1, step: 0.05,

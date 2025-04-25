@@ -1,10 +1,10 @@
-# REENTER v2 - Advanced Space Simulation in Three.js
+# Darksun - Advanced Space Simulation in Three.js
 
 <p align="center">
-  <a href="https://github.com/joaomontenegro/reenter_v2"><img src="https://img.shields.io/github/stars/joaomontenegro/reenter_v2.svg?style=flat-square" alt="GitHub Stars" /></a>
-  <a href="https://github.com/joaomontenegro/reenter_v2/actions"><img src="https://img.shields.io/github/actions/workflow/status/joaomontenegro/reenter_v2/ci.yml?style=flat-square" alt="CI Status" /></a>
+  <a href="https://github.com/joaomontenegro/darksun"><img src="https://img.shields.io/github/stars/joaomontenegro/darksun.svg?style=flat-square" alt="GitHub Stars" /></a>
+  <a href="https://github.com/joaomontenegro/darksun/actions"><img src="https://img.shields.io/github/actions/workflow/status/joaomontenegro/darksun/ci.yml?style=flat-square" alt="CI Status" /></a>
   <img src="https://img.shields.io/badge/open_source-100%25-brightgreen.svg?style=flat-square" alt="Open Source" />
-  <a href="https://github.com/joaomontenegro/reenter_v2/blob/main/LICENSE"><img src="https://img.shields.io/github/license/joaomontenegro/reenter_v2.svg?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/joaomontenegro/darksun/blob/main/LICENSE"><img src="https://img.shields.io/github/license/joaomontenegro/darksun.svg?style=flat-square" alt="License" /></a>
 </p>
 
 <p align="center">
@@ -58,7 +58,7 @@ graph TD
 
 This decouples rendering and physics, ensuring smooth performance at 60 FPS.
 
-There are no good space simulation environments with high quality visualization that run with modern software. Reenter means to change that by building an opensource simulation tool that can grow with its own community. Try it out and improve on it.
+There are no good space simulation environments with high quality visualization that run with modern software. Darksun means to change that by building an open-source simulation tool that can grow with its own community. Try it out and improve on it.
 
 All visuals implemented from scratch. Physics running in cannon-es latest version through a service worker. Some mathematical models are running in javascript for now, would be great to change to higher precision ones later (C#?).
 
@@ -103,8 +103,8 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/reenter_v2.git
-   cd reenter_v2
+   git clone https://github.com/yourusername/darksun.git
+   cd darksun
    ```
 
 2. Install the required dependencies:

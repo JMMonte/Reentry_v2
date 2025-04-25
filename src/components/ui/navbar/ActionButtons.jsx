@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '../button';
-import { Rocket, Settings2, MessageSquare, List, Share2, Activity, Globe } from 'lucide-react';
+import { Rocket, Settings2, Brain, List, Share, Activity, Globe } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
 import PropTypes from 'prop-types';
 
@@ -44,10 +44,10 @@ function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onCha
                             size="icon"
                             onClick={onChatToggle}
                         >
-                            <MessageSquare className="h-4 w-4" />
+                            <Brain className="h-4 w-4" />
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Toggle Chat</TooltipContent>
+                    <TooltipContent>Toggle AI Chat</TooltipContent>
                 </Tooltip>
             </TooltipProvider>
             {/* Toggle Satellite List Button at right edge */}
@@ -74,7 +74,7 @@ function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onCha
                             size="icon"
                             onClick={handleShareToggle}
                         >
-                            <Share2 className="h-4 w-4" />
+                            <Share className="h-4 w-4" />
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>Share State</TooltipContent>

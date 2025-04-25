@@ -145,7 +145,7 @@ function SatelliteCreatorModal({ isOpen, onClose, onCreate }) {
             isOpen={isOpen}
             onClose={onClose}
             defaultWidth={350}
-            defaultHeight={550}
+            defaultHeight={650}
             minWidth={300}
             minHeight={300}
             resizable={true}
@@ -227,6 +227,17 @@ export function Layout({
     const [resetModalOpen, setResetModalOpen] = useState(false);
     const [maneuverSat, setManeuverSat] = useState(null);
     const handleOpenManeuver = (satellite) => setManeuverSat(satellite);
+    // Intro modal on first app open
+    const [showIntro, setShowIntro] = useState(false);
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !localStorage.getItem('introShown')) {
+            setShowIntro(true);
+        }
+    }, []);
+    const handleDismissIntro = () => {
+        localStorage.setItem('introShown', 'true');
+        setShowIntro(false);
+    };
 
     // Open reset modal if URL contains type=recovery and access_token
     useEffect(() => {
@@ -308,6 +319,25 @@ export function Layout({
                         </DraggableModal>
                     );
                 })}
+                {/* Intro modal */}
+                {showIntro && (
+                    <div className="fixed bottom-4 left-4 z-50 max-w-xs w-64 bg-white dark:bg-gray-800 text-black dark:text-white p-4 rounded-lg shadow-lg">
+                        <button
+                            className="absolute top-2 right-2 text-xl font-bold leading-none"
+                            onClick={handleDismissIntro}
+                            aria-label="Close intro"
+                        >
+                            ×
+                        </button>
+                        <h2 className="text-lg font-semibold mb-2">Welcome to Darksun!</h2>
+                        <p className="text-sm">
+                            This simulation tool lets you explore satellites in 3D. Use the navbar to create satellites, add maneuvers, talk with the AI helper chat, satellite list, and display options. Click on Earth points for more information.
+                        </p>
+                        <div className="mt-3 flex justify-end">
+                            <Button size="sm" onClick={handleDismissIntro}>Got it!</Button>
+                        </div>
+                    </div>
+                )}
                 <ResetPasswordModal isOpen={resetModalOpen} onClose={() => setResetModalOpen(false)} showToast={showToast} />
             </ModalPortal>
             <Toast ref={toastRef} />

@@ -152,158 +152,49 @@ export class OrbitPath {
         if (handler) handler(e);
     }
 
-    /**
-     * Resample orbit points by arc length, with optional subdivision for high-eccentricity orbits.
-     * @param {Array<{x:number,y:number,z:number}>} pts raw orbit points
-     * @param {number} [targetCount=pts.length] desired number of output points
-     * @returns {Array<{x:number,y:number,z:number}>} uniformly spaced resampled points
-     */
-    _resampleArcLength(pts, targetCount = pts.length) {
-        if (!pts || pts.length < 2 || targetCount < 2) return pts;
-        // Convert to Vector3 array
-        const vecs = pts.map(p => new THREE.Vector3(p.x, p.y, p.z));
-        // Compute total arc length over raw points
-        let total = 0;
-        const segLengths = [];
-        for (let i = 0; i < vecs.length - 1; i++) {
-            const d = vecs[i].distanceTo(vecs[i + 1]);
-            segLengths.push(d);
-            total += d;
-        }
-        const threshold = total / (targetCount - 1);
-        // Subdivide segments longer than threshold
-        const subdiv = [vecs[0].clone()];
-        for (let i = 0; i < vecs.length - 1; i++) {
-            const p0 = vecs[i], p1 = vecs[i + 1];
-            const d = segLengths[i];
-            const n = threshold > 0 ? Math.ceil(d / threshold) : 1;
-            for (let j = 1; j <= n; j++) {
-                const t = j / n;
-                subdiv.push(p0.clone().lerp(p1, t));
-            }
-        }
-        // Build cumulative distances on subdivided points
-        const cum = [0];
-        for (let i = 0; i < subdiv.length - 1; i++) {
-            cum.push(cum[i] + subdiv[i].distanceTo(subdiv[i + 1]));
-        }
-        // Sample targetCount points evenly along total arc
-        const resampled = [];
-        for (let k = 0; k < targetCount; k++) {
-            const s = (k / (targetCount - 1)) * total;
-            // find segment index where cum >= s
-            let idx = cum.findIndex(c => c >= s);
-            if (idx === -1) {
-                resampled.push(subdiv[subdiv.length - 1].clone());
-            } else if (idx === 0) {
-                resampled.push(subdiv[0].clone());
-            } else {
-                const s0 = cum[idx - 1];
-                const seg = cum[idx] - s0;
-                const t = seg > 0 ? (s - s0) / seg : 0;
-                resampled.push(subdiv[idx - 1].clone().lerp(subdiv[idx], t));
-            }
-        }
-        return resampled.map(v => ({ x: v.x, y: v.y, z: v.z }));
-    }
-
     // Register handler for this satellite ID
     _handleMessage = (e) => {
-        // Only handle updates for this satellite
         if (e.data.type === 'ORBIT_PATH_UPDATE' && e.data.id === this._currentId) {
-            // Drop stale updates
             const seq = e.data.seq;
             if (seq <= this._lastSeq) return;
             this._lastSeq = seq;
-            // Don't update geometry when hidden
             if (!this.orbitLine.visible) return;
-            // Handle transferred Float32Array buffer from worker
-            const rawPts = e.data.orbitPoints;
-            let ptsArr;
-            if (rawPts instanceof ArrayBuffer) {
-                ptsArr = new Float32Array(rawPts);
-            } else if (ArrayBuffer.isView(rawPts)) {
-                ptsArr = rawPts;
-            } else {
-                // Fallback: convert object array to flat Float32Array
-                ptsArr = new Float32Array(rawPts.length * 3);
-                for (let j = 0; j < rawPts.length; j++) {
-                    ptsArr[j * 3] = rawPts[j].x;
-                    ptsArr[j * 3 + 1] = rawPts[j].y;
-                    ptsArr[j * 3 + 2] = rawPts[j].z;
-                }
-            }
-            const pointCount = Math.floor(ptsArr.length / 3);
-            const objPts = new Array(pointCount);
-            for (let i = 0; i < pointCount; i++) {
-                objPts[i] = { x: ptsArr[i * 3], y: ptsArr[i * 3 + 1], z: ptsArr[i * 3 + 2] };
-            }
-            const multiplier = window.app3d?.getDisplaySetting('hyperbolicPointsMultiplier') ?? 1;
-            const soiWorld = Constants.earthSOI * Constants.metersToKm * Constants.scale;
-            const weightedPts = [];
-            if (objPts.length > 0) {
-                weightedPts.push(objPts[0]);
-                for (let i = 0; i < objPts.length - 1; i++) {
-                    const p0 = objPts[i];
-                    const p1 = objPts[i + 1];
-                    const midX = (p0.x + p1.x) / 2;
-                    const midY = (p0.y + p1.y) / 2;
-                    const midZ = (p0.z + p1.z) / 2;
-                    const dMid = Math.sqrt(midX * midX + midY * midY + midZ * midZ);
-                    const subdivCount = dMid <= soiWorld ? multiplier : 1;
-                    for (let j = 1; j <= subdivCount; j++) {
-                        const t = j / subdivCount;
-                        weightedPts.push({
-                            x: p0.x + (p1.x - p0.x) * t,
-                            y: p0.y + (p1.y - p0.y) * t,
-                            z: p0.z + (p1.z - p0.z) * t
-                        });
-                    }
-                }
-            }
-            const resampled = this._resampleArcLength(weightedPts, this._numPoints);
-            ptsArr = new Float32Array(resampled.length * 3);
-            for (let i = 0; i < resampled.length; i++) {
-                ptsArr[i * 3] = resampled[i].x;
-                ptsArr[i * 3 + 1] = resampled[i].y;
-                ptsArr[i * 3 + 2] = resampled[i].z;
-            }
-
+            // Directly use the transferred Float32Array for geometry positions
+            const rawBuf = e.data.orbitPoints;
+            const ptsArr = rawBuf instanceof ArrayBuffer
+                ? new Float32Array(rawBuf)
+                : ArrayBuffer.isView(rawBuf)
+                    ? rawBuf
+                    : new Float32Array(rawBuf);
             const numPts = Math.floor(ptsArr.length / 3);
-            // Store flat array of coordinates
             this.orbitPoints = ptsArr;
-            // Emit orbit data update event for UI
+            // Emit orbit data update event for external handlers
             document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
                 detail: {
                     id: this._currentId,
-                    orbitPoints: ptsArr,
+                    orbitPoints: this.orbitPoints,
                     period: this._period,
                     numPoints: this._numPoints
                 }
             }));
-            // Compute drawing parameters
+            // Update geometry buffer
             const k = Constants.metersToKm * Constants.scale;
             const origin = this._currentPosition.clone().multiplyScalar(k);
-            const count = numPts + 1;
-            this._maxOrbitPoints = numPts;
-            // Use preallocated buffer: clamp draw range
             const geometry = this.orbitLine.geometry;
             const positionAttr = geometry.attributes.position;
-            const drawCount = Math.min(count, this._capacity);
-            geometry.setDrawRange(0, drawCount);
             const array = positionAttr.array;
-            // Set current position as first point
+            const drawCount = Math.min(numPts + 1, this._capacity);
+            geometry.setDrawRange(0, drawCount);
+            // Set starting point as the current position
             array[0] = origin.x;
             array[1] = origin.y;
             array[2] = origin.z;
-            // Fill predicted points directly from flat buffer
-            for (let j = 0; j < numPts; j++) {
-                const inIdx = j * 3;
-                const outIdx = (j + 1) * 3;
-                array[outIdx] = ptsArr[inIdx];
-                array[outIdx + 1] = ptsArr[inIdx + 1];
-                array[outIdx + 2] = ptsArr[inIdx + 2];
-            }
+            // Copy predicted orbit points in bulk for performance
+            const pointCount = Math.min(numPts, this._capacity - 1);
+            array.set(
+                ptsArr.subarray(0, pointCount * 3),
+                3
+            );
             positionAttr.needsUpdate = true;
         }
     };

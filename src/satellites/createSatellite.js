@@ -34,6 +34,7 @@ export async function createSatellite(app, params) {
         mass: params.mass || 100,
         size: params.size || 1,
         name: params.name,
+        ballisticCoefficient: params.ballisticCoefficient
     };
 
     // Add satellite via SatelliteManager

@@ -40,18 +40,16 @@ export function computeAccel(pos, bodies, perturbationScale = 1.0) {
     return [ax, ay, az];
 }
 
-// Atmospheric drag constants and model
-const ATMOSPHERE_CUTOFF_ALTITUDE = 120000; // 100 km in meters
-const DEFAULT_BALLISTIC_COEFFICIENT = 100; // kg/m^2, typical satellite ballistic coefficient
+// Atmospheric drag model now driven by Constants
 
 /**
  * Compute atmospheric drag acceleration (m/s^2) at position pos and velocity vel.
  */
-function computeDragAcceleration(pos, vel, ballisticCoefficient = DEFAULT_BALLISTIC_COEFFICIENT) {
+function computeDragAcceleration(pos, vel, ballisticCoefficient = Constants.ballisticCoefficient) {
     const x = pos[0], y = pos[1], z = pos[2];
     const r = Math.sqrt(x * x + y * y + z * z);
     const altitude = r - Constants.earthRadius;
-    if (altitude <= 0 || altitude > ATMOSPHERE_CUTOFF_ALTITUDE) {
+    if (altitude <= 0 || altitude > Constants.atmosphereCutoffAltitude) {
         return [0, 0, 0];
     }
     const rho = Constants.atmosphereSeaLevelDensity * Math.exp(-altitude / Constants.atmosphereScaleHeight);
@@ -173,7 +171,7 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, pert
         vel = newVel;
         const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
         // Apply atmospheric reentry only for elliptical trajectories
-        if (!allowFullEllipse && !isHyperbolic && r <= Constants.earthRadius + ATMOSPHERE_CUTOFF_ALTITUDE) {
+        if (!allowFullEllipse && !isHyperbolic && r <= Constants.earthRadius + Constants.atmosphereCutoffAltitude) {
             // Perform atmospheric reentry propagation at 1 s resolution for accurate trajectory
             if (typeof onProgress === 'function') onProgress(i / numPoints);
             const atmPtsWithTime = await propagateAtmosphere(pos, vel, bodies, 300, 1);
@@ -197,7 +195,7 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, pert
 }
 
 // Simple fixed-step atmospheric propagation (Euler), returns Three.Vector3 points asynchronously
-export async function propagateAtmosphere(pos0, vel0, bodies, maxSeconds = 300, dt = 1, ballisticCoefficient = DEFAULT_BALLISTIC_COEFFICIENT) {
+export async function propagateAtmosphere(pos0, vel0, bodies, maxSeconds = 300, dt = 1, ballisticCoefficient = Constants.ballisticCoefficient) {
     let pos = pos0.slice();
     let vel = vel0.slice();
     const pts = [];

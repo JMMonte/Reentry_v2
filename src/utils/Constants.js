@@ -42,6 +42,9 @@ export class Constants {
     static atmosphereScaleHeight = 8500; // Atmosphere scale height in meters
     static atmosphereSeaLevelDensity = 1.225; // Sea level air density in kg/m^3
     static atmosphereRadius = Constants.earthRadius + 0.1; // Atmosphere radius in meters
+    // Default drag parameters (user-tunable)
+    static ballisticCoefficient = 100; // Default satellite ballistic coefficient (kg/m^2)
+    static atmosphereCutoffAltitude = 120000; // Altitude in meters below which drag is applied
 
     // Earth's spheres of influence
     static earthSOI = 0.929e9; // Earth's sphere of influence in meters (roughly 929,000 km)
