@@ -46,7 +46,9 @@ export class Sun {
     }
 
     updatePosition() {
-        const position = this.timeUtils.getSunPosition();  // Use TimeUtils to get the current sun position
+        // Smoothly update sun position each simulation step
+        const position = this.timeUtils.getSunPosition();
+        // Directly update mesh and light positions
         this.sun.position.copy(position);
         this.sunLight.position.copy(position);
     }

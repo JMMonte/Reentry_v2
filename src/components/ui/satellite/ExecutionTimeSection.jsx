@@ -28,16 +28,18 @@ export function ExecutionTimeSection({
     setMultSVal,
     multMsVal,
     setMultMsVal,
+    computeNextPeriapsis,
+    computeNextApoapsis,
 }) {
     return (
         <div className="mb-2">
-            <div className="text-[10px] font-semibold mb-1">Execution Time</div>
             <Tabs value={timeMode} onValueChange={setTimeMode}>
                 <div className="flex items-center space-x-2 mb-1 text-[10px] text-muted-foreground">
-                    <span>Mode:</span>
                     <TabsList className="space-x-1">
                         <TabsTrigger value="offset">Offset (s)</TabsTrigger>
                         <TabsTrigger value="datetime">Date/Time</TabsTrigger>
+                        <TabsTrigger value="nextPeriapsis">Next Periapsis</TabsTrigger>
+                        <TabsTrigger value="nextApoapsis">Next Apoapsis</TabsTrigger>
                     </TabsList>
                 </div>
                 <TabsContent value="offset">
@@ -75,6 +77,16 @@ export function ExecutionTimeSection({
                         </div>
                     ))}
                 </TabsContent>
+                <TabsContent value="nextPeriapsis">
+                    <div className="text-[10px]">
+                        Executes at next periapsis: {computeNextPeriapsis().toISOString()}
+                    </div>
+                </TabsContent>
+                <TabsContent value="nextApoapsis">
+                    <div className="text-[10px]">
+                        Executes at next apoapsis: {computeNextApoapsis().toISOString()}
+                    </div>
+                </TabsContent>
             </Tabs>
         </div>
     );
@@ -104,4 +116,6 @@ ExecutionTimeSection.propTypes = {
     setMultSVal: PropTypes.func.isRequired,
     multMsVal: PropTypes.string.isRequired,
     setMultMsVal: PropTypes.func.isRequired,
+    computeNextPeriapsis: PropTypes.func.isRequired,
+    computeNextApoapsis: PropTypes.func.isRequired
 }; 

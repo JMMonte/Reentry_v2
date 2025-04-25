@@ -98,8 +98,10 @@ export class TimeUtils {
     }
 
     getSunPosition() {
-        const meanAnomaly = (357.5291 + 0.98560028 * this.dayOfYear) % 360;
-        const meanLongitude = (280.4665 + 0.98564736 * this.dayOfYear) % 360;
+        // Use total days including fraction to move sun smoothly within each day
+        const days = this.dayOfYear + this.fractionOfDay;
+        const meanAnomaly = (357.5291 + 0.98560028 * days) % 360;
+        const meanLongitude = (280.4665 + 0.98564736 * days) % 360;
         const eccentricity = 0.0167;
         const equationOfCenter = (1.9148 * Math.sin(meanAnomaly * Math.PI / 180) +
                                   0.0200 * Math.sin(2 * meanAnomaly * Math.PI / 180) +

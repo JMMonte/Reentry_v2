@@ -139,7 +139,7 @@ export function DraggableModal({
   return (
     <div
       ref={modalRef}
-      className={`fixed bg-background border rounded-lg shadow-lg ${className}`}
+      className={`fixed bg-background/80 backdrop-blur-sm border rounded-lg shadow-lg ${className}`}
       style={{ 
         left: position.x,
         top: position.y,
@@ -178,7 +178,7 @@ export function DraggableModal({
         <>
           <div 
             ref={contentRef} 
-            className={`overflow-auto ${resizable ? 'pb-2' : ''}`}
+            className={`modal-content overflow-auto ${resizable ? 'pb-2' : ''}`}
             style={{ 
               height: resizable ? 'calc(100% - 48px)' : 'auto',
               padding: '8px'

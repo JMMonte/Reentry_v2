@@ -71,6 +71,11 @@ export class SimulationLoop {
         // Update satellites
         this.satellites.updateAll(currentTime, realDeltaTime, warpedDeltaTime);
 
+        // Update planet object if generic Planet class is used
+        if (this.app.earth && typeof this.app.earth.update === 'function') {
+            this.app.earth.update();
+        }
+
         // Update scene
         if (typeof this.app.updateScene === 'function') {
             this.app.updateScene(currentTime);

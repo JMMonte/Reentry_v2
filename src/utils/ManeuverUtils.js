@@ -73,11 +73,45 @@ export class ManeuverUtils {
             const rHat = new THREE.Vector3(p0.x, p0.y, p0.z).normalize();
             const hHat = new THREE.Vector3().crossVectors(rHat, vHat).normalize();
             dvWorld.addScaledVector(vHat, dvLocal.x)
-                  .addScaledVector(rHat, dvLocal.y)
-                  .addScaledVector(hHat, dvLocal.z);
+                .addScaledVector(rHat, dvLocal.y)
+                .addScaledVector(hHat, dvLocal.z);
         } else {
             dvWorld.copy(dvLocal);
         }
         return dvWorld;
+    }
+
+    /**
+     * Compute execution time based on mode and inputs.
+     * @param {Date} simNow Current simulated time
+     * @param {Object} opts
+     * @param {'offset'|'datetime'} opts.timeMode
+     * @param {string} opts.offsetSec
+     * @param {number} opts.hours
+     * @param {number} opts.minutes
+     * @param {number} opts.seconds
+     * @param {number} opts.milliseconds
+     * @returns {Date}
+     */
+    static computeExecutionTime(simNow, { timeMode, offsetSec, hours, minutes, seconds, milliseconds }) {
+        if (timeMode === 'offset') {
+            const secs = parseFloat(offsetSec) || 0;
+            return new Date(simNow.getTime() + secs * 1000);
+        } else {
+            const d = new Date(simNow);
+            d.setUTCHours(hours, minutes, seconds, milliseconds);
+            return d;
+        }
+    }
+
+    /**
+     * Compute magnitude of delta-V vector components.
+     * @param {number} vx
+     * @param {number} vy
+     * @param {number} vz
+     * @returns {number}
+     */
+    static computeDeltaVMagnitude(vx, vy, vz) {
+        return Math.hypot(vx, vy, vz);
     }
 } 

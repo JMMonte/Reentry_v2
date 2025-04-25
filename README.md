@@ -1,9 +1,62 @@
-# REENTER v2 - Space Simulation Visualizer in Three.js
+# REENTER v2 - Advanced Space Simulation in Three.js
 
-![Screenshot](public/assets/texture/reenter_v2.png)
-![Screenshot](public/assets/texture/reenter_v2_1.png)
+<p align="center">
+  <a href="https://github.com/joaomontenegro/reenter_v2"><img src="https://img.shields.io/github/stars/joaomontenegro/reenter_v2.svg?style=flat-square" alt="GitHub Stars" /></a>
+  <a href="https://github.com/joaomontenegro/reenter_v2/actions"><img src="https://img.shields.io/github/actions/workflow/status/joaomontenegro/reenter_v2/ci.yml?style=flat-square" alt="CI Status" /></a>
+  <img src="https://img.shields.io/badge/open_source-100%25-brightgreen.svg?style=flat-square" alt="Open Source" />
+  <a href="https://github.com/joaomontenegro/reenter_v2/blob/main/LICENSE"><img src="https://img.shields.io/github/license/joaomontenegro/reenter_v2.svg?style=flat-square" alt="License" /></a>
+</p>
 
-This project utilizes WebGL via the Three.js library and the physics engine Cannon.js to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth-Moon system and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
+<p align="center">
+  <img src="public/assets/images/Screenshot%202025-04-25%20at%2002.12.56.png" alt="Maneuver Planning" width="100%" />
+</p>
+<p align="center">
+  <img src="public/assets/images/Screenshot%202025-04-22%20at%2022.44.48.png" alt="Simulation View" width="45%" />
+  <img src="public/assets/images/Screenshot%202025-04-22%20at%2001.34.42.png" alt="Orbital Mechanics" width="45%" />
+</p>
+
+<p align="center">
+  <img src="public/assets/images/Screenshot%202025-04-22%20at%2001.38.40.png" alt="Ground Track" width="45%" />
+  <img src="public/assets/images/Screenshot%202025-04-25%20at%2002.16.34.png" alt="Realtime Charts" width="45%" />
+  <img src="public/assets/images/Screenshot%202025-04-25%20at%2002.20.23.png" alt="Network Visualization" width="45%" />
+  <img src="public/assets/images/Screenshot%202025-04-25%20at%2002.20.37.png" alt="Detailed Elements" width="45%" />
+  <img src="public/assets/images/Screenshot%202025-04-25%20at%2002.22.55.png" alt="Moon View" width="100%" />
+</p>
+
+This project utilizes WebGL via the Three.js library and a custom physics engine (**specially built for simulating spacecraft dynamics on the web**) to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth-Moon system and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
+
+## Simulation Engine
+
+The physics simulation runs in a dedicated Web Worker (`src/workers/physicsWorker.js`) and uses:
+
+- Adaptive Integration: Solves the equations of motion using an adaptive time-step integrator:
+
+\[
+\frac{d^2 \mathbf{r}}{dt^2} = -\frac{\mu}{r^3}\mathbf{r} + \mathbf{a}_\mathrm{perturbations} + \mathbf{a}_\mathrm{drag}
+\]
+
+- Third-Body Perturbations: Includes gravitational effects from the Moon and Sun, scaled by \(\alpha\):
+
+\[
+\mathbf{a}_\mathrm{perturbations} = \alpha \left( \mathbf{a}_\mathrm{Moon} + \mathbf{a}\_\mathrm{Sun} \right)
+\]
+
+- Atmospheric Drag: Models drag acceleration:
+
+\[
+\mathbf{a}_\mathrm{drag} = -\tfrac{1}{2} \rho(h)\,C_d\,\frac{A}{m}\,\|\mathbf{v}_\mathrm{rel}\|\;\mathbf{v}\_\mathrm{rel}
+\]
+
+```mermaid
+graph TD
+  A[Main Thread: Three.js Rendering] --> B[Web Worker: physicsWorker.js]
+  B --> C[Adaptive Integrator]
+  B --> D[Drag & Perturbations Computation]
+  B --> F[PostMessage: Satellite Updates]
+  F --> A[Three.js]
+```
+
+This decouples rendering and physics, ensuring smooth performance at 60 FPS.
 
 There are no good space simulation environments with high quality visualization that run with modern software. Reenter means to change that by building an opensource simulation tool that can grow with its own community. Try it out and improve on it.
 
@@ -35,14 +88,13 @@ All visuals implemented from scratch. Physics running in cannon-es latest versio
 
 ## Deployment
 
-This application is deployed using:
+This application can be deployed using:
 
 - Frontend: [Vercel](https://vercel.com) (using static deployment approach)
-- Backend Server: [Railway](https://railway.app)
+
+> To enable AI assistant features, you must implement and host your own backend server providing AI services and conversation management (e.g., via OpenAI or other LLM APIs).
 
 For detailed instructions on deploying to Vercel, please see [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md).
-
-The server code is maintained in a separate repository.
 
 ## Installation
 
@@ -66,47 +118,3 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your machine. Then, 
    ```bash
    cp .env.example .env
    ```
-
-   Edit the `.env` file to configure the socket server URL:
-
-   - For local development, point to your locally running server: `VITE_SOCKET_SERVER_URL=http://localhost:4000` or `http://localhost:1234` (these are the allowed dev origins)
-   - For production, point to a Railway server
-
-4. Start the development server:
-
-   ```bash
-   pnpm run dev
-   ```
-
-This will run the application on `http://localhost:1234`.
-
-## Usage
-
-1. **Navigating the Scene**: Use the mouse or touch gestures for orbiting, zooming, and panning around objects.
-2. **Interacting with GUI**: Adjust simulation parameters like time warp, display settings, and physics variables in real time.
-3. **Viewing Data**: Monitor real-time charts for satellite metrics such as altitude, velocity, drag, and acceleration.
-4. **Create and Manage Spacecraft**: Launch satellites using latitude/longitude, orbital elements, or circular orbits; set up and adjust maneuver nodes to plan burns and preview trajectory changes.
-5. **AI Assistant**: Engage the integrated chat-based orbital mechanics AI for guidance on planning maneuvers, understanding orbital dynamics, and optimizing trajectories.
-6. **Satellite Networks & Ground Tracks**: Visualize line-of-sight connections, network topologies, and ground tracks with configurable update intervals.
-7. **Save & Load**: Export and import simulation states using JSON to replicate or share scenarios.
-
-## Related Repositories
-
-- [Reentry Server](https://github.com/yourusername/reentry-server): Backend server for the AI assistant and orbital mechanics guidance.
-
-## Contributing
-
-Contributions to enhance or expand the simulation capabilities are welcome. Please follow the standard fork, branch, and pull request workflow.
-
-## Licensing
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) file for details.
-
-## Acknowledgments
-
-- Three.js and Cannon.js communities for continuous support and resources.
-- Contributors and maintainers of the `stats.js`, `cannon-es-debugger`, and other utilized libraries.
-
-## Contact
-
-For support or queries, contact [hi@darkmatter.is](mailto:hi@darkmatter.is).

@@ -22,7 +22,7 @@ import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { Constants } from './utils/Constants.js';
 import { updateCameraTarget as selectBody } from './utils/BodySelectionUtils.js';
 // Add satellite creation functions
-import { createSatelliteFromLatLon, createSatelliteFromOrbitalElements, createSatelliteFromLatLonCircular } from './satellites/createSatellite.js';
+import { createSatelliteFromLatLon, createSatelliteFromOrbitalElements, createSatelliteFromLatLonCircular, getVisibleLocationsFromOrbitalElements as computeVisibleLocations } from './satellites/createSatellite.js';
 
 // Utility to convert defaultSettings to {key: value}
 function extractDefaultDisplaySettings(settingsObj) {
@@ -37,7 +37,7 @@ class App3D extends EventTarget {
         super();
         // Make instance available globally
         console.log('App3D: Initializing...');
-        
+
         // Set canvas early
         this._canvas = document.getElementById('three-canvas');
         if (!this._canvas) {
@@ -125,19 +125,19 @@ class App3D extends EventTarget {
             // Add axis labels using CSS2DObject
             const axisLength = 1000;
             ['X', 'Y', 'Z'].forEach((axis) => {
-              const dir = new THREE.Vector3(
-                axis === 'X' ? axisLength : 0,
-                axis === 'Y' ? axisLength : 0,
-                axis === 'Z' ? axisLength : 0
-              );
-              const div = document.createElement('div');
-              div.className = 'axis-label';
-              div.textContent = axis;
-              div.style.color = axis === 'X' ? '#ff0000' : axis === 'Y' ? '#00ff00' : '#0000ff';
-              div.style.fontSize = '14px';
-              const label = new CSS2DObject(div);
-              label.position.copy(dir);
-              this.axisHelper.add(label);
+                const dir = new THREE.Vector3(
+                    axis === 'X' ? axisLength : 0,
+                    axis === 'Y' ? axisLength : 0,
+                    axis === 'Z' ? axisLength : 0
+                );
+                const div = document.createElement('div');
+                div.className = 'axis-label';
+                div.textContent = axis;
+                div.style.color = axis === 'X' ? '#ff0000' : axis === 'Y' ? '#00ff00' : '#0000ff';
+                div.style.fontSize = '14px';
+                const label = new CSS2DObject(div);
+                label.position.copy(dir);
+                this.axisHelper.add(label);
             });
             this._addConnectionsGroup();
             // --- start point picking setup ---
@@ -420,6 +420,14 @@ class App3D extends EventTarget {
     }
     createSatelliteFromLatLonCircular(params) {
         return createSatelliteFromLatLonCircular(this, params);
+    }
+    /**
+     * Compute visible ground locations over time from orbital elements.
+     * @param {Object} params { semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly, referenceFrame, locations, numPoints, numPeriods }
+     */
+    getVisibleLocationsFromOrbitalElements(params) {
+        const { locations, numPoints, numPeriods, ...orbitalParams } = params;
+        return computeVisibleLocations(this, orbitalParams, locations, { numPoints, numPeriods });
     }
 
     // Methods for satellite creation

@@ -214,49 +214,60 @@ export class OrbitPath {
             this._lastSeq = seq;
             // Don't update geometry when hidden
             if (!this.orbitLine.visible) return;
-            // Use pre-resampled uniform points from worker
-            const pts = e.data.orbitPoints;
-            // Store orbit points (already uniform spatial density)
-            this.orbitPoints = pts;
+            // Handle transferred Float32Array buffer from worker
+            const rawPts = e.data.orbitPoints;
+            let ptsArr;
+            if (rawPts instanceof ArrayBuffer) {
+                ptsArr = new Float32Array(rawPts);
+            } else if (ArrayBuffer.isView(rawPts)) {
+                ptsArr = rawPts;
+            } else {
+                // Fallback: convert object array to flat Float32Array
+                ptsArr = new Float32Array(rawPts.length * 3);
+                for (let j = 0; j < rawPts.length; j++) {
+                    ptsArr[j * 3] = rawPts[j].x;
+                    ptsArr[j * 3 + 1] = rawPts[j].y;
+                    ptsArr[j * 3 + 2] = rawPts[j].z;
+                }
+            }
+            const numPts = Math.floor(ptsArr.length / 3);
+            // Store flat array of coordinates
+            this.orbitPoints = ptsArr;
             // Emit orbit data update event for UI
             document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
                 detail: {
                     id: this._currentId,
-                    orbitPoints: pts,
+                    orbitPoints: ptsArr,
                     period: this._period,
                     numPoints: this._numPoints
                 }
             }));
-            // Include current position as first point and then predicted points
+            // Compute drawing parameters
             const k = Constants.metersToKm * Constants.scale;
             const origin = this._currentPosition.clone().multiplyScalar(k);
-            const count = pts.length + 1;
-            // Update max orbit points (predicted only, for future updates)
-            this._maxOrbitPoints = pts.length;
-            // Rebuild or update geometry to match incoming points plus current position
+            const count = numPts + 1;
+            this._maxOrbitPoints = numPts;
+            // Prepare geometry and attribute buffers
             let geometry = this.orbitLine.geometry;
             let positionAttr = geometry.attributes.position;
             if (!positionAttr || positionAttr.count !== count) {
-                // Replace or create position attribute if size changed
                 const positions = new Float32Array(count * 3);
                 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
                 positionAttr = geometry.attributes.position;
             }
-            // Update draw range
             geometry.setDrawRange(0, count);
-            // Fill positions: first current position, then predicted orbit
             const array = positionAttr.array;
-            // current position
+            // Set current position as first point
             array[0] = origin.x;
             array[1] = origin.y;
             array[2] = origin.z;
-            // predicted points (resampled)
-            for (let i = 0; i < pts.length; i++) {
-                const pt = pts[i];
-                const idx = (i + 1) * 3;
-                array[idx] = pt.x;
-                array[idx + 1] = pt.y;
-                array[idx + 2] = pt.z;
+            // Fill predicted points directly from flat buffer
+            for (let j = 0; j < numPts; j++) {
+                const inIdx = j * 3;
+                const outIdx = (j + 1) * 3;
+                array[outIdx] = ptsArr[inIdx];
+                array[outIdx + 1] = ptsArr[inIdx + 1];
+                array[outIdx + 2] = ptsArr[inIdx + 2];
             }
             positionAttr.needsUpdate = true;
         }

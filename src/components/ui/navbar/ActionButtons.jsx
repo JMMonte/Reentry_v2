@@ -1,10 +1,10 @@
 import React from 'react';
 import { Button } from '../button';
-import { Rocket, Settings2, MessageSquare, List, Share2, Activity } from 'lucide-react';
+import { Rocket, Settings2, MessageSquare, List, Share2, Activity, Globe } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
 import PropTypes from 'prop-types';
 
-function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onChatToggle, onSatelliteListToggle, handleShareToggle, onSimulationToggle }) {
+function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onChatToggle, onSatelliteListToggle, handleShareToggle, onSimulationToggle, onGroundtrackToggle }) {
     return (
         <>
             <TooltipProvider>
@@ -95,6 +95,21 @@ function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onCha
                     <TooltipContent>Simulation</TooltipContent>
                 </Tooltip>
             </TooltipProvider>
+            {/* Groundtrack Button */}
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={onGroundtrackToggle}
+                        >
+                            <Globe className="h-4 w-4" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Groundtrack</TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
         </>
     );
 }
@@ -106,6 +121,7 @@ ActionButtons.propTypes = {
     onSatelliteListToggle: PropTypes.func.isRequired,
     handleShareToggle: PropTypes.func.isRequired,
     onSimulationToggle: PropTypes.func.isRequired,
+    onGroundtrackToggle: PropTypes.func.isRequired,
 };
 
 export default ActionButtons; 

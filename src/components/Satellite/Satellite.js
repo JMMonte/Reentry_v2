@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
+import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
 import { OrbitPath } from './OrbitPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { ManeuverNode } from './ManeuverNode.js';
+import { GroundtrackPath } from './GroundtrackPath.js';
 
 export class Satellite {
     constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name, referenceBody = 'earth' }) {
@@ -42,6 +44,7 @@ export class Satellite {
         this.maneuverNodes = [];
         this.maneuverGroup = new THREE.Group();
         this.scene.add(this.maneuverGroup);
+        this.groundTrackPath = new GroundtrackPath();
 
         // Throttle simulationDataUpdate events
         this._lastSimDataDispatch = 0;
@@ -133,11 +136,14 @@ export class Satellite {
                 const drag = dbg.dragData || { altitude: null, density: null, relativeVelocity: null, dragAcceleration: null };
                 const pert = dbg.perturbation || null;
                 const elements = this.getOrbitalElements();
-                const altitude = drag.altitude ?? this.getSurfaceAltitude();
+                // Always use surface altitude (km) for ground coverage
+                const altitude = this.getSurfaceAltitude();
                 const velocityVal = this.getSpeed();
-                const rNorm = this.position.clone().normalize();
-                const lat = Math.asin(rNorm.y) * (180 / Math.PI);
-                const lon = Math.atan2(this.position.z, this.position.x) * (180 / Math.PI);
+                // Convert ECI position to geodetic lat/lon (ECEF) for groundtrack
+                const simDate = this.app3d.timeUtils.getSimulatedTime();
+                const gmst = PhysicsUtils.calculateGMST(simDate.getTime ? simDate.getTime() : new Date(simDate).getTime());
+                // Convert tilt-based ECI position directly to geodetic lat/lon
+                const { lat, lon } = PhysicsUtils.eciTiltToLatLon(this.position.clone(), gmst);
                 const simTimeStr = this.app3d.timeUtils.getSimulatedTime().toISOString();
                 document.dispatchEvent(new CustomEvent('simulationDataUpdate', {
                     detail: { id: this.id, simulatedTime: simTimeStr, altitude, velocity: velocityVal, lat, lon, elements, dragData: drag, perturbation: pert }
@@ -215,6 +221,10 @@ export class Satellite {
         // Dispose apsis visualizer
         if (this.apsisVisualizer) {
             this.apsisVisualizer.dispose();
+        }
+        // Dispose groundtrack path
+        if (this.groundTrackPath) {
+            this.groundTrackPath.dispose();
         }
         // Dispose maneuver nodes
         if (this.maneuverNodes) {

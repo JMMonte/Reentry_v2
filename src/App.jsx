@@ -9,6 +9,7 @@ import { SimulationStateManager } from './simulation/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
 import LZString from 'lz-string';
+import { SimulationProvider } from './context/SimulationContext';
 
 const ToastContext = createContext({ showToast: () => { } });
 
@@ -93,6 +94,7 @@ function App3DMain() {
   const [shareCopied, setShareCopied] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSimulationOpen, setIsSimulationOpen] = useState(false);
+  const [isGroundtrackOpen, setIsGroundtrackOpen] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
   const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
   const { controller } = useApp3D(importedState);
@@ -305,6 +307,7 @@ ${shareUrl}`);
     onDisplayOptionsToggle: () => setIsDisplayOptionsOpen(!isDisplayOptionsOpen),
     onSatelliteCreatorToggle: () => setIsSatelliteModalOpen(!isSatelliteModalOpen),
     onSimulationToggle: () => setIsSimulationOpen(!isSimulationOpen),
+    onGroundtrackToggle: () => setIsGroundtrackOpen(!isGroundtrackOpen),
     isChatVisible,
     isSatelliteListVisible,
     isDisplayOptionsOpen,
@@ -386,9 +389,11 @@ ${shareUrl}`);
       });
     }
   };
+  const groundtrackWindowProps = { isOpen: isGroundtrackOpen, onClose: () => setIsGroundtrackOpen(false) };
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <ToastContext.Provider value={{ showToast }}>
+        <SimulationProvider timeUtils={app3d?.timeUtils} displaySettings={displaySettings}>
         <Layout
           navbarProps={navbarProps}
           chatModalProps={chatModalProps}
@@ -399,11 +404,13 @@ ${shareUrl}`);
           shareModalProps={shareModalProps}
           authModalProps={authModalProps}
           simulationWindowProps={{ isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), satellites: Object.values(satellites) }}
+          groundtrackWindowProps={groundtrackWindowProps}
           earthPointModalProps={earthPointModalProps}
         >
           {/* Main app content (canvas, etc.) */}
           <canvas id="three-canvas" className="absolute inset-0 z-0" />
         </Layout>
+        </SimulationProvider>
         <Toast ref={toastRef} />
       </ToastContext.Provider>
     </ThemeProvider>

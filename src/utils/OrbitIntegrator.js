@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { Constants } from './Constants.js';
 
 /**
@@ -40,7 +39,7 @@ export function computeAccel(pos, bodies, perturbationScale = 1.0) {
 }
 
 // Atmospheric drag constants and model
-const ATMOSPHERE_CUTOFF_ALTITUDE = 40000; // 100 km in meters
+const ATMOSPHERE_CUTOFF_ALTITUDE = 120000; // 100 km in meters
 const DEFAULT_BALLISTIC_COEFFICIENT = 100; // kg/m^2, typical satellite ballistic coefficient
 
 /**
@@ -158,23 +157,25 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, pert
     // Batch size for yielding to event loop (~20 chunks)
     const batchSize = Math.max(1, Math.floor(numPoints / 20));
     for (let i = 0; i < numPoints; i++) {
-        const { pos: newPos, vel: newVel } = adaptiveIntegrate(pos, vel, dt, bodies, perturbationScale);
+        // Pass sensitivityScale to adaptiveIntegrate
+        const sensitivityScale = Constants.sensitivityScale !== undefined ? Constants.sensitivityScale : 1.0;
+        const { pos: newPos, vel: newVel } = adaptiveIntegrate(pos, vel, dt, bodies, perturbationScale, undefined, undefined, sensitivityScale);
         pos = newPos;
         vel = newVel;
         const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
         if (r <= Constants.earthRadius + ATMOSPHERE_CUTOFF_ALTITUDE) {
-            const atmPts = propagateAtmosphere(pos, vel, bodies, 300, 1);
-            points.push(...atmPts);
+            // Perform atmospheric reentry propagation at 1 s resolution for accurate trajectory
+            if (typeof onProgress === 'function') onProgress(i / numPoints);
+            const atmPtsWithTime = await propagateAtmosphere(pos, vel, bodies, 300, 1);
+            // Append reentry points to the trajectory
+            for (const pt of atmPtsWithTime) {
+                points.push({ position: pt.position, timeOffset: dt * i + pt.timeOffset });
+            }
             if (typeof onProgress === 'function') onProgress(1);
             break;
         }
-        points.push(
-            new THREE.Vector3(
-                pos[0] * Constants.metersToKm * Constants.scale,
-                pos[1] * Constants.metersToKm * Constants.scale,
-                pos[2] * Constants.metersToKm * Constants.scale
-            )
-        );
+        // Return position in meters (ECI) and time offset in seconds
+        points.push({ position: pos.slice(), timeOffset: dt * (i + 1) });
         // Report progress and yield in batches
         if (typeof onProgress === 'function' && ((i + 1) % batchSize === 0 || i === numPoints - 1)) {
             onProgress((i + 1) / numPoints);
@@ -185,15 +186,22 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, pert
     return points;
 }
 
-// Simple fixed-step atmospheric propagation (Euler), returns Three.Vector3 points
-export function propagateAtmosphere(pos0, vel0, bodies, maxSeconds = 300, dt = 1, ballisticCoefficient = DEFAULT_BALLISTIC_COEFFICIENT) {
+// Simple fixed-step atmospheric propagation (Euler), returns Three.Vector3 points asynchronously
+export async function propagateAtmosphere(pos0, vel0, bodies, maxSeconds = 300, dt = 1, ballisticCoefficient = DEFAULT_BALLISTIC_COEFFICIENT) {
     let pos = pos0.slice();
     let vel = vel0.slice();
     const pts = [];
     const steps = Math.ceil(maxSeconds / dt);
+    const ATMOS_YIELD_BATCH = 20; // yield control every N steps
     for (let i = 0; i < steps; i++) {
+        const currentTimeOffset = dt * (i + 1);
+        // periodically yield to avoid blocking worker thread
+        if (i > 0 && i % ATMOS_YIELD_BATCH === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
         // gravity + drag
-        const grav = computeAccel(pos, bodies, 1.0);
+        const perturbationScale = Constants.perturbationScale !== undefined ? Constants.perturbationScale : 1.0;
+        const grav = computeAccel(pos, bodies, perturbationScale);
         const drag = computeDragAcceleration(pos, vel, ballisticCoefficient);
         // semi-implicit Euler
         vel[0] += (grav[0] + drag[0]) * dt;
@@ -204,11 +212,8 @@ export function propagateAtmosphere(pos0, vel0, bodies, maxSeconds = 300, dt = 1
         pos[2] += vel[2] * dt;
         const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
         if (r <= Constants.earthRadius) break;
-        pts.push(new THREE.Vector3(
-            pos[0] * Constants.metersToKm * Constants.scale,
-            pos[1] * Constants.metersToKm * Constants.scale,
-            pos[2] * Constants.metersToKm * Constants.scale
-        ));
+        // Return position in meters (ECI) and time offset in seconds
+        pts.push({ position: pos.slice(), timeOffset: currentTimeOffset });
     }
     return pts;
 }

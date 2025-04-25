@@ -22,6 +22,15 @@ export class SatelliteManager {
         this._toMetersFactor = 1 / (Constants.metersToKm * Constants.scale);
         // Default scale for dynamic integration tolerance based on force magnitude
         this.sensitivityScale = 1.0;
+        // --- Optimization additions ---
+        this._moonPosM = new THREE.Vector3();
+        this._sunPosM = new THREE.Vector3();
+        this._earthBody = { position: new THREE.Vector3(0, 0, 0), mass: Constants.earthMass };
+        this._moonBody = { position: this._moonPosM, mass: Constants.moonMass };
+        this._sunBody = { position: this._sunPosM, mass: Constants.sunMass };
+        this._lastPhysicsWorkerUpdate = 0;
+        this._physicsWorkerUpdateInterval = 50; // 20Hz
+        this._pendingSatelliteListUpdate = false;
     }
 
     /**
@@ -82,96 +91,98 @@ export class SatelliteManager {
      * Update all satellites (called from animation loop).
      */
     updateAll(currentTime, realDeltaTime, warpedDeltaTime) {
+        const nowPerf = performance.now();
         // Sync timeWarp with physics worker if changed
         const currentTimeWarp = this.app3d.timeUtils.timeWarp;
         if (this.physicsWorker && this.workerInitialized && this._lastTimeWarp !== currentTimeWarp) {
             this.setTimeWarp(currentTimeWarp);
             this._lastTimeWarp = currentTimeWarp;
         }
-        // Update dynamic body positions (Earth at origin, Moon) in physicsWorker for n-body
+        // --- Optimization: throttle physics worker updates ---
         if (this.physicsWorker && this.workerInitialized && this.app3d.moon) {
-            // Get absolute world positions for Moon and Sun (km-scale) and convert to meters
-            const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
-            const worldMoon = new THREE.Vector3();
-            moonMesh.getWorldPosition(worldMoon);
-            const factor = this._toMetersFactor;
-            const moonPosM = { x: worldMoon.x * factor, y: worldMoon.y * factor, z: worldMoon.z * factor };
-            const sunMesh = this.app3d.sun && this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun?.sunLight;
-            let sunPosM;
-            if (sunMesh) {
-                const worldSun = new THREE.Vector3();
-                sunMesh.getWorldPosition(worldSun);
-                sunPosM = { x: worldSun.x * factor, y: worldSun.y * factor, z: worldSun.z * factor };
-            } else {
-                sunPosM = { x: 0, y: 0, z: 0 };
+            if (!this._lastPhysicsWorkerUpdate || nowPerf - this._lastPhysicsWorkerUpdate > this._physicsWorkerUpdateInterval) {
+                // Get absolute world positions for Moon and Sun (km-scale) and convert to meters
+                const moonMesh = this.app3d.moon.getMesh ? this.app3d.moon.getMesh() : this.app3d.moon.moonMesh;
+                moonMesh.getWorldPosition(this._moonPosM);
+                this._moonPosM.multiplyScalar(this._toMetersFactor);
+                const sunMesh = this.app3d.sun && this.app3d.sun.sun ? this.app3d.sun.sun : this.app3d.sun?.sunLight;
+                if (sunMesh) {
+                    sunMesh.getWorldPosition(this._sunPosM);
+                    this._sunPosM.multiplyScalar(this._toMetersFactor);
+                } else {
+                    this._sunPosM.set(0, 0, 0);
+                }
+                this.physicsWorker.postMessage({
+                    type: 'updateBodies',
+                    data: {
+                        earthPosition: { x: 0, y: 0, z: 0 },
+                        moonPosition: { x: this._moonPosM.x, y: this._moonPosM.y, z: this._moonPosM.z },
+                        sunPosition: { x: this._sunPosM.x, y: this._sunPosM.y, z: this._sunPosM.z }
+                    }
+                });
+                this._lastPhysicsWorkerUpdate = nowPerf;
             }
-            this.physicsWorker.postMessage({
-                type: 'updateBodies',
-                data: { earthPosition: { x: 0, y: 0, z: 0 }, moonPosition: moonPosM, sunPosition: sunPosM }
-            });
         }
-        // Update satellites
-        Object.values(this._satellites).forEach(satellite => {
-            satellite.timeWarp = currentTimeWarp;
-            if (satellite.updateSatellite) {
-                satellite.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
-            }
-        });
-        
+        // --- Optimization: cache bodies array ---
+        const bodies = [this._earthBody, this._moonBody, this._sunBody];
+        // --- Optimization: single satellite loop ---
+        const sats = Object.values(this._satellites);
         // Throttled orbit path updates
         const showOrbits = this.app3d.getDisplaySetting('showOrbits');
-        const nowPerf = performance.now();
         const orbitUpdateRate = this.app3d.getDisplaySetting('orbitUpdateInterval');
         const orbitIntervalMs = 1000 / orbitUpdateRate;
         const shouldUpdatePaths = showOrbits && (!this._lastOrbitUpdateTime || nowPerf - this._lastOrbitUpdateTime >= orbitIntervalMs);
-        // Predefine gravity bodies once
-        const factor2 = this._toMetersFactor;
-        const earthBody = { position: new THREE.Vector3(0, 0, 0), mass: Constants.earthMass };
-        let moonPosM = new THREE.Vector3();
-        if (this.app3d.moon) {
-            const moonMesh = this.app3d.moon.getMesh?.() || this.app3d.moon.moonMesh;
-            moonPosM.set(
-                moonMesh.position.x * factor2,
-                moonMesh.position.y * factor2,
-                moonMesh.position.z * factor2
-            );
-        }
-        const moonBody = { position: moonPosM, mass: Constants.moonMass };
-        let sunPosM = new THREE.Vector3();
-        if (this.app3d.sun) {
-            const sunMesh = this.app3d.sun.getMesh?.() || this.app3d.sun.sunLight;
-            sunPosM.set(
-                sunMesh.position.x * factor2,
-                sunMesh.position.y * factor2,
-                sunMesh.position.z * factor2
-            );
-        }
-        const sunBody = { position: sunPosM, mass: Constants.sunMass };
-        Object.values(this._satellites).forEach(sat => {
-            const path = sat.orbitPath;
-            if (!path) return;
-            path.setVisible(showOrbits);
-            if (!shouldUpdatePaths) return;
-            const els = sat.getOrbitalElements();
-            if (!els) return;
-            const predictionPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
+        const predictionPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
+        const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
+        const currentSimTime = this.app3d.timeUtils.getSimulatedTime();
+        let anyPathUpdated = false;
+        for (let i = 0; i < sats.length; ++i) {
+            const sat = sats[i];
+            sat.timeWarp = currentTimeWarp;
+            if (sat.updateSatellite) {
+                sat.updateSatellite(currentTime, realDeltaTime, warpedDeltaTime);
+            }
+            // --- Orbit/groundtrack updates ---
+            if (sat.orbitPath) {
+                sat.orbitPath.setVisible(showOrbits);
+            }
+            const shouldUpdateGroundtrack = shouldUpdatePaths; // same throttle for both
+            if (!shouldUpdatePaths && !shouldUpdateGroundtrack) continue;
+            const els = sat.getOrbitalElements && sat.getOrbitalElements();
+            if (!els) continue;
             let periodSec;
             if (predictionPeriods > 0) {
                 const basePeriod = els.period;
                 periodSec = (basePeriod > 0 && isFinite(basePeriod))
                     ? basePeriod * predictionPeriods
-                    : Constants.secondsInDay * 7 * predictionPeriods;
+                    : Constants.secondsInDay * 30 * predictionPeriods;
             } else {
                 periodSec = els.period;
             }
-            const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
             const numPoints = (pointsPerPeriod > 0)
                 ? Math.ceil(pointsPerPeriod * (predictionPeriods > 0 ? predictionPeriods : 1))
-                : path._maxOrbitPoints;
-            path.update(sat.position.clone(), sat.velocity.clone(), sat.id,
-                [earthBody, moonBody, sunBody], periodSec, numPoints);
-        });
-        if (shouldUpdatePaths) this._lastOrbitUpdateTime = nowPerf;
+                : sat.orbitPath?._maxOrbitPoints || 180;
+            if (shouldUpdatePaths && sat.orbitPath) {
+                sat.orbitPath.update(sat.position, sat.velocity, sat.id, bodies, periodSec, numPoints);
+                anyPathUpdated = true;
+            }
+            if (shouldUpdateGroundtrack && sat.groundTrackPath) {
+                const startTimeMs = typeof currentSimTime === 'number' ? currentSimTime : currentSimTime.getTime();
+                sat.groundTrackPath.update(
+                    startTimeMs,
+                    sat.position, // Position is ECI in meters
+                    sat.velocity, // Velocity is ECI in m/s
+                    sat.id,
+                    bodies,
+                    periodSec,
+                    numPoints
+                );
+                anyPathUpdated = true;
+            }
+        }
+        if (anyPathUpdated && shouldUpdatePaths) {
+            this._lastOrbitUpdateTime = nowPerf;
+        }
     }
 
     /**
@@ -277,14 +288,19 @@ export class SatelliteManager {
      * Update React/UI with the current satellite list.
      */
     _updateSatelliteList() {
-        const satelliteData = Object.fromEntries(
-            Object.entries(this._satellites)
-                .filter(([, sat]) => sat && sat.id != null && sat.name)
-                .map(([id, sat]) => [id, { id: sat.id, name: sat.name }])
-        );
-        document.dispatchEvent(new CustomEvent('satelliteListUpdated', {
-            detail: { satellites: satelliteData }
-        }));
+        if (this._pendingSatelliteListUpdate) return;
+        this._pendingSatelliteListUpdate = true;
+        setTimeout(() => {
+            const satelliteData = Object.fromEntries(
+                Object.entries(this._satellites)
+                    .filter(([, sat]) => sat && sat.id != null && sat.name)
+                    .map(([id, sat]) => [id, { id: sat.id, name: sat.name }])
+            );
+            document.dispatchEvent(new CustomEvent('satelliteListUpdated', {
+                detail: { satellites: satelliteData }
+            }));
+            this._pendingSatelliteListUpdate = false;
+        }, 0);
     }
 
     /**

@@ -10,6 +10,9 @@ uniform float ambientIntensity; // Intensity of ambient light
 uniform float lightIntensity;   // Intensity of the main light source
 uniform float surfaceRadius;    // Radius of the planet's surface
 uniform float atmoRadius;       // Radius of the atmosphere
+uniform float densityScale;    // Global scale for atmospheric density
+uniform vec3 atmoColorNear;    // Color near surface
+uniform vec3 atmoColorFar;     // Color at outer atmosphere
 
 // Varying variables passed from vertex shader
 varying float fov;              // Field of view
@@ -77,10 +80,10 @@ float density(vec3 p, float ph) {
     float densityVariation = 1.0 - smoothstep(0.0, 0.15, h);
     
     // Simplified horizon enhancement
-    float horizonFactor = h * (1.0 - h * 3.33); // Optimized version of previous calculation
+    float horizonFactor = h * (1.0 - h * 3.33);
     horizonFactor = max(0.0, horizonFactor);
     
-    return density * densityVariation * (1.0 + horizonFactor * 0.5) * ph;
+    return density * densityVariation * (1.0 + horizonFactor * 0.5) * ph * densityScale;
 }
 
 // Optimized optical depth calculation
@@ -165,10 +168,10 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
     // Calculate horizon gradient
     float horizonGrad = calculateHorizonGradient(p, dir);
     
-    // Apply horizon effects to scatter
+    // gradient between near and far atmosphere colors
     vec3 horizonColor = mix(
-        vec3(1.0, 0.8, 0.6), // Warmer color near ground
-        vec3(1.0, 1.0, 1.0), // Normal color in space
+        atmoColorNear,
+        atmoColorFar,
         horizonGrad
     );
     scatter *= mix(1.2, 1.0, horizonGrad);

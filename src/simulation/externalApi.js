@@ -1,3 +1,5 @@
+import { getVisibleLocationsFromOrbitalElements as computeVisibleLocations } from '../satellites/createSatellite.js';
+
 /**
  * Sets up the minimal public API for external/AI integration.
  * This attaches a stable, minimal API to window.api for use by AI and external tools.
@@ -82,6 +84,14 @@ export function setupExternalApi(app3d) {
                 ascendingNode: (moon && moon.ascendingNode) || Constants.ascendingNode || (-11.26064 * Math.PI / 180),
                 argumentOfPeriapsis: (moon && moon.argumentOfPeriapsis) || Constants.argumentOfPeriapsis || (318.15 * Math.PI / 180)
             };
-        }
+        },
+        /**
+         * Compute visible ground locations over time from orbital elements.
+         * @param {Object} params { semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly, referenceFrame, locations, numPoints, numPeriods }
+         */
+        getVisibleLocationsFromOrbitalElements: (params) => {
+            const { locations, numPoints, numPeriods, ...orbitalParams } = params;
+            return computeVisibleLocations(app3d, orbitalParams, locations, { numPoints, numPeriods });
+        },
     };
 } 

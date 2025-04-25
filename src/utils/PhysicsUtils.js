@@ -2,6 +2,12 @@ import { Constants } from './Constants.js';
 import * as THREE from 'three';
 
 export class PhysicsUtils {
+    // Pre-calculate the inverse tilt quaternion for efficiency
+    static invTiltQuaternion = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1), // Un-tilt around Z-axis (Earth's axial tilt is applied around Z)
+        -THREE.MathUtils.degToRad(Constants.earthInclination) // Negative angle to invert the tilt
+    );
+
     static calculateGravitationalForce(m1, m2, r) {
         if (r === 0) {
             console.error('Distance r is zero, returning zero force to avoid division by zero.');
@@ -629,5 +635,27 @@ export class PhysicsUtils {
             periapsisRadial: rPeriapsis * Constants.metersToKm,
             apoapsisRadial: rApoapsis * Constants.metersToKm
         };
+    }
+
+    /**
+     * Convert a tilt-based ECI position to geodetic latitude and longitude.
+     * @param {THREE.Vector3} positionECI - Position in ECI (with tilt applied) in meters.
+     * @param {number} gmst - Greenwich sidereal time in radians.
+     */
+    static eciTiltToLatLon(positionECI, gmst) {
+        // Convert a tilt-based ECI pos to geodetic lat/lon (sim axes: Y-up polar axis)
+        // 1. Clone and remove axial tilt
+        const vec = positionECI.clone().applyQuaternion(PhysicsUtils.invTiltQuaternion);
+        // 2. Rotate by Earth's spin (GMST) around polar axis (Y)
+        vec.applyAxisAngle(new THREE.Vector3(0, 1, 0), -gmst);
+        // 3. Compute geodetic latitude and longitude: lat = asin(y/r), lon = atan2(z, x)
+        const r = vec.length();
+        const lat = THREE.MathUtils.radToDeg(Math.asin(vec.y / r));
+        // Calculate longitude in degrees, apply offset, and normalize to -180 to 180 range
+        let lon = THREE.MathUtils.radToDeg(Math.atan2(vec.z, vec.x)) - 190; // Adjust from 170° to 190° to fix the 20° eastward offset
+        // Normalize to -180 to 180 range
+        while (lon > 180) lon -= 360;
+        while (lon < -180) lon += 360;
+        return { lat, lon };
     }
 }

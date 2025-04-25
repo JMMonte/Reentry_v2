@@ -27,14 +27,15 @@ export function DeltaVSection({ vx, vy, vz, setVx, setVy, setVz, multP, multA, m
                         <Slider
                             value={[parseFloat(val) || 0]}
                             onValueChange={([v]) => setter(String(v))}
-                            min={-1000}
-                            max={1000}
+                            min={-5000}
+                            max={5000}
                             step={1}
                             className="mt-1"
                         />
                     </div>
                 );
             })}
+            {/* Show magnitude of the delta-V */}
             <div className="text-[10px] font-semibold mt-1">|ΔV|: {dvMag.toFixed(1)} m/s</div>
         </div>
     );

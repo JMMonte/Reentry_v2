@@ -14,6 +14,7 @@ import { SimulationWindow } from './ui/simulation/SimulationWindow';
 import { SatelliteManeuverWindow } from './ui/satellite/SatelliteManeuverWindow';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Button } from './ui/button';
+import { GroundtrackWindow } from './ui/groundtrack/GroundtrackWindow';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -206,6 +207,7 @@ ShareModal.propTypes = {
 };
 
 export function Layout({
+    groundtrackWindowProps,
     children,
     navbarProps,
     chatModalProps,
@@ -267,6 +269,12 @@ export function Layout({
                 <ShareModal {...shareModalProps} />
                 <AuthModal {...authModalProps} />
                 <SimulationWindow {...simulationWindowProps} />
+                {groundtrackWindowProps &&
+                    <GroundtrackWindow
+                        {...groundtrackWindowProps}
+                        satellites={satelliteListWindowProps.satellites}
+                    />
+                }
                 {maneuverSat && (
                     <SatelliteManeuverWindow
                         satellite={maneuverSat}
@@ -322,6 +330,10 @@ Layout.propTypes = {
         onClose: PropTypes.func.isRequired,
         satellites: PropTypes.array
     }).isRequired,
+    groundtrackWindowProps: PropTypes.shape({
+        isOpen: PropTypes.bool.isRequired,
+        onClose: PropTypes.func.isRequired
+    }),
     earthPointModalProps: PropTypes.shape({
         openModals: PropTypes.arrayOf(
             PropTypes.shape({

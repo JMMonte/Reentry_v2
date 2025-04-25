@@ -46,7 +46,7 @@ export class ManeuverNode {
                         lineDistances[i] = 0;
                     } else {
                         const x1 = posAttr.getX(i - 1), y1 = posAttr.getY(i - 1), z1 = posAttr.getZ(i - 1);
-                        const x2 = posAttr.getX(i),     y2 = posAttr.getY(i),     z2 = posAttr.getZ(i);
+                        const x2 = posAttr.getX(i), y2 = posAttr.getY(i), z2 = posAttr.getZ(i);
                         const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
                         lineDistances[i] = lineDistances[i - 1] + Math.sqrt(dx * dx + dy * dy + dz * dz);
                     }
@@ -54,7 +54,15 @@ export class ManeuverNode {
                 geom.setAttribute('lineDistance', new THREE.BufferAttribute(lineDistances, 1));
                 geom.attributes.lineDistance.needsUpdate = true;
                 // Detect atmosphere entry/exit (100 km above surface)
-                const pts = e.detail.orbitPoints.map(p => new THREE.Vector3(p.x, p.y, p.z));
+                const flatPts = e.detail.orbitPoints;
+                const pts = [];
+                if (flatPts && flatPts.length > 0) {
+                    for (let i = 0; i < flatPts.length; i += 3) {
+                        if (i + 2 < flatPts.length) { // Ensure we have x, y, and z
+                            pts.push(new THREE.Vector3(flatPts[i], flatPts[i + 1], flatPts[i + 2]));
+                        }
+                    }
+                }
                 const boundary = (Constants.earthRadius + 100000) * Constants.metersToKm * Constants.scale;
                 // clear previous markers
                 this._atmMarkers.forEach(m => { this._atmMarkerGroup.remove(m); m.geometry.dispose(); m.material.dispose(); });
@@ -62,7 +70,7 @@ export class ManeuverNode {
                 let inside = false;
                 let entryPos, exitPos;
                 for (let i = 1; i < pts.length; i++) {
-                    const r0 = pts[i-1].length();
+                    const r0 = pts[i - 1].length();
                     const r1 = pts[i].length();
                     if (!inside && r0 > boundary && r1 <= boundary) {
                         entryPos = pts[i].clone(); inside = true;
@@ -94,7 +102,7 @@ export class ManeuverNode {
         this.predictedOrbit.setVisible(this.app3d.getDisplaySetting('showOrbits'));
         // Update predicted orbit when user changes prediction parameters
         this._paramChangeHandler = (e) => {
-            if (e.detail.key === 'orbitPredictionInterval' || e.detail.key === 'orbitPointsPerOrbit') {
+            if (e.detail.key === 'orbitPredictionInterval' || e.detail.key === 'orbitPointsPerPeriod') {
                 this.update();
             }
         };
@@ -126,7 +134,7 @@ export class ManeuverNode {
         };
 
         // Create arrow for deltaV direction (unit length)
-        const dir = this.deltaV.clone().lengthSq() > 0 ? this.deltaV.clone().normalize() : new THREE.Vector3(1,0,0);
+        const dir = this.deltaV.clone().lengthSq() > 0 ? this.deltaV.clone().normalize() : new THREE.Vector3(1, 0, 0);
         this.arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(), 1, this.satellite.color);
 
         // Group mesh and arrow for positioning
@@ -228,7 +236,7 @@ export class ManeuverNode {
         } else if (typeof origPeriod === 'number' && origPeriod > 0) {
             basePeriod = origPeriod;
         } else {
-            basePeriod = 24 * 3600; // one-day fallback in seconds
+            basePeriod = Constants.secondsInDay * 10; // thirty-day fallback in seconds
         }
         const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
         const periodFactor = (typeof predPeriods === 'number' && predPeriods > 0) ? predPeriods : 1;
@@ -238,6 +246,9 @@ export class ManeuverNode {
         // Update predicted orbit from post-burn state (throttled)
         const nowPerf = performance.now();
         if (!this._lastPredTime || nowPerf - this._lastPredTime > 100) {
+            // Store orbital period and velocity for UI consumption
+            this.predictedOrbit._orbitPeriod = basePeriod;
+            this.predictedOrbit._currentVelocity = velVec.clone();
             this.predictedOrbit.update(
                 posVec,
                 velVec,
