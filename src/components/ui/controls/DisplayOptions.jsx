@@ -27,10 +27,14 @@ import PropTypes from 'prop-types';
 
 // Default settings with display options metadata
 export const defaultSettings = {
-  showGrid: { value: true, name: 'Grid', icon: Grid },
+  showGrid: { value: true, name: 'Grid', icon: Grid,
+    description: 'Show a grid overlay to help with navigation and orientation.'
+  },
   showVectors: { value: false, name: 'Vectors', icon: Move },
   showAxis: { value: false, name: 'Axis', icon: Move },
-  enableFXAA: { value: true, name: 'Anti-Aliasing (FXAA)', icon: Settings2 },
+  enableFXAA: { value: true, name: 'Anti-Aliasing (FXAA)', icon: Settings2,
+    description: 'Enable fast approximate anti-aliasing for smoother rendering.'
+  },
   showSurfaceLines: { value: true, name: 'Terrain Lines', icon: Mountain },
   showCities: { value: false, name: 'Cities', icon: Building2 },
   showAirports: { value: false, name: 'Airports', icon: Plane },
@@ -44,7 +48,9 @@ export const defaultSettings = {
   showMoonSurfaceLines: { value: false, name: 'Moon Surface Lines', icon: Mountain },
   showSatVectors: { value: false, name: 'Satellite Vectors', icon: Circle },
   showOrbits: { value: true, name: 'Satellite Orbits', icon: Circle },
-  showSatConnections: { value: false, name: 'Satellite Connections', icon: Link },
+  showSatConnections: { value: false, name: 'Satellite Connections', icon: Link,
+    description: 'Show lines connecting satellites with other satellites.'
+  },
   orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (s)', icon: Circle, type: 'number', min: 1, max: 120, step: 1,
     description: 'Seconds between orbit path recalculation for each satellite.'
   },
@@ -63,7 +69,15 @@ export const defaultSettings = {
   sensitivityScale: { value: 1.0, name: 'Sensitivity Scale', icon: LineChart, type: 'number', min: 0, max: 10, step: 0.1,
     description: `Higher values tighten the integrator's error tolerance in high-force areas (e.g. atmosphere), increasing accuracy but slowing propagation; lower values speed up simulation with less accuracy.`
   },
-  ambientLight: { value: 0.01, name: 'Ambient Light Intensity', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05 },
+  ambientLight: { value: 0.01, name: 'Ambient Light Intensity', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05,
+    description: 'Controls the overall brightness of the scene.'
+  },
+  nonKeplerianFallbackDays: { value: 10, name: 'Non-Keplerian Propagation (days)', icon: Circle, type: 'number', min: 1, max: 3650, step: 1,
+    description: 'Fallback propagation window (in days) for open or undefined-period orbits.'
+  },
+  hyperbolicPointsMultiplier: { value: 10, name: 'Hyperbolic Point Multiplier', icon: Circle, type: 'number', min: 1, max: 100, step: 1,
+    description: 'Multiplier for sample points on hyperbolic trajectories to improve tail resolution.'
+  },
 };
 
 // Group settings by category
@@ -90,7 +104,7 @@ const categories = [
   },
   {
     name: 'Simulation',
-    keys: ['orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'physicsTimeStep', 'perturbationScale', 'sensitivityScale'],
+    keys: ['orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'physicsTimeStep', 'perturbationScale', 'sensitivityScale', 'nonKeplerianFallbackDays', 'hyperbolicPointsMultiplier'],
   },
   {
     name: 'Lighting',

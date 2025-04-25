@@ -1,7 +1,5 @@
 // Worker for managing orbit path for satellites
 
-console.log('[orbitPathWorker] Worker loaded');
-
 // Map of satellite id -> orbit path points array
 let orbitPathMap = {};
 
@@ -16,7 +14,17 @@ let lastProgressTime = 0;
 
 self.onmessage = async function (e) {
     if (e.data.type === 'UPDATE_ORBIT') {
-        const { id, position, velocity, bodies, period, numPoints, seq, perturbationScale } = e.data;
+        const { id, position, velocity, bodies, period, numPoints, seq, perturbationScale, allowFullEllipse } = e.data;
+        // Override max integrator step in Constants to use the full segment dt
+        Constants.timeStep = period / numPoints;
+        // Adjust integrator sensitivity: outside Earth's SOI use looser tolerances
+        const r2 = position.x * position.x + position.y * position.y + position.z * position.z;
+        const r = Math.sqrt(r2);
+        if (r > Constants.earthSOI) {
+            Constants.sensitivityScale = 0.1;
+        } else {
+            Constants.sensitivityScale = 1.0;
+        }
         if (id === undefined || id === null) return;
         // Multi-body propagation using shared integrator
         const initPos = [position.x, position.y, position.z];
@@ -35,7 +43,8 @@ self.onmessage = async function (e) {
                     lastProgressTime = now;
                     self.postMessage({ type: 'ORBIT_PATH_PROGRESS', id, progress, seq });
                 }
-            }
+            },
+            allowFullEllipse // now dynamic, not hardcoded
         );
         // Convert ECI meter positions to scaled KM positions for Three.js
         // and store as a transferable Float32Array [x1,y1,z1, x2,y2,z2,...]
@@ -61,6 +70,5 @@ self.onmessage = async function (e) {
         } else {
             orbitPathMap = {};
         }
-        console.log('[orbitPathWorker] Reset orbit path map');
     }
 }; 

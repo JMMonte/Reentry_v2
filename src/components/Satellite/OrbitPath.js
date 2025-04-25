@@ -7,10 +7,12 @@ export class OrbitPath {
         // Sequence numbering to drop stale updates
         this._seq = 0;
         this._lastSeq = -Infinity;
-        // Start with zero-length buffer; will rebuild per update
+        // Preallocate a fixed-size buffer to avoid resizing and GL errors
+        this._capacity = 20000; // max number of orbit points
         this._maxOrbitPoints = 0;
         const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(0);
+        // Allocate full capacity upfront
+        const positions = new Float32Array(this._capacity * 3);
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setDrawRange(0, 0);
         this.orbitLine = new THREE.Line(
@@ -72,7 +74,7 @@ export class OrbitPath {
         // Note: handlers are keyed by satellite ID after first update call
     }
 
-    update(position, velocity, id, bodies = [], period, numPoints = this._maxOrbitPoints) {
+    update(position, velocity, id, bodies = [], period, numPoints = this._maxOrbitPoints, allowFullEllipse = false) {
         // Store period and number of points for simulation data window
         this._period = period;
         this._numPoints = numPoints;
@@ -103,7 +105,8 @@ export class OrbitPath {
             period,
             numPoints,
             perturbationScale,
-            seq
+            seq,
+            allowFullEllipse
         });
     }
 
@@ -163,7 +166,7 @@ export class OrbitPath {
         let total = 0;
         const segLengths = [];
         for (let i = 0; i < vecs.length - 1; i++) {
-            const d = vecs[i].distanceTo(vecs[i+1]);
+            const d = vecs[i].distanceTo(vecs[i + 1]);
             segLengths.push(d);
             total += d;
         }
@@ -171,7 +174,7 @@ export class OrbitPath {
         // Subdivide segments longer than threshold
         const subdiv = [vecs[0].clone()];
         for (let i = 0; i < vecs.length - 1; i++) {
-            const p0 = vecs[i], p1 = vecs[i+1];
+            const p0 = vecs[i], p1 = vecs[i + 1];
             const d = segLengths[i];
             const n = threshold > 0 ? Math.ceil(d / threshold) : 1;
             for (let j = 1; j <= n; j++) {
@@ -182,7 +185,7 @@ export class OrbitPath {
         // Build cumulative distances on subdivided points
         const cum = [0];
         for (let i = 0; i < subdiv.length - 1; i++) {
-            cum.push(cum[i] + subdiv[i].distanceTo(subdiv[i+1]));
+            cum.push(cum[i] + subdiv[i].distanceTo(subdiv[i + 1]));
         }
         // Sample targetCount points evenly along total arc
         const resampled = [];
@@ -230,6 +233,42 @@ export class OrbitPath {
                     ptsArr[j * 3 + 2] = rawPts[j].z;
                 }
             }
+            const pointCount = Math.floor(ptsArr.length / 3);
+            const objPts = new Array(pointCount);
+            for (let i = 0; i < pointCount; i++) {
+                objPts[i] = { x: ptsArr[i * 3], y: ptsArr[i * 3 + 1], z: ptsArr[i * 3 + 2] };
+            }
+            const multiplier = window.app3d?.getDisplaySetting('hyperbolicPointsMultiplier') ?? 1;
+            const soiWorld = Constants.earthSOI * Constants.metersToKm * Constants.scale;
+            const weightedPts = [];
+            if (objPts.length > 0) {
+                weightedPts.push(objPts[0]);
+                for (let i = 0; i < objPts.length - 1; i++) {
+                    const p0 = objPts[i];
+                    const p1 = objPts[i + 1];
+                    const midX = (p0.x + p1.x) / 2;
+                    const midY = (p0.y + p1.y) / 2;
+                    const midZ = (p0.z + p1.z) / 2;
+                    const dMid = Math.sqrt(midX * midX + midY * midY + midZ * midZ);
+                    const subdivCount = dMid <= soiWorld ? multiplier : 1;
+                    for (let j = 1; j <= subdivCount; j++) {
+                        const t = j / subdivCount;
+                        weightedPts.push({
+                            x: p0.x + (p1.x - p0.x) * t,
+                            y: p0.y + (p1.y - p0.y) * t,
+                            z: p0.z + (p1.z - p0.z) * t
+                        });
+                    }
+                }
+            }
+            const resampled = this._resampleArcLength(weightedPts, this._numPoints);
+            ptsArr = new Float32Array(resampled.length * 3);
+            for (let i = 0; i < resampled.length; i++) {
+                ptsArr[i * 3] = resampled[i].x;
+                ptsArr[i * 3 + 1] = resampled[i].y;
+                ptsArr[i * 3 + 2] = resampled[i].z;
+            }
+
             const numPts = Math.floor(ptsArr.length / 3);
             // Store flat array of coordinates
             this.orbitPoints = ptsArr;
@@ -247,15 +286,11 @@ export class OrbitPath {
             const origin = this._currentPosition.clone().multiplyScalar(k);
             const count = numPts + 1;
             this._maxOrbitPoints = numPts;
-            // Prepare geometry and attribute buffers
-            let geometry = this.orbitLine.geometry;
-            let positionAttr = geometry.attributes.position;
-            if (!positionAttr || positionAttr.count !== count) {
-                const positions = new Float32Array(count * 3);
-                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-                positionAttr = geometry.attributes.position;
-            }
-            geometry.setDrawRange(0, count);
+            // Use preallocated buffer: clamp draw range
+            const geometry = this.orbitLine.geometry;
+            const positionAttr = geometry.attributes.position;
+            const drawCount = Math.min(count, this._capacity);
+            geometry.setDrawRange(0, drawCount);
             const array = positionAttr.array;
             // Set current position as first point
             array[0] = origin.x;

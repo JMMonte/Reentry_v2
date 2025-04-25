@@ -101,7 +101,21 @@ export class SimulationStateManager {
                     params.position && typeof params.position.x === 'number' && typeof params.position.y === 'number' && typeof params.position.z === 'number' &&
                     params.velocity && typeof params.velocity.x === 'number' && typeof params.velocity.y === 'number' && typeof params.velocity.z === 'number'
                 ) {
-                    this.createSatellite(params);
+                    const sat = this.createSatellite(params);
+                    // Restore maneuver nodes if present
+                    if (params.maneuverNodes && Array.isArray(params.maneuverNodes)) {
+                        params.maneuverNodes.forEach(nodeData => {
+                            const time = new Date(nodeData.time);
+                            const dv = new THREE.Vector3(nodeData.dv.x, nodeData.dv.y, nodeData.dv.z);
+                            const node = sat.addManeuverNode(time, dv);
+                            // Store localDV for consistent editing
+                            node.localDV = dv.clone();
+                            // Initialize node visualization
+                            if (typeof node.update === 'function') {
+                                node.update();
+                            }
+                        });
+                    }
                 } else {
                     console.warn('Skipped satellite with invalid position/velocity:', params);
                 }
@@ -169,6 +183,15 @@ export class SimulationStateManager {
                     velocity: { x: sat.velocity.x, y: sat.velocity.y, z: sat.velocity.z },
                     mass: sat.mass,
                     color: sat.color,
+                    // Include maneuver nodes for persistence
+                    maneuverNodes: sat.maneuverNodes.map(node => ({
+                        time: node.time.toISOString(),
+                        dv: {
+                            x: node.localDV ? node.localDV.x : node.deltaV.x,
+                            y: node.localDV ? node.localDV.y : node.deltaV.y,
+                            z: node.localDV ? node.localDV.z : node.deltaV.z
+                        }
+                    })),
                     // Add more satellite properties as needed
                 };
             }

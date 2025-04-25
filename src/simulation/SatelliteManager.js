@@ -132,8 +132,9 @@ export class SatelliteManager {
         const orbitUpdateRate = this.app3d.getDisplaySetting('orbitUpdateInterval');
         const orbitIntervalMs = 1000 / orbitUpdateRate;
         const shouldUpdatePaths = showOrbits && (!this._lastOrbitUpdateTime || nowPerf - this._lastOrbitUpdateTime >= orbitIntervalMs);
-        const predictionPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
+        const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
         const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
+        const nonKeplerianFallbackDays = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 30;        
         const currentSimTime = this.app3d.timeUtils.getSimulatedTime();
         let anyPathUpdated = false;
         for (let i = 0; i < sats.length; ++i) {
@@ -150,20 +151,53 @@ export class SatelliteManager {
             if (!shouldUpdatePaths && !shouldUpdateGroundtrack) continue;
             const els = sat.getOrbitalElements && sat.getOrbitalElements();
             if (!els) continue;
-            let periodSec;
-            if (predictionPeriods > 0) {
-                const basePeriod = els.period;
-                periodSec = (basePeriod > 0 && isFinite(basePeriod))
-                    ? basePeriod * predictionPeriods
-                    : Constants.secondsInDay * 30 * predictionPeriods;
+            // Determine sampling for orbits
+            const ecc = els.eccentricity || 0;
+            const isHyperbolic = ecc >= 1;
+            const isNearParabolic = !isHyperbolic && ecc >= 0.99; // Check for near-parabolic
+            // Prediction periods (use 1 if 0)
+            const effectivePeriods = (typeof predPeriods === 'number' && predPeriods > 0) ? predPeriods : 1;
+            let periodSec, numPoints;
+            
+            // Use fixed window for hyperbolic AND near-parabolic orbits
+            if (isHyperbolic || isNearParabolic) {
+                const fallbackDays = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 1;
+                periodSec = fallbackDays * Constants.secondsInDay;
+                // Base sample count
+                let rawPoints = pointsPerPeriod * fallbackDays;
+                // Only apply hyperbolic multiplier inside Earth's SOI (also apply to near-parabolic for consistency)
+                const rMeters = sat.position.length();
+                if (rMeters <= Constants.earthSOI) {
+                    const hyperMultiplier = this.app3d.getDisplaySetting('hyperbolicPointsMultiplier') ?? 1;
+                    rawPoints *= hyperMultiplier;
+                }
+                numPoints = Math.ceil(rawPoints);
             } else {
-                periodSec = els.period;
+                // Normal Elliptical: full orbit(s) based on period and prediction settings
+                const basePeriod = (els.period > 0 && isFinite(els.period))
+                    ? els.period
+                    : nonKeplerianFallbackDays * Constants.secondsInDay;
+                periodSec = basePeriod * effectivePeriods;
+                numPoints = pointsPerPeriod > 0
+                    ? Math.ceil(pointsPerPeriod * effectivePeriods)
+                    : (sat.orbitPath?._maxOrbitPoints || 180);
             }
-            const numPoints = (pointsPerPeriod > 0)
-                ? Math.ceil(pointsPerPeriod * (predictionPeriods > 0 ? predictionPeriods : 1))
-                : sat.orbitPath?._maxOrbitPoints || 180;
+            // Reduce sample count outside Earth's SOI to speed up remote trajectories
+            const rMeters = sat.position.length();
+            if (rMeters > Constants.earthSOI) {
+                numPoints = Math.max(10, Math.ceil(numPoints * 0.2));
+            }
             if (shouldUpdatePaths && sat.orbitPath) {
-                sat.orbitPath.update(sat.position, sat.velocity, sat.id, bodies, periodSec, numPoints);
+                // Always show full orbit ellipse (ignore atmospheric cut-off)
+                sat.orbitPath.update(
+                    sat.position,
+                    sat.velocity,
+                    sat.id,
+                    bodies,
+                    periodSec,
+                    numPoints,
+                    true // allowFullEllipse: bypass atmosphere stop
+                );
                 anyPathUpdated = true;
             }
             if (shouldUpdateGroundtrack && sat.groundTrackPath) {

@@ -35,6 +35,9 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
         maneuverMode, setManeuverMode,
         targetSmaKm, setTargetSmaKm,
         targetEcc, setTargetEcc,
+        targetIncDeg, setTargetIncDeg,
+        targetLANDeg, setTargetLANDeg,
+        targetArgPDeg, setTargetArgPDeg,
         generateHohmann,
         isAdding, setIsAdding,
         computeNextPeriapsis,
@@ -114,12 +117,13 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
             }
             isOpen={true}
             onClose={onClose}
-            defaultPosition={{ x: 20, y: 80 }}
+            defaultPosition={{ x: 20, y: 56 }}
             resizable={true}
             defaultWidth={500}
-            defaultHeight={470}
+            defaultHeight="calc(100vh - 88px)"
             minWidth={350}
             minHeight={200}
+            maxHeight="calc(100vh - 88px)"
         >
             {/* Main layout: Vertical flex */}
             <div className="flex flex-col h-full">
@@ -192,14 +196,20 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
                             setTargetSmaKm={setTargetSmaKm}
                             targetEcc={targetEcc}
                             setTargetEcc={setTargetEcc}
-                            generateHohmann={generateHohmann}
-                            onCancel={() => setManeuverMode('manual')}
-                            onComplete={() => setManeuverMode('manual')}
+                            targetIncDeg={targetIncDeg}
+                            setTargetIncDeg={setTargetIncDeg}
+                            targetLANDeg={targetLANDeg}
+                            setTargetLANDeg={setTargetLANDeg}
+                            targetArgPDeg={targetArgPDeg}
+                            setTargetArgPDeg={setTargetArgPDeg}
                             manualBurnTime={manualBurnTime}
                             setManualBurnTime={setManualBurnTime}
                             findBestBurnTime={findBestBurnTime}
                             findNextPeriapsis={findNextPeriapsis}
                             findNextApoapsis={findNextApoapsis}
+                            generateHohmann={generateHohmann}
+                            onCancel={() => setManeuverMode('manual')}
+                            onComplete={() => setManeuverMode('manual')}
                         />
                     )}
                 </div>

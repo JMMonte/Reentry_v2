@@ -1,4 +1,6 @@
 import { Constants } from './Constants.js';
+import * as THREE from 'three';
+import { PhysicsUtils } from './PhysicsUtils.js';
 
 /**
  * Compute gravitational acceleration (m/s^2) on a satellite at position pos (array [x,y,z])
@@ -124,8 +126,8 @@ export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0
         let errMax = 0;
         // Calculate magnitude of the first stage acceleration (gravity + drag)
         const accMag = Math.sqrt(a1[0]*a1[0] + a1[1]*a1[1] + a1[2]*a1[2]);
-        // Adjust absolute tolerance based on acceleration magnitude
-        const dynamicAbsTol = absTol / (1 + sensitivityScale * accMag);
+        // Use logarithmic sensitivity scaling to moderate tolerance under strong forces
+        const dynamicAbsTol = absTol / (1 + Math.log1p(sensitivityScale * accMag));
         for (let j = 0; j < 3; j++) {
             const scp = dynamicAbsTol + relTol * Math.max(Math.abs(pos[j]), Math.abs(pos1[j]));
             errMax = Math.max(errMax, Math.abs(errPos[j]) / scp);
@@ -149,10 +151,17 @@ export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0
  * Generate an orbit path via multiple adaptiveIntegrate steps.
  * Returns an array of THREE.Vector3 in Three.js units (m→km→scale).
  */
-export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbationScale = 1.0, onProgress) {
+export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbationScale = 1.0, onProgress, allowFullEllipse = false) {
     const dt = period / numPoints;
     let pos = pos0.slice();
     let vel = vel0.slice();
+    // Determine if trajectory is hyperbolic using orbital elements
+    const oe = PhysicsUtils.calculateDetailedOrbitalElements(
+        new THREE.Vector3(pos0[0], pos0[1], pos0[2]),
+        new THREE.Vector3(vel0[0], vel0[1], vel0[2]),
+        Constants.earthGravitationalParameter
+    );
+    const isHyperbolic = oe && oe.eccentricity >= 1;
     const points = [];
     // Batch size for yielding to event loop (~20 chunks)
     const batchSize = Math.max(1, Math.floor(numPoints / 20));
@@ -163,7 +172,8 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, pert
         pos = newPos;
         vel = newVel;
         const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
-        if (r <= Constants.earthRadius + ATMOSPHERE_CUTOFF_ALTITUDE) {
+        // Apply atmospheric reentry only for elliptical trajectories
+        if (!allowFullEllipse && !isHyperbolic && r <= Constants.earthRadius + ATMOSPHERE_CUTOFF_ALTITUDE) {
             // Perform atmospheric reentry propagation at 1 s resolution for accurate trajectory
             if (typeof onProgress === 'function') onProgress(i / numPoints);
             const atmPtsWithTime = await propagateAtmosphere(pos, vel, bodies, 300, 1);

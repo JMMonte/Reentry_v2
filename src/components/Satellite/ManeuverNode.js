@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { adaptiveIntegrate } from '../../utils/OrbitIntegrator.js';
 import { Constants } from '../../utils/Constants.js';
 import { OrbitPath } from './OrbitPath.js';
+import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 
 export class ManeuverNode {
     constructor({ satellite, time, deltaV }) {
@@ -215,47 +216,58 @@ export class ManeuverNode {
         // Update node position in Three.js units
         const scaleK = Constants.metersToKm * Constants.scale;
         this.group.position.set(posArr[0] * scaleK, posArr[1] * scaleK, posArr[2] * scaleK);
+        
         // Predict post-burn orbit via shared worker
-        const velVec = new THREE.Vector3(velArr[0], velArr[1], velArr[2]);
         const posVec = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
+        const velVec = new THREE.Vector3(velArr[0], velArr[1], velArr[2]);
         const bodiesForWorker = bodiesAll.map(b => ({ position: new THREE.Vector3(b.position.x, b.position.y, b.position.z), mass: b.mass }));
-        // Compute period window: try Keplerian period after burn, then original, then one-day fallback
-        const mu = Constants.G * Constants.earthMass;
-        const rMag = posVec.length();
-        const vMag = velVec.length();
-        const energy = 0.5 * vMag * vMag - mu / rMag;
-        let keplerPeriod = 0;
-        if (energy < 0) {
-            const a = -mu / (2 * energy);
-            if (a > 0) keplerPeriod = 2 * Math.PI * Math.sqrt(a * a * a / mu);
-        }
-        const origPeriod = this.satellite.getOrbitalElements()?.period;
-        let basePeriod;
-        if (keplerPeriod > 0) {
-            basePeriod = keplerPeriod;
-        } else if (typeof origPeriod === 'number' && origPeriod > 0) {
-            basePeriod = origPeriod;
+        
+        // --- Calculate POST-BURN orbital elements for period calculation --- 
+        const postBurnOE = PhysicsUtils.calculateDetailedOrbitalElements(
+            posVec, 
+            velVec, 
+            Constants.earthGravitationalParameter
+        );
+        const isHyperbolic = postBurnOE && postBurnOE.eccentricity >= 1;
+        const isNearParabolic = postBurnOE && !isHyperbolic && postBurnOE.eccentricity >= 0.99; // Check for near-parabolic
+
+        // UI settings
+        const fallbackDays = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 30;
+        const hyperMultiplier = this.app3d.getDisplaySetting('hyperbolicPointsMultiplier') ?? 1;
+        let periodSec, numPts;
+        
+        // Use fixed window for hyperbolic AND near-parabolic orbits
+        if (isHyperbolic || isNearParabolic) {
+            periodSec = fallbackDays * Constants.secondsInDay;
+            const ptsPer = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
+            // Use hyperMultiplier for near-parabolic as well for denser sampling near Earth
+            numPts = Math.ceil(ptsPer * fallbackDays * hyperMultiplier); 
         } else {
-            basePeriod = Constants.secondsInDay * 10; // thirty-day fallback in seconds
+            // Normal Elliptical: use POST-BURN orbital period scaled by prediction periods
+            const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
+            const periodFactor = (typeof predPeriods === 'number' && predPeriods > 0) ? predPeriods : 1;
+            // Use computed POST-BURN period or fallback
+            const basePeriod = (postBurnOE && postBurnOE.period > 0 && isFinite(postBurnOE.period))
+                ? postBurnOE.period
+                : (fallbackDays * Constants.secondsInDay);
+            periodSec = basePeriod * periodFactor;
+            const ptsPer = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
+            numPts = Math.ceil(ptsPer * periodFactor);
         }
-        const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
-        const periodFactor = (typeof predPeriods === 'number' && predPeriods > 0) ? predPeriods : 1;
-        const windowSeconds = basePeriod * periodFactor;
-        const ptsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
-        const numPts = Math.ceil(ptsPerPeriod * periodFactor);
         // Update predicted orbit from post-burn state (throttled)
         const nowPerf = performance.now();
         if (!this._lastPredTime || nowPerf - this._lastPredTime > 100) {
             // Store orbital period and velocity for UI consumption
-            this.predictedOrbit._orbitPeriod = basePeriod;
+            this.predictedOrbit._orbitPeriod = periodSec;
             this.predictedOrbit._currentVelocity = velVec.clone();
             this.predictedOrbit.update(
                 posVec,
                 velVec,
                 this.predictionId,
                 bodiesForWorker,
-                windowSeconds,
-                numPts
+                periodSec,
+                numPts,
+                true // allowFullEllipse: always show full ellipse for preview/post-burn orbits
             );
             this._lastPredTime = nowPerf;
         }

@@ -13,21 +13,21 @@ export function SimulationWindow({ isOpen, onClose }) {
     const [isLoading, setIsLoading] = useState(true);
     // Define available metrics
     const metricsList = [
-        { key: 'altitude', label: 'Altitude' },
-        { key: 'velocity', label: 'Velocity' },
-        { key: 'lat', label: 'Latitude' },
-        { key: 'lon', label: 'Longitude' },
-        { key: 'semiMajorAxis', label: 'SMA' },
-        { key: 'eccentricity', label: 'Ecc' },
-        { key: 'inclination', label: 'Inc' },
-        { key: 'argumentOfPeriapsis', label: 'AoP' },
-        { key: 'trueAnomaly', label: 'TA' },
-        { key: 'density', label: 'Density' },
-        { key: 'dragAcc', label: 'Drag Accel' },
-        { key: 'perturbation', label: 'Perturbation' },
-        { key: 'pertAccEarth', label: 'Perturb Earth' },
-        { key: 'pertAccMoon', label: 'Perturb Moon' },
-        { key: 'pertAccSun', label: 'Perturb Sun' }
+        { key: 'altitude', label: 'Altitude', color: '#1f77b4' },
+        { key: 'velocity', label: 'Velocity', color: '#ff7f0e' },
+        { key: 'lat', label: 'Latitude', color: '#2ca02c' },
+        { key: 'lon', label: 'Longitude', color: '#d62728' },
+        { key: 'semiMajorAxis', label: 'SMA', color: '#9467bd' },
+        { key: 'eccentricity', label: 'Ecc', color: '#8c564b' },
+        { key: 'inclination', label: 'Inc', color: '#e377c2' },
+        { key: 'argumentOfPeriapsis', label: 'AoP', color: '#7f7f7f' },
+        { key: 'trueAnomaly', label: 'TA', color: '#bcbd22' },
+        { key: 'density', label: 'Density', color: '#17becf' },
+        { key: 'dragAcc', label: 'Drag Accel', color: '#393b79' },
+        { key: 'perturbation', label: 'Perturbation', color: '#637939' },
+        { key: 'pertAccEarth', label: 'Perturb Earth', color: '#8c6d31' },
+        { key: 'pertAccMoon', label: 'Perturb Moon', color: '#843c39' },
+        { key: 'pertAccSun', label: 'Perturb Sun', color: '#7b4173' }
     ];
     // Default metrics selection and axis assignments
     const [selectedMetrics, setSelectedMetrics] = useState([metricsList[0].key, metricsList[1].key]);
@@ -249,6 +249,7 @@ export function SimulationWindow({ isOpen, onClose }) {
                             <label key={metric.key} className="inline-flex items-center gap-1">
                                 <input
                                     type="checkbox"
+                                    style={{ accentColor: metric.color }}
                                     checked={selectedMetrics.includes(metric.key)}
                                     onChange={() => setSelectedMetrics(prev => prev.includes(metric.key) ? prev.filter(m => m !== metric.key) : [...prev, metric.key])}
                                 />
@@ -296,7 +297,7 @@ export function SimulationWindow({ isOpen, onClose }) {
                                         yAxisId={metric === primaryMetric ? 'left' : metric === secondaryMetric ? 'right' : metric}
                                         type="monotone"
                                         dataKey={metric}
-                                        stroke={metric === primaryMetric ? 'steelblue' : '#ccc'}
+                                        stroke={metricsList.find(mt => mt.key === metric)?.color}
                                         dot={false}
                                     />
                                 ))}

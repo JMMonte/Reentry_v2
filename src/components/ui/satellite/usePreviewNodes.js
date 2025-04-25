@@ -135,7 +135,7 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
                 hohmannNodeRefs.current = [];
             }
         };
-    }, [maneuverMode, satellite, timeUtils, getHohmannPreviewData, predPeriods, ptsPerPeriod, isAdding, selectedIndex]);
+    }, [maneuverMode, isAdding, selectedIndex, predPeriods, ptsPerPeriod]);
 
     // Update preview node execution time when time inputs or mode change (including apsis modes)
     useEffect(() => {
