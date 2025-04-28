@@ -1,173 +1,323 @@
 import * as THREE from 'three';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
+import { Constants } from '../utils/Constants.js';
 import { PlanetSurface } from './PlanetSurface.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
 
 export class Planet {
-    constructor(scene, renderer, timeManager, textureManager, config) {
+    /** Registry holding every created planet */
+    static instances = [];
+
+    /**
+     * @param {THREE.Scene}          scene
+     * @param {THREE.WebGLRenderer}  renderer
+     * @param {TimeManager}          timeManager
+     * @param {TextureManager}       textureManager
+     * @param {object}               config
+     */
+    constructor(scene, renderer, timeManager, textureManager, config = {}) {
+        const {
+            name,
+            radius,
+            orbitRadius = 0,
+            oblateness = 0,
+            rotationPeriod = 86_400,
+            orbitalPeriod = 365.25,
+            tilt = 0,
+            meshRes = 128,
+            atmosphereRes = 128,
+            cloudRes = 128,
+            atmosphereThickness = 0,
+            cloudThickness = 0,
+            orbitElements = null,
+            addSurface = false,
+            surfaceOptions = {},
+            primaryGeojsonData,
+            stateGeojsonData,
+            cityData,
+            airportsData,
+            spaceportsData,
+            groundStationsData,
+            observatoriesData,
+            missionsData,
+            addLight = false,
+            lightOptions = {},
+            materials: materialOverrides = {},
+            symbol
+        } = config;
+
+        /* ---------- basic setup ---------- */
+        this.name = name;
+        this.symbol = symbol || name.charAt(0);
         this.scene = scene;
         this.renderer = renderer;
         this.timeManager = timeManager;
         this.textureManager = textureManager;
-        this.config = config;
-        // Setup material manager per planet configuration
+        this.orbitRadius = orbitRadius;
+        this.radius = radius;
+        this.oblateness = oblateness;
+        this.rotationPeriod = rotationPeriod;
+        this.orbitalPeriod = orbitalPeriod;
+        this.tilt = tilt;
+        this.meshRes = meshRes;
+        this.atmosphereRes = atmosphereRes;
+        this.cloudRes = cloudRes;
+        this.atmosphereThickness = atmosphereThickness;
+        this.cloudThickness = cloudThickness;
+        this.orbitElements = orbitElements;
+        this.rotationOffset = 0; // prime-meridian alignment
+
+        Planet.instances.push(this);
+
+        /* ---------- materials ---------- */
         this.materials = new PlanetMaterials(
             this.textureManager,
             this.renderer.capabilities,
-            this.config.materials || {}
+            materialOverrides
         );
 
-        // Core properties
-        this.radius = config.radius;
-        this.oblateness = config.oblateness || 0;
-        this.rotationPeriod = config.rotationPeriod || 86400;
-        this.orbitalPeriod = config.orbitalPeriod || 365.25;
-        this.tilt = config.tilt || 0;
-        this.meshRes = config.meshRes || 64;
-        this.atmosphereRes = config.atmosphereRes || 64;
-        this.cloudRes = config.cloudRes || 64;
-        this.atmosphereThickness = config.atmosphereThickness || 0;
-        this.cloudThickness = config.cloudThickness || 0;
+        /* ---------- scene graph ---------- */
+        this.#initGroups();
+        this.#initMaterials();
+        this.#initMeshes();
 
-        // Build the planet
-        this.initializeGroups();
-        this.initializeMaterials();
-        this.initializeMeshes();
-
-        // Optional surface features
-        if (config.addSurface) {
+        /* ---------- optional surface ---------- */
+        if (addSurface) {
             this.surface = new PlanetSurface(
                 this.planetMesh,
                 this.radius,
-                config.primaryGeojsonData,
-                config.stateGeojsonData,
-                config.surfaceOptions
+                primaryGeojsonData,
+                stateGeojsonData,
+                surfaceOptions
             );
-            this.addSurfaceDetails(config);
+            this.#addSurfaceDetails({
+                surfaceOptions,
+                cityData,
+                airportsData,
+                spaceportsData,
+                groundStationsData,
+                observatoriesData,
+                missionsData
+            });
         }
 
-        // Optional light
-        if (config.addLight) {
-            this.addLightSource(config.lightOptions);
-        }
+        /* ---------- optional planet light ---------- */
+        if (addLight) this.#addLight(lightOptions);
     }
 
-    initializeGroups() {
+    /* ===== private helpers ===== */
+
+    /** orbit → tilt → spin hierarchy & axial tilt */
+    #initGroups() {
+        this.orbitGroup = new THREE.Group();
         this.tiltGroup = new THREE.Group();
         this.rotationGroup = new THREE.Group();
+
         this.tiltGroup.add(this.rotationGroup);
-        this.scene.add(this.tiltGroup);
-        this.tiltGroup.rotation.z = THREE.MathUtils.degToRad(this.tilt);
+        this.orbitGroup.add(this.tiltGroup);
+        this.scene.add(this.orbitGroup);
+
+        // Z-axis = north pole (Three.js default is Y-up)
+        this.orbitGroup.rotation.set(-Math.PI / 2, 0, Math.PI);
+        this.tiltGroup.rotation.x = THREE.MathUtils.degToRad(this.tilt);
+
+        if (this.orbitElements) this.#drawOrbitLine();
     }
 
-    initializeMaterials() {
-        // Use PlanetMaterials manager to create all materials
+    #initMaterials() {
         this.surfaceMaterial = this.materials.getSurfaceMaterial();
-        this.cloudMaterial = this.materials.getCloudMaterial();
-        if (this.atmosphereThickness > 0) {
-            this.atmosphereMaterial = this.materials.getAtmosphereMaterial(this.radius);
-        }
-        this.glowMaterial = this.materials.getGlowMaterial();
+        this.cloudMaterial = this.cloudThickness > 0 ? this.materials.getCloudMaterial() : null;
+        this.atmosphereMaterial = this.atmosphereThickness > 0
+            ? this.materials.getAtmosphereMaterial(this.radius)
+            : null;
+        this.glowMaterial = this.materials.getGlowMaterial(this.radius, { atmoHeight: this.atmosphereThickness });
     }
 
-    initializeMeshes() {
+    #initMeshes() {
         const scaledRadius = this.radius * (1 - this.oblateness);
-        this.planetGeometry = new THREE.SphereGeometry(scaledRadius, this.meshRes, this.meshRes);
-        this.planetMesh = new THREE.Mesh(this.planetGeometry, this.surfaceMaterial);
-        this.planetMesh.renderOrder = 0;
+
+        /* --- planet core --- */
+        this.planetMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(scaledRadius, this.meshRes, this.meshRes),
+            this.surfaceMaterial
+        );
         this.rotationGroup.add(this.planetMesh);
 
-        if (this.atmosphereThickness > 0) {
-            const atmoRadius = this.radius + this.atmosphereThickness;
-            const atmoGeo = new THREE.SphereGeometry(atmoRadius, this.atmosphereRes, this.atmosphereRes);
-            this.atmosphereMesh = new THREE.Mesh(atmoGeo, this.atmosphereMaterial);
+        /* --- atmosphere shell --- */
+        if (this.atmosphereMaterial) {
+            this.atmosphereMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(this.radius + this.atmosphereThickness, this.atmosphereRes, this.atmosphereRes),
+                this.atmosphereMaterial
+            );
             this.atmosphereMesh.renderOrder = -1;
             this.rotationGroup.add(this.atmosphereMesh);
         }
 
+        /* --- cloud shell --- */
         if (this.cloudMaterial) {
-            const cloudRadius = this.radius + this.cloudThickness;
-            const cloudGeo = new THREE.SphereGeometry(cloudRadius, this.cloudRes, this.cloudRes);
-            this.cloudMesh = new THREE.Mesh(cloudGeo, this.cloudMaterial);
+            this.cloudMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(this.radius + this.cloudThickness, this.cloudRes, this.cloudRes),
+                this.cloudMaterial
+            );
             this.cloudMesh.renderOrder = 1;
             this.rotationGroup.add(this.cloudMesh);
         }
 
-        // Glow layer
+        /* --- glow shell --- */
         if (this.glowMaterial) {
-            const { scale, renderOrder } = this.materials.getGlowParameters();
-            const glowRadius = this.radius * (1 + scale);
-            const glowGeo = new THREE.SphereGeometry(glowRadius, this.meshRes, this.meshRes);
-            this.glowMesh = new THREE.Mesh(glowGeo, this.glowMaterial);
+            const { renderOrder } = this.materials.getGlowParameters();
+            const glowRadius = this.radius + this.atmosphereThickness;
+            this.glowMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(glowRadius, this.meshRes, this.meshRes),
+                this.glowMaterial
+            );
             this.glowMesh.renderOrder = renderOrder;
             this.rotationGroup.add(this.glowMesh);
         }
-
-        // align meshes
-        this.rotationGroup.children.forEach(mesh => mesh.rotateY(1.5 * Math.PI));
     }
 
-    addSurfaceDetails(config) {
-        const opts = (config.surfaceOptions || {});
-        if (opts.addLatitudeLines) this.surface.addLatitudeLines(opts.latitudeStep || 10);
-        if (opts.addLongitudeLines) this.surface.addLongitudeLines(opts.longitudeStep || 10);
-        if (opts.addCountryBorders) this.surface.addCountryBorders();
-        if (opts.addStates) this.surface.addStates();
-        if (opts.addCities && config.cityData) this.surface.addInstancedPoints(config.cityData, this.surface.materials.cityPoint, 'cities');
-        if (opts.addAirports && config.airportsData) this.surface.addInstancedPoints(config.airportsData, this.surface.materials.airportPoint, 'airports');
-        if (opts.addSpaceports && config.spaceportsData) this.surface.addInstancedPoints(config.spaceportsData, this.surface.materials.spaceportPoint, 'spaceports');
-        if (opts.addGroundStations && config.groundStationsData) this.surface.addInstancedPoints(config.groundStationsData, this.surface.materials.groundStationPoint, 'groundStations');
-        if (opts.addObservatories && config.observatoriesData) this.surface.addInstancedPoints(config.observatoriesData, this.surface.materials.observatoryPoint, 'observatories');
-    }
+    #addSurfaceDetails({
+        surfaceOptions: o = {},
+        cityData,
+        airportsData,
+        spaceportsData,
+        groundStationsData,
+        observatoriesData,
+        missionsData
+    }) {
+        const {
+            addLatitudeLines = false,
+            latitudeStep = 10,
+            addLongitudeLines = false,
+            longitudeStep = 10,
+            addCountryBorders = false,
+            addStates = false,
+            addCities = false,
+            addAirports = false,
+            addSpaceports = false,
+            addGroundStations = false,
+            addObservatories = false,
+            addMissions = false
+        } = o;
 
-    addLightSource(opts = {}) {
-        const color = opts.color || 0xffffff;
-        const intensity = opts.intensity || 1;
-        const distance = opts.distance;
-        const decay = opts.decay || 1;
-        const light = new THREE.PointLight(color, intensity, distance);
-        light.position.set(0, 0, 0);
-        light.decay = decay;
-        this.planetMesh.add(light);
-        if (opts.helper) {
-            const helper = new THREE.PointLightHelper(light, opts.helperSize || 5);
-            this.scene.add(helper);
+        if (addLatitudeLines) this.surface.addLatitudeLines(latitudeStep);
+        if (addLongitudeLines) this.surface.addLongitudeLines(longitudeStep);
+        if (addCountryBorders) this.surface.addCountryBorders();
+        if (addStates) this.surface.addStates();
+
+        const layers = [
+            [addCities, cityData, 'cityPoint', 'cities'],
+            [addAirports, airportsData, 'airportPoint', 'airports'],
+            [addSpaceports, spaceportsData, 'spaceportPoint', 'spaceports'],
+            [addGroundStations, groundStationsData, 'groundStationPoint', 'groundStations'],
+            [addObservatories, observatoriesData, 'observatoryPoint', 'observatories'],
+            [addMissions, missionsData, 'missionPoint', 'missions']
+        ];
+
+        for (const [flag, data, matKey, layer] of layers) {
+            if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
         }
     }
 
-    updateRotation() {
-        const totalRot = 2 * Math.PI * (this.timeManager.fractionOfDay + (this.timeManager.dayOfYear / this.orbitalPeriod));
-        this.rotationGroup.rotation.y = totalRot;
+    #addLight({
+        color = 0xffffff,
+        intensity = 1,
+        distance,
+        decay = 1,
+        position = new THREE.Vector3(),
+        helper = false,
+        helperSize = 5
+    } = {}) {
+        const light = new THREE.PointLight(color, intensity, distance, decay);
+        light.position.copy(position);
+        this.orbitGroup.add(light);
+
+        if (helper) this.scene.add(new THREE.PointLightHelper(light, helperSize));
     }
 
-    updateLightDirection() {
+    #drawOrbitLine() {
+        const points = [];
+        const samples = 360;
+        const periodSeconds = (this.orbitalPeriod ?? 27.321661) * Constants.secondsInDay;
+
+        for (let i = 0; i <= samples; i++) {
+            points.push(
+                PhysicsUtils.getPositionAtTime(this.orbitElements, (i / samples) * periodSeconds)
+            );
+        }
+
+        this.orbitLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(points),
+            new THREE.LineBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.5 })
+        );
+        this.orbitLine.frustumCulled = false;
+        this.scene.add(this.orbitLine);
+    }
+
+    /* ===== frame updates ===== */
+
+    update() {
+        this.#updateOrbit();
+        this.#updateRotation();
+        this.#updateLightDirection();
+    }
+
+    #updateOrbit() {
+        if (this.orbitElements) {
+            const JD = this.timeManager.getJulianDate();
+            const tSeconds = (JD - 2_451_545.0) * Constants.secondsInDay; // since J2000
+            this.orbitGroup.position.copy(
+                PhysicsUtils.getPositionAtTime(this.orbitElements, tSeconds)
+            );
+        } else if (this.orbitRadius > 0) {
+            const dayFrac = this.timeManager.dayOfYear + this.timeManager.fractionOfDay;
+            const angle = (2 * Math.PI * dayFrac) / this.orbitalPeriod;
+            this.orbitGroup.position.set(
+                this.orbitRadius * Math.cos(angle),
+                0,
+                this.orbitRadius * Math.sin(angle)
+            );
+        }
+    }
+
+    #updateRotation() {
+        const JD = this.timeManager.getJulianDate();
+        const secs = (JD - 2_451_545.0) * Constants.secondsInDay;
+        this.rotationGroup.rotation.y =
+            (2 * Math.PI * (secs / this.rotationPeriod % 1)) + this.rotationOffset;
+    }
+
+    #updateLightDirection() {
         const sun = this.timeManager.getSunPosition();
+
         if (this.atmosphereMaterial) {
-            this.atmosphereMaterial.uniforms.lightPosition.value.set(sun.x, sun.y, sun.z);
+            this.atmosphereMaterial.uniforms.lightPosition.value.copy(sun);
         }
-        if (this.glowMaterial && this.glowMaterial.uniforms.sunDirection) {
-            const sunDir = new THREE.Vector3(sun.x, sun.y, sun.z).normalize();
-            this.glowMaterial.uniforms.sunDirection.value.copy(sunDir);
+        if (this.glowMaterial?.uniforms?.lightPosition) {
+            this.glowMaterial.uniforms.lightPosition.value.copy(sun);
         }
     }
 
-    convertEciToGround(positionECI) {
+    /* ===== public helpers & toggles ===== */
+
+    getMesh() { return this.planetMesh; }
+    getTiltGroup() { return this.tiltGroup; }
+    getSurfaceTexture() { return this.planetMesh?.material?.map; }
+
+    setSurfaceLinesVisible(v) { this.surface?.setSurfaceLinesVisible(v); }
+    setCountryBordersVisible(v) { this.surface?.setCountryBordersVisible(v); }
+    setStatesVisible(v) { this.surface?.setStatesVisible(v); }
+    setCitiesVisible(v) { this.surface?.setCitiesVisible(v); }
+    setAirportsVisible(v) { this.surface?.setAirportsVisible(v); }
+    setSpaceportsVisible(v) { this.surface?.setSpaceportsVisible(v); }
+    setGroundStationsVisible(v) { this.surface?.setGroundStationsVisible(v); }
+    setObservatoriesVisible(v) { this.surface?.setObservatoriesVisible(v); }
+    setMissionsVisible(v) { this.surface?.setMissionsVisible(v); }
+
+    /** Convert ECI to surface lat/lon */
+    convertEciToGround(posEci) {
         const gmst = PhysicsUtils.calculateGMST(Date.now());
-        const ecef = PhysicsUtils.eciToEcef(positionECI, gmst);
+        const ecef = PhysicsUtils.eciToEcef(posEci, gmst);
         return PhysicsUtils.calculateIntersectionWithEarth(ecef);
     }
-
-    getTiltGroup() {
-        return this.tiltGroup;
-    }
-
-    getMesh() {
-        return this.planetMesh;
-    }
-
-    // Add an update method for simulation loop integration
-    update() {
-        this.updateRotation();
-        this.updateLightDirection();
-    }
-} 
+}

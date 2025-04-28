@@ -1,0 +1,453 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 11",
+                "mission": "Tranquility Base",
+                "agency": "NASA",
+                "landing_date": "1969-07-20T20:17:40Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    23.47314,
+                    0.67416
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 12",
+                "mission": "Statio Cognita",
+                "agency": "NASA",
+                "landing_date": "1969-11-19T06:54:35Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -23.42157,
+                    -3.01239
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 14",
+                "mission": "Fra Mauro",
+                "agency": "NASA",
+                "landing_date": "1971-02-05T09:18:11Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -17.47194,
+                    -3.64589
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 15",
+                "mission": "Hadley–Apennine",
+                "agency": "NASA",
+                "landing_date": "1971-07-30T22:16:29Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    3.63386,
+                    26.13222
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 16",
+                "mission": "Descartes Highlands",
+                "agency": "NASA",
+                "landing_date": "1972-04-21T02:23:35Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    15.50110,
+                    -8.97340
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Apollo 17",
+                "mission": "Taurus–Littrow",
+                "agency": "NASA",
+                "landing_date": "1972-12-11T19:54:58Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    30.77230,
+                    20.19110
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Surveyor 1",
+                "mission": "Oceanus Procellarum",
+                "agency": "NASA",
+                "landing_date": "1966-06-02T06:17:36Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -43.33980,
+                    -2.47450
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Surveyor 3",
+                "mission": "Oceanus Procellarum",
+                "agency": "NASA",
+                "landing_date": "1967-04-20T00:04:53Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -23.41800,
+                    -3.01620
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Surveyor 5",
+                "mission": "Mare Tranquillitatis",
+                "agency": "NASA",
+                "landing_date": "1967-09-11T00:46:44Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    23.19430,
+                    1.45510
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Surveyor 6",
+                "mission": "Sinus Medii",
+                "agency": "NASA",
+                "landing_date": "1967-11-10T01:01:04Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -1.42750,
+                    0.47420
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Surveyor 7",
+                "mission": "Tycho North Rim",
+                "agency": "NASA",
+                "landing_date": "1968-01-10T01:05:36Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -11.51270,
+                    -40.98120
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 9",
+                "mission": "Oceanus Procellarum",
+                "agency": "USSR",
+                "landing_date": "1966-02-03T18:45:30Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -64.37000,
+                    7.08000
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 13",
+                "mission": "Oceanus Procellarum",
+                "agency": "USSR",
+                "landing_date": "1966-12-24T18:01:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -62.05000,
+                    18.87000
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 16",
+                "mission": "Mare Fecunditatis",
+                "agency": "USSR",
+                "landing_date": "1970-09-20T05:18:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    56.36380,
+                    -0.51370
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 17",
+                "mission": "Mare Imbrium (Lander)",
+                "agency": "USSR",
+                "landing_date": "1970-11-17T03:47:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -35.00163,
+                    38.23764
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Lunokhod 1",
+                "mission": "Mare Imbrium (Rover)",
+                "agency": "USSR",
+                "landing_date": "1970-11-17T04:28:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -35.00810,
+                    38.31500
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 20",
+                "mission": "Mare Fecunditatis",
+                "agency": "USSR",
+                "landing_date": "1972-02-21T19:19:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    56.62420,
+                    3.78630
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 21",
+                "mission": "Le Monnier crater (Lander)",
+                "agency": "USSR",
+                "landing_date": "1973-01-15T22:35:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    30.40760,
+                    25.99940
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Lunokhod 2",
+                "mission": "Le Monnier crater (Rover)",
+                "agency": "USSR",
+                "landing_date": "1973-01-15T23:14:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    30.92220,
+                    25.83230
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 23",
+                "mission": "Mare Crisium (sample)",
+                "agency": "USSR",
+                "landing_date": "1974-11-06T22:31:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    62.15110,
+                    12.66670
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Luna 24",
+                "mission": "Mare Crisium (sample)",
+                "agency": "USSR",
+                "landing_date": "1976-08-18T01:12:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    62.21290,
+                    12.71420
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Chang'e 3",
+                "mission": "Mare Imbrium",
+                "agency": "China",
+                "landing_date": "2013-12-14T13:11:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -19.51170,
+                    44.12140
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Chang'e 4",
+                "mission": "Von Kármán crater (farside)",
+                "agency": "China",
+                "landing_date": "2019-01-03T02:26:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    177.58850,
+                    -45.45610
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Chang'e 5",
+                "mission": "Mons Rümker",
+                "agency": "China",
+                "landing_date": "2020-12-01T15:11:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -51.91610,
+                    43.05760
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Chang'e 6",
+                "mission": "Apollo crater (farside)",
+                "agency": "China",
+                "landing_date": "2024-06-04T22:23:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -153.98520,
+                    -41.63850
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Chandrayaan-3",
+                "mission": "Shiv Shakti Point",
+                "agency": "ISRO",
+                "landing_date": "2023-08-23T12:34:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    32.32000,
+                    -69.37410
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "SLIM",
+                "mission": "Shioli crater vicinity",
+                "agency": "JAXA",
+                "landing_date": "2024-01-19T15:20:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    25.25100,
+                    -13.31600
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "IM-1 Odysseus",
+                "mission": "Malapert A region",
+                "agency": "Intuitive Machines / NASA",
+                "landing_date": "2024-02-22T23:23:00Z"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    1.44000,
+                    -80.13000
+                ]
+            }
+        }
+    ]
+}

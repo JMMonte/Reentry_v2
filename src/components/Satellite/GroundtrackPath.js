@@ -1,106 +1,113 @@
+// GroundtrackPath.js
+
 /**
- * Manages ground track calculation for a single satellite using a shared worker.
+ * Computes a satellite’s ground-track in a Web-Worker and streams the
+ * polyline back as {lat, lon} pairs.
+ *
+ * Design notes
+ * • One shared worker for the whole app ↓ memory & thread count  
+ * • Map-based handler lookup (O(1))  
+ * • Sequence numbers drop late worker replies  
+ * • No DOM churn; loader overlay omitted (keep UI free of duplicates)
  */
 export class GroundtrackPath {
-    constructor() {
-        this.points = []; // Array of {lat, lon}
-        this._seq = 0;
-        this._lastSeq = -Infinity;
-        this._currentId = null;
+    /* ───────────── static shared infra ───────────── */
+    static _worker = null;               // Web-Worker instance
+    static _handlers = new Map();          // Map<satId, GroundtrackPath>
 
-        // Use a shared worker across all GroundtrackPath instances
-        if (!GroundtrackPath.sharedWorker) {
-            GroundtrackPath.sharedWorker = new Worker(
-                new URL('../../workers/groundtrackWorker.js', import.meta.url),
-                { type: 'module' }
-            );
-            GroundtrackPath.sharedWorker.onmessage = GroundtrackPath._dispatchMessage;
-            GroundtrackPath.handlers = {}; // Static map { id: handler }
-        }
-        this.worker = GroundtrackPath.sharedWorker;
+    static _initSharedWorker() {
+        GroundtrackPath._worker = new Worker(
+            new URL('../../workers/groundtrackWorker.js', import.meta.url),
+            { type: 'module' },
+        );
+
+        GroundtrackPath._worker.onmessage = (e) => {
+            const { type, id } = e.data;
+            if (type === 'GROUNDTRACK_PROGRESS') { /* add spinner here if wanted */ return; }
+            if (type === 'GROUNDTRACK_UPDATE') {
+                GroundtrackPath._handlers.get(id)?._onWorkerUpdate(e.data);
+            }
+        };
     }
 
+    /* ───────────── constructor / fields ─────────── */
+    constructor() {
+        if (!GroundtrackPath._worker) GroundtrackPath._initSharedWorker();
+
+        /** @type {{lat:number, lon:number}[]} */
+        this.points = [];
+
+        this._seq = 0;           // outbound
+        this._lastSeq = -Infinity;   // inbound
+        this._currentId = null;
+        this.worker = GroundtrackPath._worker;
+    }
+
+    /* ───────────── public API ───────────── */
+
     /**
-     * Request an update for the ground track.
-     * @param {Date|number} startTime - Current simulation time (Date object or timestamp ms).
-     * @param {THREE.Vector3} position - Current ECI position (meters).
-     * @param {THREE.Vector3} velocity - Current ECI velocity (m/s).
-     * @param {string|number} id - Satellite ID.
-     * @param {Array<{position: THREE.Vector3, mass: number}>} bodies - Perturbing bodies.
-     * @param {number} period - Orbital period (seconds) for propagation duration.
-     * @param {number} numPoints - Number of points to calculate.
+     * Ask the worker to (re)compute a ground-track polyline.
+     * @param {Date|number} startTime – epoch ms or Date
+     * @param {THREE.Vector3} position – ECI metres
+     * @param {THREE.Vector3} velocity – ECI m/s
+     * @param {string|number} id – satellite id
+     * @param {{position:THREE.Vector3, mass:number}[]} bodies
+     * @param {number} period – seconds to propagate
+     * @param {number} numPoints – target segment count
      */
-    update(startTime, position, velocity, id, bodies, period, numPoints) {
+    update(startTime, position, velocity, id, bodies = [],
+        period, numPoints) {
+
         this._currentId = id;
-        // Ensure the handler for this ID is registered
-        if (!GroundtrackPath.handlers[id]) {
-            GroundtrackPath.handlers[id] = this._handleMessage;
-        }
+        GroundtrackPath._handlers.set(id, this);
 
         const seq = ++this._seq;
-        const serialBodies = bodies.map(body => ({
-            // Ensure positions are plain objects for worker message
-            position: { x: body.position.x, y: body.position.y, z: body.position.z },
-            mass: body.mass
+
+        const bodiesMsg = bodies.map(b => ({
+            position: { x: b.position.x, y: b.position.y, z: b.position.z },
+            mass: b.mass,
         }));
-        
-        // Pass timestamp (ms) for startTime
-        const startTimestamp = typeof startTime === 'number' ? startTime : startTime.getTime();
+
+        const epochMs = typeof startTime === 'number'
+            ? startTime
+            : startTime.getTime();
 
         this.worker.postMessage({
             type: 'UPDATE_GROUNDTRACK',
             id,
-            startTime: startTimestamp,
-            position: { x: position.x, y: position.y, z: position.z }, // Pass plain object
-            velocity: { x: velocity.x, y: velocity.y, z: velocity.z }, // Pass plain object
-            bodies: serialBodies,
+            seq,
+            startTime: epochMs,
+            position: { x: position.x, y: position.y, z: position.z },
+            velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
+            bodies: bodiesMsg,
             period,
             numPoints,
-            seq
         });
     }
 
-    getPoints() {
-        return this.points;
-    }
+    /** Return cached polyline */
+    getPoints() { return this.points; }
 
+    /** Release worker cache & detach handler */
     dispose() {
-        // Tell worker to clear cache for this satellite
-        if (this.worker && this._currentId !== null) {
+        if (this._currentId != null) {
             this.worker.postMessage({ type: 'RESET', id: this._currentId });
+            GroundtrackPath._handlers.delete(this._currentId);
         }
-        // Unregister handler
-        if (this._currentId !== null) {
-            delete GroundtrackPath.handlers[this._currentId];
-        }
+        this.points.length = 0;
     }
 
-    // Static dispatcher for shared worker messages
-    static _dispatchMessage(e) {
-        if (e.data.type === 'GROUNDTRACK_UPDATE') {
-            const handler = GroundtrackPath.handlers && GroundtrackPath.handlers[e.data.id];
-            if (handler) {
-                handler(e.data); // Pass the data part of the message
-            }
-        } else if (e.data.type === 'GROUNDTRACK_PROGRESS') {
-            // Optional: Could dispatch a progress event here if needed
-            // console.log(`Groundtrack progress for ${e.data.id}: ${e.data.progress}`);
-        }
-    }
+    /* ───────────── instance handler ───────────── */
 
-    // Instance method to handle messages for this specific satellite
-    _handleMessage = (data) => {
-        // Only handle updates for this satellite
-        if (data.id === this._currentId) {
-            // Drop stale updates based on sequence number
-            this._lastSeq = data.seq;
-            this.points = data.points; // Update the points array
-            
-            
-            // Dispatch an event to notify UI components (like GroundtrackWindow)
-            document.dispatchEvent(new CustomEvent('groundTrackUpdated', {
-                detail: { id: this._currentId, points: this.points }
-            }));
-        }
-    };
-} 
+    /** called by static dispatcher */
+    _onWorkerUpdate({ seq, points }) {
+        if (seq <= this._lastSeq) return;   // stale frame
+        this._lastSeq = seq;
+
+        this.points = points;
+
+        document.dispatchEvent(new CustomEvent('groundTrackUpdated', {
+            detail: { id: this._currentId, points: this.points },
+        }));
+    }
+}

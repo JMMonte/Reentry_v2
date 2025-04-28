@@ -6,6 +6,7 @@ export class Sun {
     constructor(scene, timeUtils) {
         this.scene = scene;
         this.timeUtils = timeUtils;  // Inject TimeUtils instance directly into Sun
+        this.symbol = '☉';
         this.radius = Constants.sunRadius * Constants.scale * Constants.metersToKm;  // Scale down the Sun's radius
 
         const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down
@@ -14,8 +15,7 @@ export class Sun {
             emissive: 0xFFFFFF,  // Glowing color
             emissiveIntensity: 0.1,
             shininess: 100,
-            transparent: true,
-            opacity: 0.8,
+            transparent: false,
             blending: THREE.AdditiveBlending,
             depthWrite: false  // This allows the lens flare to show through
         });

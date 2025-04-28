@@ -42,6 +42,9 @@ export class App3DController {
             } catch (err) {
                 console.error('Failed to import initial simulation state:', err);
             }
+        } else {
+            // No initial state: default to Earth
+            this.app3d.updateSelectedBody('earth');
         }
     }
 

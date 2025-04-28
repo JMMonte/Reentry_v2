@@ -1,201 +1,191 @@
+// OrbitPath.js
+
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
 
+/**
+ * Predictive orbit trail for a single satellite.
+ *
+ * Hot-path notes
+ * • One shared Web-Worker for all instances (lower memory / thread count)
+ * • Handler Map<satId, OrbitPath> instead of object literals
+ * • Float32Array bulk-copy into a pre-allocated VBO (capacity 20 000 verts)
+ * • Sequence numbers so late/out-of-order packets are ignored
+ * • Simple loader overlay toggled via static helpers
+ */
 export class OrbitPath {
+    /** Max vertices reserved for every orbit line */
+    static CAPACITY = 20_000;
+
     constructor(color) {
-        this.orbitPoints = [];
-        // Sequence numbering to drop stale updates
+        /* sequence bookkeeping */
         this._seq = 0;
         this._lastSeq = -Infinity;
-        // Preallocate a fixed-size buffer to avoid resizing and GL errors
-        this._capacity = 20000; // max number of orbit points
-        this._maxOrbitPoints = 0;
-        const geometry = new THREE.BufferGeometry();
-        // Allocate full capacity upfront
-        const positions = new Float32Array(this._capacity * 3);
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setDrawRange(0, 0);
+
+        /* typed-array capacity */
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute(
+            'position',
+            new THREE.BufferAttribute(new Float32Array(OrbitPath.CAPACITY * 3), 3),
+        );
+        geom.setDrawRange(0, 0);
+
         this.orbitLine = new THREE.Line(
-            geometry,
-            new THREE.LineBasicMaterial({
-                color,
-                linewidth: 2,
-                transparent: true,
-                opacity: 0.7
-            })
+            geom,
+            new THREE.LineBasicMaterial({ color, linewidth: 2, transparent: true, opacity: 0.7 }),
         );
         this.orbitLine.frustumCulled = false;
         this.orbitLine.visible = false;
 
-        // Create spinner-based orbit-loading indicator
-        if (typeof document !== 'undefined' && !document.getElementById('orbit-path-loader')) {
-            // Add spinner keyframes
-            if (!document.getElementById('orbit-path-spinner-style')) {
-                const style = document.createElement('style');
-                style.id = 'orbit-path-spinner-style';
-                style.textContent = `@keyframes orbitPathSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
-                document.head.appendChild(style);
-            }
-            // Loader container
-            const loader = document.createElement('div');
-            loader.id = 'orbit-path-loader';
-            Object.assign(loader.style, {
-                position: 'absolute', bottom: '10px', left: '10px',
-                display: 'none', alignItems: 'center',
-                padding: '4px 8px', background: 'rgba(0,0,0,0.6)',
-                color: '#fff', fontSize: '12px', borderRadius: '4px',
-                zIndex: '1000'
-            });
-            // Spinner element
-            const spinner = document.createElement('div');
-            spinner.id = 'orbit-path-spinner';
-            Object.assign(spinner.style, {
-                width: '16px', height: '16px',
-                border: '2px solid #fff', borderTop: '2px solid transparent',
-                borderRadius: '50%', marginRight: '8px',
-                animation: 'orbitPathSpin 1s linear infinite'
-            });
-            loader.appendChild(spinner);
-            document.body.appendChild(loader);
-        }
+        /* scratch vars */
+        this._originKm = new THREE.Vector3();
+        this._k = Constants.metersToKm * Constants.scale;
 
-        // Use a shared worker across all OrbitPath instances
-        if (!OrbitPath.sharedWorker) {
-            OrbitPath.sharedWorker = new Worker(
-                new URL('../../workers/orbitPathWorker.js', import.meta.url),
-                { type: 'module' }
-            );
-            OrbitPath.sharedWorker.onmessage = OrbitPath._dispatchMessage;
-            OrbitPath.handlers = {};
-        }
-        this.worker = OrbitPath.sharedWorker;
-        // Register handler for each satellite ID
-        OrbitPath.handlers = OrbitPath.handlers || {};
-        // Note: handlers are keyed by satellite ID after first update call
+        /* once-only loader overlay */
+        OrbitPath._ensureLoader();
+
+        /* shared worker bootstrap */
+        if (!OrbitPath._worker) OrbitPath._initSharedWorker();
+        this.worker = OrbitPath._worker;
     }
 
-    update(position, velocity, id, bodies = [], period, numPoints = this._maxOrbitPoints, allowFullEllipse = false) {
-        // Store period and number of points for simulation data window
+    /* ───────────────────────── Public API ───────────────────────── */
+
+    /**
+     * Ask the worker to (re)compute the orbit path.
+     * All vectors are ECI metres / m s⁻¹.
+     */
+    update(position, velocity, id,
+        bodies = [], period,
+        numPoints = this._maxOrbitPoints,
+        allowFullEllipse = false) {
+
+        this._currentId = id;
         this._period = period;
         this._numPoints = numPoints;
-        this._currentId = id;
-        // Save current position for geometry origin
-        this._currentPosition = position.clone();
-        // Store Earth position for distance calculations
-        if (bodies.length > 0) {
-            const bp = bodies[0].position;
-            this._earthPosition = new THREE.Vector3(bp.x, bp.y, bp.z);
-        } else {
-            this._earthPosition = new THREE.Vector3(0, 0, 0);
-        }
-        OrbitPath.handlers[id] = this._handleMessage;
-        const seq = ++this._seq;
-        const serialBodies = bodies.map(body => ({
-            position: { x: body.position.x, y: body.position.y, z: body.position.z },
-            mass: body.mass
+        this._originKm.copy(position).multiplyScalar(this._k);
+
+        /* Structured-clone-ready bodies array */
+        const bodiesMsg = bodies.map(b => ({
+            position: { x: b.position.x, y: b.position.y, z: b.position.z },
+            mass: b.mass,
         }));
-        // Read current perturbation scale from UI settings
-        const perturbationScale = window.app3d?.getDisplaySetting('perturbationScale') ?? 1.0;
+
+        OrbitPath._handlers.set(id, this);          // subscribe
+
         this.worker.postMessage({
             type: 'UPDATE_ORBIT',
             id,
             position: { x: position.x, y: position.y, z: position.z },
             velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
-            bodies: serialBodies,
+            bodies: bodiesMsg,
             period,
             numPoints,
-            perturbationScale,
-            seq,
-            allowFullEllipse
+            perturbationScale: window.app3d?.getDisplaySetting('perturbationScale') ?? 1,
+            seq: ++this._seq,
+            allowFullEllipse,
         });
     }
 
-    setVisible(visible) {
-        this.orbitLine.visible = visible;
-        if (!visible) {
-            const geom = this.orbitLine.geometry;
-            geom.setDrawRange(0, 0);
-            geom.attributes.position.needsUpdate = true;
+    setVisible(v) {
+        this.orbitLine.visible = v;
+        if (!v) {
+            this.orbitLine.geometry.setDrawRange(0, 0);
+            this.orbitLine.geometry.attributes.position.needsUpdate = true;
         }
     }
-
-    setColor(color) {
-        if (this.orbitLine.material) {
-            this.orbitLine.material.color.set(color);
-        }
-    }
+    setColor(c) { this.orbitLine.material.color.set(c); }
 
     dispose() {
-        if (this.orbitLine.geometry) this.orbitLine.geometry.dispose();
-        if (this.orbitLine.material) this.orbitLine.material.dispose();
-        // Tell worker to clear this satellite's orbitCache
-        if (this.worker) {
-            this.worker.postMessage({ type: 'RESET', id: this._currentId });
-        }
-        // Unregister handler but keep shared worker alive
-        delete OrbitPath.handlers[this._currentId];
+        this.orbitLine.geometry.dispose();
+        this.orbitLine.material.dispose();
+        this.worker.postMessage({ type: 'RESET', id: this._currentId });
+        OrbitPath._handlers.delete(this._currentId);
     }
 
-    // Static dispatcher for shared worker messages
-    static _dispatchMessage(e) {
-        // Hide loader once data arrives
-        if (e.data.type === 'ORBIT_PATH_UPDATE') {
-            const loader = document.getElementById('orbit-path-loader');
-            if (loader) loader.style.display = 'none';
-        }
-        if (e.data.type === 'ORBIT_PATH_PROGRESS') {
-            const loader = document.getElementById('orbit-path-loader');
-            if (loader) loader.style.display = 'flex';
-            return;
-        }
-        const handler = OrbitPath.handlers && OrbitPath.handlers[e.data.id];
-        if (handler) handler(e);
+    /* ─────────────────────── Internal handlers ─────────────────────── */
+
+    /** instance-specific message processor (routed via static map) */
+    _onWorkerUpdate(e) {
+        const { seq, orbitPoints } = e.data;
+        if (seq <= this._lastSeq || !this.orbitLine.visible) return;
+        this._lastSeq = seq;
+
+        const pts = orbitPoints instanceof Float32Array ? orbitPoints : new Float32Array(orbitPoints);
+        const n = Math.min(Math.floor(pts.length / 3), OrbitPath.CAPACITY - 1);
+
+        /* fire raw-data event for external consumers */
+        document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
+            detail: { id: this._currentId, orbitPoints: pts, period: this._period, numPoints: this._numPoints },
+        }));
+
+        /* write into VBO – origin then prediction points */
+        const attr = this.orbitLine.geometry.attributes.position;
+        const buffer = attr.array;
+
+        buffer[0] = this._originKm.x;
+        buffer[1] = this._originKm.y;
+        buffer[2] = this._originKm.z;
+        buffer.set(pts.subarray(0, n * 3), 3);
+
+        this.orbitLine.geometry.setDrawRange(0, n + 1);
+        attr.needsUpdate = true;
     }
 
-    // Register handler for this satellite ID
-    _handleMessage = (e) => {
-        if (e.data.type === 'ORBIT_PATH_UPDATE' && e.data.id === this._currentId) {
-            const seq = e.data.seq;
-            if (seq <= this._lastSeq) return;
-            this._lastSeq = seq;
-            if (!this.orbitLine.visible) return;
-            // Directly use the transferred Float32Array for geometry positions
-            const rawBuf = e.data.orbitPoints;
-            const ptsArr = rawBuf instanceof ArrayBuffer
-                ? new Float32Array(rawBuf)
-                : ArrayBuffer.isView(rawBuf)
-                    ? rawBuf
-                    : new Float32Array(rawBuf);
-            const numPts = Math.floor(ptsArr.length / 3);
-            this.orbitPoints = ptsArr;
-            // Emit orbit data update event for external handlers
-            document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
-                detail: {
-                    id: this._currentId,
-                    orbitPoints: this.orbitPoints,
-                    period: this._period,
-                    numPoints: this._numPoints
-                }
-            }));
-            // Update geometry buffer
-            const k = Constants.metersToKm * Constants.scale;
-            const origin = this._currentPosition.clone().multiplyScalar(k);
-            const geometry = this.orbitLine.geometry;
-            const positionAttr = geometry.attributes.position;
-            const array = positionAttr.array;
-            const drawCount = Math.min(numPts + 1, this._capacity);
-            geometry.setDrawRange(0, drawCount);
-            // Set starting point as the current position
-            array[0] = origin.x;
-            array[1] = origin.y;
-            array[2] = origin.z;
-            // Copy predicted orbit points in bulk for performance
-            const pointCount = Math.min(numPts, this._capacity - 1);
-            array.set(
-                ptsArr.subarray(0, pointCount * 3),
-                3
-            );
-            positionAttr.needsUpdate = true;
+    /* ─────────────────────────── Static infra ────────────────────────── */
+
+    /** one shared worker + handler map across the whole app */
+    static _initSharedWorker() {
+        OrbitPath._worker = new Worker(
+            new URL('../../workers/orbitPathWorker.js', import.meta.url),
+            { type: 'module' },
+        );
+        OrbitPath._handlers = new Map();
+
+        OrbitPath._worker.onmessage = (e) => {
+            const { type, id } = e.data;
+            if (type === 'ORBIT_PATH_PROGRESS') { OrbitPath._toggleLoader(true); return; }
+            if (type === 'ORBIT_PATH_UPDATE') { OrbitPath._toggleLoader(false); }
+            OrbitPath._handlers.get(id)?._onWorkerUpdate(e);
+        };
+    }
+
+    /** lightweight loader overlay (created once) */
+    static _ensureLoader() {
+        if (typeof document === 'undefined' || document.getElementById('orbit-path-loader')) return;
+
+        /* keyframes */
+        if (!document.getElementById('orbit-path-spinner-style')) {
+            const sty = document.createElement('style');
+            sty.id = 'orbit-path-spinner-style';
+            sty.textContent = '@keyframes orbitPathSpin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}';
+            document.head.appendChild(sty);
         }
-    };
-} 
+
+        const box = document.createElement('div');
+        box.id = 'orbit-path-loader';
+        Object.assign(box.style, {
+            position: 'absolute', bottom: '10px', left: '10px',
+            display: 'none', alignItems: 'center',
+            padding: '4px 8px', background: 'rgba(0,0,0,.6)',
+            color: '#fff', fontSize: '12px', borderRadius: '4px', zIndex: 1000,
+        });
+
+        const spin = document.createElement('div');
+        Object.assign(spin.style, {
+            width: '16px', height: '16px',
+            border: '2px solid #fff', borderTop: '2px solid transparent',
+            borderRadius: '50%', marginRight: '8px',
+            animation: 'orbitPathSpin 1s linear infinite',
+        });
+
+        box.appendChild(spin);
+        box.appendChild(document.createTextNode('Computing orbit…'));
+        document.body.appendChild(box);
+    }
+
+    static _toggleLoader(show) {
+        const el = typeof document !== 'undefined' && document.getElementById('orbit-path-loader');
+        if (el) el.style.display = show ? 'flex' : 'none';
+    }
+}

@@ -1,6 +1,7 @@
 /**
  * Manages display settings and their application to the App3D scene and satellites.
  */
+import { Planet } from '../components/Planet.js';
 export class DisplaySettingsManager {
     /**
      * @param {App3D} app3d - Reference to the main App3D instance
@@ -59,19 +60,27 @@ export class DisplaySettingsManager {
                 if (ambientLight) ambientLight.intensity = value;
                 break;
             }
-            case 'showGrid':
-                if (app3d.radialGrid) app3d.radialGrid.setVisible(value);
+            case 'showGrid': {
+                const rg = app3d.sceneManager?.radialGrid;
+                if (rg && typeof rg.setVisible === 'function') rg.setVisible(value);
                 break;
+            }
             case 'showVectors':
-                if (app3d.vectors) app3d.vectors.setVisible(value);
+                // Toggle planet-centric vectors (now an array)
+                if (Array.isArray(app3d.planetVectors)) {
+                    app3d.planetVectors.forEach(v => v.setVisible(value));
+                } else if (app3d.planetVectors) {
+                    app3d.planetVectors.setVisible(value);
+                }
                 break;
             case 'showSatVectors':
-                Object.values(app3d.satellites.getSatellites()).forEach(sat => {
-                    if (sat.setVectorsVisible) sat.setVectorsVisible(value);
-                });
+                // Toggle satellite-centric velocity/gravity arrows only
+                if (app3d.satelliteVectors) app3d.satelliteVectors.setVisible(value);
                 break;
             case 'showSurfaceLines':
-                if (app3d.earth?.setSurfaceLinesVisible) app3d.earth.setSurfaceLinesVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setSurfaceLinesVisible === 'function') p.setSurfaceLinesVisible(value);
+                });
                 break;
             case 'showOrbits':
                 Object.values(app3d.satellites.getSatellites()).forEach(sat => {
@@ -80,25 +89,44 @@ export class DisplaySettingsManager {
                 });
                 break;
             case 'showCities':
-                if (app3d.earth?.setCitiesVisible) app3d.earth.setCitiesVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setCitiesVisible === 'function') p.setCitiesVisible(value);
+                });
                 break;
             case 'showAirports':
-                if (app3d.earth?.setAirportsVisible) app3d.earth.setAirportsVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setAirportsVisible === 'function') p.setAirportsVisible(value);
+                });
                 break;
             case 'showSpaceports':
-                if (app3d.earth?.setSpaceportsVisible) app3d.earth.setSpaceportsVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setSpaceportsVisible === 'function') p.setSpaceportsVisible(value);
+                });
                 break;
             case 'showObservatories':
-                if (app3d.earth?.setObservatoriesVisible) app3d.earth.setObservatoriesVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setObservatoriesVisible === 'function') p.setObservatoriesVisible(value);
+                });
                 break;
             case 'showGroundStations':
-                if (app3d.earth?.setGroundStationsVisible) app3d.earth.setGroundStationsVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setGroundStationsVisible === 'function') p.setGroundStationsVisible(value);
+                });
+                break;
+            case 'showMissions':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setMissionsVisible === 'function') p.setMissionsVisible(value);
+                });
                 break;
             case 'showCountryBorders':
-                if (app3d.earth?.setCountryBordersVisible) app3d.earth.setCountryBordersVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setCountryBordersVisible === 'function') p.setCountryBordersVisible(value);
+                });
                 break;
             case 'showStates':
-                if (app3d.earth?.setStatesVisible) app3d.earth.setStatesVisible(value);
+                Planet.instances.forEach(p => {
+                    if (typeof p.setStatesVisible === 'function') p.setStatesVisible(value);
+                });
                 break;
             case 'showMoonOrbit':
                 if (app3d.moon?.setOrbitVisible) app3d.moon.setOrbitVisible(value);
@@ -115,6 +143,21 @@ export class DisplaySettingsManager {
                     app3d.sceneManager.composers.fxaaPass.enabled = value;
                 }
                 break;
+            case 'pixelRatio': {
+                // Update renderer pixel ratio
+                if (app3d.renderer) {
+                    app3d.renderer.setPixelRatio(value);
+                }
+                // Update FXAA resolution uniform
+                const fxaaPass = app3d.sceneManager?.composers?.fxaaPass;
+                if (fxaaPass) {
+                    fxaaPass.material.uniforms.resolution.value.set(
+                        1 / (window.innerWidth * value),
+                        1 / (window.innerHeight * value)
+                    );
+                }
+                break;
+            }
             case 'showAxis': {
                 if (app3d.axisHelper) {
                     app3d.axisHelper.visible = value;

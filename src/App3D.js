@@ -1,185 +1,155 @@
-// app3d.js
+// app3d.js ─ refactored drop-in
+// ──────────────────────────────────────────────────────────────────────────────
+// 1. IMPORTS
+// ──────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer';
+THREE.Object3D.DEFAULT_UP.set(0, 0, 1);                   // use Z-up globally
+
+// External helpers
+import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import Stats from 'stats.js';
+
+// Core utilities & constants
+import { Constants } from './utils/Constants.js';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { TextureManager } from './managers/textureManager.js';
-import { CameraControls } from './managers/CameraControls.js';
-import { RadialGrid } from './components/RadialGrid.js';
-import { SatelliteManager } from './simulation/SatelliteManager.js';
-import { DisplaySettingsManager } from './simulation/DisplaySettingsManager.js';
-import { SceneManager } from './simulation/SceneManager.js';
-import { SimulationStateManager } from './simulation/SimulationStateManager.js';
+
+// Managers & engines
+import { SatelliteManager } from './managers/SatelliteManager.js';
+import { DisplaySettingsManager } from './managers/DisplaySettingsManager.js';
+import { SceneManager } from './managers/SceneManager.js';
+import { SimulationStateManager } from './managers/SimulationStateManager.js';
 import { SimulationLoop } from './simulation/SimulationLoop.js';
 
-// Hook in global app event listeners (bodySelected, displaySettings, etc.)
-import { setupEventListeners as setupGlobalListeners } from './setup/setupListeners.js';
-import { setupCamera, setupRenderer, setupControls, setupPhysicsWorld, setupSettings } from './setup/setupComponents.js';
-import { loadTextures, setupSceneDetails, setupPostProcessing } from './setup/setupScene.js';
+// Controls
+import { CameraControls } from './controls/CameraControls.js';
+import {
+    setupCamera,
+    setupRenderer,
+    setupControls
+} from './setup/setupComponents.js';
 import { initTimeControls } from './controls/timeControls.js';
-import { initializeBodySelector } from './controls/bodySelectorControls.js';
+
+// Global listeners & UI
+import { setupEventListeners as setupGlobalListeners }
+    from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
-import { Constants } from './utils/Constants.js';
-import { updateCameraTarget as selectBody } from './utils/BodySelectionUtils.js';
-// Add satellite creation functions
-import { createSatelliteFromLatLon, createSatelliteFromOrbitalElements, createSatelliteFromLatLonCircular, getVisibleLocationsFromOrbitalElements as computeVisibleLocations } from './satellites/createSatellite.js';
 
-// Utility to convert defaultSettings to {key: value}
-function extractDefaultDisplaySettings(settingsObj) {
-    return Object.fromEntries(Object.entries(settingsObj).map(([k, v]) => [k, v.value]));
+// Domain helpers
+import {
+    createSatelliteFromLatLon,
+    createSatelliteFromOrbitalElements,
+    createSatelliteFromLatLonCircular,
+    getVisibleLocationsFromOrbitalElements as computeVisibleLocations
 }
+    from './components/Satellite/createSatellite.js';
+import { Planet } from './components/Planet.js';
+import { LabelFader } from './utils/LabelFader.js';
 
+// ──────────────────────────────────────────────────────────────────────────────
+// 2. SMALL UTILITIES
+// ──────────────────────────────────────────────────────────────────────────────
+const KM = Constants.metersToKm;
+const toKm = v => v * KM;
+
+const getDefaultDisplaySettings = src =>
+    Object.fromEntries(Object.entries(src).map(([k, v]) => [k, v.value]));
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 3. MAIN CLASS
+// ──────────────────────────────────────────────────────────────────────────────
+/**
+ * Core 3-D application and master orchestrator.
+ * Emits:  'sceneReady'  – once the scene graph & simulation loop are live.
+ */
 class App3D extends EventTarget {
-    /**
-     * Core 3D application for simulation.
-     */
+
     constructor() {
         super();
-        // Make instance available globally
-        console.log('App3D: Initializing...');
+        console.log('[App3D] constructor');
 
-        // Set canvas early
+        // — Canvas & DOM — -----------------------------------------------------
         this._canvas = document.getElementById('three-canvas');
-        if (!this._canvas) {
-            throw new Error('Canvas element not found');
-        }
+        if (!this._canvas) throw new Error('Canvas element #three-canvas not found');
 
-        // Private properties (OOP encapsulation)
-        this._isInitialized = false;
-        this._controls = null;
-        this._lineOfSightWorker = null;
-        this._satelliteConnections = new THREE.Group();
-        this._connections = [];
-        this._connectionsEnabled = false;
+        // — Internal state — ---------------------------------------------------
+        /** @type {boolean} */        this._isInitialized = false;
+        /** @type {THREE.Group} */    this._satelliteLinks = new THREE.Group();
 
-        // Managers
-        this._satellites = new SatelliteManager(this);
-        this._displaySettingsManager = new DisplaySettingsManager(this, extractDefaultDisplaySettings(defaultSettings));
+        // active pick-state
+        this._poiIndicator = null;
+        this._highlightedPOI = null;
+        this._hoveredPOI = null;
+        this._hoverSnapshot = { scale: new THREE.Vector3(), color: new THREE.Color() };
+        this._poiWindowOpen = false;
+
+        // — Managers & engines — ----------------------------------------------
         this._textureManager = new TextureManager();
-
-        // Other core state
-        this._timeUtils = new TimeUtils({
-            simulatedTime: new Date().toISOString()
-        });
-        this._stats = new Stats();
-
-        // Simulation state manager
+        this._displaySettingsManager = new DisplaySettingsManager(
+            this,
+            getDefaultDisplaySettings(defaultSettings)
+        );
+        this._satellites = new SatelliteManager(this);
+        this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
 
-        // Simulation loop manager
-        this.simulationLoop = null;
+        // — Misc util — --------------------------------------------------------
+        this._timeUtils = new TimeUtils({ simulatedTime: new Date().toISOString() });
+        this._stats = new Stats();
 
-        // Global event listeners (bodySelected -> updateSelectedBody, etc.)
-        setupGlobalListeners(this);
-        // Local event handlers (e.g. resize)
+        // — Workers & helpers — -----------------------------------------------
+        this._lineOfSightWorker = null;
+        this._connectionsEnabled = false;
+        this._connections = [];
+
+        // — Event storage — ----------------------------------------------------
         this._eventHandlers = {};
-        this.setupEventListeners();
 
-        // Scene manager
-        this.sceneManager = new SceneManager(this);
-
-        // Initialize the app
-        // this.init();
+        // Global listeners (bodySelected, displaySettings, …)
+        setupGlobalListeners(this);
     }
 
-    /** @returns {boolean} */
+    // ───── Properties (read-only public) ──────────────────────────────────────
     get isInitialized() { return this._isInitialized; }
-    /** @returns {THREE.Scene} */
     get scene() { return this.sceneManager.scene; }
-    /** @returns {THREE.Camera} */
     get camera() { return this.sceneManager.camera; }
-    /** @returns {THREE.WebGLRenderer} */
     get renderer() { return this.sceneManager.renderer; }
-    /** @returns {SatelliteManager} */
     get satellites() { return this._satellites; }
-    /** @returns {DisplaySettingsManager} */
     get displaySettingsManager() { return this._displaySettingsManager; }
-    /** @returns {TextureManager} */
     get textureManager() { return this._textureManager; }
-    /** @returns {TimeUtils} */
     get timeUtils() { return this._timeUtils; }
-    /** @returns {Stats} */
     get stats() { return this._stats; }
-    /** @returns {HTMLCanvasElement} */
     get canvas() { return this._canvas; }
-    /** @returns {CSS2DRenderer} */
     get labelRenderer() { return this.sceneManager.labelRenderer; }
-    /** @returns {Object} */
     get composers() { return this.sceneManager.composers; }
-    /** @returns {RadialGrid} */
-    get radialGrid() { return this.sceneManager.radialGrid; }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 4. LIFE-CYCLE
+    // ──────────────────────────────────────────────────────────────────────────
+    /**
+     * Bootstrap the entire 3-D stack.
+     * Call exactly once right after constructing `App3D`.
+     */
     async init() {
-        console.log('Initializing App...');
+        console.log('[App3D] init start');
         try {
-            // Setup camera and renderer (still needed for SceneManager)
-            this._setupCamera();
-            this._setupRenderer();
-            // Delegate all scene/camera/renderer/radialGrid setup to SceneManager
+            this._setupCameraAndRenderer();
             await this.sceneManager.init();
-            // Add Three.js axis helper at origin
-            this.axisHelper = new THREE.AxesHelper(1000);
-            this.axisHelper.position.set(0, 0, 0);
-            this.axisHelper.visible = this.displaySettingsManager.getSetting('showAxis');
-            this.scene.add(this.axisHelper);
-            // Add axis labels using CSS2DObject
-            const axisLength = 1000;
-            ['X', 'Y', 'Z'].forEach((axis) => {
-                const dir = new THREE.Vector3(
-                    axis === 'X' ? axisLength : 0,
-                    axis === 'Y' ? axisLength : 0,
-                    axis === 'Z' ? axisLength : 0
-                );
-                const div = document.createElement('div');
-                div.className = 'axis-label';
-                div.textContent = axis;
-                div.style.color = axis === 'X' ? '#ff0000' : axis === 'Y' ? '#00ff00' : '#0000ff';
-                div.style.fontSize = '14px';
-                const label = new CSS2DObject(div);
-                label.position.copy(dir);
-                this.axisHelper.add(label);
-            });
-            this._addConnectionsGroup();
-            // --- start point picking setup ---
-            this.raycaster = new THREE.Raycaster();
-            this.raycaster.params.Points.threshold = 1;
-            this.pickablePoints = [];
-            const pts = this.earth?.earthSurface?.points;
-            if (pts) Object.values(pts).forEach(arr => arr.forEach(p => this.pickablePoints.push(p)));
-            // throttle pointermove: only one raycast per animation frame
-            this._pickScheduled = false;
-            this._throttledOnPointerMove = (event) => {
-                if (this._pickScheduled) return;
-                this._pickScheduled = true;
-                requestAnimationFrame(() => {
-                    this._onPointerMove(event);
-                    this._pickScheduled = false;
-                });
-            };
-            this.canvas.addEventListener('pointermove', this._throttledOnPointerMove);
-            this.canvas.addEventListener('pointerdown', this._onPointerDown.bind(this));
-            // --- end point picking setup ---
-            // Controls and other setup
+
+            this._initAxisHelper();
+            this._initPOIPicking();
             this._setupControls();
-            this._setupCameraControls();
-            this._setupPhysicsWorld();
-            // Pre-initialize physics worker so it's ready before any satellite creation
-            if (this.satellites && typeof this.satellites._initPhysicsWorker === 'function') {
-                this.satellites._initPhysicsWorker();
-            }
-            this._setupSettings();
-            this._setupEventAndSocketListeners();
-            this._setupTimeAndBodyControls();
-            this._applyStatsStyle();
-            this._isInitialized = true;
-            this._addWindowResizeListener();
-            this.onWindowResize();
-            // Ensure connections are enabled on load if toggle is on
-            if (this.displaySettingsManager.getSetting('showSatConnections')) {
-                this._handleShowSatConnectionsChange(true);
-                this._updateConnectionsWorkerSatellites();
-            }
-            // Start simulation loop
+
+            // Physics worker (latency-hiding)
+            this.satellites._initPhysicsWorker?.();
+
+            // Time controls
+            initTimeControls(this.timeUtils);
+
+            this._injectStatsPanel();
+            this._wireResizeListener();
+
+            // Simulation heartbeat
             this.simulationLoop = new SimulationLoop({
                 app: this,
                 satellites: this.satellites,
@@ -189,395 +159,389 @@ class App3D extends EventTarget {
                 stats: this.stats
             });
             this.simulationLoop.start();
-            this._dispatchSceneReadyEvent();
-            this._applyDisplaySettings();
-            console.log('App initialization complete');
-        } catch (error) {
-            console.error('Error during initialization:', error);
+
+            // Display settings must run *after* everything exists
+            this.displaySettingsManager.applyAll();
+
+            this._isInitialized = true;
+            this._dispatchSceneReady();
+            console.log('[App3D] init done');
+        } catch (err) {
+            console.error('App3D init failed:', err);
             this.dispose();
-            throw error;
+            throw err;
         }
     }
 
-    _setupCamera() {
+    /** Release workers, Three.js resources, and DOM artefacts. */
+    dispose() {
+        console.log('[App3D] dispose');
+        this._isInitialized = false;
+
+        // Workers
+        this._lineOfSightWorker?.terminate?.();
+        this._lineOfSightWorker = null;
+
+        // Satellites & loops
+        this._satellites?.dispose?.();
+        this.simulationLoop?.dispose?.();
+
+        // Scene graph
+        this.sceneManager?.dispose?.();
+
+        // Listeners
+        this._removeWindowResizeListener();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 5. INIT HELPERS
+    // ──────────────────────────────────────────────────────────────────────────
+    _setupCameraAndRenderer() {
         this._camera = setupCamera();
-        if (!this._camera) throw new Error('Failed to initialize camera');
-        this._camera.layers.enable(1);
-    }
-    _setupRenderer() {
         this._renderer = setupRenderer(this.canvas);
-        if (!this._renderer) throw new Error('Failed to initialize renderer');
+        this._renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
     }
+
     _setupControls() {
         this._controls = setupControls(this._camera, this._renderer);
-        if (!this._controls) throw new Error('Failed to initialize controls');
-    }
-    _setupCameraControls() {
         this.cameraControls = new CameraControls(this._camera, this._controls);
-        if (!this.cameraControls) throw new Error('Failed to initialize camera controls');
     }
-    _setupPhysicsWorld() {
-        this.world = setupPhysicsWorld();
+
+    _initAxisHelper() {
+        const len = 1000;
+        const color = { X: '#ff0000', Y: '#00ff00', Z: '#0000ff' };
+
+        this.axisHelper = new THREE.AxesHelper(len);
+        this.axisHelper.visible =
+            this.displaySettingsManager.getSetting('showAxis');
+
+        // attach labels
+        const mkLabel = axis => {
+            const div = document.createElement('div');
+            div.className = 'axis-label';
+            div.textContent = axis;
+            div.style.color = color[axis];
+            div.style.fontSize = '14px';
+            return new CSS2DObject(div);
+        };
+        ['X', 'Y', 'Z'].forEach(axis => {
+            const lbl = mkLabel(axis);
+            lbl.position.set(axis === 'X' ? len : 0,
+                axis === 'Y' ? len : 0,
+                axis === 'Z' ? len : 0);
+            this.axisHelper.add(lbl);
+        });
+
+        this.scene.add(this.axisHelper);
+
+        // fade logic
+        const maxR = (Constants.earthRadius + Constants.earthHillSphere) * KM * Constants.scale;
+        this.axisLabelFader = new LabelFader(this.axisHelper.children, maxR * 0.05, maxR * 0.2);
     }
-    _setupSettings() {
-        this.settings = setupSettings();
+
+    _initPOIPicking() {
+        // collect every pickable point once planets exist
+        this.pickablePoints = [];
+        Planet.instances?.forEach(p => {
+            const pts = p.surface?.points;
+            if (pts) Object.values(pts).flat().forEach(m => this.pickablePoints.push(m));
+        });
+
+        this.raycaster = new THREE.Raycaster();
+        this.raycaster.params.Points.threshold = 1;
+
+        // event throttling
+        let pending = false;
+        const onMove = evt => {
+            if (pending) return;
+            pending = true;
+            requestAnimationFrame(() => {
+                this._handlePointerMove(evt);
+                pending = false;
+            });
+        };
+        this.canvas.addEventListener('pointermove', onMove);
+        this.canvas.addEventListener('pointerdown', this._handlePointerDown.bind(this));
     }
-    async _setupTextures() {
-        await loadTextures(this.textureManager);
+
+    _injectStatsPanel() {
+        if (!this.stats?.dom) return;
+        Object.assign(this.stats.dom.style, {
+            position: 'fixed',
+            bottom: '16px',
+            right: '16px',
+            left: 'auto',
+            top: 'auto',
+            cursor: 'pointer',
+            opacity: '0.9',
+            zIndex: 10000
+        });
+        document.body.appendChild(this.stats.dom);
     }
-    async _setupSceneDetails() {
-        await setupSceneDetails(this);
-    }
-    _setupPostProcessing() {
-        setupPostProcessing(this);
-    }
-    _setupRadialGrid() {
-        this.radialGrid = new RadialGrid(this._scene);
-        this.radialGrid.setVisible(this.displaySettingsManager.getSetting('showGrid'));
-    }
-    _addConnectionsGroup() {
-        this._scene.add(this._satelliteConnections);
-    }
-    _setupEventAndSocketListeners() {
-        setupGlobalListeners(this);
-    }
-    _setupTimeAndBodyControls() {
-        initTimeControls(this.timeUtils);
-        initializeBodySelector(this);
-    }
-    _applyStatsStyle() {
-        if (this.stats && this.stats.dom) {
-            this.stats.dom.style.cssText = 'position:fixed;bottom:16px;right:16px;cursor:pointer;opacity:0.9;z-index:10000;';
-            document.body.appendChild(this.stats.dom);
-        }
-    }
-    _addWindowResizeListener() {
-        this._eventHandlers.resize = this.onWindowResize.bind(this);
+
+    _wireResizeListener() {
+        this._eventHandlers.resize = this._onWindowResize.bind(this);
         window.addEventListener('resize', this._eventHandlers.resize);
+        this._onWindowResize();  // run once at startup
     }
-    _startAnimationLoop() {
-        this.animate();
-    }
-    _dispatchSceneReadyEvent() {
-        const sceneReadyEvent = new Event('sceneReady');
-        this.dispatchEvent(sceneReadyEvent);
-        if (typeof this.onSceneReady === 'function') {
-            this.onSceneReady();
-        }
-    }
-    _applyDisplaySettings() {
-        if (this.displaySettingsManager) {
-            this.displaySettingsManager.applyAll();
-        }
+    _removeWindowResizeListener() {
+        window.removeEventListener('resize', this._eventHandlers.resize);
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 6. RUNTIME UPDATES
+    // ──────────────────────────────────────────────────────────────────────────
+    /**
+     * Called each frame from the SimulationLoop.
+     * @param {Date} currentTime – current simulated time
+     */
     updateScene(currentTime) {
-        if (this.earth) {
-            this.earth.updateRotation();
-            this.earth.updateLightDirection();
-        }
-        if (this.sun) this.sun.updatePosition(currentTime);
-        if (this.moon) {
-            this.moon.updatePosition(currentTime);
-            this.moon.updateRotation(currentTime);
-        }
-        // Update vectors only if traced on screen
-        if (this.vectors && this.displaySettingsManager.getSetting('showVectors')) {
-            this.vectors.updateVectors();
-        }
-        // Update satellite connections every frame if enabled
-        if (this._connectionsEnabled) {
-            this._updateConnectionsWorkerSatellites();
-        }
-    }
+        this.earth?.update?.();
+        this.sun?.updatePosition?.(currentTime);
+        this.moon?.update?.();
 
-    updateSatelliteConnections(connections) {
-        this._satelliteConnections.visible = true;
-        // Clear existing connections
-        while (this._satelliteConnections.children.length > 0) {
-            const line = this._satelliteConnections.children[0];
-            line.geometry.dispose();
-            line.material.dispose();
-            this._satelliteConnections.remove(line);
-        }
-        // Create new connections if enabled
-        if (this.displaySettingsManager.getSetting('showSatConnections')) {
-            connections.forEach(conn => {
-                const material = new THREE.LineBasicMaterial({
-                    color: conn.color === 'red' ? 0xff0000 : 0x00ff00,
-                    opacity: 1.0,
-                    transparent: false,
-                    linewidth: 5 // Note: linewidth only works in some environments
-                });
-                const geometry = new THREE.BufferGeometry();
-                // Convert connection points from km to simulation units (km * scale)
-                const vertices = new Float32Array(
-                    conn.points.flat().map(v => v * Constants.scale)
-                );
-                geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-                const line = new THREE.Line(geometry, material);
-                line.renderOrder = 9999;
-                this._satelliteConnections.add(line);
+        // planet & satellite vectors
+        if (this.displaySettingsManager.getSetting('showVectors')) {
+            this.planetVectors?.forEach(v => {
+                v.updateVectors?.();
+                v.updateFading?.(this.camera);
             });
         }
-    }
-
-    onWindowResize = () => {
-        if (this._camera && this._renderer) {
-            this._camera.aspect = window.innerWidth / window.innerHeight;
-            this._camera.updateProjectionMatrix();
-            this._renderer.setSize(window.innerWidth, window.innerHeight);
-            this._renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
-
-            if (this.sceneManager.composers.bloom && this.sceneManager.composers.final) {
-                this.sceneManager.composers.bloom.setSize(window.innerWidth, window.innerHeight);
-                this.sceneManager.composers.final.setSize(window.innerWidth, window.innerHeight);
-            }
-
-            if (this.labelRenderer) {
-                this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
-            }
+        if (this.displaySettingsManager.getSetting('showSatVectors')) {
+            this.satelliteVectors?.updateSatelliteVectors?.();
         }
+
+        // satellite links
+        if (this._connectionsEnabled) this._syncConnectionsWorker();
+
+        // UI-scale transforms
+        this.axisLabelFader?.update(this.camera);
+        this._resizePOIs();
     }
 
-    // Methods for React integration
-    updateTimeWarp(value) {
-        if (this.timeUtils) {
-            this.timeUtils.setTimeWarp(value);
-        }
-        // Notify the physics worker of the new timeWarp
-        if (this.physicsWorker && this.workerInitialized) {
-            this.physicsWorker.postMessage({ type: 'setTimeWarp', data: { value } });
-        }
-    }
-
-    updateSelectedBody(value) {
-        // Delegate to BodySelectionUtils for all body types
-        if (this.cameraControls) {
-            selectBody(value, this, false);
-        }
-    }
-
-    getDisplaySetting(key) {
-        return this.displaySettingsManager.getSetting(key);
-    }
-
+    // ──────────────────────────────────────────────────────────────────────────
+    // 7. DISPLAY SETTINGS (delegated to DisplaySettingsManager)
+    // ──────────────────────────────────────────────────────────────────────────
     updateDisplaySetting(key, value) {
         this.displaySettingsManager.updateSetting(key, value);
-        if (key === 'showSatConnections') {
-            this._handleShowSatConnectionsChange(value);
-        } else if (key === 'physicsTimeStep') {
-            this.satellites.setPhysicsTimeStep(value);
-        } else if (key === 'sensitivityScale') {
-            this.satellites.setSensitivityScale(value);
+
+        switch (key) {
+            case 'showSatConnections':
+                this._toggleSatelliteLinks(value);
+                break;
+            case 'physicsTimeStep':
+                this.satellites.setPhysicsTimeStep(value);
+                break;
+            case 'sensitivityScale':
+                this.satellites.setSensitivityScale(value);
+                break;
         }
     }
 
-    updateSatelliteList() {
-        // Create a clean object with only necessary satellite data
-        const satelliteData = Object.fromEntries(
-            Object.entries(this.satellites.getSatellites())
-                .filter(([, sat]) => sat && sat.id != null && sat.name)
-                .map(([id, sat]) => [id, {
-                    id: sat.id,
-                    name: sat.name
-                }])
-        );
-        // Dispatch an event to notify React components about the satellite list update
-        document.dispatchEvent(new CustomEvent('satelliteListUpdated', {
-            detail: {
-                satellites: satelliteData
-            }
-        }));
-        // Update connections worker if enabled
-        if (this._connectionsEnabled && this._lineOfSightWorker) {
-            this._updateConnectionsWorkerSatellites();
-        }
-    }
-
-    // Delegate satellite/state methods to SimulationStateManager
-    createSatellite(params) {
-        return this.simulationStateManager.createSatellite(params);
-    }
-    removeSatellite(satelliteId) {
-        return this.simulationStateManager.removeSatellite(satelliteId);
-    }
-    importSimulationState(state) {
-        return this.simulationStateManager.importState(state);
-    }
-    exportSimulationState() {
-        return this.simulationStateManager.exportState();
-    }
-
-    // Satellite creation methods
-    createSatelliteFromLatLon(params) {
-        return createSatelliteFromLatLon(this, params);
-    }
-    createSatelliteFromOrbitalElements(params) {
-        return createSatelliteFromOrbitalElements(this, params);
-    }
-    createSatelliteFromLatLonCircular(params) {
-        return createSatelliteFromLatLonCircular(this, params);
-    }
-    /**
-     * Compute visible ground locations over time from orbital elements.
-     * @param {Object} params { semiMajorAxis, eccentricity, inclination, raan, argumentOfPeriapsis, trueAnomaly, referenceFrame, locations, numPoints, numPeriods }
-     */
-    getVisibleLocationsFromOrbitalElements(params) {
-        const { locations, numPoints, numPeriods, ...orbitalParams } = params;
-        return computeVisibleLocations(this, orbitalParams, locations, { numPoints, numPeriods });
-    }
-
-    // Methods for satellite creation
-    // Remove direct satellite creation methods (now handled by SimulationStateManager)
-    // async createSatelliteLatLon(params) { ... }
-    // async createSatelliteOrbital(params) { ... }
-    // async createSatelliteCircular(params) { ... }
-    // createSatelliteFromState(params) { ... }
-
-    // --- SATELLITE CONNECTIONS WORKER LOGIC ---
-    _initLineOfSightWorker() {
-        if (this._lineOfSightWorker) return;
-        this._lineOfSightWorker = new Worker(new URL('./workers/lineOfSightWorker.js', import.meta.url), { type: 'module' });
-        this._lineOfSightWorker.onmessage = (e) => {
-            if (e.data.type === 'CONNECTIONS_UPDATED') {
-                this._connections = e.data.connections;
-                this.updateSatelliteConnections(this._connections);
-            }
-        };
-    }
-    _terminateLineOfSightWorker() {
-        if (this._lineOfSightWorker) {
-            this._lineOfSightWorker.terminate();
-            this._lineOfSightWorker = null;
-        }
-        this._connections = [];
-        this.updateSatelliteConnections([]);
-    }
-    _updateConnectionsWorkerSatellites() {
-        if (!this._lineOfSightWorker) return;
-        const satellitesRaw = Object.values(this.satellites.getSatellites())
-            .filter(sat => sat && sat.position && sat.id != null)
-            .map(sat => ({
-                id: sat.id,
-                position: { ...sat.position }
-            }));
-        const satellites = satellitesRaw.map(sat => ({
-            id: sat.id,
-            position: {
-                x: sat.position.x * Constants.metersToKm,
-                y: sat.position.y * Constants.metersToKm,
-                z: sat.position.z * Constants.metersToKm
-            }
-        }));
-        this._lineOfSightWorker.postMessage({ type: 'UPDATE_SATELLITES', satellites });
-    }
-    _handleShowSatConnectionsChange(enabled) {
+    // ──────────────────────────────────────────────────────────────────────────
+    // 8. SATELLITE CONNECTIONS WORKER
+    // ──────────────────────────────────────────────────────────────────────────
+    _toggleSatelliteLinks(enabled) {
         this._connectionsEnabled = enabled;
         if (enabled) {
             this._initLineOfSightWorker();
-            this._updateConnectionsWorkerSatellites();
+            this._syncConnectionsWorker();
         } else {
-            this._terminateLineOfSightWorker();
+            this._lineOfSightWorker?.terminate?.();
+            this._lineOfSightWorker = null;
+            this._connections = [];
+            this._updateSatelliteConnections([]);
         }
     }
 
-    setupEventListeners() {
-        // Store handler references for cleanup
-        // Window resize
-        this._eventHandlers.resize = this.onWindowResize.bind(this);
-        window.addEventListener('resize', this._eventHandlers.resize);
+    _initLineOfSightWorker() {
+        if (this._lineOfSightWorker) return;
+        this._lineOfSightWorker = new Worker(
+            new URL('./workers/lineOfSightWorker.js', import.meta.url),
+            { type: 'module' }
+        );
+        this._lineOfSightWorker.onmessage = evt => {
+            if (evt.data.type === 'CONNECTIONS_UPDATED') {
+                this._connections = evt.data.connections;
+                this._updateSatelliteConnections(this._connections);
+            }
+        };
     }
 
-    // handle pointer hover to change cursor over points
-    _onPointerMove(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        const mouse = new THREE.Vector2(
-            ((event.clientX - rect.left) / rect.width) * 2 - 1,
-            -((event.clientY - rect.top) / rect.height) * 2 + 1
-        );
-        this.raycaster.setFromCamera(mouse, this.camera);
-        let hit = false;
-        this.pickablePoints.forEach(points => {
-            const intersects = this.raycaster.intersectObject(points, false);
-            if (intersects.length) hit = true;
+    _syncConnectionsWorker() {
+        if (!this._lineOfSightWorker) return;
+        const sats = Object.values(this.satellites.getSatellites())
+            .filter(s => s?.position && s.id != null)
+            .map(s => ({
+                id: s.id, position: {
+                    x: toKm(s.position.x), y: toKm(s.position.y), z: toKm(s.position.z)
+                }
+            }));
+        this._lineOfSightWorker.postMessage({ type: 'UPDATE_SATELLITES', satellites: sats });
+    }
+
+    _updateSatelliteConnections(connections) {
+        this._satelliteLinks.visible = true;
+        this._satelliteLinks.clear();
+
+        if (!this.displaySettingsManager.getSetting('showSatConnections')) return;
+
+        connections.forEach(cnx => {
+            const material = new THREE.LineBasicMaterial({ color: cnx.color === 'red' ? 0xff0000 : 0x00ff00 });
+            const verts = new Float32Array(cnx.points.flat().map(p => p * Constants.scale));
+            const geom = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(verts, 3));
+            const line = new THREE.Line(geom, material);
+            line.renderOrder = 9999;
+            this._satelliteLinks.add(line);
         });
+
+        if (!this.scene.children.includes(this._satelliteLinks)) {
+            this.scene.add(this._satelliteLinks);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 9. POINTER INTERACTION WITH POIs
+    // ──────────────────────────────────────────────────────────────────────────
+    _handlePointerMove(evt) {
+        if (this._poiWindowOpen) { document.body.style.cursor = ''; return; }
+
+        const mouse = this._getMouseNDC(evt);
+        this.raycaster.setFromCamera(mouse, this.camera);
+
+        const hit = this.pickablePoints.find(m => m.visible &&
+            this.raycaster.intersectObject(m, false).length);
+
+        // restore previous
+        if (this._hoveredPOI && this._hoveredPOI !== hit) {
+            this._hoveredPOI.scale.copy(this._hoverSnapshot.scale);
+            this._hoveredPOI.material.color.copy(this._hoverSnapshot.color);
+        }
+
+        // apply new hover
+        if (hit && this._hoveredPOI !== hit) {
+            this._hoverSnapshot = { scale: hit.scale.clone(), color: hit.material.color.clone() };
+            hit.scale.multiplyScalar(1.2);
+            hit.material.color.offsetHSL(0, 0, 0.3);
+        }
+        this._hoveredPOI = hit;
         document.body.style.cursor = hit ? 'pointer' : '';
     }
 
-    // handle pointer click to dispatch point info event
-    _onPointerDown(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        const mouse = new THREE.Vector2(
-            ((event.clientX - rect.left) / rect.width) * 2 - 1,
-            -((event.clientY - rect.top) / rect.height) * 2 + 1
-        );
+    _handlePointerDown(evt) {
+        const mouse = this._getMouseNDC(evt);
         this.raycaster.setFromCamera(mouse, this.camera);
-        for (const points of this.pickablePoints) {
-            const intersects = this.raycaster.intersectObject(points, false);
-            if (intersects.length) {
-                const intersect = intersects[0];
-                const idx = intersect.index;
-                const { features, category } = points.userData;
-                const feature = features[idx];
+
+        for (const mesh of this.pickablePoints) {
+            if (!mesh.visible) continue;
+            if (this.raycaster.intersectObject(mesh, false).length) {
+                const { feature, category } = mesh.userData;
                 window.dispatchEvent(new CustomEvent('earthPointClick', { detail: { feature, category } }));
                 break;
             }
         }
     }
 
-    removeEventListeners() {
-        if (!this._eventHandlers) return;
-        window.removeEventListener('resize', this._eventHandlers.resize);
+    _getMouseNDC(evt) {
+        const { left, top, width, height } = this.canvas.getBoundingClientRect();
+        return new THREE.Vector2(
+            ((evt.clientX - left) / width) * 2 - 1,
+            -((evt.clientY - top) / height) * 2 + 1
+        );
     }
 
-    dispose() {
-        if (this._lineOfSightWorker) {
-            this._lineOfSightWorker.terminate();
-            this._lineOfSightWorker = null;
-        }
-        // Dispose all satellites and their workers (including physics and shared orbit workers)
-        if (this._satellites) {
-            this._satellites.dispose();
-        }
-        console.log('Disposing App3D...');
-        this._isInitialized = false;
+    // ──────────────────────────────────────────────────────────────────────────
+    // 10.  UI SCALES
+    // ──────────────────────────────────────────────────────────────────────────
+    _resizePOIs() {
+        if (!this.pickablePoints?.length) return;
 
-        // Remove all event listeners
-        this.removeEventListeners();
+        const pixelSize = 8;
+        const vFOV = THREE.MathUtils.degToRad(this.camera.fov);
+        const halfH = window.innerHeight;
 
-        // Dispose simulation loop
-        if (this.simulationLoop) {
-            this.simulationLoop.dispose();
+        const tmp = new THREE.Vector3();
+        const scaleFor = dist =>
+            (2 * Math.tan(vFOV / 2) * dist) * (pixelSize / halfH);
+
+        this.pickablePoints.forEach(mesh => {
+            if (!mesh.visible) return;
+            mesh.getWorldPosition(tmp);
+            const s = scaleFor(tmp.distanceTo(this.camera.position));
+            mesh.scale.set(s, s, 1);
+        });
+
+        if (this._poiIndicator) {
+            this._poiIndicator.getWorldPosition(tmp);
+            const s = scaleFor(tmp.distanceTo(this.camera.position)) * 1.2;
+            this._poiIndicator.scale.set(s, s, 1);
         }
-        // Dispose scene manager
-        if (this.sceneManager) {
-            this.sceneManager.dispose();
-        }
-        try {
-            // Removed: Stop animation loop, composers, scene, renderer, controls cleanup (now handled by managers)
-        } catch (error) {
-            console.error('Error during cleanup:', error);
-        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 11. MISC
+    // ──────────────────────────────────────────────────────────────────────────
+    _dispatchSceneReady() {
+        const evt = new Event('sceneReady');
+        this.dispatchEvent(evt);
+        document.dispatchEvent(evt);
+        this.onSceneReady?.();
+    }
+
+    _onWindowResize() {
+        if (!this._camera || !this._renderer) return;
+        this._camera.aspect = window.innerWidth / window.innerHeight;
+        this._camera.updateProjectionMatrix();
+        this._renderer.setSize(window.innerWidth, window.innerHeight);
+
+        this.sceneManager.composers.bloom?.setSize(window.innerWidth, window.innerHeight);
+        this.sceneManager.composers.final?.setSize(window.innerWidth, window.innerHeight);
+        this.labelRenderer?.setSize(window.innerWidth, window.innerHeight);
+
+        this._resizePOIs();
+    }
+
+    // ───────── SATELLITE/STATE API (delegates to SimulationStateManager) ─────
+    createSatellite(p) { return this.simulationStateManager.createSatellite(p); }
+    removeSatellite(i) { return this.simulationStateManager.removeSatellite(i); }
+    importSimulationState(s) { return this.simulationStateManager.importState(s); }
+    exportSimulationState() { return this.simulationStateManager.exportState(); }
+
+    // Satellite creation helpers
+    createSatelliteFromLatLon(p) { return createSatelliteFromLatLon(this, p); }
+    createSatelliteFromOrbitalElements(p) { return createSatelliteFromOrbitalElements(this, p); }
+    createSatelliteFromLatLonCircular(p) { return createSatelliteFromLatLonCircular(this, p); }
+
+    getVisibleLocationsFromOrbitalElements(p) {
+        const { locations, numPoints, numPeriods, ...orbit } = p;
+        return computeVisibleLocations(this, orbit, locations, { numPoints, numPeriods });
+    }
+
+    // Display-linked getters / setters
+    getDisplaySetting(k) { return this.displaySettingsManager.getSetting(k); }
+    updateTimeWarp(v) { this.timeUtils.setTimeWarp(v); }
+
+    /**
+     * Update camera to follow a new body selection (string or object).
+     * Called by React/App3DController on selectedBody changes.
+     */
+    updateSelectedBody(value) {
+        this.cameraControls?.follow(value, this);
+    }
+
+    /** Notify React UI about updated satellite roster. */
+    updateSatelliteList() {
+        const list = Object.fromEntries(
+            Object.entries(this.satellites.getSatellites())
+                .filter(([, s]) => s && s.id != null && s.name)
+                .map(([id, s]) => [id, { id: s.id, name: s.name }])
+        );
+        document.dispatchEvent(new CustomEvent('satelliteListUpdated', { detail: { satellites: list } }));
+        if (this._connectionsEnabled) this._syncConnectionsWorker();
     }
 }
 
-/**
- * @class App3D
- * @extends EventTarget
- * Core 3D application for simulation.
- * Public API:
- * - init()
- * - dispose()
- * - updateTimeWarp(value)
- * - updateSelectedBody(value)
- * - getDisplaySetting(key)
- * - updateDisplaySetting(key, value)
- * - updateSatelliteList()
- * - createSatellite(params)
- * - removeSatellite(satelliteId)
- * - importSimulationState(state)
- * - exportSimulationState()
- */
-
+// ──────────────────────────────────────────────────────────────────────────────
+// 12. EXPORT
+// ──────────────────────────────────────────────────────────────────────────────
 export default App3D;

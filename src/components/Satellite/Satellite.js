@@ -1,3 +1,4 @@
+// Satellite.js
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
@@ -7,279 +8,259 @@ import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { ManeuverNode } from './ManeuverNode.js';
 import { GroundtrackPath } from './GroundtrackPath.js';
 
+/**
+ * Represents one spacecraft and all of its visual helpers.
+ *
+ *  • All expensive allocations happen in the constructor.  
+ *  • Per-frame updates re-use scratch Vector3s to avoid GC churn.  
+ *  • Simulation-data events are throttled to ~10 Hz.
+ */
 export class Satellite {
-    constructor({ scene, position, velocity, id, color, mass = 100, size = 1, app3d, name, referenceBody = 'earth' }) {
+    /**
+     * @param {Object} opts
+     * @param {THREE.Scene}   opts.scene
+     * @param {THREE.Vector3} opts.position  – ECI metres
+     * @param {THREE.Vector3} opts.velocity  – ECI m/s
+     * @param {string|number} opts.id
+     * @param {string|number|THREE.Color} opts.color
+     * @param {number}  [opts.mass=100]  – kg
+     * @param {number}  [opts.size=1]    – purely visual scale
+     * @param {App3D}   opts.app3d
+     * @param {string}  [opts.name]
+     * @param {'earth'|'moon'|'sun'} [opts.referenceBody='earth']
+     */
+    constructor({
+        scene, position, velocity, id,
+        color, mass = 100, size = 1,
+        app3d, name,
+        referenceBody = 'earth',
+    }) {
+        /* ── meta ── */
         this.app3d = app3d;
         this.scene = scene;
         this.id = id;
-        this.name = name;
-        this.color = color;
+        this.name = name ?? `Satellite ${id}`;
         this.mass = mass;
         this.size = size;
-        this.position = position.clone();
-        this.velocity = velocity.clone();
-        this.initialized = false;
-        this.updateBuffer = [];
-
-        // Store reference body for attachments (e.g., ground track)
+        this.color = color;
         this.referenceBody = referenceBody;
+        this.timeWarp = 1;                    // synced externally
 
-        // Initialize orientation quaternion
+        /* ── state vectors ── */
+        this.position = position.clone();     // metres
+        this.velocity = velocity.clone();     // m/s
         this.orientation = new THREE.Quaternion();
-        if (velocity) {
-            const upVector = new THREE.Vector3(0, 1, 0);
-            const velocityDir = velocity.clone().normalize();
-            this.orientation.setFromUnitVectors(upVector, velocityDir);
-        }
+        this.acceleration = new THREE.Vector3(); // add acceleration vector for debug window
 
-        // Create debug window
-        if (this.app3d.createDebugWindow) {
-            this.app3d.createDebugWindow(this);
-        }
+        /* ── scratch & caches ── */
+        this._scaledKm = new THREE.Vector3();     // km·scale
+        this._smoothedKm = this._scaledKm.clone();  // for viz smoothing
+        this._tmpPos = new THREE.Vector3();     // helper
+        this._alpha = 0.7;                     // smoothing factor
+        this._k = Constants.metersToKm * Constants.scale;
 
-        // Smoothing for display to reduce visual oscillation
-        this._smoothedScaled = null;
+        /* ── throttling ── */
+        this._lastSimEvt = 0;
+        this._evtInterval = 100;   // ms (≈10 Hz)
 
-        this.initializeVisuals();
+        /* ── worker buffer ── */
+        this._updateBuffer = [];
+
+        /* ── visuals ── */
+        this._initVisuals();
+
+        /* debug window on demand */
+        app3d.createDebugWindow?.(this);
+
+        /* maneuvers container */
         this.maneuverNodes = [];
         this.maneuverGroup = new THREE.Group();
-        this.scene.add(this.maneuverGroup);
-        this.groundTrackPath = new GroundtrackPath();
-
-        // Throttle simulationDataUpdate events
-        this._lastSimDataDispatch = 0;
-
-        // Subscribe to display options changes
-        this.app3d.addEventListener('displaySettingChanged', (event) => {
-            const { key, value } = event.detail;
-            switch (key) {
-                case 'showOrbits':
-                    if (this.orbitPath) this.orbitPath.setVisible(value);
-                    if (this.apsisVisualizer) this.apsisVisualizer.setVisible(value);
-                    break;
-                case 'showSatVectors':
-                    if (this.velocityVector) this.velocityVector.visible = value;
-                    if (this.orientationVector) this.orientationVector.visible = value;
-                    break;
-            }
-        });
+        scene.add(this.maneuverGroup);
     }
 
-    initializeVisuals() {
-        // Use SatelliteVisualizer for mesh and vectors
+    /* ────────────────────────── Visual helpers ─────────────────────────── */
+
+    _initVisuals() {
+        /* body mesh & axes */
         this.visualizer = new SatelliteVisualizer(this.color, this.orientation, this.app3d);
         this.visualizer.addToScene(this.scene);
 
-        // Replace orbit line/worker with OrbitPath
+        /* orbit line */
         this.orbitPath = new OrbitPath(this.color);
         this.scene.add(this.orbitPath.orbitLine);
         this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
 
-        // Initialize apsis visualizer
+        /* apsis markers */
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
-        // Initial visibility from display options
         this.apsisVisualizer.setVisible(this.app3d.getDisplaySetting('showOrbits'));
+
+        /* ground track curve */
+        this.groundTrackPath = new GroundtrackPath();
     }
 
-    updatePosition(position, velocity, debug) {
-        // Store latest debug data if provided
+    /* ───────────────────── Physics state ingestion ─────────────────────── */
+
+    /**
+     * Update authoritative physics state (invoked by worker handler).
+     * @param {THREE.Vector3} pos – metres
+     * @param {THREE.Vector3} vel – m/s
+     * @param {Object} [debug]
+     */
+    updatePosition(pos, vel, debug) {
         if (debug) {
             this.debug = debug;
-        }
-        // Mark that we've received real physics state
-        this.initialized = true;
-        // Lazy-init only the needed scratch vector
-        if (!this._scratchScaled) {
-            this._scratchScaled = new THREE.Vector3();
-        }
-        // Store current state (in meters)
-        this.position = position.clone();
-        this.velocity = velocity.clone();
-
-        // Convert from meters to scaled kilometers for visualization (reuse scratch vector)
-        const k = Constants.metersToKm * Constants.scale;
-        this._scratchScaled.set(
-            position.x * k,
-            position.y * k,
-            position.z * k
-        );
-
-        // Exponential smoothing for visual display
-        const alpha = 0.7;
-        if (!this._smoothedScaled) {
-            this._smoothedScaled = this._scratchScaled.clone();
-        } else {
-            this._smoothedScaled.lerp(this._scratchScaled, alpha);
+            // compute net acceleration from gravitational and drag components
+            const totalAcc = debug.perturbation?.acc?.total;
+            const dragAcc = debug.dragData?.dragAcceleration;
+            if (totalAcc && dragAcc) {
+                this.acceleration.set(
+                    totalAcc.x + dragAcc.x,
+                    totalAcc.y + dragAcc.y,
+                    totalAcc.z + dragAcc.z
+                );
+            } else if (totalAcc) {
+                this.acceleration.set(totalAcc.x, totalAcc.y, totalAcc.z);
+            } else {
+                this.acceleration.set(0, 0, 0);
+            }
+            // notify debug window of updated debug data
+            this.debugWindow?.onPositionUpdate?.();
         }
 
-        // Update mesh and vectors via visualizer
-        this.visualizer.updatePosition(this._smoothedScaled);
+        /* copy into internal vectors (no new allocations) */
+        this.position.copy(pos);
+        this.velocity.copy(vel);
+
+        /* convert to scaled-km for rendering */
+        this._scaledKm.set(pos.x * this._k, pos.y * this._k, pos.z * this._k);
+
+        /* smooth to reduce visual jitter */
+        this._smoothedKm.lerpVectors(this._smoothedKm, this._scaledKm, this._alpha);
+
+        /* push to visual actors */
+        this.visualizer.updatePosition(this._smoothedKm);
         this.visualizer.updateOrientation(this.orientation);
-        this.visualizer.updateVectors(this.velocity, this.orientation);
+        this.apsisVisualizer.update(pos, vel, this.debug?.apsisData);
 
-        // Update apsis visualizer using worker-provided apsisData
-        if (this.apsisVisualizer) {
-            this.apsisVisualizer.update(position, velocity, this.debug?.apsisData);
+        /* maneuver nodes */
+        for (const node of this.maneuverNodes) node.update?.();
+
+        /* throttle CustomEvent to browser */
+        const now = Date.now();
+        if (now - this._lastSimEvt >= this._evtInterval) {
+            this._dispatchSimData();
+            this._lastSimEvt = now;
         }
-
-        // Notify debug window about position update
-        if (this.debugWindow?.onPositionUpdate) {
-            this.debugWindow.onPositionUpdate();
-        }
-
-        // Dispatch simulation data update with drag and perturbation info
-        try {
-            // Throttle data events to ~10Hz
-            const nowEvt = Date.now();
-            if (!this._lastSimDataDispatch || nowEvt - this._lastSimDataDispatch > 100) {
-                const dbg = debug || this.debug || {};
-                const drag = dbg.dragData || { altitude: null, density: null, relativeVelocity: null, dragAcceleration: null };
-                const pert = dbg.perturbation || null;
-                const elements = this.getOrbitalElements();
-                // Always use surface altitude (km) for ground coverage
-                const altitude = this.getSurfaceAltitude();
-                const velocityVal = this.getSpeed();
-                // Convert ECI position to geodetic lat/lon (ECEF) for groundtrack
-                const simDate = this.app3d.timeUtils.getSimulatedTime();
-                const gmst = PhysicsUtils.calculateGMST(simDate.getTime ? simDate.getTime() : new Date(simDate).getTime());
-                // Convert tilt-based ECI position directly to geodetic lat/lon
-                const { lat, lon } = PhysicsUtils.eciTiltToLatLon(this.position.clone(), gmst);
-                const simTimeStr = this.app3d.timeUtils.getSimulatedTime().toISOString();
-                document.dispatchEvent(new CustomEvent('simulationDataUpdate', {
-                    detail: { id: this.id, simulatedTime: simTimeStr, altitude, velocity: velocityVal, lat, lon, elements, dragData: drag, perturbation: pert }
-                }));
-                this._lastSimDataDispatch = nowEvt;
-            }
-        } catch (err) {
-            console.error('Error dispatching simulationDataUpdate with debug:', err);
-        }
-
-        // Update maneuver nodes positions
-        this.maneuverNodes.forEach(node => node.update());
     }
 
+    /**
+     * Process any pending worker frames queued by SatelliteManager.
+     * Only the newest buffered frame is applied.
+     */
     updateSatellite() {
-        // Process any buffered physics updates
-        while (this.updateBuffer.length > 0) {
-            const update = this.updateBuffer.shift();
-            if (update) {
-                const position = new THREE.Vector3(
-                    update.position[0],
-                    update.position[1],
-                    update.position[2]
-                );
-                const velocity = new THREE.Vector3(
-                    update.velocity[0],
-                    update.velocity[1],
-                    update.velocity[2]
-                );
-                this.updatePosition(position, velocity);
-            }
+        if (!this._updateBuffer.length) return;
+        const u = this._updateBuffer.pop();
+        this._updateBuffer.length = 0;
+
+        this._tmpPos.set(u.position[0], u.position[1], u.position[2]);
+        const vel = new THREE.Vector3(u.velocity[0], u.velocity[1], u.velocity[2]);
+        this.updatePosition(this._tmpPos, vel);
+    }
+
+    /* ─────────────────────────── Accessors ─────────────────────────────── */
+
+    getSpeed() { return this.velocity.length(); }
+    getRadialAltitude() { return this.position.length() * Constants.metersToKm; }
+    getSurfaceAltitude() { return (this.position.length() - Constants.earthRadius) * Constants.metersToKm; }
+    getOrbitalElements() { return this.debug?.apsisData ?? null; }
+    getMesh() { return this.visualizer?.mesh ?? null; }
+
+    /* ─────────────────────────── Visibility ────────────────────────────── */
+
+    setVisible(v) {
+        const showOrbit = v && this.app3d.getDisplaySetting('showOrbits');
+        this.visualizer.setVisible(v);
+        this.orbitPath.setVisible(showOrbit);
+        this.apsisVisualizer.setVisible(showOrbit);
+    }
+
+    /* ─────────────────── Maneuver-node helpers ─────────────────────────── */
+
+    addManeuverNode(time, deltaV) {
+        const node = new ManeuverNode({ satellite: this, time, deltaV });
+        this.maneuverNodes.push(node);
+        return node;
+    }
+    removeManeuverNode(node) {
+        node.dispose();
+        this.maneuverNodes = this.maneuverNodes.filter(n => n !== node);
+    }
+
+    /* ───────────────────────── Event dispatch ──────────────────────────── */
+
+    _dispatchSimData() {
+        try {
+            const dbg = this.debug ?? {};
+            const drag = dbg.dragData ?? {};
+            const pert = dbg.perturbation ?? null;
+            const elems = this.getOrbitalElements();
+            const alt = this.getSurfaceAltitude();
+            const speed = this.getSpeed();
+
+            /* lat/lon */
+            const simTime = this.app3d.timeUtils.getSimulatedTime();
+            const epochMs = simTime.getTime?.() ?? new Date(simTime).getTime();
+            const gmst = PhysicsUtils.calculateGMST(epochMs);
+            const { lat, lon } = PhysicsUtils.eciTiltToLatLon(this.position, gmst);
+
+            document.dispatchEvent(new CustomEvent('simulationDataUpdate', {
+                detail: {
+                    id: this.id,
+                    simulatedTime: new Date(epochMs).toISOString(),
+                    altitude: alt,
+                    velocity: speed,
+                    lat, lon,
+                    elements: elems,
+                    dragData: drag,
+                    perturbation: pert,
+                },
+            }));
+        } catch (err) {
+            console.error('[Satellite] simulationDataUpdate failed:', err);
         }
     }
 
-    setVisible(visible) {
-        this.visualizer.setVisible(visible);
-        this.orbitPath?.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
-        // Show apsis markers only if orbit is visible
-        this.apsisVisualizer.setVisible(visible && window.app3d.getDisplaySetting('showOrbits'));
-    }
+    /* ─────────────────────── Misc mutators ─────────────────────────────── */
 
-    setVectorsVisible(visible) {
-        this.visualizer.setVectorsVisible(visible);
-    }
-
-    getSpeed() {
-        return this.velocity ? this.velocity.length() : 0;
-    }
-
-    getRadialAltitude() {
-        return this.position ? (this.position.length() * Constants.metersToKm) : 0;
-    }
-
-    getSurfaceAltitude() {
-        if (!this.position) return 0;
-        return (this.position.length() - Constants.earthRadius) * Constants.metersToKm;
-    }
-
-    getOrbitalElements() {
-        // Rely on apsisData computed by the physics worker
-        return this.debug?.apsisData || null;
-    }
-
-    dispose() {
-        // Remove and dispose visualizer
-        if (this.visualizer) {
-            this.visualizer.removeFromScene(this.scene);
-            this.visualizer.dispose();
-        }
-        // Remove and dispose orbit path
-        if (this.orbitPath) {
-            this.scene.remove(this.orbitPath.orbitLine);
-            this.orbitPath.dispose();
-        }
-        // Dispose apsis visualizer
-        if (this.apsisVisualizer) {
-            this.apsisVisualizer.dispose();
-        }
-        // Dispose groundtrack path
-        if (this.groundTrackPath) {
-            this.groundTrackPath.dispose();
-        }
-        // Dispose maneuver nodes
-        if (this.maneuverNodes) {
-            this.maneuverNodes.forEach(node => node.dispose());
-            this.maneuverNodes = [];
-        }
-        if (this.maneuverGroup) {
-            this.scene.remove(this.maneuverGroup);
-        }
-
-        // Only dispatch satelliteDeleted event after cleanup
-        document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
-    }
-
-    setColor(color) {
-        this.color = color;
-
-        this.visualizer.setColor(color);
-        if (this.orbitPath?.orbitLine) {
-            this.orbitPath.orbitLine.material.color.set(color);
-        }
+    setColor(c) {
+        this.color = c;
+        this.visualizer.setColor(c);
+        this.orbitPath.orbitLine.material.color.set(c);
     }
 
     delete() {
-        if (this.app3d && this.app3d.satellites && typeof this.app3d.satellites.removeSatellite === 'function') {
+        if (this.app3d?.satellites?.removeSatellite) {
             this.app3d.satellites.removeSatellite(this.id);
         } else {
             this.dispose();
         }
     }
 
-    /**
-     * Provide mesh for camera targeting (used by CameraControls.getBodyPosition)
-     */
-    getMesh() {
-        return this.visualizer?.mesh || null;
-    }
+    /* ───────────────────────── Destructor ──────────────────────────────── */
 
-    /**
-     * Add a maneuver node to this satellite
-     * @param {Date} time for maneuver execution
-     * @param {THREE.Vector3} deltaV vector in m/s
-     */
-    addManeuverNode(time, deltaV) {
-        const node = new ManeuverNode({ satellite: this, time, deltaV });
-        this.maneuverNodes.push(node);
-        return node;
-    }
+    dispose() {
+        this.visualizer?.removeFromScene(this.scene);
+        this.visualizer?.dispose();
 
-    /**
-     * Remove a maneuver node
-     * @param {ManeuverNode} node
-     */
-    removeManeuverNode(node) {
-        node.dispose();
-        this.maneuverNodes = this.maneuverNodes.filter(n => n !== node);
+        this.scene.remove(this.orbitPath.orbitLine);
+        this.orbitPath?.dispose();
+        this.groundTrackPath?.dispose();
+        this.apsisVisualizer?.dispose();
+
+        for (const n of this.maneuverNodes) n.dispose();
+        this.maneuverNodes.length = 0;
+        this.scene.remove(this.maneuverGroup);
+
+        document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
     }
 }

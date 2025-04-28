@@ -7,7 +7,7 @@ export class Vectors {
         this.earth = earth;
         this.scene = scene;
         this.timeUtils = timeUtils;
-        this.scale = this.earth.EARTH_RADIUS * 2;
+        this.scale = this.earth.radius * 2;
         this.satellites = [];
         this.fontLoader = new FontLoader();
         this.font = null;
@@ -72,10 +72,13 @@ export class Vectors {
 
 
     initNorthPoleVector() {
-        const northPoleDirection = new THREE.Vector3(0, 1, 0);
+        // compute actual north pole orientation from planet's tiltGroup
+        const northPoleDirection = new THREE.Vector3(0, 1, 0)
+            .applyQuaternion(this.earth.getTiltGroup().quaternion)
+            .normalize();
         this.northPoleVector = new THREE.ArrowHelper(
             northPoleDirection,
-            this.earth.earthMesh.position,
+            this.earth.getMesh().position,
             this.scale,
             0x0000ff
         );
@@ -88,10 +91,11 @@ export class Vectors {
     }
 
     initSunDirection() {
-        const sunDirection = new THREE.Vector3(0, 1, 0);
+        // compute actual sun direction from timeUtils
+        const sunDirection = this.timeUtils.getSunPosition().normalize();
         this.sunDirectionArrow = new THREE.ArrowHelper(
             sunDirection,
-            this.earth.earthMesh.position,
+            this.earth.getMesh().position,
             this.scale,
             0xffff00
         );
@@ -104,10 +108,11 @@ export class Vectors {
     }
 
     initGreenwichVector() {
-        const greenwichDirection = new THREE.Vector3(0, 0, 1);
+        // compute actual Greenwich meridian direction on equator
+        const greenwichDirection = this.timeUtils.getGreenwichPosition(this.earth).normalize();
         this.greenwichVector = new THREE.ArrowHelper(
             greenwichDirection,
-            this.earth.earthMesh.position,
+            this.earth.getMesh().position,
             this.scale,
             0x00ff00
         );
@@ -141,7 +146,7 @@ export class Vectors {
                     velocityVector.setDirection(velocity);
                     velocityVector.setLength(velocityLength * 0.1, this.scale * 0.02, this.scale * 0.005);
                     const gravityDirection = new THREE.Vector3().subVectors(
-                        this.earth.earthMesh.position,
+                        this.earth.getMesh().position,
                         entry.satellite.mesh.position
                     ).normalize();
                     const gravityMagnitude = gravityDirection.length() * this.scale * 0.05;
@@ -226,7 +231,7 @@ export class Vectors {
         );
         this.scene.add(velocityVector);
         const gravityDirection = new THREE.Vector3().subVectors(
-            this.earth.earthMesh.position,
+            this.earth.getMesh().position,
             satellite.mesh.position
         ).normalize();
         const gravityMagnitude = gravityDirection.length() * this.scale * 0.05;

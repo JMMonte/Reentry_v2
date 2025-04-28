@@ -1,175 +1,188 @@
 import * as THREE from 'three';
 
+/**
+ * Adds graticules, borders and point‐of‐interest billboards to a planet mesh.
+ * All primitives are children of `parentMesh`, so they inherit its transforms.
+ */
 export class PlanetSurface {
-    constructor(parentMesh, earthRadius, primaryGeojsonData, stateGeojsonData, surfaceOptions = {}) {
-        this.scene = parentMesh;
-        this.earthRadius = earthRadius;
-        this.heightOffset = surfaceOptions.heightOffset || 0.01;
-        this.radius = this.earthRadius + this.heightOffset;
+    /**
+     * @param {THREE.Object3D} parentMesh — the planet mesh (or a group) to attach children to
+     * @param {number}         radius     — planet radius (scene units)
+     * @param {object}         countryGeo — GeoJSON with national borders
+     * @param {object}         stateGeo   — GeoJSON with state / province borders
+     * @param {object}         opts       — { heightOffset, circleTextureSize, … }
+     */
+    constructor(
+        parentMesh,
+        radius,
+        countryGeo,
+        stateGeo,
+        opts = {}
+    ) {
+        this.root = parentMesh;
+        this.radius = radius + (opts.heightOffset ?? 0.01);
+        this.countryGeo = countryGeo;
+        this.stateGeo = stateGeo;
 
-        this.primaryGeojsonData = primaryGeojsonData;
-        this.stateGeojsonData = stateGeojsonData;
+        /* ---------- shared resources ---------- */
+        this.circleTexture = this.#createCircleTexture(opts.circleTextureSize ?? 64);
 
-        this.circleTexture = this.createCircleTexture(surfaceOptions.circleTextureSize || 64);
+        /* ---------- materials ---------- */
+        const lineMat = c => new THREE.LineBasicMaterial({
+            color: c, transparent: true, depthWrite: false, blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor
+        });
+        const pointMat = c => new THREE.PointsMaterial({
+            color: c, map: this.circleTexture, size: 8, alphaTest: 0.5,
+            transparent: true, depthWrite: false, blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor, sizeAttenuation: false
+        });
 
         this.materials = {
-            latitudeLineMajor: new THREE.LineBasicMaterial({color: 0x00A5FF, transparent: true, depthWrite: false, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor}),
-            latitudeLineMinor: new THREE.LineBasicMaterial({color: 0x00A5FF, transparent: true, depthWrite: false, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor}),
-            countryLine: new THREE.LineBasicMaterial({color: 0x00A5FF, transparent: true, depthWrite: false, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor}),
-            stateLine: new THREE.LineBasicMaterial({color: 0x00FF00, transparent: true, depthWrite: false, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor}),
-            cityPoint: new THREE.PointsMaterial({color: 0x00A5FF, map: this.circleTexture, alphaTest: 0.5, transparent: true, depthWrite: true, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, sizeAttenuation: false, size: 4}),
-            airportPoint: new THREE.PointsMaterial({color: 0xFF0000, map: this.circleTexture, alphaTest: 0.5, transparent: true, depthWrite: true, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, sizeAttenuation: false, size: 4}),
-            spaceportPoint: new THREE.PointsMaterial({color: 0xFFD700, map: this.circleTexture, alphaTest: 0.5, transparent: true, depthWrite: true, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, sizeAttenuation: false, size: 4}),
-            groundStationPoint: new THREE.PointsMaterial({color: 0x00FF00, map: this.circleTexture, alphaTest: 0.5, transparent: true, depthWrite: true, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, sizeAttenuation: false, size: 4}),
-            observatoryPoint: new THREE.PointsMaterial({color: 0xFF00FF, map: this.circleTexture, alphaTest: 0.5, transparent: true, depthWrite: true, depthTest: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, sizeAttenuation: false, size: 4})
+            latitudeMajor: lineMat(0x00a5ff),
+            latitudeMinor: lineMat(0x00a5ff),
+            countryLine: lineMat(0x00a5ff),
+            stateLine: lineMat(0x00ff00),
+            cityPoint: pointMat(0x00a5ff),
+            airportPoint: pointMat(0xff0000),
+            spaceportPoint: pointMat(0xffd700),
+            groundStationPoint: pointMat(0x00ff00),
+            observatoryPoint: pointMat(0xff00ff),
+            missionPoint: pointMat(0xffff00)
         };
 
+        /* ---------- collections ---------- */
         this.surfaceLines = [];
         this.countryBorders = [];
         this.states = [];
-        this.points = {cities: [], airports: [], spaceports: [], groundStations: [], observatories: []};
+        this.points = {
+            cities: [], airports: [], spaceports: [],
+            groundStations: [], observatories: [], missions: []
+        };
     }
 
-    addLatitudeLines(step = 10) {
+    /* ===== graticule lines ===== */
+
+    addLatitudeLines(step = 10) { this.#addGraticule(step, true); }
+    addLongitudeLines(step = 10) { this.#addGraticule(step, false); }
+
+    #addGraticule(step, isLat) {
         const majorStep = step * 3;
-        for (let lat = -90; lat <= 90; lat += step) {
-            const lineGeometry = new THREE.BufferGeometry();
-            const points = [];
-            for (let lon = -180; lon <= 180; lon += 2) {
-                const phi = THREE.MathUtils.degToRad(90 - lat);
-                const theta = THREE.MathUtils.degToRad(lon);
-                const x = this.radius * Math.sin(phi) * Math.cos(theta);
-                const y = this.radius * Math.cos(phi);
-                const z = this.radius * Math.sin(phi) * Math.sin(theta);
-                points.push(new THREE.Vector3(x, y, z));
+        const rangeStart = isLat ? -90 : -180;
+        const rangeEnd = isLat ? 90 : 180;
+
+        for (let d = rangeStart; d <= rangeEnd; d += step) {
+            const pts = [];
+            const innerStep = 2;
+            if (isLat) {
+                for (let lon = -180; lon <= 180; lon += innerStep)
+                    pts.push(this.#spherical(lon, d));
+            } else {
+                for (let lat = -90; lat <= 90; lat += innerStep)
+                    pts.push(this.#spherical(d, lat));
             }
-            points.push(points[0]);
-            lineGeometry.setFromPoints(points);
-            const material = (lat % majorStep === 0) ? this.materials.latitudeLineMajor : this.materials.latitudeLineMinor;
-            const line = new THREE.Line(lineGeometry, material);
-            this.scene.add(line);
+            pts.push(pts[0]); // close loop
+
+            const mat = (d % majorStep === 0)
+                ? this.materials.latitudeMajor
+                : this.materials.latitudeMinor;
+
+            const line = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints(pts),
+                mat
+            );
+            this.root.add(line);
             this.surfaceLines.push(line);
         }
     }
 
-    addLongitudeLines(step = 10) {
-        const majorStep = step * 3;
-        for (let lon = -180; lon <= 180; lon += step) {
-            const lineGeometry = new THREE.BufferGeometry();
-            const points = [];
-            for (let lat = -90; lat <= 90; lat += 2) {
-                const phi = THREE.MathUtils.degToRad(90 - lat);
-                const theta = THREE.MathUtils.degToRad(lon);
-                const x = this.radius * Math.sin(phi) * Math.cos(theta);
-                const y = this.radius * Math.cos(phi);
-                const z = this.radius * Math.sin(phi) * Math.sin(theta);
-                points.push(new THREE.Vector3(x, y, z));
-            }
-            points.push(points[0]);
-            lineGeometry.setFromPoints(points);
-            const material = (lon % majorStep === 0) ? this.materials.latitudeLineMajor : this.materials.latitudeLineMinor;
-            const line = new THREE.Line(lineGeometry, material);
-            this.scene.add(line);
-            this.surfaceLines.push(line);
-        }
-    }
+    /* ===== borders ===== */
 
-    addInstancedPoints(geojsonData, material, category, dotRadius = 0.05) {
-        const instCount = geojsonData.features.length;
-        const sphereGeo = new THREE.SphereGeometry(dotRadius, 6, 6);
-        const meshMat = new THREE.MeshBasicMaterial({
-            color: material.color,
-            map: material.map,
-            alphaTest: material.alphaTest,
-            transparent: material.transparent,
-            depthWrite: material.depthWrite,
-            depthTest: material.depthTest,
-            blending: material.blending,
-            blendEquation: material.blendEquation,
-            blendSrc: material.blendSrc,
-            blendDst: material.blendDst
+    addCountryBorders() { this.#addBorders(this.countryGeo, this.materials.countryLine, this.countryBorders); }
+    addStates() { this.#addBorders(this.stateGeo, this.materials.stateLine, this.states); }
+
+    #addBorders(geojson, material, store) {
+        geojson?.features.forEach(f => {
+            const polys = f.geometry.type === 'Polygon'
+                ? [f.geometry.coordinates]
+                : f.geometry.coordinates;
+
+            polys.forEach(poly => poly.forEach(ring => {
+                const pts = ring.map(([lon, lat]) => this.#spherical(lon, lat));
+                pts.push(pts[0]);
+                const line = new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints(pts),
+                    material
+                );
+                this.root.add(line);
+                store.push(line);
+            }));
         });
-        const inst = new THREE.InstancedMesh(sphereGeo, meshMat, instCount);
-        inst.renderOrder = 3;
-        inst.userData = {features: geojsonData.features, category};
-        const tempObj = new THREE.Object3D();
-        for (let i = 0; i < instCount; i++) {
-            const feat = geojsonData.features[i];
+    }
+
+    /* ===== points-of-interest ===== */
+
+    /**
+     * Adds billboard markers for a GeoJSON FeatureCollection.
+     * @param {object}            geojson   GeoJSON collection with Point coords
+     * @param {THREE.Material}    material  base material (will be cloned)
+     * @param {keyof this.points} category  'cities' | 'airports' | …
+     */
+    addInstancedPoints(geojson, material, category) {
+        geojson?.features.forEach(feat => {
             const [lon, lat] = feat.geometry.coordinates;
-            const phi = THREE.MathUtils.degToRad(90 - lat);
-            const theta = THREE.MathUtils.degToRad(lon);
-            const pos = new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
-            tempObj.position.copy(pos);
-            tempObj.updateMatrix();
-            inst.setMatrixAt(i, tempObj.matrix);
-        }
-        inst.instanceMatrix.needsUpdate = true;
-        this.scene.add(inst);
-        this.points[category].push(inst);
-    }
+            const pos = this.#spherical(lon, lat);
 
-    addCountryBorders() {
-        this.primaryGeojsonData.features.forEach(feature => {
-            const geometryType = feature.geometry.type;
-            let polygons = [];
-            if (geometryType === 'Polygon') {
-                polygons = [feature.geometry.coordinates];
-            } else if (geometryType === 'MultiPolygon') {
-                polygons = feature.geometry.coordinates;
-            }
-            polygons.forEach(polygon => {
-                polygon.forEach(ring => {
-                    const points = ring.map(([lon, lat]) => {
-                        const phi = THREE.MathUtils.degToRad(90 - lat);
-                        const theta = THREE.MathUtils.degToRad(lon);
-                        return new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
-                    });
-                    points.push(points[0]);
-                    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-                    const lineMesh = new THREE.Line(lineGeometry, this.materials.countryLine);
-                    this.scene.add(lineMesh);
-                    this.countryBorders.push(lineMesh);
-                });
+            // Create a sprite marker for points of interest
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: material.map,
+                color: material.color.getHex(),
+                transparent: material.transparent,
+                alphaTest: material.alphaTest,
+                depthWrite: false
             });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.copy(pos);
+            sprite.renderOrder = 3;
+            sprite.userData = { feature: feat, category };
+
+            this.root.add(sprite);
+            this.points[category].push(sprite);
         });
     }
 
-    addStates() {
-        this.stateGeojsonData.features.forEach(feature => {
-            const geometryType = feature.geometry.type;
-            let polygons = [];
-            if (geometryType === 'Polygon') {
-                polygons = [feature.geometry.coordinates];
-            } else if (geometryType === 'MultiPolygon') {
-                polygons = feature.geometry.coordinates;
-            }
-            polygons.forEach(polygon => {
-                polygon.forEach(ring => {
-                    const points = ring.map(([lon, lat]) => {
-                        const phi = THREE.MathUtils.degToRad(90 - lat);
-                        const theta = THREE.MathUtils.degToRad(lon);
-                        return new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
-                    });
-                    points.push(points[0]);
-                    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-                    const lineMesh = new THREE.Line(lineGeometry, this.materials.stateLine);
-                    this.scene.add(lineMesh);
-                    this.states.push(lineMesh);
-                });
-            });
-        });
+    /* ===== visibility helpers ===== */
+
+    #setPointsVisible(cat, v) { this.points[cat].forEach(m => m.visible = v); }
+
+    setSurfaceLinesVisible(v) { this.surfaceLines.forEach(l => l.visible = v); }
+    setCountryBordersVisible(v) { this.countryBorders.forEach(b => b.visible = v); }
+    setStatesVisible(v) { this.states.forEach(s => s.visible = v); }
+
+    setCitiesVisible(v) { this.#setPointsVisible('cities', v); }
+    setAirportsVisible(v) { this.#setPointsVisible('airports', v); }
+    setSpaceportsVisible(v) { this.#setPointsVisible('spaceports', v); }
+    setGroundStationsVisible(v) { this.#setPointsVisible('groundStations', v); }
+    setObservatoriesVisible(v) { this.#setPointsVisible('observatories', v); }
+    setMissionsVisible(v) { this.#setPointsVisible('missions', v); }
+
+    /* ===== internal utilities ===== */
+
+    #spherical(lon, lat) {
+        const phi = THREE.MathUtils.degToRad(90 - lat);
+        const theta = THREE.MathUtils.degToRad(lon + 90);
+        return new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
     }
 
-    setPointsVisible(category, visible) {
-        this.points[category].forEach(point => point.visible = visible);
+    #createCircleTexture(size) {
+        const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        return new THREE.CanvasTexture(canvas);
     }
-
-    setCitiesVisible(visible) { this.setPointsVisible('cities', visible); }
-    setAirportsVisible(visible) { this.setPointsVisible('airports', visible); }
-    setSpaceportsVisible(visible) { this.setPointsVisible('spaceports', visible); }
-    setGroundStationsVisible(visible) { this.setPointsVisible('groundStations', visible); }
-    setObservatoriesVisible(visible) { this.setPointsVisible('observatories', visible); }
-    setCountryBordersVisible(visible) { this.countryBorders.forEach(border => border.visible = visible); }
-    setStatesVisible(visible) { this.states.forEach(state => state.visible = visible); }
-    setSurfaceLinesVisible(visible) { this.surfaceLines.forEach(line => line.visible = visible); }
-} 
+}

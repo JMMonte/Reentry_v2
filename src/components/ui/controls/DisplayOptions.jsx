@@ -35,12 +35,18 @@ export const defaultSettings = {
   enableFXAA: { value: true, name: 'Anti-Aliasing (FXAA)', icon: Settings2,
     description: 'Enable fast approximate anti-aliasing for smoother rendering.'
   },
+  pixelRatio: { value: Math.min(window.devicePixelRatio, 2.0), name: 'Pixel Ratio', icon: Settings2, type: 'number', min: 0.5, max: 2, step: 0.1,
+    description: 'Adjust pixel ratio to control antialias strength (effective resolution).'
+  },
   showSurfaceLines: { value: true, name: 'Terrain Lines', icon: Mountain },
   showCities: { value: false, name: 'Cities', icon: Building2 },
   showAirports: { value: false, name: 'Airports', icon: Plane },
   showSpaceports: { value: false, name: 'Spaceports', icon: Rocket },
   showGroundStations: { value: false, name: 'Ground Stations', icon: Radio },
   showObservatories: { value: false, name: 'Observatories', icon: Telescope },
+  showMissions: { value: false, name: 'Planetary Missions', icon: Rocket,
+    description: 'Show mission landing sites (e.g. lunar landing sites).'
+  },
   showCountryBorders: { value: false, name: 'Country Borders', icon: Map },
   showStates: { value: false, name: 'States', icon: Map },
   showMoonOrbit: { value: true, name: 'Moon Orbit', icon: Moon },
@@ -84,7 +90,7 @@ export const defaultSettings = {
 const categories = [
   {
     name: 'Rendering',
-    keys: ['showGrid', 'showVectors', 'showAxis', 'enableFXAA'],
+    keys: ['showGrid', 'showVectors', 'showAxis', 'enableFXAA', 'pixelRatio'],
   },
   {
     name: 'Map Features',
@@ -92,7 +98,7 @@ const categories = [
   },
   {
     name: 'Points of Interest',
-    keys: ['showCities', 'showAirports', 'showSpaceports', 'showGroundStations', 'showObservatories'],
+    keys: ['showCities', 'showAirports', 'showSpaceports', 'showGroundStations', 'showObservatories', 'showMissions'],
   },
   {
     name: 'Moon',

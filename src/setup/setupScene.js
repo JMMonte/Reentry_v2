@@ -1,225 +1,231 @@
 // setupScene.js
+// ──────────────────────────────────────────────────────────────────────────────
+// 1. IMPORTS
+// ──────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
-import { Earth } from '../components/Earth.js';
+
+// 3-D assets ───────────────────────────────────────────────────────────────────
+import { Planet } from '../components/Planet.js';
 import { Sun } from '../components/Sun.js';
-import { Moon } from '../components/Moon.js';
-import { Vectors } from '../utils/Vectors.js';
 import { BackgroundStars } from '../components/background.js';
+
+// Post-processing ───────────────────────────────────────────────────────────────
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
-import {
-    earthTexture,
-    earthSpecTexture,
-    earthNormalTexture,
-    cloudTexture,
-    moonTexture,
-    moonBump
-} from '../config/textures.js';
+// Domain utilities ─────────────────────────────────────────────────────────────
+import { Constants } from '../utils/Constants.js';
+import { PlanetVectors } from '../utils/PlanetVectors.js';
+import { SatelliteVectors } from '../utils/SatelliteVectors.js';
 
+// Data layers ──────────────────────────────────────────────────────────────────
+import geojsonDataSovereignty from '../config/ne_50m_admin_0_sovereignty.json';
+import geojsonDataStates from '../config/ne_110m_admin_1_states_provinces.json';
 import {
     geojsonDataCities,
     geojsonDataAirports,
     geojsonDataSpaceports,
     geojsonDataGroundStations,
-    geojsonDataObservatories
+    geojsonDataObservatories,
+    geojsonDataMissions
 } from '../config/geojsonData.js';
 
-export async function loadTextures(textureManager) {
-    console.log('Loading textures...');
+// Textures ─────────────────────────────────────────────────────────────────────
+import {
+    earthTexture, earthSpecTexture, earthNormalTexture,
+    cloudTexture, moonTexture, moonBump
+} from '../config/textures.js';
 
-    // Define textures with fallbacks for large files
-    const textures = [
-        {
-            name: 'earthTexture',
-            url: earthTexture,
-            // Add URL parameter for deployment detection
-            fallbackUrl: earthTexture + '?url'
+// ──────────────────────────────────────────────────────────────────────────────
+// 2. STATIC CONFIGURATION
+// ──────────────────────────────────────────────────────────────────────────────
+const TEXTURE_DEFINITIONS = [
+    { key: 'earthTexture', src: earthTexture },
+    { key: 'earthSpecTexture', src: earthSpecTexture },
+    { key: 'earthNormalTexture', src: earthNormalTexture },
+    { key: 'cloudTexture', src: cloudTexture },
+    { key: 'moonTexture', src: moonTexture },
+    { key: 'moonBump', src: moonBump },
+];
+
+const AMBIENT_LIGHT_CONFIG = { color: 0xffffff, intensity: 0.1 };
+
+const BLOOM_CONFIG = { strength: 0.3, radius: 0.999, threshold: 0.99 };
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 3. HELPERS
+// ──────────────────────────────────────────────────────────────────────────────
+const addAmbientLight = (scene) => {
+    const light = new THREE.AmbientLight(
+        AMBIENT_LIGHT_CONFIG.color,
+        AMBIENT_LIGHT_CONFIG.intensity
+    );
+    light.name = 'ambientLight';
+    scene.add(light);
+};
+
+const loadTextures = async (textureManager) => {
+    const tasks = TEXTURE_DEFINITIONS.map(({ key, src }) => ({
+        name: key,
+        url: src,
+        fallbackUrl: `${src}?url`
+    }));
+    await textureManager.loadAllTextures(tasks);
+};
+
+const createEarthConfig = () => ({
+    name: 'earth',
+    symbol: '♁',
+    radius: Constants.earthRadius * Constants.scale * Constants.metersToKm,
+    tilt: Constants.earthInclination,
+    meshRes: 64,
+    atmosphereThickness: 10,
+    cloudThickness: 0.1,
+    addSurface: true,
+    surfaceOptions: {
+        addLatitudeLines: true, latitudeStep: 10,
+        addLongitudeLines: true, longitudeStep: 10,
+        addCountryBorders: true,
+        addStates: true, addCities: true,
+        addAirports: true, addSpaceports: true,
+        addGroundStations: true, addObservatories: true,
+    },
+    primaryGeojsonData: geojsonDataSovereignty,
+    stateGeojsonData: geojsonDataStates,
+    cityData: geojsonDataCities,
+    airportsData: geojsonDataAirports,
+    spaceportsData: geojsonDataSpaceports,
+    groundStationsData: geojsonDataGroundStations,
+    observatoriesData: geojsonDataObservatories,
+    addLight: true,
+    lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: true },
+});
+
+const createMoonConfig = (timeUtils) => {
+    // --- derive argument of periapsis at runtime
+    const JD = timeUtils.getJulianDate();
+    const T = (JD - 2451545.0) / 36525;
+    const lamPi = 83.353246 + 4069.0137287 * T - 0.01032 * T * T - T ** 3 / 80000;
+    const argPerDeg =
+        lamPi - THREE.MathUtils.radToDeg(Constants.ascendingNode) + 80; // empirical offset
+
+    return {
+        name: 'moon',
+        symbol: '☾',
+        radius: Constants.moonRadius * Constants.metersToKm * Constants.scale,
+        rotationPeriod: 29.53058867 * Constants.secondsInDay, // synodic
+        meshRes: 128,
+        tilt: 0,
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true
         },
-        {
-            name: 'earthSpecTexture',
-            url: earthSpecTexture,
-            fallbackUrl: earthSpecTexture + '?url'
+        missionsData: geojsonDataMissions,
+        addLight: true,
+        lightOptions: { color: 0x6699ff, intensity: 1000.5, helper: true },
+        orbitalPeriod: 27.321661, // sidereal days
+        orbitElements: {
+            semiMajorAxis: Constants.semiMajorAxis,
+            eccentricity: Constants.eccentricity,
+            inclination: Constants.inclination,
+            longitudeOfAscendingNode: Constants.ascendingNode,
+            argumentOfPeriapsis: THREE.MathUtils.degToRad(argPerDeg),
+            mu: Constants.earthGravitationalParameter,
         },
-        {
-            name: 'earthNormalTexture',
-            url: earthNormalTexture,
-            fallbackUrl: earthNormalTexture + '?url'
-        },
-        {
-            name: 'cloudTexture',
-            url: cloudTexture,
-            fallbackUrl: cloudTexture + '?url'
-        },
-        {
-            name: 'moonTexture',
-            url: moonTexture,
-            fallbackUrl: moonTexture + '?url'
-        },
-        {
-            name: 'moonBump',
-            url: moonBump,
-            fallbackUrl: moonBump + '?url'
+        materials: {
+            createSurfaceMaterial: (tm, anisotropy) => {
+                const mat = new THREE.MeshPhongMaterial({
+                    map: tm.getTexture('moonTexture'),
+                    bumpMap: tm.getTexture('moonBump'),
+                    bumpScale: 3.9
+                });
+                if (mat.map) mat.map.anisotropy = anisotropy;
+                if (mat.bumpMap) mat.bumpMap.anisotropy = anisotropy;
+                return mat;
+            },
+            createCloudMaterial: () => null,
+            createGlowMaterial: () => null
         }
-    ];
+    };
+};
 
-    try {
-        await textureManager.loadAllTextures(textures);
-        console.log('Textures loaded successfully');
-    } catch (error) {
-        console.error('Error loading textures:', error);
-        throw error;
-    }
-}
+const setupPostProcessing = (app) => {
+    const { scene, camera, renderer, sceneManager } = app;
+    const composer = new EffectComposer(renderer);
 
-export function setupScene(app) {
-    if (!app.scene || !app.renderer) {
-        throw new Error('Scene or renderer not initialized');
-    }
+    composer.addPass(new RenderPass(scene, camera));
 
-    try {
-        // Add ambient light
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.1); // soft white light
-        ambientLight.name = 'ambientLight';
-        app.scene.add(ambientLight);
-
-        return app.scene;
-    } catch (error) {
-        console.error('Error setting up scene:', error);
-        throw error;
-    }
-}
-
-export async function setupSceneDetails(app) {
-    if (!app.textureManager) {
-        throw new Error('TextureManager not initialized');
-    }
-
-    try {
-        // Initialize components that require textures
-        new BackgroundStars(app.scene, app.camera);
-        app.earth = new Earth(app.scene, app.renderer, app.timeUtils, app.textureManager);
-        app.sun = new Sun(app.scene, app.timeUtils);
-        app.moon = new Moon(app.scene, app.earth, app.timeUtils);
-        app.vectors = new Vectors(app.earth, app.scene, app.timeUtils);
-
-        // Add earth points after Earth is initialized
-        addEarthPoints(app);
-
-        // Apply initial display settings to components
-        console.log('Applying initial display settings to scene components');
-        if (app.displaySettings) {
-            Object.entries(app.displaySettings).forEach(([key, value]) => {
-                switch (key) {
-                    case 'showGrid':
-                        if (app.radialGrid) {
-                            app.radialGrid.setVisible(value);
-                        }
-                        break;
-                    case 'showVectors':
-                        if (app.vectors) {
-                            app.vectors.setVisible(value);
-                        }
-                        break;
-                    case 'showSurfaceLines':
-                        if (app.earth?.setSurfaceLinesVisible) {
-                            app.earth.setSurfaceLinesVisible(value);
-                        }
-                        break;
-                    case 'showCities':
-                        if (app.earth?.setCitiesVisible) {
-                            app.earth.setCitiesVisible(value);
-                        }
-                        break;
-                    case 'showAirports':
-                        if (app.earth?.setAirportsVisible) {
-                            app.earth.setAirportsVisible(value);
-                        }
-                        break;
-                    case 'showSpaceports':
-                        if (app.earth?.setSpaceportsVisible) {
-                            app.earth.setSpaceportsVisible(value);
-                        }
-                        break;
-                    case 'showObservatories':
-                        if (app.earth?.setObservatoriesVisible) {
-                            app.earth.setObservatoriesVisible(value);
-                        }
-                        break;
-                    case 'showGroundStations':
-                        if (app.earth?.setGroundStationsVisible) {
-                            app.earth.setGroundStationsVisible(value);
-                        }
-                        break;
-                    case 'showCountryBorders':
-                        if (app.earth?.setCountryBordersVisible) {
-                            app.earth.setCountryBordersVisible(value);
-                        }
-                        break;
-                    case 'showStates':
-                        if (app.earth?.setStatesVisible) {
-                            app.earth.setStatesVisible(value);
-                        }
-                        break;
-                    case 'showMoonOrbit':
-                        if (app.moon?.setOrbitVisible) {
-                            app.moon.setOrbitVisible(value);
-                        }
-                        break;
-                    case 'showMoonTraces':
-                        if (app.moon?.setTraceVisible) {
-                            app.moon.setTraceVisible(value);
-                        }
-                        break;
-                    case 'showMoonSurfaceLines':
-                        if (app.moon?.setSurfaceDetailsVisible) {
-                            app.moon.setSurfaceDetailsVisible(value);
-                        }
-                        break;
-                }
-            });
-        }
-    } catch (error) {
-        console.error('Error setting up scene details:', error);
-        throw error;
-    }
-}
-
-export function addEarthPoints(app) {
-    app.earth.earthSurface.addPoints(geojsonDataCities, app.earth.earthSurface.materials.cityPoint, 'cities');
-    app.earth.earthSurface.addPoints(geojsonDataAirports, app.earth.earthSurface.materials.airportPoint, 'airports');
-    app.earth.earthSurface.addPoints(geojsonDataSpaceports, app.earth.earthSurface.materials.spaceportPoint, 'spaceports');
-    app.earth.earthSurface.addPoints(geojsonDataGroundStations, app.earth.earthSurface.materials.groundStationPoint, 'groundStations');
-    app.earth.earthSurface.addPoints(geojsonDataObservatories, app.earth.earthSurface.materials.observatoryPoint, 'observatories');
-}
-
-export function setupPostProcessing(app) {
-    // Single composer with FXAA, render, and bloom passes for lightweight antialiasing
-    const composer = new EffectComposer(app._renderer);
-    // Render pass
-    const renderPass = new RenderPass(app.scene, app.camera);
-    composer.addPass(renderPass);
-    // FXAA anti-aliasing pass (cheap)
     const fxaaPass = new ShaderPass(FXAAShader);
-    const pixelRatio = app.renderer.getPixelRatio();
-    fxaaPass.material.uniforms['resolution'].value.set(
+    const pixelRatio = renderer.getPixelRatio();
+    fxaaPass.material.uniforms.resolution.value.set(
         1 / (window.innerWidth * pixelRatio),
         1 / (window.innerHeight * pixelRatio)
     );
     composer.addPass(fxaaPass);
-    app.sceneManager.composers.fxaaPass = fxaaPass;
-    // Bloom pass (low resolution for performance)
+    sceneManager.composers.fxaaPass = fxaaPass;
+
     const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.3,
-        0.999,
-        0.99
+        BLOOM_CONFIG.strength,
+        BLOOM_CONFIG.radius,
+        BLOOM_CONFIG.threshold
     );
-    bloomPass.renderToScreen = true;
     bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2);
+    bloomPass.renderToScreen = true;
     composer.addPass(bloomPass);
-    app.sceneManager.composers.final = composer;
+    sceneManager.composers.final = composer;
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 4. PUBLIC API
+// ──────────────────────────────────────────────────────────────────────────────
+/**
+ * The only function you import elsewhere.
+ * Handles: textures ➜ primitives ➜ planets ➜ post-processing.
+ */
+export async function initScene(app) {
+    const { scene, renderer, camera, timeUtils, textureManager } = app;
+    if (!scene || !renderer || !camera) throw new Error('Scene, camera, or renderer not set.');
+    if (!textureManager) throw new Error('TextureManager not initialized.');
+
+    // 1. Assets & background
+    await loadTextures(textureManager);
+    addAmbientLight(scene);
+    new BackgroundStars(scene, camera);
+
+    // 2. Planetary bodies
+    app.earth = new Planet(scene, renderer, timeUtils, textureManager, createEarthConfig());
+    app.sun = new Sun(scene, timeUtils);
+    app.moon = new Planet(scene, renderer, timeUtils, textureManager, createMoonConfig(timeUtils));
+
+    // 3. Helpers
+    app.planets = Planet.instances;
+    app.planetVectors = app.planets.map(
+        p => new PlanetVectors(p, scene, timeUtils, { name: p.name })
+    );
+    const gravitySources = [
+        { name: 'earth', body: app.earth, mesh: app.earth.getMesh(), mass: Constants.earthMass },
+        { name: 'moon',  body: app.moon,  mesh: app.moon.getMesh(),  mass: Constants.moonMass },
+        { name: 'sun',   body: app.sun,   mesh: app.sun.sun,      mass: Constants.sunMass }
+    ];
+    app.satelliteVectors = new SatelliteVectors({
+        scene,
+        timeUtils,
+        satelliteManager: app.satellites,
+        gravitySources,
+        camera
+    });
+
+    // 4. Display tuning
+    if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
+
+    // 5. Post-processing
+    setupPostProcessing(app);
+
+    return scene;  // gives callers a fluent handle
 }

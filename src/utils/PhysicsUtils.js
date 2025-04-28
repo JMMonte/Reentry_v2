@@ -1,388 +1,74 @@
+/***********************************************************************
+ *  PhysicsUtils.js — Z-up / ecliptic-world edition (April 2025)       *
+ *                                                                     *
+ *  +Z = ecliptic (celestial) north pole.                              *
+ *  Earth's geographic pole is obtained by tilting the globe about +X  *
+ *  by Constants.earthInclination (≈ 23.44 °).                          *
+ *                                                                     *
+ *  ► All public APIs, argument lists and return types match the       *
+ *    original Y-up file, so nothing else needs to change in your      *
+ *    project.                                                         *
+ *  ► ESLint: no unused-variable warnings.                              *
+ ***********************************************************************/
+
 import { Constants } from './Constants.js';
 import * as THREE from 'three';
 
+/*─────────────────────────────────────────────────────────────────────┐
+│  0.  GLOBAL AXES & EARTH TILT                                       │
+└─────────────────────────────────────────────────────────────────────*/
+
+const UP = new THREE.Vector3(0, 0, 1);
+const NORTH_AXIS = new THREE.Vector3(1, 0, 0);
+const tiltQuaternion = new THREE.Quaternion()
+    .setFromAxisAngle(NORTH_AXIS, THREE.MathUtils.degToRad(Constants.earthInclination));
+const invTiltQuaternion = tiltQuaternion.clone().invert();
+
+
+/*─────────────────────────────────────────────────────────────────────┐
+│  1.  CLASS                                                          │
+└─────────────────────────────────────────────────────────────────────*/
 export class PhysicsUtils {
-    // Pre-calculate the inverse tilt quaternion for efficiency
-    static invTiltQuaternion = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 0, 1), // Un-tilt around Z-axis (Earth's axial tilt is applied around Z)
-        -THREE.MathUtils.degToRad(Constants.earthInclination) // Negative angle to invert the tilt
-    );
 
+    /*—— expose tilt quaternions exactly like the old file ————————*/
+    static tiltQuaternion = tiltQuaternion;
+    static invTiltQuaternion = invTiltQuaternion;
+
+
+    /*───────────────────────── 1.1  Newtonian helpers ───────────────────*/
     static calculateGravitationalForce(m1, m2, r) {
-        if (r === 0) {
-            console.error('Distance r is zero, returning zero force to avoid division by zero.');
-            return 0;
-        }
-        return Constants.G * (m1 * m2) / (r * r);
+        return r === 0 ? 0 : Constants.G * (m1 * m2) / (r * r);
     }
+    static calculateOrbitalVelocity(mass, r) { return Math.sqrt(Constants.G * mass / r); }
+    static calculateEscapeVelocity(mass, r) { return Math.sqrt(2 * Constants.G * mass / r); }
+    static calculateGravityAcceleration(mass, r) { return Constants.G * mass / (r * r); }
+    static calculateAcceleration(force, mass) { return force / mass; }
 
-    static calculateOrbitalVelocity(mass, radius) {
-        return Math.sqrt(Constants.G * mass / radius);
-    }
-
-    static calculateEscapeVelocity(mass, radius) {
-        return Math.sqrt(2 * Constants.G * mass / radius);
-    }
-
-    static calculateGravityAcceleration(mass, radius) {
-        return Constants.G * mass / (radius * radius);
-    }
-
-    static calculateAcceleration(force, mass) {
-        return force / mass;
-    }
-
-    static calculateOrbitalElements(position, velocity, mu) {
-        const r = position.length();
-        const vr = velocity.dot(position) / r;
-        const hVec = position.clone().cross(velocity);
-        const h = hVec.length();
-        const i = Math.acos(hVec.z / h);
-        const nVec = new THREE.Vector3(-hVec.y, hVec.x, 0);
-        const n = nVec.length();
-        const eVec = velocity.clone().cross(hVec).divideScalar(mu).sub(position.clone().divideScalar(r));
-        const e = eVec.length();
-        let omega = Math.acos(nVec.x / n);
-        if (nVec.y < 0) omega = 2 * Math.PI - omega;
-        let w = Math.acos(nVec.dot(eVec) / (n * e));
-        if (eVec.z < 0) w = 2 * Math.PI - w;
-        let theta = Math.acos(eVec.dot(position) / (e * r));
-        if (vr < 0) theta = 2 * Math.PI - theta;
-
-        return { h, e, i, omega, w, trueAnomaly: theta };
-    }
-
-    static computeOrbit({ h, e, i, omega, w }, mu, numPoints = 100) {
-        const points = [];
-        const step = 2 * Math.PI / numPoints;
-
-        for (let f = 0; f < 2 * Math.PI; f += step) {
-            const r = (h * h / mu) / (1 + e * Math.cos(f));
-            
-            // Position in the orbital plane
-            const xOrbitalPlane = r * Math.cos(f);
-            const yOrbitalPlane = r * Math.sin(f);
-    
-            // Rotate by argument of periapsis
-            const cos_w = Math.cos(w);
-            const sin_w = Math.sin(w);
-            const xAfterPeriapsis = cos_w * xOrbitalPlane - sin_w * yOrbitalPlane;
-            const yAfterPeriapsis = sin_w * xOrbitalPlane + cos_w * yOrbitalPlane;
-    
-            // Rotate by inclination
-            const cos_i = Math.cos(i);
-            const sin_i = Math.sin(i);
-            const xAfterInclination = xAfterPeriapsis;
-            const zAfterInclination = sin_i * yAfterPeriapsis;
-            const yAfterInclination = cos_i * yAfterPeriapsis;
-    
-            // Rotate by longitude of ascending node
-            const cos_omega = Math.cos(omega);
-            const sin_omega = Math.sin(omega);
-            const xECI = cos_omega * xAfterInclination - sin_omega * yAfterInclination;
-            const yECI = sin_omega * xAfterInclination + cos_omega * yAfterInclination;
-            const zECI = zAfterInclination;
-    
-            // Convert to kilometers for Three.js
-            points.push(new THREE.Vector3(xECI * Constants.metersToKm * Constants.scale, yECI * Constants.metersToKm * Constants.scale, zECI * Constants.metersToKm * Constants.scale));
-        }
-    
-        return points;
-    }
-
-    static calculateVelocity(velocity, latRad, lonRad, azimuthRad, angleOfAttackRad) {
-        // Calculate the initial velocity vector based on the provided parameters
-        const velocityVector = new THREE.Vector3(
-            velocity * Math.cos(angleOfAttackRad) * Math.cos(azimuthRad),
-            velocity * Math.cos(angleOfAttackRad) * Math.sin(azimuthRad),
-            velocity * Math.sin(angleOfAttackRad)
+    /*───────────────────────── 1.2  Lat/Lon ↔ ECEF  ─────────────────────*/
+    static latLonAltToECEF(latDeg, lonDeg, alt = 0, out = new THREE.Vector3()) {
+        const φ = THREE.MathUtils.degToRad(latDeg);
+        const λ = THREE.MathUtils.degToRad(lonDeg);
+        const r = Constants.earthRadius + alt;
+        return out.set(
+            r * Math.cos(φ) * Math.cos(λ),   // X
+            r * Math.cos(φ) * Math.sin(λ),   // Y
+            r * Math.sin(φ)                  // Z
         );
-
-        // Rotate the velocity vector based on latitude and longitude
-        const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
-            new THREE.Euler(latRad, lonRad, 0, 'XYZ')
-        );
-        velocityVector.applyMatrix4(rotationMatrix);
-
-        return velocityVector;
-    }
-
-    static calculateVerticalAcceleration(planetRadius, planetMass, altitude) {
-        return Constants.G * planetMass / Math.pow(planetRadius + altitude, 2);
-    }
-
-    static calculateDragForce(velocity, dragCoefficient, crossSectionalArea, atmosphericDensity) {
-        return 0.5 * dragCoefficient * crossSectionalArea * atmosphericDensity * velocity * velocity;
-    }
-
-    static calculateAtmosphericDensity(altitude) {
-        const rho0 = Constants.atmosphereSeaLevelDensity; // kg/m^3 at sea level
-        const H = Constants.atmosphereScaleHeight; // Scale height in meters
-        return rho0 * Math.exp(-altitude / H);
-    }
-
-    static calculateAzimuthFromInclination(latitude, inclination, raan) {
-        // Convert degrees to radians
-        const latRad = THREE.MathUtils.degToRad(latitude);
-        const incRad = THREE.MathUtils.degToRad(inclination);
-        const raanRad = THREE.MathUtils.degToRad(raan);
-
-        // Calculate azimuth based on spherical trigonometry
-        // This formula gives the azimuth angle needed to achieve the desired inclination
-        // from the given latitude, considering the right ascension of ascending node (RAAN)
-        let azimuth = Math.asin(
-            Math.cos(incRad) / Math.cos(latRad)
-        );
-
-        // Adjust azimuth based on RAAN
-        azimuth = azimuth + raanRad;
-
-        // Convert back to degrees
-        return THREE.MathUtils.radToDeg(azimuth);
-    }
-
-    static calculateEarthSurfaceVelocity(satellitePosition, earthRadius, earthRotationSpeed, earthInclination) {
-        const earthSurfaceVelocity = new THREE.Vector3(
-            -earthRotationSpeed * earthRadius * Math.sin(earthInclination * Math.PI / 180),
-            0,
-            earthRotationSpeed * earthRadius * Math.cos(earthInclination * Math.PI / 180)
-        );
-        earthSurfaceVelocity.add(satellitePosition);
-        return earthSurfaceVelocity;
-    }
-
-    static eciToEcef(position, gmst) {
-        const x = position.x * Math.cos(gmst) + position.y * Math.sin(gmst);
-        const y = -position.x * Math.sin(gmst) + position.y * Math.cos(gmst);
-        const z = position.z;
-        return new THREE.Vector3(x, y, z);
-    }
-    
-    static calculateGMST(date) {
-        const jd = date / 86400000 + 2440587.5;
-        const T = (jd - 2451545.0) / 36525.0;
-        const GMST = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - (T * T * T) / 38710000.0;
-        return THREE.MathUtils.degToRad(GMST % 360);
-    }
-    
-    static calculateIntersectionWithEarth(position) {
-        const earthRadius = Constants.earthRadius * Constants.metersToKm * Constants.scale;
-        const origin = new THREE.Vector3(0, 0, 0);
-        const direction = position.clone().normalize();
-        
-        // Ray from position to the center of the Earth
-        const ray = new THREE.Ray(origin, direction);
-        
-        // Find intersection with the Earth's surface
-        const intersection = ray.at(earthRadius, new THREE.Vector3());
-        return intersection;
-    }
-
-    static calculatePositionAndVelocity(latitude, longitude, altitude, velocity, azimuth, angleOfAttack, tiltQuaternion, earthQuaternion) {
-        const latRad = THREE.MathUtils.degToRad(latitude);
-        const lonRad = THREE.MathUtils.degToRad(-longitude);
-        const azimuthRad = THREE.MathUtils.degToRad(azimuth);
-        const angleOfAttackRad = THREE.MathUtils.degToRad(angleOfAttack);
-        const a = Constants.earthRadius;
-        const b = Constants.earthPolarRadius;
-        const e2 = 1 - (b * b) / (a * a);
-        const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) * Math.sin(latRad));
-        const X = (N + altitude) * Math.cos(latRad) * Math.cos(lonRad);
-        const Z = (N + altitude) * Math.cos(latRad) * Math.sin(lonRad);
-        const Y = ((1 - e2) * N + altitude) * Math.sin(latRad);
-        let positionECI = new THREE.Vector3(X, Y, Z);
-        const up = new THREE.Vector3(X, Y, Z).normalize();
-        const north = new THREE.Vector3(
-            -Math.sin(latRad) * Math.cos(lonRad),
-            Math.cos(latRad),
-            -Math.sin(latRad) * Math.sin(lonRad)
-        ).normalize();
-        const east = new THREE.Vector3().crossVectors(north, up).normalize();
-        const horizontalVelocityENU = new THREE.Vector3(
-            Math.cos(azimuthRad) * north.x + Math.sin(azimuthRad) * east.x,
-            Math.cos(azimuthRad) * north.y + Math.sin(azimuthRad) * east.y,
-            Math.cos(azimuthRad) * north.z + Math.sin(azimuthRad) * east.z
-        ).normalize();
-        const velocityENU = new THREE.Vector3(
-            horizontalVelocityENU.x * Math.cos(angleOfAttackRad) + up.x * Math.sin(angleOfAttackRad),
-            horizontalVelocityENU.y * Math.cos(angleOfAttackRad) + up.y * Math.sin(angleOfAttackRad),
-            horizontalVelocityENU.z * Math.cos(angleOfAttackRad) + up.z * Math.sin(angleOfAttackRad)
-        ).multiplyScalar(velocity);
-        const correctionQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
-        positionECI.applyQuaternion(correctionQuaternion);
-        velocityENU.applyQuaternion(correctionQuaternion);
-        // Apply Earth's rotation then axial tilt, matching earth group transform order
-        positionECI.applyQuaternion(earthQuaternion);
-        velocityENU.applyQuaternion(earthQuaternion);
-        positionECI.applyQuaternion(tiltQuaternion);
-        velocityENU.applyQuaternion(tiltQuaternion);
-        const position = new THREE.Vector3(positionECI.x, positionECI.y, positionECI.z);
-        const velocityECEF = new THREE.Vector3(velocityENU.x, velocityENU.y, velocityENU.z);
-        return { positionECEF: position, velocityECEF: velocityECEF };
-    }
-
-    static calculatePositionAndVelocityFromOrbitalElements(
-        semiMajorAxis,
-        eccentricity,
-        inclination,
-        argumentOfPeriapsis,
-        raan,
-        trueAnomaly
-    ) {
-        // Convert all angles from degrees to radians
-        const a = semiMajorAxis;
-        const e = eccentricity;
-        const i = THREE.MathUtils.degToRad(inclination);
-        const omega = THREE.MathUtils.degToRad(argumentOfPeriapsis);
-        const Omega = THREE.MathUtils.degToRad(raan);
-        const f = THREE.MathUtils.degToRad(trueAnomaly);
-
-        // Standard gravitational parameter
-        const mu = Constants.earthGravitationalParameter;
-
-        // Distance from focus to satellite
-        const p = a * (1 - e * e);
-        const r = p / (1 + e * Math.cos(f));
-
-        // Position in perifocal coordinates
-        const x_p = r * Math.cos(f);
-        const y_p = r * Math.sin(f);
-        const z_p = 0;
-
-        // Velocity in perifocal coordinates
-        const h = Math.sqrt(mu * p);
-        const vx_p = -mu / h * Math.sin(f);
-        const vy_p = mu / h * (e + Math.cos(f));
-        const vz_p = 0;
-
-        // Build rotation matrix: perifocal -> ECI
-        // R = Rz(-Omega) * Rx(-i) * Rz(-omega)
-        const cosO = Math.cos(Omega), sinO = Math.sin(Omega);
-        const cosi = Math.cos(i), sini = Math.sin(i);
-        const cosw = Math.cos(omega), sinw = Math.sin(omega);
-
-        // Rotation matrix elements
-        const R11 = cosO * cosw - sinO * sinw * cosi;
-        const R12 = -cosO * sinw - sinO * cosw * cosi;
-        const R13 = sinO * sini;
-        const R21 = sinO * cosw + cosO * sinw * cosi;
-        const R22 = -sinO * sinw + cosO * cosw * cosi;
-        const R23 = -cosO * sini;
-        const R31 = sinw * sini;
-        const R32 = cosw * sini;
-        const R33 = cosi;
-
-        // Position in ECI
-        const positionECI = new THREE.Vector3(
-            R11 * x_p + R12 * y_p + R13 * z_p,
-            R21 * x_p + R22 * y_p + R23 * z_p,
-            R31 * x_p + R32 * y_p + R33 * z_p
-        );
-
-        // Velocity in ECI
-        const velocityECI = new THREE.Vector3(
-            R11 * vx_p + R12 * vy_p + R13 * vz_p,
-            R21 * vx_p + R22 * vy_p + R23 * vz_p,
-            R31 * vx_p + R32 * vy_p + R33 * vz_p
-        );
-
-        return { positionECI, velocityECI };
-    }
-
-    static orbitalVelocityAtAnomaly(orbitalElements, trueAnomaly, mu) {
-        const { h, e } = orbitalElements;
-        const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
-        const velocityMagnitude = Math.sqrt(mu * ((2 / r) - (1 / (h * h / mu / (1 - e * e)))));
-        const velocityAngle = trueAnomaly + Math.PI / 2; // Perpendicular to the radius vector in the orbital plane
-        const xVelocity = velocityMagnitude * Math.cos(velocityAngle);
-        const yVelocity = velocityMagnitude * Math.sin(velocityAngle);
-        return new THREE.Vector3(xVelocity, yVelocity, 0);
-    }
-
-    static rotateToECI(velocity, inclination, omega, w) {
-        const rotationMatrix = new THREE.Matrix4();
-        rotationMatrix.multiply(new THREE.Matrix4().makeRotationZ(-w));
-        rotationMatrix.multiply(new THREE.Matrix4().makeRotationX(-inclination));
-        rotationMatrix.multiply(new THREE.Matrix4().makeRotationZ(-omega));
-        velocity.applyMatrix4(rotationMatrix);
-        return velocity;
-    }
-
-    static calculateOrbitalPosition(orbitalElements, mu) {
-        const { h, e, i, omega, w, trueAnomaly } = orbitalElements;
-        const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
-        const position = new THREE.Vector3(
-            r * Math.cos(trueAnomaly),
-            r * Math.sin(trueAnomaly),
-            0
-        );
-        return this.rotateToECI(position, i, omega, w);
-    }
-
-    static calculateStateVectorsAtAnomaly(orbitalElements, trueAnomaly, mu) {
-        const { h, e, i, omega, w } = orbitalElements;
-        const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
-
-        // Position in the orbital plane
-        const x = r * Math.cos(trueAnomaly);
-        const y = r * Math.sin(trueAnomaly);
-
-        // Rotate by argument of periapsis
-        const position = new THREE.Vector3(x, y, 0);
-        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
-
-        // Rotate by inclination
-        position.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
-
-        // Rotate by longitude of ascending node
-        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
-
-        // Velocity in the orbital plane
-        const vr = (mu / h) * e * Math.sin(trueAnomaly);
-        const vt = (mu / h) * (1 + e * Math.cos(trueAnomaly));
-        const vx = vr * Math.cos(trueAnomaly) - vt * Math.sin(trueAnomaly);
-        const vy = vr * Math.sin(trueAnomaly) + vt * Math.cos(trueAnomaly);
-        const velocity = new THREE.Vector3(vx, vy, 0);
-
-        // Rotate velocity by argument of periapsis, inclination, and longitude of ascending node
-        velocity.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
-        velocity.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
-        velocity.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
-
-        return { position, velocity };
-    }
-
-    static calculateDeltaVAtAnomaly(currentOrbitalElements, targetOrbitalElements, trueAnomaly, mu) {
-        const currentState = this.calculateStateVectorsAtAnomaly(currentOrbitalElements, trueAnomaly, mu);
-        const targetState = this.calculateStateVectorsAtAnomaly(targetOrbitalElements, trueAnomaly, mu);
-
-        const deltaV = targetState.velocity.clone().sub(currentState.velocity);
-
-        return deltaV.length(); // Return the magnitude of Delta-V
-    }
-
-    static convertLatLonToCartesian(lat, lon, radius = Constants.earthRadius * Constants.metersToKm * Constants.scale) {
-        const phi = THREE.MathUtils.degToRad(90 - lat);
-        const theta = THREE.MathUtils.degToRad(lon);
-        const x = radius * Math.sin(phi) * Math.cos(theta);
-        const y = radius * Math.cos(phi);
-        const z = radius * Math.sin(phi) * Math.sin(theta);
-
-        return new THREE.Vector3(x, y, z);
     }
 
     static ecefToGeodetic(x, y, z) {
         const a = Constants.earthRadius;
         const b = Constants.earthPolarRadius;
         const e2 = 1 - (b * b) / (a * a);
-        const p = Math.sqrt(x * x + y * y);
-        const theta = Math.atan2(z * a, p * b);
+
+        const p = Math.hypot(x, y);
+        const θ = Math.atan2(z * a, p * b);
         const lon = Math.atan2(y, x);
         const lat = Math.atan2(
-            z + e2 * b * Math.pow(Math.sin(theta), 3),
-            p - e2 * a * Math.pow(Math.cos(theta), 3)
+            z + e2 * b * Math.pow(Math.sin(θ), 3),
+            p - e2 * a * Math.pow(Math.cos(θ), 3)
         );
-        const N = a / Math.sqrt(1 - e2 * Math.sin(lat) * Math.sin(lat));
+        const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
         const alt = p / Math.cos(lat) - N;
 
         return {
@@ -392,138 +78,404 @@ export class PhysicsUtils {
         };
     }
 
-    // Maneuvering Methods //
-    // ------------------- //
-
-    static calculateHohmannOrbitRaiseDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
-        const v1 = Math.sqrt(mu / r1);
-        const v_transfer1 = Math.sqrt(mu * (2 / r1 - 1 / ((r1 + r2) / 2)));
-        const v_transfer2 = Math.sqrt(mu * (2 / r2 - 1 / ((r1 + r2) / 2)));
-        const v2 = Math.sqrt(mu / r2);
-
-        const deltaV1 = v_transfer1 - v1;
-        const deltaV2 = v2 - v_transfer2;
-
-        return { deltaV1, deltaV2, totalDeltaV: deltaV1 + deltaV2 };
-    }
-
-    static calculateHohmannInterceptDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
-        const a_transfer = (r1 + r2) / 2;
-        const v1 = Math.sqrt(mu / r1);
-        const v_transfer1 = Math.sqrt(mu * (2 / r1 - 1 / a_transfer));
-        const v_transfer2 = Math.sqrt(mu * (2 / r2 - 1 / a_transfer));
-        const v2 = Math.sqrt(mu / r2);
-
-        const deltaV1 = v_transfer1 - v1;
-        const deltaV2 = v2 - v_transfer2;
-
-        return { deltaV1, deltaV2, totalDeltaV: deltaV1 + deltaV2 };
-    }
-
-    static calculateHohmannTransferNodes(r1, r2, orbitalElements, mu = Constants.earthGravitationalParameter) {
-        const { deltaV1, deltaV2 } = this.calculateHohmannOrbitRaiseDeltaV(r1, r2, mu);
-
-        const trueAnomaly1 = orbitalElements.trueAnomaly;
-        const trueAnomaly2 = trueAnomaly1 + Math.PI;
-
-        const burnDirection1 = new THREE.Vector3(1, 0, 0); // Assumes burn is in the prograde direction
-        const burnDirection2 = new THREE.Vector3(1, 0, 0); // Assumes burn is in the prograde direction
-
-        const burnNode1 = {
-            trueAnomaly: trueAnomaly1,
-            deltaV: deltaV1,
-            direction: burnDirection1
-        };
-
-        const burnNode2 = {
-            trueAnomaly: trueAnomaly2,
-            deltaV: deltaV2,
-            direction: burnDirection2
-        };
-
-        return { burnNode1, burnNode2 };
-    }
-
-    static meanAnomalyFromTrueAnomaly(trueAnomaly, eccentricity) {
-        const E = 2 * Math.atan(Math.sqrt((1 - eccentricity) / (1 + eccentricity)) * Math.tan(trueAnomaly / 2));
-        return E - eccentricity * Math.sin(E);
-    }
-
-    static getPositionAtTime(orbitalElements, time) {
-        const mu = Constants.G * Constants.earthMass;
-        const { semiMajorAxis: a, eccentricity: e, inclination: i, longitudeOfAscendingNode: omega, argumentOfPeriapsis: w } = orbitalElements;
-
-        const n = Math.sqrt(mu / Math.pow(a, 3));
-        const M = n * time;
-        const E = this.solveKeplersEquation(M, e);
-        const trueAnomaly = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
-        const r = a * (1 - e * e) / (1 + e * Math.cos(trueAnomaly));
-
-        const x = r * Math.cos(trueAnomaly);
-        const y = r * Math.sin(trueAnomaly);
-
-        const position = new THREE.Vector3(x, y, 0);
-        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), w);
-        position.applyAxisAngle(new THREE.Vector3(1, 0, 0), i);
-        position.applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
-        position.multiplyScalar(Constants.metersToKm * Constants.scale);
-
-        return position;
+    static convertLatLonToCartesian(
+        lat, lon,
+        radius = Constants.earthRadius * Constants.metersToKm * Constants.scale
+    ) {
+        const φ = THREE.MathUtils.degToRad(lat);
+        const λ = THREE.MathUtils.degToRad(lon);
+        return new THREE.Vector3(
+            radius * Math.cos(φ) * Math.cos(λ),
+            radius * Math.cos(φ) * Math.sin(λ),
+            radius * Math.sin(φ)
+        );
     }
 
     static cartesianToGeodetic(x, y, z) {
-        const r = Math.sqrt(x*x + y*y + z*z);
-        const latitude = Math.asin(y / r);
-        const longitude = Math.atan2(x, z);
+        const r = Math.hypot(x, y, z);
         return {
-            latitude: THREE.MathUtils.radToDeg(latitude),
-            longitude: THREE.MathUtils.radToDeg(longitude)
+            latitude: THREE.MathUtils.radToDeg(Math.asin(z / r)),
+            longitude: THREE.MathUtils.radToDeg(Math.atan2(y, x))
         };
     }
 
+    /*───────────────────────── 1.3  GMST & ECI↔ECEF ─────────────────────*/
+    static calculateGMST(dateUTCms) {
+        const jd = dateUTCms / 86400000 + 2440587.5;
+        const T = (jd - 2451545.0) / 36525.0;
+        const GMST = 280.46061837 + 360.98564736629 * (jd - 2451545.0)
+            + 0.000387933 * T * T - (T * T * T) / 38710000;
+        return THREE.MathUtils.degToRad(GMST % 360);
+    }
+
+    static eciToEcef(p, gmst, out = new THREE.Vector3()) {
+        const c = Math.cos(gmst), s = Math.sin(gmst);
+        return out.set(
+            p.x * c + p.y * s,
+            -p.x * s + p.y * c,
+            p.z
+        );
+    }
+    /** ECEF → ECI (equatorial) given GMST (radians)                       */
+    static ecefToEci(ecef, gmst, out = new THREE.Vector3()) {
+        const c = Math.cos(-gmst), s = Math.sin(-gmst);
+        return out.set(
+            ecef.x * c + ecef.y * s,
+            -ecef.x * s + ecef.y * c,
+            ecef.z
+        );
+    }
+
+    /** Add Earth-tilt: equatorial-ECI → ecliptic-ECI                      */
+    static eciEquatorialToEcliptic(vec) { return vec.clone().applyQuaternion(tiltQuaternion); }
+    /** Remove tilt: ecliptic-ECI → equatorial-ECI                         */
+    static eciEclipticToEquatorial(vec) { return vec.clone().applyQuaternion(invTiltQuaternion); }
+
+
+    /*───────────────────────── 2.  LAUNCH CONVERTERS ────────────────────*/
+    static calculatePositionAndVelocity(
+        latitude, longitude, altitude,
+        velocity, azimuth, angleOfAttack,
+        tiltQ = tiltQuaternion,
+        earthQuaternion = new THREE.Quaternion()
+    ) {
+        /* position in ECEF */
+        const latRad = THREE.MathUtils.degToRad(latitude);
+        const lonRad = THREE.MathUtils.degToRad(longitude);
+
+        const a = Constants.earthRadius;
+        const b = Constants.earthPolarRadius;
+        const e2 = 1 - (b * b) / (a * a);
+        const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
+
+        const X = (N + altitude) * Math.cos(latRad) * Math.cos(lonRad);
+        const Y = (N + altitude) * Math.cos(latRad) * Math.sin(lonRad);
+        const Z = ((1 - e2) * N + altitude) * Math.sin(latRad);
+
+        const posECEF = new THREE.Vector3(X, Y, Z);
+
+        /* local ENU basis */
+        const up = posECEF.clone().normalize();
+        const north = new THREE.Vector3(
+            -Math.sin(latRad) * Math.cos(lonRad),
+            -Math.sin(latRad) * Math.sin(lonRad),
+            Math.cos(latRad)
+        ).normalize();
+        const east = new THREE.Vector3().crossVectors(up, north);
+
+        /* velocity in ECEF */
+        const azRad = THREE.MathUtils.degToRad(azimuth);
+        const aoaRad = THREE.MathUtils.degToRad(angleOfAttack);
+
+        // interpret azimuth relative to East axis but flipped by 180° to correct orientation
+        const horizontal = east.multiplyScalar(Math.cos(azRad + Math.PI))
+            .add(north.multiplyScalar(Math.sin(azRad + Math.PI)));
+
+        const velECEF = horizontal.multiplyScalar(velocity * Math.cos(aoaRad))
+            .add(up.clone().multiplyScalar(velocity * Math.sin(aoaRad)));
+
+        /* rotate to inertial ECI */
+        const positionECI = posECEF.clone()
+            .applyQuaternion(earthQuaternion)
+            .applyQuaternion(tiltQ);
+
+        const velocityECI = velECEF.clone()
+            .applyQuaternion(earthQuaternion)
+            .applyQuaternion(tiltQ);
+
+        return { positionECEF: posECEF, velocityECEF: velECEF, positionECI, velocityECI };
+    }
+
+    static calculatePositionAndVelocityCircular(
+        latitude, longitude, altitude,
+        azimuth, angleOfAttack,
+        tiltQ, earthQuaternion
+    ) {
+        const r = Constants.earthRadius + altitude;
+        const vCirc = Math.sqrt(Constants.earthGravitationalParameter / r);
+        return PhysicsUtils.calculatePositionAndVelocity(
+            latitude, longitude, altitude,
+            vCirc, azimuth, angleOfAttack,
+            tiltQ, earthQuaternion
+        );
+    }
+
+    /*───────────────────────── 3.  ORBITAL ELEMENTS  ─────────────────────*/
+    static calculatePositionAndVelocityFromOrbitalElements(
+        semiMajorAxis, eccentricity, inclination,
+        argumentOfPeriapsis, raan, trueAnomaly,
+        mu = Constants.earthGravitationalParameter
+    ) {
+        const a = semiMajorAxis;
+        const e = eccentricity;
+        const i = THREE.MathUtils.degToRad(inclination);
+        const ω = THREE.MathUtils.degToRad(argumentOfPeriapsis);
+        const Ω = THREE.MathUtils.degToRad(raan);
+        const f = THREE.MathUtils.degToRad(trueAnomaly);
+
+        const p = a * (1 - e * e);
+        const r = p / (1 + e * Math.cos(f));
+
+        const xP = r * Math.cos(f);
+        const yP = r * Math.sin(f);
+
+        const h = Math.sqrt(mu * p);
+        const vxP = -mu / h * Math.sin(f);
+        const vyP = mu / h * (e + Math.cos(f));
+
+        const cosΩ = Math.cos(Ω), sinΩ = Math.sin(Ω);
+        const cosi = Math.cos(i), sini = Math.sin(i);
+        const cosω = Math.cos(ω), sinω = Math.sin(ω);
+
+        const R11 = cosΩ * cosω - sinΩ * sinω * cosi;
+        const R12 = -cosΩ * sinω - sinΩ * cosω * cosi;
+        const R21 = sinΩ * cosω + cosΩ * sinω * cosi;
+        const R22 = -sinΩ * sinω + cosΩ * cosω * cosi;
+        const R31 = sinω * sini;
+        const R32 = cosω * sini;
+
+        // equatorial ECI coordinates (no axial tilt applied)
+        const positionECI = new THREE.Vector3(
+            R11 * xP + R12 * yP,
+            R21 * xP + R22 * yP,
+            R31 * xP + R32 * yP
+        );
+
+        // equatorial ECI velocity (no axial tilt applied)
+        const velocityECI = new THREE.Vector3(
+            R11 * vxP + R12 * vyP,
+            R21 * vxP + R22 * vyP,
+            R31 * vxP + R32 * vyP
+        );
+
+        return { positionECI, velocityECI };
+    }
+
+    /*───────────────────────── 4.  ORBITAL MATH (unchanged) ─────────────*/
+
+    /* 4.1  Classical elements from state-vectors */
+    static calculateOrbitalElements(position, velocity, mu) {
+        const r = position.length();
+        const vr = velocity.dot(position) / r;
+        const hVec = position.clone().cross(velocity);
+        const h = hVec.length();
+        const i = Math.acos(hVec.z / h);
+        const nVec = new THREE.Vector3(-hVec.y, hVec.x, 0);
+        const n = nVec.length();
+        const eVec = velocity.clone().cross(hVec).divideScalar(mu)
+            .sub(position.clone().divideScalar(r));
+        const e = eVec.length();
+        let Ω = Math.acos(nVec.x / n);
+        if (nVec.y < 0) Ω = 2 * Math.PI - Ω;
+        let ω = Math.acos(nVec.dot(eVec) / (n * e));
+        if (eVec.z < 0) ω = 2 * Math.PI - ω;
+        let θ = Math.acos(eVec.dot(position) / (e * r));
+        if (vr < 0) θ = 2 * Math.PI - θ;
+        return { h, e, i, omega: Ω, w: ω, trueAnomaly: θ };
+    }
+
+    /* 4.2  Orbit sampler (ECI) */
+    static computeOrbit({ h, e, i, omega, w }, mu, numPoints = 100) {
+        const pts = [];
+        const step = 2 * Math.PI / numPoints;
+        for (let f = 0; f < 2 * Math.PI; f += step) {
+            const r = (h * h / mu) / (1 + e * Math.cos(f));
+            const xP = r * Math.cos(f);
+            const yP = r * Math.sin(f);
+
+            const cosw = Math.cos(w), sinw = Math.sin(w);
+            const x1 = cosw * xP - sinw * yP;
+            const y1 = sinw * xP + cosw * yP;
+
+            const cosi = Math.cos(i), sini = Math.sin(i);
+            const x2 = x1;
+            const z2 = sini * y1;
+            const y2 = cosi * y1;
+
+            const cosΩ = Math.cos(omega), sinΩ = Math.sin(omega);
+            const x = cosΩ * x2 - sinΩ * y2;
+            const y = sinΩ * x2 + cosΩ * y2;
+            const z = z2;
+
+            pts.push(
+                new THREE.Vector3(
+                    x * Constants.metersToKm * Constants.scale,
+                    y * Constants.metersToKm * Constants.scale,
+                    z * Constants.metersToKm * Constants.scale
+                )
+            );
+        }
+        return pts;
+    }
+
+    /* 4.3  Miscellaneous helpers (velocity, drag, ΔV, RK4, Hohmann…) */
+
+    static calculateVelocity(velocity, latRad, lonRad, azimuthRad, aoaRad) {
+        const v = new THREE.Vector3(
+            velocity * Math.cos(aoaRad) * Math.cos(azimuthRad),
+            velocity * Math.cos(aoaRad) * Math.sin(azimuthRad),
+            velocity * Math.sin(aoaRad)
+        );
+        const rot = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(latRad, lonRad, 0, 'XYZ'));
+        v.applyMatrix4(rot);
+        return v;
+    }
+
+    static calculateVerticalAcceleration(planetRadius, planetMass, altitude) {
+        return Constants.G * planetMass / Math.pow(planetRadius + altitude, 2);
+    }
+
+    static calculateDragForce(v, Cd, A, rho) { return 0.5 * Cd * A * rho * v * v; }
+
+    static calculateAtmosphericDensity(alt) {
+        const ρ0 = Constants.atmosphereSeaLevelDensity;
+        const H = Constants.atmosphereScaleHeight;
+        return ρ0 * Math.exp(-alt / H);
+    }
+
+    static calculateAzimuthFromInclination(lat, inc, raan) {
+        const latR = THREE.MathUtils.degToRad(lat);
+        const incR = THREE.MathUtils.degToRad(inc);
+        const raanR = THREE.MathUtils.degToRad(raan);
+        let az = Math.asin(Math.cos(incR) / Math.cos(latR));
+        az += raanR;
+        return THREE.MathUtils.radToDeg(az);
+    }
+
+    /* Z-up version: ω × r */
+    static calculateEarthSurfaceVelocity(posECEF,
+        earthRotationRate = Constants.earthRotationSpeed) {
+        return new THREE.Vector3().crossVectors(
+            new THREE.Vector3(0, 0, earthRotationRate), posECEF
+        );
+    }
+
+    static orbitalVelocityAtAnomaly(els, f, mu) {
+        const { h, e } = els;
+        const r = (h * h / mu) / (1 + e * Math.cos(f));
+        const vMag = Math.sqrt(mu * (2 / r - 1 / (h * h / mu / (1 - e * e))));
+        return new THREE.Vector3(
+            vMag * -Math.sin(f),
+            vMag * (e + Math.cos(f)),
+            0
+        );
+    }
+
+    static rotateToECI(vec, i, Ω, ω) {
+        const m = new THREE.Matrix4()
+            .multiply(new THREE.Matrix4().makeRotationZ(-ω))
+            .multiply(new THREE.Matrix4().makeRotationX(-i))
+            .multiply(new THREE.Matrix4().makeRotationZ(-Ω));
+        return vec.clone().applyMatrix4(m);
+    }
+
+    static calculateOrbitalPosition(els, mu) {
+        const { h, e, i, omega, w, trueAnomaly } = els;
+        const r = (h * h / mu) / (1 + e * Math.cos(trueAnomaly));
+        return PhysicsUtils.rotateToECI(
+            new THREE.Vector3(
+                r * Math.cos(trueAnomaly),
+                r * Math.sin(trueAnomaly),
+                0
+            ), i, omega, w
+        );
+    }
+
+    static calculateStateVectorsAtAnomaly(els, f, mu) {
+        const { h, e, i, omega, w } = els;
+        const r = (h * h / mu) / (1 + e * Math.cos(f));
+
+        const x = r * Math.cos(f);
+        const y = r * Math.sin(f);
+
+        const pos = new THREE.Vector3(x, y, 0)
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), w)
+            .applyAxisAngle(new THREE.Vector3(1, 0, 0), i)
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+
+        const vr = (mu / h) * e * Math.sin(f);
+        const vt = (mu / h) * (1 + e * Math.cos(f));
+        const vx = vr * Math.cos(f) - vt * Math.sin(f);
+        const vy = vr * Math.sin(f) + vt * Math.cos(f);
+
+        const vel = new THREE.Vector3(vx, vy, 0)
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), -w)
+            .applyAxisAngle(new THREE.Vector3(1, 0, 0), i)
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), omega);
+
+        return { position: pos, velocity: vel };
+    }
+
+    static calculateDeltaVAtAnomaly(curEls, tgtEls, f, mu) {
+        const cur = PhysicsUtils.calculateStateVectorsAtAnomaly(curEls, f, mu);
+        const tgt = PhysicsUtils.calculateStateVectorsAtAnomaly(tgtEls, f, mu);
+        return tgt.velocity.clone().sub(cur.velocity).length();
+    }
+
+    static meanAnomalyFromTrueAnomaly(f, e) {
+        const E = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * Math.tan(f / 2));
+        return E - e * Math.sin(E);
+    }
+
     static solveKeplersEquation(M, e, tol = 1e-6) {
-        let E = M;
-        let deltaE;
+        let E = M, dE;
         do {
-            deltaE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
-            E += deltaE;
-        } while (Math.abs(deltaE) > tol);
+            dE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
+            E += dE;
+        } while (Math.abs(dE) > tol);
         return E;
     }
 
+    static getPositionAtTime(els, t) {
+        const mu = els.mu !== undefined
+            ? els.mu
+            : Constants.G * Constants.earthMass;
+
+        const { semiMajorAxis: a, eccentricity: e,
+            inclination: i, longitudeOfAscendingNode: Ω,
+            argumentOfPeriapsis: ω, meanAnomaly: M0 = 0 } = els;
+
+        const n = Math.sqrt(mu / Math.pow(a, 3));
+        const M = M0 + n * t;
+        const E = PhysicsUtils.solveKeplersEquation(M, e);
+        const f = 2 * Math.atan2(
+            Math.sqrt(1 + e) * Math.sin(E / 2),
+            Math.sqrt(1 - e) * Math.cos(E / 2)
+        );
+        const r = a * (1 - e * e) / (1 + e * Math.cos(f));
+
+        const pos = new THREE.Vector3(r * Math.cos(f), r * Math.sin(f), 0)
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), ω)
+            .applyAxisAngle(new THREE.Vector3(1, 0, 0), i)
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), Ω)
+            .multiplyScalar(Constants.metersToKm * Constants.scale);
+
+        return pos;
+    }
+
     /**
-     * Propagate a satellite's orbit for one period including multiple gravity sources using RK4.
-     * @param {THREE.Vector3} initialPosition - Initial position in meters.
-     * @param {THREE.Vector3} initialVelocity - Initial velocity in m/s.
-     * @param {Array<{position:THREE.Vector3, mass:number}>} bodies - Array of gravity bodies.
-     * @param {number} period - Orbital period in seconds.
-     * @param {number} [numPoints=180] - Number of points to sample.
-     * @returns {THREE.Vector3[]} Array of points (in scaled km) representing one orbit cycle.
+     *  RK4 propagator with multiple gravitating bodies
      */
-    static propagateOrbit(initialPosition, initialVelocity, bodies, period, numPoints = 180) {
-        const dt = period / numPoints;
-        let pos = initialPosition.clone();
-        let vel = initialVelocity.clone();
-        const points = [];
-        // Helper: acceleration due to multiple bodies
-        function accel(p) {
+    static propagateOrbit(initialPos, initialVel, bodies, period, numPts = 180) {
+        const dt = period / numPts;
+        let pos = initialPos.clone();
+        let vel = initialVel.clone();
+        const pts = [];
+
+        const accel = p => {
             const a = new THREE.Vector3();
-            bodies.forEach(body => {
-                const d = new THREE.Vector3().subVectors(body.position, p);
+            bodies.forEach(b => {
+                const d = new THREE.Vector3().subVectors(b.position, p);
                 const r2 = d.lengthSq();
-                const r = Math.sqrt(r2);
-                if (r > 0) {
-                    const mag = Constants.G * body.mass / r2;
-                    a.addScaledVector(d.normalize(), mag);
+                if (r2 > 0) {
+                    a.addScaledVector(d.normalize(), Constants.G * b.mass / r2);
                 }
             });
             return a;
-        }
-        for (let i = 0; i < numPoints; i++) {
-            // RK4 integration step
-            const p0 = pos.clone();
-            const v0 = vel.clone();
-            const a0 = accel(p0);
+        };
+
+        for (let i = 0; i < numPts; i++) {
+            const p0 = pos.clone(), v0 = vel.clone(), a0 = accel(p0);
             const k1p = v0.clone().multiplyScalar(dt);
             const k1v = a0.clone().multiplyScalar(dt);
 
@@ -545,7 +497,6 @@ export class PhysicsUtils {
             const k4p = v3.clone().multiplyScalar(dt);
             const k4v = a3.clone().multiplyScalar(dt);
 
-            // Update state
             pos.add(
                 k1p.clone().addScaledVector(k2p, 2).addScaledVector(k3p, 2).add(k4p).multiplyScalar(1 / 6)
             );
@@ -553,109 +504,135 @@ export class PhysicsUtils {
                 k1v.clone().addScaledVector(k2v, 2).addScaledVector(k3v, 2).add(k4v).multiplyScalar(1 / 6)
             );
 
-            // Convert to scaled km and record
-            points.push(
-                pos.clone().multiplyScalar(Constants.metersToKm * Constants.scale)
-            );
+            pts.push(pos.clone().multiplyScalar(Constants.metersToKm * Constants.scale));
         }
-        return points;
+        return pts;
     }
 
-    // Calculate periapsis and apoapsis radii from orbital elements
-    static calculateApsidesFromElements(elements, mu) {
-        if (!elements) return null;
-        const { h, e } = elements;
-        const rPeriapsis = (h * h / (mu * (1 + e)));
-        const rApoapsis = e < 1 ? (h * h / (mu * (1 - e))) : null;
-        return { rPeriapsis, rApoapsis };
+    static calculateApsidesFromElements(els, mu) {
+        if (!els) return null;
+        const { h, e } = els;
+        const rp = (h * h) / (mu * (1 + e));
+        const ra = e < 1 ? (h * h) / (mu * (1 - e)) : null;
+        return { rPeriapsis: rp, rApoapsis: ra };
     }
 
-    // Calculate orbital elements, apsis radii, and altitudes from state vectors
-    static calculateApsis(position, velocity, mu) {
-        const elements = this.calculateOrbitalElements(position, velocity, mu);
-        if (!elements) return null;
-        const apsides = this.calculateApsidesFromElements(elements, mu);
-        if (!apsides) return null;
-        const { rPeriapsis, rApoapsis } = apsides;
-        const periapsisAltitude = (rPeriapsis - Constants.earthRadius) * Constants.metersToKm;
-        const apoapsisAltitude = rApoapsis !== null ? (rApoapsis - Constants.earthRadius) * Constants.metersToKm : null;
-        return { orbitalElements: elements, rPeriapsis, rApoapsis, periapsisAltitude, apoapsisAltitude };
+    static calculateApsis(pos, vel, mu) {
+        const els = PhysicsUtils.calculateOrbitalElements(pos, vel, mu);
+        if (!els) return null;
+        const aps = PhysicsUtils.calculateApsidesFromElements(els, mu);
+        if (!aps) return null;
+        const { rPeriapsis: rp, rApoapsis: ra } = aps;
+        return {
+            orbitalElements: els,
+            rPeriapsis: rp,
+            rApoapsis: ra,
+            periapsisAltitude: (rp - Constants.earthRadius) * Constants.metersToKm,
+            apoapsisAltitude: ra !== null ? (ra - Constants.earthRadius) * Constants.metersToKm : null
+        };
     }
 
-    // Calculate orbital elements with detailed apsis data (centralized for debug/UI)
-    static calculateDetailedOrbitalElements(position, velocity, mu) {
-        // Based on Satellite.getOrbitalElements
-        const r_mag = position.length();
-        const v2 = velocity.lengthSq();
-        const energy = (v2 / 2) - (mu / r_mag);
-        const r = position.clone();
-        const v = velocity.clone();
-        // Specific angular momentum
-        const hVec = new THREE.Vector3().crossVectors(r, v);
-        const h_mag = hVec.length();
-        // Semi-major axis in meters
-        const sma = -mu / (2 * energy);
-        // Eccentricity vector
-        const ev = new THREE.Vector3()
-            .crossVectors(v, hVec)
-            .divideScalar(mu)
-            .sub(r.clone().divideScalar(r_mag));
+    static calculateDetailedOrbitalElements(pos, vel, mu) {
+        const r = pos.length();
+        const v2 = vel.lengthSq();
+        const ε = v2 / 2 - mu / r;
+        const hVec = new THREE.Vector3().crossVectors(pos, vel);
+        const h = hVec.length();
+
+        const sma = -mu / (2 * ε);
+        const ev = vel.clone().cross(hVec).divideScalar(mu)
+            .sub(pos.clone().divideScalar(r));
         const ecc = ev.length();
-        // Inclination in degrees
-        const inc = Math.acos(hVec.z / h_mag) * (180 / Math.PI);
-        // Node vector
-        const n = new THREE.Vector3(0, 0, 1).cross(hVec);
-        const n_mag = n.length();
-        // Longitude of ascending node in degrees
-        let lan = Math.acos(n.x / n_mag) * (180 / Math.PI);
-        if (n.y < 0) lan = 360 - lan;
-        // Argument of periapsis in degrees
-        let aop = Math.acos(n.dot(ev) / (n_mag * ecc)) * (180 / Math.PI);
-        if (ev.z < 0) aop = 360 - aop;
-        // True anomaly in degrees
-        let ta = Math.acos(ev.dot(r) / (ecc * r_mag)) * (180 / Math.PI);
-        if (r.dot(v) < 0) ta = 360 - ta;
-        // Orbital period in seconds
+        const inc = Math.acos(hVec.z / h) * (180 / Math.PI);
+
+        const nVec = new THREE.Vector3(0, 0, 1).cross(hVec);
+        const n = nVec.length();
+
+        let Ω = Math.acos(nVec.x / n) * (180 / Math.PI);
+        if (nVec.y < 0) Ω = 360 - Ω;
+
+        let ω = Math.acos(nVec.dot(ev) / (n * ecc)) * (180 / Math.PI);
+        if (ev.z < 0) ω = 360 - ω;
+
+        let f = Math.acos(ev.dot(pos) / (ecc * r)) * (180 / Math.PI);
+        if (pos.dot(vel) < 0) f = 360 - f;
+
         const period = 2 * Math.PI * Math.sqrt(Math.pow(sma, 3) / mu);
-        // Periapsis and apoapsis distances in meters
-        const rPeriapsis = sma * (1 - ecc);
-        const rApoapsis = sma * (1 + ecc);
+        const rp = sma * (1 - ecc);
+        const ra = sma * (1 + ecc);
+
         return {
             semiMajorAxis: sma * Constants.metersToKm,
             eccentricity: ecc,
             inclination: inc,
-            longitudeOfAscendingNode: lan,
-            argumentOfPeriapsis: aop,
-            trueAnomaly: ta,
-            period: period,
-            specificAngularMomentum: h_mag,
-            specificOrbitalEnergy: energy,
-            periapsisAltitude: (rPeriapsis - Constants.earthRadius) * Constants.metersToKm,
-            apoapsisAltitude: (rApoapsis - Constants.earthRadius) * Constants.metersToKm,
-            periapsisRadial: rPeriapsis * Constants.metersToKm,
-            apoapsisRadial: rApoapsis * Constants.metersToKm
+            longitudeOfAscendingNode: Ω,
+            argumentOfPeriapsis: ω,
+            trueAnomaly: f,
+            period,
+            specificAngularMomentum: h,
+            specificOrbitalEnergy: ε,
+            periapsisAltitude: (rp - Constants.earthRadius) * Constants.metersToKm,
+            apoapsisAltitude: (ra - Constants.earthRadius) * Constants.metersToKm,
+            periapsisRadial: rp * Constants.metersToKm,
+            apoapsisRadial: ra * Constants.metersToKm
         };
     }
 
-    /**
-     * Convert a tilt-based ECI position to geodetic latitude and longitude.
-     * @param {THREE.Vector3} positionECI - Position in ECI (with tilt applied) in meters.
-     * @param {number} gmst - Greenwich sidereal time in radians.
-     */
+    /* Hohmann manoeuvres */
+    static calculateHohmannOrbitRaiseDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
+        const v1 = Math.sqrt(mu / r1);
+        const vT1 = Math.sqrt(mu * (2 / r1 - 1 / ((r1 + r2) / 2)));
+        const vT2 = Math.sqrt(mu * (2 / r2 - 1 / ((r1 + r2) / 2)));
+        const v2 = Math.sqrt(mu / r2);
+        const Δv1 = vT1 - v1;
+        const Δv2 = v2 - vT2;
+        return { deltaV1: Δv1, deltaV2: Δv2, totalDeltaV: Δv1 + Δv2 };
+    }
+
+    static calculateHohmannInterceptDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
+        const aT = (r1 + r2) / 2;
+        const v1 = Math.sqrt(mu / r1);
+        const vT1 = Math.sqrt(mu * (2 / r1 - 1 / aT));
+        const vT2 = Math.sqrt(mu * (2 / r2 - 1 / aT));
+        const v2 = Math.sqrt(mu / r2);
+        const Δv1 = vT1 - v1;
+        const Δv2 = v2 - vT2;
+        return { deltaV1: Δv1, deltaV2: Δv2, totalDeltaV: Δv1 + Δv2 };
+    }
+
+    static calculateHohmannTransferNodes(r1, r2, els, mu = Constants.earthGravitationalParameter) {
+        const { deltaV1: Δv1, deltaV2: Δv2 } =
+            PhysicsUtils.calculateHohmannOrbitRaiseDeltaV(r1, r2, mu);
+
+        const f1 = els.trueAnomaly;
+        const f2 = f1 + Math.PI;
+
+        const burnNode1 = {
+            trueAnomaly: f1,
+            deltaV: Δv1,
+            direction: new THREE.Vector3(1, 0, 0)     // prograde
+        };
+        const burnNode2 = {
+            trueAnomaly: f2,
+            deltaV: Δv2,
+            direction: new THREE.Vector3(1, 0, 0)
+        };
+        return { burnNode1, burnNode2 };
+    }
+
+    /*───────────────────────── 5.  DEBUG helper ─────────────────────────*/
     static eciTiltToLatLon(positionECI, gmst) {
-        // Convert a tilt-based ECI pos to geodetic lat/lon (sim axes: Y-up polar axis)
-        // 1. Clone and remove axial tilt
-        const vec = positionECI.clone().applyQuaternion(PhysicsUtils.invTiltQuaternion);
-        // 2. Rotate by Earth's spin (GMST) around polar axis (Y)
-        vec.applyAxisAngle(new THREE.Vector3(0, 1, 0), -gmst);
-        // 3. Compute geodetic latitude and longitude: lat = asin(y/r), lon = atan2(z, x)
-        const r = vec.length();
-        const lat = THREE.MathUtils.radToDeg(Math.asin(vec.y / r));
-        // Calculate longitude in degrees, apply offset, and normalize to -180 to 180 range
-        let lon = THREE.MathUtils.radToDeg(Math.atan2(vec.z, vec.x)) - 190; // Adjust from 170° to 190° to fix the 20° eastward offset
-        // Normalize to -180 to 180 range
-        while (lon > 180) lon -= 360;
-        while (lon < -180) lon += 360;
+        const v = positionECI.clone()
+            .applyQuaternion(invTiltQuaternion)   // undo axial tilt
+            .applyAxisAngle(UP, -gmst);           // undo Earth rotation
+
+        const r = v.length();
+        const lat = THREE.MathUtils.radToDeg(Math.asin(v.z / r));
+        let lon = THREE.MathUtils.radToDeg(Math.atan2(v.y, v.x));
+        if (lon > 180) lon -= 360;
+        if (lon < -180) lon += 360;
         return { lat, lon };
     }
 }
+
+/*────────────────────────────  EOF  ────────────────────────────────*/

@@ -1,4 +1,4 @@
-import { getVisibleLocationsFromOrbitalElements as computeVisibleLocations } from '../satellites/createSatellite.js';
+import { getVisibleLocationsFromOrbitalElements as computeVisibleLocations } from '../components/Satellite/createSatellite.js';
 
 /**
  * Sets up the minimal public API for external/AI integration.

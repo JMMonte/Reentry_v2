@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { Button } from '../button';
 import { Label } from '../label';
 import { Input } from '../input';
@@ -6,6 +6,8 @@ import { Slider } from '../slider';
 import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import PropTypes from 'prop-types';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
+import { Constants } from '../../../utils/Constants';
+import { PhysicsUtils } from '../../../utils/PhysicsUtils';
 
 const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
     const [mode, setMode] = useState('latlon');
@@ -27,7 +29,17 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
         trueAnomaly: 0,
         angleOfAttack: 0,
         referenceFrame: 'equatorial',
+        circular: false
     });
+
+    // auto-calc circular velocity on altitude or circular flag change
+    useEffect(() => {
+        if (mode === 'latlon' && formData.circular) {
+            const r = Constants.earthRadius + formData.altitude * Constants.kmToMeters;
+            const vCirc = PhysicsUtils.calculateOrbitalVelocity(Constants.earthMass, r) * Constants.metersToKm;
+            setFormData(prev => ({ ...prev, velocity: vCirc }));
+        }
+    }, [mode, formData.circular, formData.altitude]);
 
     const handlePresetBC = (value) => {
         setFormData(prev => ({ ...prev, ballisticCoefficient: value }));
@@ -54,8 +66,11 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
     }));
 
     const handleInputChange = (e) => {
-        const { name: field, value, type } = e.target;
+        const { name: field, value, type, checked } = e.target;
         setFormData(prev => {
+            if (type === 'checkbox') {
+                return { ...prev, [field]: checked };
+            }
             if (type === 'number') {
                 const parsed = parseFloat(value);
                 return {
@@ -88,9 +103,10 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     latitude: params.latitude,
                     longitude: params.longitude,
                     altitude: params.altitude,
-                    velocity: params.velocity,
                     azimuth: params.azimuth,
+                    velocity: params.velocity,
                     angleOfAttack: params.angleOfAttack,
+                    circular: params.circular,
                     mass: params.mass,
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
@@ -106,19 +122,6 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     argumentOfPeriapsis: params.argumentOfPeriapsis,
                     trueAnomaly: params.trueAnomaly,
                     referenceFrame: params.referenceFrame,
-                    mass: params.mass,
-                    size: params.size,
-                    ballisticCoefficient: params.ballisticCoefficient,
-                    name: params.name || undefined
-                });
-            } else if (mode === 'circular') {
-                await onCreateSatellite({
-                    mode,
-                    latitude: params.latitude,
-                    longitude: params.longitude,
-                    altitude: params.altitude,
-                    azimuth: params.azimuth,
-                    angleOfAttack: params.angleOfAttack,
                     mass: params.mass,
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
@@ -180,6 +183,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                         step="any"
                         size="sm"
                         required
+                        disabled={name === 'velocity' && formData.circular}
                     />
                 </div>
                 <div className="col-span-6 flex items-center">
@@ -244,9 +248,8 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
             <div className="mb-2">
                 <Tabs value={mode} onValueChange={setMode}>
                     <TabsList className="flex justify-center gap-0 text-xs mb-2">
-                        <TabsTrigger value="latlon" className="w-1/3 text-xs transition-colors hover:bg-primary/10">Lat/Lon</TabsTrigger>
-                        <TabsTrigger value="orbital" className="w-1/3 text-xs transition-colors hover:bg-primary/10">Orbital</TabsTrigger>
-                        <TabsTrigger value="circular" className="w-1/3 text-xs transition-colors hover:bg-primary/10">Circular</TabsTrigger>
+                        <TabsTrigger value="latlon" className="w-1/2 text-xs transition-colors hover:bg-primary/10">Lat/Lon</TabsTrigger>
+                        <TabsTrigger value="orbital" className="w-1/2 text-xs transition-colors hover:bg-primary/10">Orbital</TabsTrigger>
                     </TabsList>
                 </Tabs>
             </div>
@@ -260,6 +263,21 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                             {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
                             {renderField("velocity", "Velocity", "number", null, null, 0.1, "km/s")}
                             {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
+                            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                                <Label htmlFor="circular" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                    Circular:
+                                </Label>
+                                <div className="col-span-9">
+                                    <input
+                                        type="checkbox"
+                                        id="circular"
+                                        name="circular"
+                                        checked={formData.circular}
+                                        onChange={handleInputChange}
+                                        className="h-4 w-4"
+                                    />
+                                </div>
+                            </div>
                         </>
                     )}
                     {mode === 'orbital' && (
@@ -293,15 +311,6 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                                 </div>
                                 <div className="col-span-3" />
                             </div>
-                        </>
-                    )}
-                    {mode === 'circular' && (
-                        <>
-                            {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
-                            {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
-                            {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                            {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
-                            {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
                         </>
                     )}
                 </div>

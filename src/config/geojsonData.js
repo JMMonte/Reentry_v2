@@ -4,11 +4,13 @@ import geojsonDataAirports from './ne_10m_airports.json';
 import geojsonDataSpaceports from './spaceports.json';
 import geojsonDataGroundStations from './ground_stations.json';
 import geojsonDataObservatories from './observatories.json';
+import geojsonDataMissions from './lunar_missions.json';
 
 export {
     geojsonDataCities,
     geojsonDataAirports,
     geojsonDataSpaceports,
     geojsonDataGroundStations,
-    geojsonDataObservatories
+    geojsonDataObservatories,
+    geojsonDataMissions
 };

@@ -1,57 +1,61 @@
 // setupListeners.js
+// ──────────────────────────────────────────────────────────────────────────────
+// One-time wiring of DOM / CustomEvent listeners (React/GUI ↔︎ App3D)
+// ──────────────────────────────────────────────────────────────────────────────
 export function setupEventListeners(app) {
-    window.addEventListener('resize', app.onWindowResize.bind(app));
-    document.body.appendChild(app.stats.dom);
+    // 1. Stats.js panel — inject once, if present
+    if (app.stats?.dom && !document.body.contains(app.stats.dom)) {
+        document.body.appendChild(app.stats.dom);
+    }
 
-    document.addEventListener('updateDisplaySetting', (event) => {
-        console.log('App: Received updateDisplaySetting event', event.detail);
-        const { key, value } = event.detail;
-        app.displayManager.updateSetting(key, value);
+    // 2. Display-settings bridge
+    document.addEventListener('updateDisplaySetting', ({ detail }) => {
+        const { key, value } = detail ?? {};
+        app.updateDisplaySetting?.(key, value);
     });
 
     document.addEventListener('getDisplaySettings', () => {
-        console.log('App: Received getDisplaySettings event');
-        const currentSettings = app.displayManager.getSettings();
-        console.log('App: Sending current settings', currentSettings);
-        document.dispatchEvent(new CustomEvent('displaySettingsResponse', {
-            detail: currentSettings
-        }));
+        const current = app.displaySettingsManager?.getSettings?.() ?? {};
+        document.dispatchEvent(
+            new CustomEvent('displaySettingsResponse', { detail: current })
+        );
     });
 
-    document.addEventListener('createSatelliteFromLatLon', (event) => {
-        app.createSatelliteLatLon(event.detail);
+    // 3. Satellite-creation helpers
+    const satEvents = {
+        createSatelliteFromLatLon: 'createSatelliteFromLatLon',
+        createSatelliteFromOrbitalElements: 'createSatelliteFromOrbitalElements',
+        createSatelliteFromLatLonCircular: 'createSatelliteFromLatLonCircular'
+    };
+    Object.entries(satEvents).forEach(([evtName, fnName]) => {
+        document.addEventListener(evtName, ({ detail }) => {
+            app[fnName]?.(detail);
+        });
     });
 
-    document.addEventListener('createSatelliteFromOrbitalElements', (event) => {
-        app.createSatelliteOrbital(event.detail);
+    // 4. Time warp & body selection
+    document.addEventListener('updateTimeWarp', ({ detail }) => {
+        app.updateTimeWarp?.(detail?.value);
     });
 
-    document.addEventListener('createSatelliteFromLatLonCircular', (event) => {
-        app.createSatelliteCircular(event.detail);
-    });
-
-    document.addEventListener('updateTimeWarp', (event) => {
-        app.updateTimeWarp(event.detail.value);
-    });
-
-    document.addEventListener('bodySelected', (event) => {
-        const value = event.detail.body;
-        if (typeof app.updateSelectedBody === 'function') {
-            app.updateSelectedBody(value);
-        }
+    // Listen for bodySelected events from UI and delegate to camera
+    document.addEventListener('bodySelected', ({ detail }) => {
+        const value = detail?.body;
+        app.updateSelectedBody?.(value);
     });
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Optional Web-socket bridge.  Each socket message forwards to the same
+// satellite-creation helpers so the server can trigger identical actions.
+// ──────────────────────────────────────────────────────────────────────────────
 export function setupSocketListeners(app, socket) {
-    socket.on('createSatelliteFromLatLon', (params) => {
-        app.createSatelliteLatLon(params);
-    });
-
-    socket.on('createSatelliteFromOrbitalElements', (params) => {
-        app.createSatelliteOrbital(params);
-    });
-
-    socket.on('createSatelliteFromLatLonCircular', (params) => {
-        app.createSatelliteCircular(params);
+    const map = {
+        createSatelliteFromLatLon: 'createSatelliteFromLatLon',
+        createSatelliteFromOrbitalElements: 'createSatelliteFromOrbitalElements',
+        createSatelliteFromLatLonCircular: 'createSatelliteFromLatLonCircular'
+    };
+    Object.entries(map).forEach(([msg, fn]) => {
+        socket.on(msg, params => app[fn]?.(params));
     });
 }

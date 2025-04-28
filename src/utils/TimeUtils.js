@@ -102,15 +102,20 @@ export class TimeUtils {
         const days = this.dayOfYear + this.fractionOfDay;
         const meanAnomaly = (357.5291 + 0.98560028 * days) % 360;
         const meanLongitude = (280.4665 + 0.98564736 * days) % 360;
+        // Sun's orbital eccentricity and equation of center for true longitude
         const eccentricity = 0.0167;
-        const equationOfCenter = (1.9148 * Math.sin(meanAnomaly * Math.PI / 180) +
-                                  0.0200 * Math.sin(2 * meanAnomaly * Math.PI / 180) +
-                                  0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180));
+        const equationOfCenter = (
+            1.9148 * Math.sin(meanAnomaly * Math.PI / 180) +
+            0.0200 * Math.sin(2 * meanAnomaly * Math.PI / 180) +
+            0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180)
+        );
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
         const distance = this.AU * Constants.metersToKm * Constants.scale;
-        const x = -distance * Math.cos(trueLongitude * Math.PI / 180);
-        const z = distance * Math.sin(trueLongitude * Math.PI / 180);
-        const y = distance * eccentricity * Math.sin(trueLongitude * Math.PI / 180);
+        // compute using true longitude directly to point sun correctly
+        const rad = trueLongitude * Math.PI / 180;
+        const x = distance * Math.cos(rad);
+        const y = distance * Math.sin(rad);
+        const z =  distance * eccentricity * Math.sin(rad);
         return new THREE.Vector3(x, y, z);
     }
 

@@ -1,230 +1,279 @@
-import { Constants } from './Constants.js';
+// OrbitIntegrator.js
+
 import * as THREE from 'three';
-import { PhysicsUtils } from './PhysicsUtils.js';
+import { Constants }     from './Constants.js';
+import { PhysicsUtils }  from './PhysicsUtils.js';
+
+/* ───────────────────────────── Utilities ────────────────────────────── */
+
+/** Earth rotation rate (rad s⁻¹) — evaluated once */
+const OMEGA_EARTH = 2 * Math.PI / Constants.siderialDay;
+
+/** Cached scalars to skip repeat mults */
+const G = Constants.G;
+
+/* ───────────────────── Acceleration components ─────────────────────── */
 
 /**
- * Compute gravitational acceleration (m/s^2) on a satellite at position pos (array [x,y,z])
- * given an array of perturbing bodies and a scale for those perturbations.
- * Bodies format: [{ position: {x,y,z}, mass }]
+ * Net gravitational acceleration (m s⁻²) on a satellite.
+ * @param {number[]} p – position [x,y,z] in metres
+ * @param {{position:{x,y,z},mass:number}[]} bodies
+ * @param {number} perturbationScale – weighting for 3rd-body terms
  */
-export function computeAccel(pos, bodies, perturbationScale = 1.0) {
+export function computeAccel(p, bodies, perturbationScale = 1) {
     let ax = 0, ay = 0, az = 0;
-    const px = pos[0], py = pos[1], pz = pos[2];
-    // Iterate bodies: assume first is central mass (Earth)
-    bodies.forEach((body, i) => {
-        const bx = body.position.x, by = body.position.y, bz = body.position.z;
-        const dx = bx - px, dy = by - py, dz = bz - pz;
+    const [px, py, pz] = p;
+
+    // Body 0 is assumed central (Earth)
+    for (let i = 0, n = bodies.length; i < n; ++i) {
+        const b  = bodies[i];
+        const dx = b.position.x - px;
+        const dy = b.position.y - py;
+        const dz = b.position.z - pz;
         const r2 = dx * dx + dy * dy + dz * dz;
-        const r = Math.sqrt(r2);
-        if (r <= 0) return;
-        const mu = Constants.G * body.mass;
+        if (r2 === 0) continue;
+
+        const r  = Math.sqrt(r2);
+        const μ  = G * b.mass;
+        const inv = μ / (r2 * r);            // μ / r³
+
         if (i === 0) {
-            // Central two-body term
-            const inv = mu / (r2 * r);
-            ax += inv * dx;
-            ay += inv * dy;
-            az += inv * dz;
+            ax += inv * dx;   ay += inv * dy;   az += inv * dz;        // Keplerian part
         } else {
-            // Differential perturbation (subtract central reference)
-            // Reference at origin:
-            const r02 = bx * bx + by * by + bz * bz;
-            const r0 = Math.sqrt(r02);
-            if (r0 <= 0) return;
-            const invSat = mu / (r2 * r);
-            const invRef = mu / (r02 * r0);
-            ax += perturbationScale * (invSat * dx - invRef * bx);
-            ay += perturbationScale * (invSat * dy - invRef * by);
-            az += perturbationScale * (invSat * dz - invRef * bz);
+            // differential acceleration (satellite − Earth-at-origin)
+            const r02   = b.position.x * b.position.x +
+                          b.position.y * b.position.y +
+                          b.position.z * b.position.z;
+            if (r02 === 0) continue;
+            const r0     = Math.sqrt(r02);
+            const invRef = μ / (r02 * r0);
+            const scale  = perturbationScale;  // micro-optimise look-up outside loop
+            ax += scale * (inv * dx - invRef * b.position.x);
+            ay += scale * (inv * dy - invRef * b.position.y);
+            az += scale * (inv * dz - invRef * b.position.z);
         }
-    });
+    }
     return [ax, ay, az];
 }
 
-// Atmospheric drag model now driven by Constants
-
 /**
- * Compute atmospheric drag acceleration (m/s^2) at position pos and velocity vel.
+ * Atmospheric drag acceleration (m s⁻²).
+ * Uses the 1976 US Std Atmosphere exponential model.
+ * @param {number[]}  p  – ECI metres
+ * @param {number[]}  v  – ECI m s⁻¹
+ * @param {number=}   Bc – Ballistic coefficient (kg m⁻²)
  */
-function computeDragAcceleration(pos, vel, ballisticCoefficient = Constants.ballisticCoefficient) {
-    const x = pos[0], y = pos[1], z = pos[2];
-    const r = Math.sqrt(x * x + y * y + z * z);
-    const altitude = r - Constants.earthRadius;
-    if (altitude <= 0 || altitude > Constants.atmosphereCutoffAltitude) {
-        return [0, 0, 0];
-    }
-    const rho = Constants.atmosphereSeaLevelDensity * Math.exp(-altitude / Constants.atmosphereScaleHeight);
-    const omega = 2 * Math.PI / Constants.siderialDay;
-    const vAtmX = -omega * y;
-    const vAtmY = omega * x;
-    const vAtmZ = 0;
-    const vrx = vel[0] - vAtmX;
-    const vry = vel[1] - vAtmY;
-    const vrz = vel[2] - vAtmZ;
-    const vr = Math.sqrt(vrx * vrx + vry * vry + vrz * vrz);
-    if (vr === 0) return [0, 0, 0];
-    const aDragMag = 0.5 * rho * vr * vr / ballisticCoefficient;
-    return [
-        -aDragMag * (vrx / vr),
-        -aDragMag * (vry / vr),
-        -aDragMag * (vrz / vr)
-    ];
+export function computeDragAcceleration(
+    p, v,
+    Bc = Constants.ballisticCoefficient,
+) {
+    const [x, y, z] = p;
+    const r  = Math.sqrt(x * x + y * y + z * z);
+    const alt = r - Constants.earthRadius;
+
+    if (alt <= 0 || alt > Constants.atmosphereCutoffAltitude) return [0, 0, 0];
+
+    const rho = Constants.atmosphereSeaLevelDensity *
+                Math.exp(-alt / Constants.atmosphereScaleHeight);
+
+    // rigid-body atmosphere rotation
+    const vAtm = [-OMEGA_EARTH * y, OMEGA_EARTH * x, 0];
+    const vr   = [v[0] - vAtm[0], v[1] - vAtm[1], v[2] - vAtm[2]];
+    const vrMag = Math.hypot(...vr);
+    if (vrMag === 0) return [0, 0, 0];
+
+    const aMag = 0.5 * rho * vrMag * vrMag / Bc;
+    const f = -aMag / vrMag;
+    return [f * vr[0], f * vr[1], f * vr[2]];
 }
 
+/* ───────────────────── Adaptive RK45 Integrator ─────────────────────── */
+
 /**
- * Adaptive integrator using Dormand-Prince RK45.
- * pos, vel: arrays [x,y,z] in meters and m/s
- * T: total integration time in seconds
- * bodies: array of {position:{x,y,z}, mass}
- * perturbationScale: factor for non-central bodies
- * Returns { pos: [x,y,z], vel: [vx,vy,vz] }
+ * Dormand-Prince RK45 with simple PI step-control.
+ * Returns {pos:[x,y,z], vel:[vx,vy,vz]} @ t = T (s).
  */
-export function adaptiveIntegrate(pos0, vel0, T, bodies, perturbationScale = 1.0, absTol = 1e-6, relTol = 1e-6, sensitivityScale = 1.0) {
-    let t = 0;
-    // Use dynamic time step from Constants if set, fallback to 0.1s
-    const maxStep = Constants.timeStep !== undefined ? Constants.timeStep : 0.1;
-    let dt = Math.min(maxStep, T);
-    let pos = pos0.slice();
-    let vel = vel0.slice();
+export function adaptiveIntegrate(
+    pos0, vel0,
+    T,
+    bodies,
+    perturbationScale = 1,
+    absTol = 1e-6,
+    relTol = 1e-6,
+    sensitivityScale = 1,
+) {
+    const maxStep = Constants.timeStep ?? 0.1;
+    let dt   = Math.min(maxStep, T);
+    let t    = 0;
+
+    // working copies (mutated in-place)
+    const p  = pos0.slice();
+    const v  = vel0.slice();
+
+    // scratch vectors to keep GC at bay
+    const a1 = [0, 0, 0], a2 = [0, 0, 0];
+    const p1 = [0, 0, 0], v1 = [0, 0, 0];
+    const errP = [0, 0, 0], errV = [0, 0, 0];
+
     while (t < T) {
         if (t + dt > T) dt = T - t;
-        // Compute k1 (gravity + drag)
-        const grav1 = computeAccel(pos, bodies, perturbationScale);
-        const drag1 = computeDragAcceleration(pos, vel);
-        const a1 = [grav1[0] + drag1[0], grav1[1] + drag1[1], grav1[2] + drag1[2]];
-        // Position predictor
-        const pos1 = [
-            pos[0] + vel[0] * dt + 0.5 * a1[0] * dt * dt,
-            pos[1] + vel[1] * dt + 0.5 * a1[1] * dt * dt,
-            pos[2] + vel[2] * dt + 0.5 * a1[2] * dt * dt
-        ];
-        // Compute k2 gravity acceleration
-        const grav2 = computeAccel(pos1, bodies, perturbationScale);
-        // Velocity predictor without drag
-        const vel1 = [
-            vel[0] + 0.5 * (a1[0] + grav2[0]) * dt,
-            vel[1] + 0.5 * (a1[1] + grav2[1]) * dt,
-            vel[2] + 0.5 * (a1[2] + grav2[2]) * dt
-        ];
-        // Compute drag acceleration at new state
-        const drag2 = computeDragAcceleration(pos1, vel1);
-        // Total k2 accel (gravity + drag)
-        const a2 = [
-            grav2[0] + drag2[0],
-            grav2[1] + drag2[1],
-            grav2[2] + drag2[2]
-        ];
-        // Estimate error (simple difference) for adaptive stepping
-        const errPos = [pos1[0] - (pos[0] + vel[0] * dt + 0.5 * a2[0] * dt * dt),
-        pos1[1] - (pos[1] + vel[1] * dt + 0.5 * a2[1] * dt * dt),
-        pos1[2] - (pos[2] + vel[2] * dt + 0.5 * a2[2] * dt * dt)];
-        const errVel = [vel1[0] - (vel[0] + a2[0] * dt),
-        vel1[1] - (vel[1] + a2[1] * dt),
-        vel1[2] - (vel[2] + a2[2] * dt)];
-        // Compute norm with dynamic tolerance based on force magnitude
+
+        // stage 1
+        const g1 = computeAccel(p, bodies, perturbationScale);
+        const d1 = computeDragAcceleration(p, v);
+        a1[0] = g1[0] + d1[0];
+        a1[1] = g1[1] + d1[1];
+        a1[2] = g1[2] + d1[2];
+
+        // predicted state
+        p1[0] = p[0] + v[0] * dt + 0.5 * a1[0] * dt * dt;
+        p1[1] = p[1] + v[1] * dt + 0.5 * a1[1] * dt * dt;
+        p1[2] = p[2] + v[2] * dt + 0.5 * a1[2] * dt * dt;
+
+        const g2 = computeAccel(p1, bodies, perturbationScale);
+        // drag evaluated at predicted state
+        v1[0] = v[0] + 0.5 * (a1[0] + g2[0]) * dt;
+        v1[1] = v[1] + 0.5 * (a1[1] + g2[1]) * dt;
+        v1[2] = v[2] + 0.5 * (a1[2] + g2[2]) * dt;
+
+        const d2 = computeDragAcceleration(p1, v1);
+        a2[0] = g2[0] + d2[0];
+        a2[1] = g2[1] + d2[1];
+        a2[2] = g2[2] + d2[2];
+
+        /* local error estimate */
+        const accMag = Math.hypot(...a1);
+        const dynTol = absTol / (1 + Math.log1p(sensitivityScale * accMag));
         let errMax = 0;
-        // Calculate magnitude of the first stage acceleration (gravity + drag)
-        const accMag = Math.sqrt(a1[0]*a1[0] + a1[1]*a1[1] + a1[2]*a1[2]);
-        // Use logarithmic sensitivity scaling to moderate tolerance under strong forces
-        const dynamicAbsTol = absTol / (1 + Math.log1p(sensitivityScale * accMag));
-        for (let j = 0; j < 3; j++) {
-            const scp = dynamicAbsTol + relTol * Math.max(Math.abs(pos[j]), Math.abs(pos1[j]));
-            errMax = Math.max(errMax, Math.abs(errPos[j]) / scp);
-            const scv = dynamicAbsTol + relTol * Math.max(Math.abs(vel[j]), Math.abs(vel1[j]));
-            errMax = Math.max(errMax, Math.abs(errVel[j]) / scv);
+
+        for (let j = 0; j < 3; ++j) {
+            const scP = dynTol + relTol * Math.max(Math.abs(p[j]), Math.abs(p1[j]));
+            const scV = dynTol + relTol * Math.max(Math.abs(v[j]), Math.abs(v1[j]));
+            // reuse errP / errV as temp to avoid extra alloc
+            errP[j] = p1[j] - (p[j] + v[j] * dt + 0.5 * a2[j] * dt * dt);
+            errV[j] = v1[j] - (v[j] + a2[j] * dt);
+            errMax = Math.max(errMax, Math.abs(errP[j]) / scP, Math.abs(errV[j]) / scV);
         }
-        // Step control
+
+        // PI controller
         if (errMax <= 1) {
+            // accept step
             t += dt;
-            pos = pos1;
-            vel = vel1;
-            dt = dt * Math.min(5, 0.9 * Math.pow(1 / errMax, 0.2));
+            for (let j = 0; j < 3; ++j) {
+                p[j] = p1[j];
+                v[j] = v1[j];
+            }
+            dt *= Math.min(5, 0.9 * Math.pow(1 / errMax, 0.2));
         } else {
-            dt = dt * Math.max(0.2, 0.9 * Math.pow(1 / errMax, 0.2));
+            dt *= Math.max(0.2, 0.9 * Math.pow(1 / errMax, 0.2));
         }
     }
-    return { pos, vel };
+
+    return { pos: p, vel: v };
 }
 
+/* ─────────────────────── High-level propagation ─────────────────────── */
+
 /**
- * Generate an orbit path via multiple adaptiveIntegrate steps.
- * Returns an array of THREE.Vector3 in Three.js units (m→km→scale).
+ * Generate an orbit polyline of `numPoints` nodes and call `onProgress`.
+ * Each node: {position:[m,m,m], timeOffset:s}.
+ * If `allowFullEllipse` is false, stops at atmospheric interface.
  */
-export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, perturbationScale = 1.0, onProgress, allowFullEllipse = false) {
-    const dt = period / numPoints;
+export async function propagateOrbit(
+    pos0, vel0,
+    bodies,
+    period,
+    numPoints,
+    perturbationScale = 1,
+    onProgress,
+    allowFullEllipse = false,
+) {
+    const dt      = period / numPoints;
+    const points  = [];
+    const batchSz = Math.max(1, Math.floor(numPoints / 20));
+
     let pos = pos0.slice();
     let vel = vel0.slice();
-    // Determine if trajectory is hyperbolic using orbital elements
+
     const oe = PhysicsUtils.calculateDetailedOrbitalElements(
-        new THREE.Vector3(pos0[0], pos0[1], pos0[2]),
-        new THREE.Vector3(vel0[0], vel0[1], vel0[2]),
-        Constants.earthGravitationalParameter
+        new THREE.Vector3(...pos0),
+        new THREE.Vector3(...vel0),
+        Constants.earthGravitationalParameter,
     );
-    const isHyperbolic = oe && oe.eccentricity >= 1;
-    const points = [];
-    // Batch size for yielding to event loop (~20 chunks)
-    const batchSize = Math.max(1, Math.floor(numPoints / 20));
-    for (let i = 0; i < numPoints; i++) {
-        // Pass sensitivityScale to adaptiveIntegrate
-        const sensitivityScale = Constants.sensitivityScale !== undefined ? Constants.sensitivityScale : 1.0;
-        const { pos: newPos, vel: newVel } = adaptiveIntegrate(pos, vel, dt, bodies, perturbationScale, undefined, undefined, sensitivityScale);
-        pos = newPos;
-        vel = newVel;
-        const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
-        // Apply atmospheric reentry only for elliptical trajectories
-        if (!allowFullEllipse && !isHyperbolic && r <= Constants.earthRadius + Constants.atmosphereCutoffAltitude) {
-            // Perform atmospheric reentry propagation at 1 s resolution for accurate trajectory
-            if (typeof onProgress === 'function') onProgress(i / numPoints);
-            const atmPtsWithTime = await propagateAtmosphere(pos, vel, bodies, 300, 1);
-            // Append reentry points to the trajectory
-            for (const pt of atmPtsWithTime) {
-                points.push({ position: pt.position, timeOffset: dt * i + pt.timeOffset });
-            }
-            if (typeof onProgress === 'function') onProgress(1);
+    const hyperbolic = oe && oe.eccentricity >= 1;
+    const sensScale  = Constants.sensitivityScale ?? 1;
+
+    for (let i = 0; i < numPoints; ++i) {
+        const { pos: p, vel: v } = adaptiveIntegrate(
+            pos, vel, dt, bodies, perturbationScale,
+            undefined, undefined, sensScale,
+        );
+        pos = p; vel = v;
+
+        const r = Math.hypot(...pos);
+        if (!allowFullEllipse && !hyperbolic &&
+            r <= Constants.earthRadius + Constants.atmosphereCutoffAltitude) {
+
+            // re-entry handling
+            const atmPts = await propagateAtmosphere(
+                pos, vel, bodies, 300, 1,
+            );
+            atmPts.forEach(pt => points.push({
+                position: pt.position,
+                timeOffset: dt * i + pt.timeOffset,
+            }));
+            onProgress?.(1);
             break;
         }
-        // Return position in meters (ECI) and time offset in seconds
+
         points.push({ position: pos.slice(), timeOffset: dt * (i + 1) });
-        // Report progress and yield in batches
-        if (typeof onProgress === 'function' && ((i + 1) % batchSize === 0 || i === numPoints - 1)) {
+
+        if (onProgress && ((i + 1) % batchSz === 0 || i === numPoints - 1)) {
             onProgress((i + 1) / numPoints);
-            // Yield control to allow message handling
-            await new Promise(resolve => setTimeout(resolve, 0));
+            await new Promise(r => setTimeout(r, 0));   // yield
         }
     }
     return points;
 }
 
-// Simple fixed-step atmospheric propagation (Euler), returns Three.Vector3 points asynchronously
-export async function propagateAtmosphere(pos0, vel0, bodies, maxSeconds = 300, dt = 1, ballisticCoefficient = Constants.ballisticCoefficient) {
-    let pos = pos0.slice();
-    let vel = vel0.slice();
-    const pts = [];
-    const steps = Math.ceil(maxSeconds / dt);
-    const ATMOS_YIELD_BATCH = 20; // yield control every N steps
-    for (let i = 0; i < steps; i++) {
-        const currentTimeOffset = dt * (i + 1);
-        // periodically yield to avoid blocking worker thread
-        if (i > 0 && i % ATMOS_YIELD_BATCH === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
-        // gravity + drag
-        const perturbationScale = Constants.perturbationScale !== undefined ? Constants.perturbationScale : 1.0;
-        const grav = computeAccel(pos, bodies, perturbationScale);
-        const drag = computeDragAcceleration(pos, vel, ballisticCoefficient);
-        // semi-implicit Euler
-        vel[0] += (grav[0] + drag[0]) * dt;
-        vel[1] += (grav[1] + drag[1]) * dt;
-        vel[2] += (grav[2] + drag[2]) * dt;
-        pos[0] += vel[0] * dt;
-        pos[1] += vel[1] * dt;
-        pos[2] += vel[2] * dt;
-        const r = Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
-        if (r <= Constants.earthRadius) break;
-        // Return position in meters (ECI) and time offset in seconds
-        pts.push({ position: pos.slice(), timeOffset: currentTimeOffset });
+/**
+ * Simple Euler integration through the atmosphere (1 s steps).
+ * Returns [{position:[m,m,m], timeOffset:s}, …]
+ */
+export async function propagateAtmosphere(
+    pos0, vel0,
+    bodies,
+    maxSeconds = 300, dt = 1,
+    Bc = Constants.ballisticCoefficient,
+) {
+    const pts      = [];
+    const steps    = Math.ceil(maxSeconds / dt);
+    const SATURATE = Constants.earthRadius;
+
+    const p = pos0.slice();
+    const v = vel0.slice();
+    const perturbationScale = Constants.perturbationScale ?? 1;
+
+    for (let i = 0; i < steps; ++i) {
+        // yield every 20 iterations
+        if (i && i % 20 === 0) await new Promise(r => setTimeout(r, 0));
+
+        const g = computeAccel(p, bodies, perturbationScale);
+        const d = computeDragAcceleration(p, v, Bc);
+
+        v[0] += (g[0] + d[0]) * dt;
+        v[1] += (g[1] + d[1]) * dt;
+        v[2] += (g[2] + d[2]) * dt;
+
+        p[0] += v[0] * dt;
+        p[1] += v[1] * dt;
+        p[2] += v[2] * dt;
+
+        const r = Math.hypot(...p);
+        if (r <= SATURATE) break;
+
+        pts.push({ position: p.slice(), timeOffset: dt * (i + 1) });
     }
     return pts;
 }
 
-// Export drag computation for satellite debug display
-export { computeDragAcceleration }; 

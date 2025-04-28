@@ -2,7 +2,7 @@ import React from 'react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectSeparator } from '../select';
 import PropTypes from 'prop-types';
 
-function BodySelector({ selectedBody, handleBodyChange, satelliteOptions, getDisplayValue }) {
+function BodySelector({ selectedBody, handleBodyChange, planetOptions, satelliteOptions, getDisplayValue }) {
     return (
         <Select value={selectedBody} onValueChange={handleBodyChange}>
             <SelectTrigger className="w-[100px]">
@@ -12,8 +12,9 @@ function BodySelector({ selectedBody, handleBodyChange, satelliteOptions, getDis
             </SelectTrigger>
             <SelectContent>
                 <SelectItem value="none">None</SelectItem>
-                <SelectItem value="earth">Earth</SelectItem>
-                <SelectItem value="moon">Moon</SelectItem>
+                {planetOptions.map(({ value, text }) => (
+                    <SelectItem key={value} value={value}>{text}</SelectItem>
+                ))}
                 {satelliteOptions.length > 0 && (
                     <>
                         <SelectSeparator />
@@ -30,6 +31,7 @@ function BodySelector({ selectedBody, handleBodyChange, satelliteOptions, getDis
 BodySelector.propTypes = {
     selectedBody: PropTypes.string.isRequired,
     handleBodyChange: PropTypes.func.isRequired,
+    planetOptions: PropTypes.array.isRequired,
     satelliteOptions: PropTypes.array.isRequired,
     getDisplayValue: PropTypes.func.isRequired,
 };

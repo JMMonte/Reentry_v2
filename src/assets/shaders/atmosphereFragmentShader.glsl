@@ -162,7 +162,7 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
     vec3 scatter = sum_ray * k_ray * ray_phase + sum_mie * k_mie * mie_phase;
     
     // Add sun position-dependent brightness
-    float sun_fade = smoothstep(-0.1, 0.1, dot(normalize(l), vec3(0.0, 1.0, 0.0)));
+    float sun_fade = smoothstep(-0.1, 0.1, dot(normalize(l), vec3(0.0, 0.0, 1.0)));
     scatter *= mix(0.756, 1.32, sun_fade);
     
     // Calculate horizon gradient
@@ -212,7 +212,7 @@ void main() {
     float finalHorizonGrad = calculateHorizonGradient(eye, dir);
     
     // Enhanced gamma correction with horizon-aware exposure
-    float exposure = mix(0.85, 1.7, smoothstep(0.0, 0.5, dot(normalize(l), vec3(0.0, 1.0, 0.0))));
+    float exposure = mix(0.85, 1.7, smoothstep(0.0, 0.5, dot(normalize(l), vec3(0.0, 0.0, 1.0))));
     exposure *= mix(1.3, 1.0, finalHorizonGrad); // Boost exposure near horizon
     
     vec4 I_gamma = pow(I * exposure, vec4(1.0 / 2.2));
@@ -221,7 +221,7 @@ void main() {
     vec3 skyColor = mix(
         vec3(0.095, 0.189, 0.33),
         vec3(0.378, 0.567, 0.85),
-        smoothstep(-0.2, 0.2, dot(normalize(l), vec3(0.0, 1.0, 0.0)))
+        smoothstep(-0.2, 0.2, dot(normalize(l), vec3(0.0, 0.0, 1.0)))
     );
     
     // Add warmer tint near horizon

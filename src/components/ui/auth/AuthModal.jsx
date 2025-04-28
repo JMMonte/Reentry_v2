@@ -5,7 +5,7 @@ import PropTypes from 'prop-types';
 import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import { Input } from '../input';
 import { supabase } from '../../../supabaseClient';
-import { ToastContext } from '../../Layout';
+import { ToastContext } from '../../../components/ui/Layout';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
 export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: externalSetMode, onSignupSuccess }) {

@@ -54,77 +54,49 @@ export class SimulationLoop {
     _animate() {
         if (!this._running) return;
         this._frameId = requestAnimationFrame(() => this._animate());
-        if (this.stats) this.stats.begin();
+        this.stats?.begin();
 
         const timestamp = performance.now();
         this.timeUtils.update(timestamp);
         const currentTime = this.timeUtils.getSimulatedTime();
-        const realDeltaTime = (timestamp - this._lastTime) / 1000;
+        const delta = (timestamp - this._lastTime) / 1000;
         this._lastTime = timestamp;
-        const warpedDeltaTime = realDeltaTime * this.timeUtils.timeWarp;
+        const warpedDelta = delta * this.timeUtils.timeWarp;
 
-        // Update controls
-        if (this.app._controls && typeof this.app._controls.update === 'function') {
-            this.app._controls.update();
-        }
+        // Update simulation bodies
+        this.satellites.updateAll(currentTime, delta, warpedDelta);
+        this.app.updateScene(currentTime);
+        // Then sync camera to follow updated body position
+        this.cameraControls.updateCameraPosition();
 
-        // Update satellites
-        this.satellites.updateAll(currentTime, realDeltaTime, warpedDeltaTime);
-
-        // Update planet object if generic Planet class is used
-        if (this.app.earth && typeof this.app.earth.update === 'function') {
-            this.app.earth.update();
-        }
-
-        // Update scene
-        if (typeof this.app.updateScene === 'function') {
-            this.app.updateScene(currentTime);
-        }
-
-        // Preview node: update its position, arrow, and predicted orbit if present
+        // Preview node update (throttled to 10Hz)
         if (this.app.previewNode) {
-            const nowPv = performance.now();
-            // Throttle preview updates to 10 Hz
-            if (!this._lastPreviewUpdateTime || nowPv - this._lastPreviewUpdateTime > 100) {
-                try {
-                    this.app.previewNode.update();
-                } catch (e) {
-                    console.warn('Preview node update error:', e);
-                }
-                this._lastPreviewUpdateTime = nowPv;
+            const now = performance.now();
+            if (now - this._lastPreviewUpdateTime > 100) {
+                this.app.previewNode.update();
+                this._lastPreviewUpdateTime = now;
             }
-            // Always ensure it's visible
             this.app.previewNode.predictedOrbit.setVisible(true);
         }
 
-        // Update camera controls
-        if (this.cameraControls && typeof this.cameraControls.updateCameraPosition === 'function') {
-            this.cameraControls.updateCameraPosition();
-        }
-
-        // Throttle fading of radial grid labels (max ~10Hz)
-        if (this.sceneManager.radialGrid && typeof this.sceneManager.radialGrid.updateFading === 'function') {
-            if (!this._lastFadingTime || timestamp - this._lastFadingTime > 100) {
-                this.sceneManager.radialGrid.updateFading(this.sceneManager.camera);
-                this._lastFadingTime = timestamp;
-            }
+        // Throttle radial grid fading (10Hz)
+        if (this.sceneManager.radialGrid && timestamp - this._lastFadingTime > 100) {
+            this.sceneManager.radialGrid.updateFading(this.sceneManager.camera);
+            this._lastFadingTime = timestamp;
         }
 
         // Render scene
         if (this.sceneManager.composers.final) {
             this.sceneManager.composers.final.render();
-        } else if (this.sceneManager.renderer && this.sceneManager.scene && this.sceneManager.camera) {
+        } else {
             this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }
 
-        // Throttle label rendering (max ~10Hz)
+        // Render CSS2D labels every frame for smooth updates
         if (this.sceneManager.labelRenderer) {
-            if (!this._lastLabelTime || timestamp - this._lastLabelTime > 100) {
-                this.sceneManager.labelRenderer.render(this.sceneManager.scene, this.sceneManager.camera);
-                this._lastLabelTime = timestamp;
-            }
+            this.sceneManager.labelRenderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }
 
-        if (this.stats) this.stats.end();
+        this.stats?.end();
     }
 } 

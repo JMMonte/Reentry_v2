@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { SimulationStateManager } from './SimulationStateManager';
+import { SimulationStateManager } from '../managers/SimulationStateManager';
 
 export function useSimulationState(controller, initialState) {
     useEffect(() => {

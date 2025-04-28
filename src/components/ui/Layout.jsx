@@ -1,20 +1,20 @@
 import React, { useState, createContext, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
-import { Navbar } from './ui/navbar/Navbar';
-import { ModalPortal } from './ui/modal/ModalPortal';
-import { AuthModal } from './ui/auth/AuthModal';
-import { ChatModal } from './ui/chat/ChatModal';
-import { DisplayOptions } from './ui/controls/DisplayOptions';
-import { SatelliteDebugWindow } from './ui/satellite/SatelliteDebugWindow';
-import { SatelliteListWindow } from './ui/satellite/SatelliteListWindow';
-import { DraggableModal } from './ui/modal/DraggableModal';
-import SatelliteCreator from './ui/satellite/SatelliteCreator';
+import { Navbar } from './navbar/Navbar';
+import { ModalPortal } from './modal/ModalPortal';
+import { AuthModal } from './auth/AuthModal';
+import { ChatModal } from './chat/ChatModal';
+import { DisplayOptions } from './controls/DisplayOptions';
+import { SatelliteDebugWindow } from './satellite/SatelliteDebugWindow';
+import { SatelliteListWindow } from './satellite/SatelliteListWindow';
+import { DraggableModal } from './modal/DraggableModal';
+import SatelliteCreator from './satellite/SatelliteCreator';
 import PropTypes from 'prop-types';
-import { ResetPasswordModal } from './ui/auth/ResetPasswordModal';
-import { SimulationWindow } from './ui/simulation/SimulationWindow';
-import { SatelliteManeuverWindow } from './ui/satellite/SatelliteManeuverWindow';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
-import { Button } from './ui/button';
-import { GroundtrackWindow } from './ui/groundtrack/GroundtrackWindow';
+import { ResetPasswordModal } from './auth/ResetPasswordModal';
+import { SimulationWindow } from './simulation/SimulationWindow';
+import { SatelliteManeuverWindow } from './satellite/SatelliteManeuverWindow';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './dropdown-menu';
+import { Button } from './button';
+import { GroundTrackWindow } from './groundtrack/GroundTrackWindow';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -207,7 +207,7 @@ ShareModal.propTypes = {
 };
 
 export function Layout({
-    groundtrackWindowProps,
+    groundTrackWindowProps,
     children,
     navbarProps,
     chatModalProps,
@@ -280,10 +280,11 @@ export function Layout({
                 <ShareModal {...shareModalProps} />
                 <AuthModal {...authModalProps} />
                 <SimulationWindow {...simulationWindowProps} />
-                {groundtrackWindowProps &&
-                    <GroundtrackWindow
-                        {...groundtrackWindowProps}
+                {groundTrackWindowProps &&
+                    <GroundTrackWindow
+                        {...groundTrackWindowProps}
                         satellites={satelliteListWindowProps.satellites}
+                        planets={window.app3d?.planets || []}
                     />
                 }
                 {maneuverSat && (
@@ -360,7 +361,7 @@ Layout.propTypes = {
         onClose: PropTypes.func.isRequired,
         satellites: PropTypes.array
     }).isRequired,
-    groundtrackWindowProps: PropTypes.shape({
+    groundTrackWindowProps: PropTypes.shape({
         isOpen: PropTypes.bool.isRequired,
         onClose: PropTypes.func.isRequired
     }),

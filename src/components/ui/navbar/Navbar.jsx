@@ -4,7 +4,7 @@ import { supabase } from '../../../supabaseClient';
 import LogoMenu from './LogoMenu';
 import BodySelector from './BodySelector';
 import TimeControls from './TimeControls';
-import { getBodyDisplayName, findSatellite, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
+import { getBodyDisplayName, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
 import { saveAs } from 'file-saver';
 import LZString from 'lz-string';
 import ActionButtons from './ActionButtons';
@@ -57,7 +57,25 @@ export function Navbar({
   setIsAuthOpen,
   setAuthMode
 }) {
-  const [satelliteOptions, setSatelliteOptions] = useState([]);
+  // Satellite dropdown options state, updated from props and fallback events
+  const [satelliteOptions, setSatelliteOptions] = useState(() => getSatelliteOptions(satellites));
+  // Update when satellites prop changes
+  useEffect(() => {
+    setSatelliteOptions(getSatelliteOptions(satellites));
+  }, [satellites]);
+  // Fallback update on SatelliteManager events
+  useEffect(() => {
+    const handleListUpdated = (e) => {
+      const satsMap = e.detail?.satellites;
+      if (satsMap) {
+        const arr = Object.values(satsMap);
+        setSatelliteOptions(getSatelliteOptions(arr));
+      }
+    };
+    document.addEventListener('satelliteListUpdated', handleListUpdated);
+    return () => document.removeEventListener('satelliteListUpdated', handleListUpdated);
+  }, []);
+  const [planetOptions, setPlanetOptions] = useState([]);
   const [user, setUser] = useState(null);
 
   // Helper function to get the display value
@@ -65,33 +83,18 @@ export function Navbar({
     return getBodyDisplayName(value, satellites);
   };
 
-  // Update satellite options when satellites prop changes
-  useEffect(() => {
-    // Get satellite options using utility function
-    const options = getSatelliteOptions(satellites);
-    setSatelliteOptions(options);
-
-    // If the currently selected satellite is not in the new options, reset selection
-    if (selectedBody && selectedBody !== 'none' && selectedBody !== 'earth' && selectedBody !== 'moon') {
-      const satellite = findSatellite(selectedBody, satellites);
-      if (!satellite) {
-        onBodySelect('none');
-      }
-    }
-  }, [satellites, selectedBody, onBodySelect]);
-
   // Listen for satellite deletion events
   useEffect(() => {
     const handleSatelliteDeleted = (event) => {
-      const satellite = findSatellite(selectedBody, satellites);
-      if (satellite?.id === event.detail.id) {
+      // reset selection if deleted body matches
+      if (selectedBody === `satellite-${event.detail.id}`) {
         onBodySelect('none');
       }
     };
 
     document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
     return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
-  }, [selectedBody, onBodySelect, satellites]);
+  }, [selectedBody, onBodySelect]);
 
   // Fetch user on mount and listen for auth state changes
   useEffect(() => {
@@ -110,10 +113,19 @@ export function Navbar({
     };
   }, []);
 
-  // Propagate the dropdown's value (none, earth, moon, satellite-<id>) directly
+  // When dropdown changes, update React state and directly drive cameraControls
   const handleBodyChange = (eventOrValue) => {
-    const value = typeof eventOrValue === 'object' ? eventOrValue.target.value : eventOrValue;
-    onBodySelect(value || 'none');
+    const value = typeof eventOrValue === 'object'
+      ? eventOrValue.target.value
+      : eventOrValue;
+    const selected = value || 'none';
+    // update application state
+    onBodySelect(selected);
+    // directly follow in 3D camera controls
+    const app = app3DRef.current;
+    if (app?.cameraControls?.follow) {
+      app.cameraControls.follow(selected, app);
+    }
   };
 
   // --- Save/Import/Share Simulation State ---
@@ -155,6 +167,23 @@ export function Navbar({
     setUser(null);
   };
 
+  // Update planet options when scene is ready
+  useEffect(() => {
+    const handleSceneReady = () => {
+      const app = app3DRef.current;
+      const planets = app?.planets || [];
+      const options = planets.map(p => ({
+        value: p.name,
+        text: p.name.charAt(0).toUpperCase() + p.name.slice(1),
+      }));
+      setPlanetOptions(options);
+    };
+    document.addEventListener('sceneReady', handleSceneReady);
+    // Also update once on mount in case scene is already ready
+    handleSceneReady();
+    return () => document.removeEventListener('sceneReady', handleSceneReady);
+  }, []);
+
   return (
     <div className="fixed top-0 left-0 right-0 h-[72px] flex items-center justify-between z-20 bg-gradient-to-b from-background/90 to-transparent backdrop-blur-sm px-4">
       <div className="flex items-center gap-1.5">
@@ -168,6 +197,7 @@ export function Navbar({
         <BodySelector
           selectedBody={selectedBody}
           handleBodyChange={handleBodyChange}
+          planetOptions={planetOptions}
           satelliteOptions={satelliteOptions}
           getDisplayValue={getDisplayValue}
         />

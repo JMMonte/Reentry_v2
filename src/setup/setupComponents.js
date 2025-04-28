@@ -1,113 +1,108 @@
-// setupComponents.js
+// setupComponents.js ───────────────────────────────────────────────────────────
+// Centralised helpers that create Three.js primitives with sensible defaults.
+// Public surface:
+//
+//   setupCamera()                   → THREE.PerspectiveCamera
+//   setupRenderer(canvas)           → THREE.WebGLRenderer
+//   setupControls(camera, renderer) → OrbitControls
+//   setupPhysicsWorld()             → minimal stub (keeps legacy code happy)
+//
+// All functions throw with a clear message if they cannot fulfil their contract.
+// ──────────────────────────────────────────────────────────────────────────────
+
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Constants } from '../utils/Constants.js';
 
+// ──────────────────────────────────────────────────────────────────────────────
+// 1. CAMERA
+// ──────────────────────────────────────────────────────────────────────────────
+const CAMERA_OPTS = {
+    fov: 42,
+    near: 0.1,
+    farKm: 4e10                       // expressed in kilometres
+};
 export function setupCamera() {
-    const camera = new THREE.PerspectiveCamera(
-        42, // Field of view
-        window.innerWidth / window.innerHeight, // Aspect ratio
-        0.1, // Near clipping plane
-        Constants.kmToMeters * 4e10 // Far clipping plane
+    const cam = new THREE.PerspectiveCamera(
+        CAMERA_OPTS.fov,
+        window.innerWidth / window.innerHeight,
+        CAMERA_OPTS.near,
+        CAMERA_OPTS.farKm * Constants.kmToMeters      // convert to metres
     );
-    camera.position.set(1000, 7000, 20000).multiplyScalar(Constants.scale);
-    camera.lookAt(new THREE.Vector3(0, 0, 0));
-    camera.logarithmicDepthBuffer = true;
-    return camera;
+
+    cam.up.set(0, 0, 1);                              // global Z-up
+    cam.position.set(1000, 20000, 7000)
+        .multiplyScalar(Constants.scale);      // north-pole vantage
+    cam.lookAt(0, 0, 0);
+    cam.logarithmicDepthBuffer = true;
+
+    return cam;
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 2. RENDERER
+// ──────────────────────────────────────────────────────────────────────────────
+const WEBGL_ATTRS = Object.freeze({
+    alpha: true,
+    depth: true,
+    stencil: true,
+    antialias: true,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: true,
+    powerPreference: 'high-performance',
+    failIfMajorPerformanceCaveat: false
+});
 
 export function setupRenderer(canvas) {
-    if (!canvas) {
-        console.error('No canvas provided to setupRenderer');
-        return null;
-    }
+    if (!canvas) throw new Error('setupRenderer: <canvas> not supplied');
 
-    try {
-        // Create WebGL context first
-        const contextAttributes = {
-            alpha: true,
-            depth: true,
-            stencil: true,
-            antialias: true,
-            premultipliedAlpha: false,
-            preserveDrawingBuffer: true,
-            powerPreference: 'high-performance',
-            failIfMajorPerformanceCaveat: false,
-        };
+    // Prefer WebGL2 but gracefully fall back
+    const gl =
+        canvas.getContext('webgl2', WEBGL_ATTRS) ??
+        canvas.getContext('webgl', WEBGL_ATTRS);
 
-        const gl = canvas.getContext('webgl2', contextAttributes) || 
-                  canvas.getContext('webgl', contextAttributes);
+    if (!gl) throw new Error('WebGL not supported by this browser / driver');
 
-        if (!gl) {
-            throw new Error('WebGL not supported');
-        }
+    const renderer = new THREE.WebGLRenderer({
+        canvas,
+        context: gl,
+        logarithmicDepthBuffer: true,
+        ...WEBGL_ATTRS          // carry over AA, alpha, etc.
+    });
 
-        // Create renderer with existing context
-        const renderer = new THREE.WebGLRenderer({
-            canvas: canvas,
-            context: gl,
-            ...contextAttributes,
-            logarithmicDepthBuffer: true
-        });
+    // Runtime sanity check
+    if (!renderer.getContext())
+        throw new Error('setupRenderer: context initialisation failed');
 
-        // Check if context was created successfully
-        if (!renderer || !renderer.getContext()) {
-            throw new Error('Failed to initialize WebGL renderer');
-        }
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
 
-        // Configure renderer
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
-        renderer.physicallyCorrectLights = true;
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1;
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.physicallyCorrectLights = true;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
 
-        return renderer;
-    } catch (error) {
-        console.error('Error creating WebGL renderer:', error);
-        throw error;
-    }
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    return renderer;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// 3. ORBIT CONTROLS
+// ──────────────────────────────────────────────────────────────────────────────
 export function setupControls(camera, renderer) {
     const controls = new OrbitControls(camera, renderer.domElement);
+
     controls.minDistance = 100 * Constants.metersToKm * Constants.scale * 2;
-    controls.maxDistance = 500000000 * Constants.scale;
+    controls.maxDistance = 500_000_000 * Constants.scale;
+
     return controls;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// 4. PHYSICS WORLD (stub keeps legacy api compile-time happy)
+// ──────────────────────────────────────────────────────────────────────────────
 export function setupPhysicsWorld() {
-    // Physics world stub; legacy addBody calls are no-ops
-    return {
-        addBody: () => { /* no-op */ }
-    };
-}
-
-export function setupSettings() {
-    return {
-        timeWarp: 1,
-        startTime: new Date().toISOString(),
-        simulatedTime: new Date().toISOString()
-    };
-}
-
-export async function setupScene(app) {
-    if (!app.scene || !app.renderer) {
-        throw new Error('Scene or renderer not initialized');
-    }
-
-    try {
-        // Initialize basic scene components that don't need textures
-        app.controls = setupControls(app.camera, app.renderer);
-        app.world = setupPhysicsWorld();
-        app.settings = setupSettings();
-
-        return app.scene;
-    } catch (error) {
-        console.error('Error setting up scene:', error);
-        throw error;
-    }
+    return { addBody: () => {/* no-op for now */ } };
 }

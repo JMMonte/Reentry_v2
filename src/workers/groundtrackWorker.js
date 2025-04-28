@@ -44,16 +44,18 @@ self.onmessage = async function (e) {
         // Scratch vector for calculations
         const scratchVec = new THREE.Vector3();
 
+        // Compute ground track points via ECI→ECEF→geodetic to match Earth-fixed frame
         for (let i = 0; i < propagatedPoints.length; i++) {
             const { position: eciPosArray, timeOffset } = propagatedPoints[i];
-            // Set the scratch vector to the tilt-based ECI position
             scratchVec.set(eciPosArray[0], eciPosArray[1], eciPosArray[2]);
-            // Compute time and Greenwich sidereal time
-            const pointTime = startTimestamp + timeOffset * 1000; // Time of this point in ms
+            const pointTime = startTimestamp + timeOffset * 1000;
             const gmst = PhysicsUtils.calculateGMST(pointTime);
-            // Use helper to convert tilt-based ECI directly to geodetic lat/lon
-            const { lat, lon } = PhysicsUtils.eciTiltToLatLon(scratchVec, gmst);
-            // Include absolute time in each point
+            // ECI to Earth-fixed ECEF
+            const ecefVec = PhysicsUtils.eciToEcef(scratchVec, gmst);
+            // ECEF to geodetic lat/lon
+            const { latitude: lat, longitude: lon } = PhysicsUtils.ecefToGeodetic(
+                ecefVec.x, ecefVec.y, ecefVec.z
+            );
             groundPoints.push({ lat, lon, time: pointTime });
 
             // Yield control periodically during conversion

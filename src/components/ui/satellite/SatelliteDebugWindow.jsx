@@ -12,6 +12,9 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [dragData, setDragData] = useState(null);
   const [perturbationData, setPerturbationData] = useState(null);
+  const [simTime, setSimTime] = useState(null);
+  const [lat, setLat] = useState(null);
+  const [lon, setLon] = useState(null);
 
   // Store reference to setIsOpen in satellite (for toggling from list)
   useEffect(() => {
@@ -31,6 +34,18 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       };
     }
   }, [satellite]);
+
+  useEffect(() => {
+    function handleSimData(e) {
+      const detail = e.detail;
+      if (detail.id !== satellite.id) return;
+      setSimTime(detail.simulatedTime);
+      setLat(detail.lat);
+      setLon(detail.lon);
+    }
+    document.addEventListener('simulationDataUpdate', handleSimData);
+    return () => document.removeEventListener('simulationDataUpdate', handleSimData);
+  }, [satellite.id]);
 
   const handleFocus = () => {
     if (onBodySelect && satellite) {
@@ -87,6 +102,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     return typeof num === 'number' ? num.toFixed(2) : num;
   };
 
+  const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
   // Render gravitational perturbations with breakdown per body
   const renderPerturbation = () => {
     if (!perturbationData) return null;
@@ -117,42 +134,22 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         </div>
         {showBreakdown && (
           <div className="space-y-1 p-1 bg-muted/10 rounded">
-            <div className="grid grid-cols-4 gap-0.5 text-[8px]">
-              <span className="text-muted-foreground">Earth Acc:</span>
-              <span>{formatNumber(acc.earth.x)}</span>
-              <span>{formatNumber(acc.earth.y)}</span>
-              <span>{formatNumber(acc.earth.z)}</span>
-            </div>
-            <div className="grid grid-cols-4 gap-0.5 text-[8px]">
-              <span className="text-muted-foreground">Moon Acc:</span>
-              <span>{formatNumber(acc.moon.x)}</span>
-              <span>{formatNumber(acc.moon.y)}</span>
-              <span>{formatNumber(acc.moon.z)}</span>
-            </div>
-            <div className="grid grid-cols-4 gap-0.5 text-[8px]">
-              <span className="text-muted-foreground">Sun Acc:</span>
-              <span>{formatNumber(acc.sun.x)}</span>
-              <span>{formatNumber(acc.sun.y)}</span>
-              <span>{formatNumber(acc.sun.z)}</span>
-            </div>
-            <div className="grid grid-cols-4 gap-0.5 text-[8px]">
-              <span className="text-muted-foreground">Earth F:</span>
-              <span>{formatNumber(force.earth.x)}</span>
-              <span>{formatNumber(force.earth.y)}</span>
-              <span>{formatNumber(force.earth.z)}</span>
-            </div>
-            <div className="grid grid-cols-4 gap-0.5 text-[8px]">
-              <span className="text-muted-foreground">Moon F:</span>
-              <span>{formatNumber(force.moon.x)}</span>
-              <span>{formatNumber(force.moon.y)}</span>
-              <span>{formatNumber(force.moon.z)}</span>
-            </div>
-            <div className="grid grid-cols-4 gap-0.5 text-[8px]">
-              <span className="text-muted-foreground">Sun F:</span>
-              <span>{formatNumber(force.sun.x)}</span>
-              <span>{formatNumber(force.sun.y)}</span>
-              <span>{formatNumber(force.sun.z)}</span>
-            </div>
+            {Object.keys(acc).filter(body => body !== 'total').map(body => (
+              <div className="grid grid-cols-4 gap-0.5 text-[8px]" key={`acc-${body}`}>
+                <span className="text-muted-foreground">{capitalize(body)} Acc:</span>
+                <span>{formatNumber(acc[body].x)}</span>
+                <span>{formatNumber(acc[body].y)}</span>
+                <span>{formatNumber(acc[body].z)}</span>
+              </div>
+            ))}
+            {Object.keys(force).filter(body => body !== 'total').map(body => (
+              <div className="grid grid-cols-4 gap-0.5 text-[8px]" key={`force-${body}`}>
+                <span className="text-muted-foreground">{capitalize(body)} F:</span>
+                <span>{formatNumber(force[body].x)}</span>
+                <span>{formatNumber(force[body].y)}</span>
+                <span>{formatNumber(force[body].z)}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -196,6 +193,20 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       <div className="space-y-2">
         {satellite && (
           <>
+            {simTime && (
+              <div className='grid grid-cols-2 gap-0.5'>
+                <span className='text-[10px] font-mono text-muted-foreground'>Sim Time:</span>
+                <span className='col-span-1 text-[10px] font-mono'>{simTime}</span>
+              </div>
+            )}
+            {lat != null && (
+              <div className='grid grid-cols-4 gap-0.5'>
+                <span className='text-[10px] font-mono text-muted-foreground'>Lat:</span>
+                <span className='text-[10px] font-mono'>{formatNumber(lat)}°</span>
+                <span className='text-[10px] font-mono text-muted-foreground'>Lon:</span>
+                <span className='text-[10px] font-mono'>{formatNumber(lon)}°</span>
+              </div>
+            )}
             {renderVector(satellite.position, "Position")}
             {renderVector(satellite.velocity, "Velocity", true)}
             {renderVector(satellite.acceleration, "Acceleration", true)}

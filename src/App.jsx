@@ -1,15 +1,15 @@
 import React, { useState, useEffect, createContext, useRef } from 'react';
 import { getSocket } from './socket';
-import { ThemeProvider } from './components/theme-provider';
-import { Layout } from './components/Layout';
+import { ThemeProvider } from './components/ui/theme-provider';
+import { Layout } from './components/ui/Layout';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
 import { useApp3D } from './simulation/useApp3D';
 import { useSimulationState } from './simulation/useSimulationState';
-import { SimulationStateManager } from './simulation/SimulationStateManager';
+import { SimulationStateManager } from './managers/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
 import LZString from 'lz-string';
-import { SimulationProvider } from './context/SimulationContext';
+import { SimulationProvider } from './simulation/SimulationContext';
 
 const ToastContext = createContext({ showToast: () => { } });
 
@@ -97,7 +97,7 @@ function App3DMain() {
   const [isGroundtrackOpen, setIsGroundtrackOpen] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
   const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
-  const { controller } = useApp3D(importedState);
+  const { controller, ready } = useApp3D(importedState);
   const app3d = controller?.app3d;
   const [checkedInitialState, setCheckedInitialState] = useState(false);
   const ignoreNextHashChange = React.useRef(false);
@@ -128,14 +128,15 @@ function App3DMain() {
   useEffect(() => {
     const handleSatelliteListUpdate = () => {
       if (app3d && app3d.satellites) {
-        const satellites = app3d.satellites.getSatellites();
-        setSatellites(satellites);
+        const satsMap = app3d.satellites.getSatellites();
+        setSatellites({ ...satsMap });
         setDebugWindows(prev =>
-          prev.map(w => satellites[w.id] ? { ...w, satellite: satellites[w.id] } : null).filter(Boolean)
+          prev.map(w => satsMap[w.id] ? { ...w, satellite: satsMap[w.id] } : null).filter(Boolean)
         );
       }
     };
     document.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+    handleSatelliteListUpdate();
     return () => document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
   }, [app3d]);
   useEffect(() => {
@@ -199,12 +200,12 @@ function App3DMain() {
       window.handlingBodySelectedEvent = false;
     }
   };
-  // Immediately update camera target when selectedBody changes
+  // Update camera target when scene is ready and selectedBody changes
   useEffect(() => {
-    if (controller?.app3d?.updateSelectedBody) {
+    if (controller?.app3d?.updateSelectedBody && ready) {
       controller.app3d.updateSelectedBody(selectedBody);
     }
-  }, [selectedBody, controller]);
+  }, [selectedBody, controller, ready]);
   const onCreateSatellite = async (params) => {
     try {
       let satellite;
@@ -288,17 +289,29 @@ ${shareUrl}`);
     const onPointClick = (e) => {
       const { feature, category } = e.detail;
       setOpenPointModals(prev => {
-        const exists = prev.find(m => m.feature === feature && m.category === category);
-        if (exists) {
-          return prev.filter(m => !(m.feature === feature && m.category === category));
-        } else {
-          return [...prev, { feature, category }];
-        }
+        const isSame = prev.length === 1 && prev[0].feature === feature && prev[0].category === category;
+        // toggle off if clicking the same, else open only the new one
+        return isSame ? [] : [{ feature, category }];
       });
     };
     window.addEventListener('earthPointClick', onPointClick);
     return () => window.removeEventListener('earthPointClick', onPointClick);
   }, []);
+  // Notify App3D when a POI modal is open/closed
+  useEffect(() => {
+    const open = openPointModals.length > 0;
+    const feature = openPointModals[0]?.feature;
+    const category = openPointModals[0]?.category;
+    window.dispatchEvent(new CustomEvent('poiModal', {
+      detail: { open, feature, category }
+    }));
+  }, [openPointModals]);
+  // Make the 3D app globally available for UI components
+  useEffect(() => {
+    if (app3d) {
+      window.app3d = app3d;
+    }
+  }, [app3d]);
   if (!checkedInitialState) return null;
   // Build props for Layout
   const navbarProps = {
@@ -380,36 +393,33 @@ ${shareUrl}`);
     openModals: openPointModals,
     onToggle: (feature, category) => {
       setOpenPointModals(prev => {
-        const exists = prev.find(m => m.feature === feature && m.category === category);
-        if (exists) {
-          return prev.filter(m => !(m.feature === feature && m.category === category));
-        } else {
-          return [...prev, { feature, category }];
-        }
+        const isSame = prev.length === 1 && prev[0].feature === feature && prev[0].category === category;
+        // toggle off if clicking the same, else open only the new one
+        return isSame ? [] : [{ feature, category }];
       });
     }
   };
-  const groundtrackWindowProps = { isOpen: isGroundtrackOpen, onClose: () => setIsGroundtrackOpen(false) };
+  const groundTrackWindowProps = { isOpen: isGroundtrackOpen, onClose: () => setIsGroundtrackOpen(false) };
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <ToastContext.Provider value={{ showToast }}>
         <SimulationProvider timeUtils={app3d?.timeUtils} displaySettings={displaySettings}>
-        <Layout
-          navbarProps={navbarProps}
-          chatModalProps={chatModalProps}
-          displayOptionsProps={displayOptionsProps}
-          debugWindows={debugWindows}
-          satelliteListWindowProps={satelliteListWindowProps}
-          satelliteCreatorModalProps={satelliteCreatorModalProps}
-          shareModalProps={shareModalProps}
-          authModalProps={authModalProps}
-          simulationWindowProps={{ isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), satellites: Object.values(satellites) }}
-          groundtrackWindowProps={groundtrackWindowProps}
-          earthPointModalProps={earthPointModalProps}
-        >
-          {/* Main app content (canvas, etc.) */}
-          <canvas id="three-canvas" className="absolute inset-0 z-0" />
-        </Layout>
+          <Layout
+            navbarProps={navbarProps}
+            chatModalProps={chatModalProps}
+            displayOptionsProps={displayOptionsProps}
+            debugWindows={debugWindows}
+            satelliteListWindowProps={satelliteListWindowProps}
+            satelliteCreatorModalProps={satelliteCreatorModalProps}
+            shareModalProps={shareModalProps}
+            authModalProps={authModalProps}
+            simulationWindowProps={{ isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), satellites: Object.values(satellites) }}
+            groundTrackWindowProps={groundTrackWindowProps}
+            earthPointModalProps={earthPointModalProps}
+          >
+            {/* Main app content (canvas, etc.) */}
+            <canvas id="three-canvas" className="absolute inset-0 z-0" />
+          </Layout>
         </SimulationProvider>
         <Toast ref={toastRef} />
       </ToastContext.Provider>

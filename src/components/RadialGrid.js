@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants';
-import { OrbitalRegimes } from '../utils/OrbitalRegimes';
+import { OrbitalRegimes } from '../config/OrbitalRegimes.js';
+import { LabelFader } from '../utils/LabelFader.js';
 
 export class RadialGrid {
     /**
@@ -20,6 +21,11 @@ export class RadialGrid {
         
         this.createGrid();
         this.createLabels();
+        // Initialize label fading based on each label's distance
+        const maxRadius = (Constants.earthRadius + Constants.earthHillSphere) * Constants.metersToKm * Constants.scale;
+        const fadeStart = maxRadius * 0.05;
+        const fadeEnd = maxRadius * 0.2;
+        this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
     }
 
     createGrid() {
@@ -122,8 +128,8 @@ export class RadialGrid {
                 new THREE.Vector3(0, 0, 0),
                 new THREE.Vector3(
                     Math.cos(angle) * maxRadius,
-                    0,
-                    Math.sin(angle) * maxRadius
+                    Math.sin(angle) * maxRadius,
+                    0
                 )
             ]);
             
@@ -142,8 +148,8 @@ export class RadialGrid {
         for (let i = 0; i <= segments; i++) {
             const angle = (i / segments) * Math.PI * 2;
             positions[i * 3] = Math.cos(angle) * scaledRadius;
-            positions[i * 3 + 1] = 0;
-            positions[i * 3 + 2] = Math.sin(angle) * scaledRadius;
+            positions[i * 3 + 1] = Math.sin(angle) * scaledRadius;
+            positions[i * 3 + 2] = 0;
         }
 
         circleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -201,8 +207,8 @@ export class RadialGrid {
     createLabel(text, radius) {
         const sprite = this.createTextSprite(text);
         const scaledRadius = radius * Constants.metersToKm * Constants.scale;
-        sprite.position.set(scaledRadius, 0, 0);
-        sprite.layers.set(1);
+        sprite.position.set(scaledRadius, 0, 0); // X, Y, Z
+        sprite.position.set(Math.cos(0) * scaledRadius, Math.sin(0) * scaledRadius, 0); // Place on XY plane at angle 0
         this.group.add(sprite);
         this.labelsSprites.push(sprite);
     }
@@ -212,21 +218,8 @@ export class RadialGrid {
      * then fade out to zero at fadeEnd.
      */
     updateFading(camera) {
-        const distance = camera.position.length();
-        const maxRadius = (Constants.earthRadius + Constants.earthHillSphere) * Constants.metersToKm * Constants.scale;
-        const fadeStart = maxRadius * 0.05;
-        const fadeEnd = maxRadius * 0.2;
-        let opacity = 1;
-        if (distance > fadeStart) {
-            if (distance >= fadeEnd) opacity = 0;
-            else opacity = 1 - (distance - fadeStart) / (fadeEnd - fadeStart);
-        }
-        this.labelsSprites.forEach(sprite => {
-            const mat = sprite.material;
-            mat.opacity = opacity;
-            mat.transparent = true;
-            mat.needsUpdate = true;
-        });
+        // delegate to centralized LabelFader
+        this.labelFader.update(camera);
     }
 
     setVisible(visible) {
