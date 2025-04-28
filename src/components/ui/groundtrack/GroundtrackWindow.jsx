@@ -4,12 +4,16 @@ import React, {
     useRef,
     useReducer,
     useState,
+    useMemo,
 } from 'react';
 import PropTypes from 'prop-types';
 import { DraggableModal } from '../modal/DraggableModal';
 import { usePlanetList } from './hooks';
 import GroundTrackCanvas from './GroundTrackCanvas.jsx';
 import GroundTrackControls from './GroundTrackControls.jsx';
+import { projectToGeodetic } from '../../../utils/MapProjection';
+import { Constants } from '../../../utils/Constants';
+import * as THREE from 'three';
 
 // ---------------------------------------------------------------------------
 // Layers state machine
@@ -44,26 +48,33 @@ export function GroundTrackWindow({
     satellites,
     planets,
 }) {
-    const offscreenRef = useRef(null);
-    // Track latest simulation lat/lon per satellite from simulationDataUpdate
-    const [currentPos, setCurrentPos] = useState({});
-    useEffect(() => {
-        const handleSim = e => {
-            setCurrentPos(prev => ({
-                ...prev,
-                [e.detail.id]: { lat: e.detail.lat, lon: e.detail.lon }
-            }));
-        };
-        document.addEventListener('simulationDataUpdate', handleSim);
-        return () => document.removeEventListener('simulationDataUpdate', handleSim);
-    }, []);
+    const [offscreenCanvas, setOffscreenCanvas] = useState(null);
     const [tracks, setTracks] = useState({});
+    // refs to batch updates
+    const pendingTracksRef = useRef({});
+    const flushTracksScheduledRef = useRef(false);
     const [selectedPlanet, setSelectedPlanet] = useState(0);
     const [layers, dispatchLayers] = useReducer(layersReducer, initialLayers);
     const [showCoverage, setShowCoverage] = useState(false);
 
     const planetList = usePlanetList(planets);
     const planet = planetList[selectedPlanet];
+    console.log('[GroundTrackWindow] selected planet:', planet?.name);
+
+    // Prepare POI data from the planet's surface for canvas rendering
+    const poiData = useMemo(() => {
+        console.log('[GroundTrackWindow] computing poiData for planet:', planet?.name);
+        if (!planet?.surface) return {};
+        return Object.entries(planet.surface.points).reduce((acc, [key, meshes]) => {
+            acc[key] = meshes.map(mesh => {
+                const feat = mesh.userData.feature;
+                const [lon, lat] = feat.geometry.coordinates;
+                return { lon, lat };
+            });
+            return acc;
+        }, {});
+    }, [planet]);
+    console.log('[GroundTrackWindow] poiData:', poiData);
 
     // Clamp planet index if list changes
     useEffect(() => {
@@ -80,19 +91,41 @@ export function GroundTrackWindow({
             setTracks({});
             return;
         }
+        // reset batching state when opened
+        pendingTracksRef.current = {};
+        flushTracksScheduledRef.current = false;
         const handler = e => {
             const { id, points } = e.detail;
-            setTracks(prev => ({ ...prev, [id]: points }));
+            pendingTracksRef.current[id] = points;
+            if (!flushTracksScheduledRef.current) {
+                flushTracksScheduledRef.current = true;
+                requestAnimationFrame(() => {
+                    setTracks(prev => {
+                        const newTracks = { ...prev };
+                        Object.entries(pendingTracksRef.current).forEach(([tid, pts]) => {
+                            newTracks[tid] = pts;
+                        });
+                        return newTracks;
+                    });
+                    pendingTracksRef.current = {};
+                    flushTracksScheduledRef.current = false;
+                });
+            }
         };
-        document.addEventListener(
-            'groundTrackUpdated',
-            handler
-        );
-        return () =>
-            document.removeEventListener(
-                'groundTrackUpdated',
-                handler
-            );
+        document.addEventListener('groundTrackUpdated', handler);
+        // also handle incremental chunk streaming
+        const chunkHandler = e => {
+            const { id, points } = e.detail;
+            setTracks(prev => ({
+                ...prev,
+                [id]: prev[id] ? [...prev[id], ...points] : [...points]
+            }));
+        };
+        document.addEventListener('groundTrackChunk', chunkHandler);
+        return () => {
+            document.removeEventListener('groundTrackUpdated', handler);
+            document.removeEventListener('groundTrackChunk', chunkHandler);
+        };
     }, [isOpen]);
 
     // Hook: cache planet surface to offscreen canvas
@@ -108,7 +141,7 @@ export function GroundTrackWindow({
             off
                 .getContext('2d')
                 .drawImage(img, 0, 0);
-            offscreenRef.current = off;
+            setOffscreenCanvas(off);
         }
 
         if (src instanceof HTMLImageElement) {
@@ -138,13 +171,22 @@ export function GroundTrackWindow({
         dispatchLayers({ type: 'SET', payload });
     }, [planet]);
 
-    // CSV download
+    // CSV download: convert raw ECI positions to lat/lon per selected planet
     const downloadCsv = () => {
         const rows = [['satelliteId', 'time', 'lat', 'lon']];
-        for (const [id, pts] of Object.entries(tracks))
-            pts.forEach(({ time, lat, lon }) =>
-                rows.push([id, time, lat, lon]),
-            );
+        const k = Constants.metersToKm * Constants.scale;
+        for (const [id, pts] of Object.entries(tracks)) {
+            pts.forEach(pt => {
+                const { time, position } = pt;
+                const scratch = new THREE.Vector3(
+                    position.x * k,
+                    position.y * k,
+                    position.z * k
+                );
+                const { latitude, longitude } = projectToGeodetic(scratch, planet);
+                rows.push([id, time, latitude, longitude]);
+            });
+        }
         const blob = new Blob(
             [rows.map(r => r.join(',')).join('\n')],
             { type: 'text/csv;charset=utf-8;' },
@@ -186,15 +228,15 @@ export function GroundTrackWindow({
             minHeight={200}
         >
             <GroundTrackCanvas
-                map={offscreenRef.current}
+                map={offscreenCanvas}
                 planet={planet}
                 width={1024}
                 height={512}
                 satellites={satellites}
                 tracks={tracks}
-                currentPos={currentPos}
                 layers={layers}
                 showCoverage={showCoverage}
+                poiData={poiData}
             />
         </DraggableModal>
     );

@@ -1,4 +1,5 @@
 import { PhysicsUtils } from './PhysicsUtils.js';
+import * as THREE from 'three';
 
 /**
  * Project a world-space position onto a planet's surface and return geodetic coordinates.
@@ -8,16 +9,20 @@ import { PhysicsUtils } from './PhysicsUtils.js';
  */
 export function projectToGeodetic(worldPos, planet) {
     if (!planet) return { latitude: 0, longitude: 0, altitude: 0 };
-    // Convert world position to planet local coordinates
-    const local = worldPos.clone();
-    // Assume planetMesh has parent groups for orbit/tilt/rotation
-    const mesh = planet.getMesh();
-    if (mesh && mesh.parent) {
-        mesh.parent.worldToLocal(local);
+    // Convert world position into planet's equatorial local frame (handle plain objects)
+    const local =
+        typeof worldPos.clone === 'function'
+            ? worldPos.clone()
+            : new THREE.Vector3(worldPos.x || 0, worldPos.y || 0, worldPos.z || 0);
+    // Use the mesh parent (rotationGroup) to include daily spin and tilt
+    const mesh = planet.getMesh?.();
+    const ref = (mesh && mesh.parent) || planet.getTiltGroup?.();
+    if (ref && typeof ref.worldToLocal === 'function') {
+        ref.worldToLocal(local);
     }
-    // Compute geodetic lat/lon on planet-centered coordinates
+    // Compute geodetic lat/lon on planet-centered coordinates (swap axes so Z is vertical)
     const { latitude, longitude } = PhysicsUtils.cartesianToGeodetic(
-        local.x, local.y, local.z
+        local.x, local.z, local.y
     );
     // Altitude above surface in same units as radius
     const radius = planet.radius;

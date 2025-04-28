@@ -10,7 +10,13 @@ export class PlanetSurface {
      * @param {number}         radius     — planet radius (scene units)
      * @param {object}         countryGeo — GeoJSON with national borders
      * @param {object}         stateGeo   — GeoJSON with state / province borders
-     * @param {object}         opts       — { heightOffset, circleTextureSize, … }
+     * @param {object}         opts       — configuration options:
+     *   @param {number} [opts.heightOffset=0.01]       — offset above the surface
+     *   @param {number} [opts.circleTextureSize=32]   — size of the point texture
+     *   @param {number} [opts.circleSegments=16]      — segments for circle geometry
+     *   @param {number} [opts.markerSize=1]           — radius of the marker circle
+     *   @param {number} [opts.fadeStartFactor=2.0]      — fade out surface features between these radius multiples
+     *   @param {number} [opts.fadeEndFactor=3.0]        — fade out surface features between these radius multiples
      */
     constructor(
         parentMesh,
@@ -20,12 +26,30 @@ export class PlanetSurface {
         opts = {}
     ) {
         this.root = parentMesh;
-        this.radius = radius + (opts.heightOffset ?? 0.01);
+        // Destructure options with defaults
+        const {
+            heightOffset = 0.01,
+            circleTextureSize = 64,
+            circleSegments = 16,
+            markerSize = 1,
+            fadeStartFactor = 2.0,
+            fadeEndFactor = 3.0
+        } = opts;
+        // Assign properties
+        this.heightOffset = heightOffset;
+        this.circleTextureSize = circleTextureSize;
+        this.circleSegments = circleSegments;
+        this.markerSize = markerSize;
+        this.radius = radius + heightOffset;
+        this.fadeStartDistance = this.radius * fadeStartFactor;
+        this.fadeEndDistance = this.radius * fadeEndFactor;
         this.countryGeo = countryGeo;
         this.stateGeo = stateGeo;
 
         /* ---------- shared resources ---------- */
-        this.circleTexture = this.#createCircleTexture(opts.circleTextureSize ?? 64);
+        this.circleTexture = this.#createCircleTexture(circleTextureSize);
+        // Pre-create circle geometry for POI markers
+        this.circleGeom = new THREE.CircleGeometry(markerSize, circleSegments);
 
         /* ---------- materials ---------- */
         const lineMat = c => new THREE.LineBasicMaterial({
@@ -131,25 +155,31 @@ export class PlanetSurface {
      * @param {keyof this.points} category  'cities' | 'airports' | …
      */
     addInstancedPoints(geojson, material, category) {
+        // Use pre-created circle geometry for POI markers
+        const circleGeom = this.circleGeom;
         geojson?.features.forEach(feat => {
             const [lon, lat] = feat.geometry.coordinates;
             const pos = this.#spherical(lon, lat);
 
-            // Create a sprite marker for points of interest
-            const spriteMaterial = new THREE.SpriteMaterial({
+            // Create a circle mesh marker for points of interest
+            const circleMaterial = new THREE.MeshBasicMaterial({
                 map: material.map,
                 color: material.color.getHex(),
                 transparent: material.transparent,
                 alphaTest: material.alphaTest,
                 depthWrite: false
             });
-            const sprite = new THREE.Sprite(spriteMaterial);
-            sprite.position.copy(pos);
-            sprite.renderOrder = 3;
-            sprite.userData = { feature: feat, category };
+            const mesh = new THREE.Mesh(circleGeom, circleMaterial);
+            mesh.position.copy(pos);
+            // Orient the marker flush with surface (normal along radial direction)
+            const normal = pos.clone().normalize();
+            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+            mesh.renderOrder = 3;
+            mesh.userData = { feature: feat, category };
+            mesh.visible = true;
 
-            this.root.add(sprite);
-            this.points[category].push(sprite);
+            this.root.add(mesh);
+            this.points[category].push(mesh);
         });
     }
 
@@ -184,5 +214,32 @@ export class PlanetSurface {
         ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
         ctx.fill();
         return new THREE.CanvasTexture(canvas);
+    }
+
+    /**
+     * Update feature opacity based on camera distance to surface.
+     * @param {THREE.Camera} camera
+     */
+    updateFade(camera) {
+        if (!camera) return;
+        const worldPos = new THREE.Vector3();
+        this.root.getWorldPosition(worldPos);
+        const dist = worldPos.distanceTo(camera.position);
+        let opacity;
+        if (dist <= this.fadeStartDistance) {
+            opacity = 1;
+        } else if (dist >= this.fadeEndDistance) {
+            opacity = 0;
+        } else {
+            opacity = (this.fadeEndDistance - dist) / (this.fadeEndDistance - this.fadeStartDistance);
+        }
+        // Apply to graticules, borders, and states
+        this.surfaceLines.forEach(line => { line.material.opacity = opacity; });
+        this.countryBorders.forEach(line => { line.material.opacity = opacity; });
+        this.states.forEach(line => { line.material.opacity = opacity; });
+        // Apply to point features
+        Object.values(this.points).flat().forEach(mesh => {
+            mesh.material.opacity = opacity;
+        });
     }
 }

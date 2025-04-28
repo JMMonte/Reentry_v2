@@ -1,7 +1,7 @@
 // GroundtrackPath.js
 
 /**
- * Computes a satellite’s ground-track in a Web-Worker and streams the
+ * Computes a satellite's ground-track in a Web-Worker and streams the
  * polyline back as {lat, lon} pairs.
  *
  * Design notes
@@ -23,7 +23,14 @@ export class GroundtrackPath {
 
         GroundtrackPath._worker.onmessage = (e) => {
             const { type, id } = e.data;
-            if (type === 'GROUNDTRACK_PROGRESS') { /* add spinner here if wanted */ return; }
+            // progress updates can be ignored or used for a loader
+            if (type === 'GROUNDTRACK_PROGRESS') return;
+            // chunk of points
+            if (type === 'GROUNDTRACK_CHUNK') {
+                GroundtrackPath._handlers.get(id)?._onWorkerChunk(e.data);
+                return;
+            }
+            // final complete set
             if (type === 'GROUNDTRACK_UPDATE') {
                 GroundtrackPath._handlers.get(id)?._onWorkerUpdate(e.data);
             }
@@ -108,6 +115,17 @@ export class GroundtrackPath {
 
         document.dispatchEvent(new CustomEvent('groundTrackUpdated', {
             detail: { id: this._currentId, points: this.points },
+        }));
+    }
+
+    /** called on partial chunk updates */
+    _onWorkerChunk({ seq, points }) {
+        // only accept chunks for current sequence
+        if (seq !== this._seq) return;
+        // append new points
+        this.points.push(...points);
+        document.dispatchEvent(new CustomEvent('groundTrackChunk', {
+            detail: { id: this._currentId, points }
         }));
     }
 }

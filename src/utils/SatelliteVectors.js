@@ -93,10 +93,17 @@ export class SatelliteVectors {
 
     setVisible(flag) {
         this._visible = flag;
-        this._entries.forEach(({ vel, orient, grav }) => {
+        this._entries.forEach(({ vel, orient, grav, velLabel, orientLabel, gravLabels }) => {
+            // hide/show arrows
             vel.visible = orient.visible = flag;
             grav.forEach(g => g.visible = flag);
+            // hide/show labels (CSS2D objects)
+            if (velLabel) velLabel.visible = flag;
+            if (orientLabel) orientLabel.visible = flag;
+            gravLabels?.forEach(l => (l.visible = flag));
         });
+        // if toggled on, force immediate re-sync of vectors
+        if (flag) this.updateSatelliteVectors(true);
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -165,10 +172,18 @@ export class SatelliteVectors {
 
         // velocity arrow
         vel.visible = true;
-        const velDir = this._tmpDir.copy(sat.velocity).normalize();
-        this._updateArrow(vel, velDir, pos, camDist);
+        // use normalized velocity from debug if provided, else compute
+        let velDirVec;
+        if (sat.debug?.velDir) {
+            velDirVec = this._tmpDir.set(
+                sat.debug.velDir.x, sat.debug.velDir.y, sat.debug.velDir.z
+            );
+        } else {
+            velDirVec = this._tmpDir.copy(sat.velocity).normalize();
+        }
+        this._updateArrow(vel, velDirVec, pos, camDist);
         velLabel.visible = true;
-        velLabel.position.copy(pos).add(velDir.clone().multiplyScalar(len));
+        velLabel.position.copy(pos).add(velDirVec.clone().multiplyScalar(len));
 
         // orientation arrow (body Y-axis)
         orient.visible = true;
@@ -182,18 +197,22 @@ export class SatelliteVectors {
         // gravity arrows
         grav.forEach((gArrow, i) => {
             const src = this.gravitySources[i];
-            const acc = sat.debug?.perturbation?.acc?.[src?.name];
-            if (!src?.mesh || !acc) {
+            const accDir = sat.debug?.perturbation?.accDir?.[src?.name];
+            const accRaw = sat.debug?.perturbation?.acc?.[src?.name];
+            if (!src?.mesh || (!accRaw && !accDir)) {
                 gArrow.visible = false;
                 gravLabels[i].visible = false;
                 return;
             }
             gArrow.visible = true;
-            const gDir = this._tmpAcc.set(acc.x, acc.y, acc.z).normalize();
-            this._updateArrow(gArrow, gDir, pos, camDist);
+            // use precomputed unit direction if available
+            const dir = accDir
+                ? this._tmpAcc.set(accDir.x, accDir.y, accDir.z)
+                : this._tmpAcc.set(accRaw.x, accRaw.y, accRaw.z).normalize();
+            this._updateArrow(gArrow, dir, pos, camDist);
             const label = gravLabels[i];
             label.visible = true;
-            label.position.copy(pos).add(gDir.clone().multiplyScalar(len));
+            label.position.copy(pos).add(dir.clone().multiplyScalar(len));
         });
     }
 

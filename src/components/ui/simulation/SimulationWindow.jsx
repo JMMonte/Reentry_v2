@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DraggableModal } from '../modal/DraggableModal';
 import { Button } from '../button';
 import { Loader2 } from 'lucide-react';
@@ -11,6 +11,9 @@ import PropTypes from 'prop-types';
 export function SimulationWindow({ isOpen, onClose }) {
     const [simulationData, setSimulationData] = useState({});
     const [isLoading, setIsLoading] = useState(true);
+    // refs to batch incoming updates
+    const pendingSimRef = useRef({});
+    const flushSimRef = useRef(false);
     // Define available metrics
     const metricsList = [
         { key: 'altitude', label: 'Altitude', color: '#1f77b4' },
@@ -36,33 +39,45 @@ export function SimulationWindow({ isOpen, onClose }) {
     const [selectedSatId, setSelectedSatId] = useState(null);
 
     useEffect(() => {
-        if (!isOpen) return;
-        // Handlers for orbit path and parameter updates
-        const handleOrbitUpdate = (e) => {
-            const { id, orbitPoints, period, numPoints } = e.detail;
-            setSimulationData(prev => {
-                const entry = prev[id] || { orbitUpdates: [], paramUpdates: [] };
-                return {
-                    ...prev,
-                    [id]: {
-                        orbitUpdates: [...entry.orbitUpdates, { orbitPoints, period, numPoints }],
-                        paramUpdates: entry.paramUpdates
-                    }
-                };
-            });
+        if (!isOpen) {
+            // reset when closed
+            setSimulationData({});
+            pendingSimRef.current = {};
+            flushSimRef.current = false;
+            return;
+        }
+        // batch handlers instead of per-event setState
+        const scheduleFlush = () => {
+            if (!flushSimRef.current) {
+                flushSimRef.current = true;
+                requestAnimationFrame(() => {
+                    setSimulationData(prev => {
+                        const next = { ...prev };
+                        for (const [sid, updates] of Object.entries(pendingSimRef.current)) {
+                            const prevEntry = next[sid] || { orbitUpdates: [], paramUpdates: [] };
+                            next[sid] = {
+                                orbitUpdates: [...prevEntry.orbitUpdates, ...(updates.orbitUpdates || [])],
+                                paramUpdates: [...prevEntry.paramUpdates, ...(updates.paramUpdates || [])]
+                            };
+                        }
+                        return next;
+                    });
+                    pendingSimRef.current = {};
+                    flushSimRef.current = false;
+                });
+            }
         };
-        const handleParamUpdate = (e) => {
+        const handleOrbitUpdate = e => {
+            const { id, orbitPoints, period, numPoints } = e.detail;
+            const bucket = pendingSimRef.current[id] ||= { orbitUpdates: [], paramUpdates: [] };
+            bucket.orbitUpdates.push({ orbitPoints, period, numPoints });
+            scheduleFlush();
+        };
+        const handleParamUpdate = e => {
             const { id, elements, perturbation, simulatedTime, altitude, velocity, lat, lon, dragData } = e.detail;
-            setSimulationData(prev => {
-                const entry = prev[id] || { orbitUpdates: [], paramUpdates: [] };
-                return {
-                    ...prev,
-                    [id]: {
-                        orbitUpdates: entry.orbitUpdates,
-                        paramUpdates: [...entry.paramUpdates, { elements, perturbation, simulatedTime, altitude, velocity, lat, lon, dragData }]
-                    }
-                };
-            });
+            const bucket = pendingSimRef.current[id] ||= { orbitUpdates: [], paramUpdates: [] };
+            bucket.paramUpdates.push({ elements, perturbation, simulatedTime, altitude, velocity, lat, lon, dragData });
+            scheduleFlush();
         };
         document.addEventListener('orbitDataUpdate', handleOrbitUpdate);
         document.addEventListener('simulationDataUpdate', handleParamUpdate);
@@ -179,11 +194,6 @@ export function SimulationWindow({ isOpen, onClose }) {
             return rec;
         });
     }, [simulationData, selectedSatId, selectedMetrics]);
-
-    // Clear stored simulation data when modal closes to free memory
-    useEffect(() => {
-        if (!isOpen) setSimulationData({});
-    }, [isOpen]);
 
     return (
         <DraggableModal

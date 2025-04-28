@@ -7,6 +7,10 @@ import { PlanetMaterials } from './PlanetMaterials.js';
 export class Planet {
     /** Registry holding every created planet */
     static instances = [];
+    /** Shared camera reference for LOD updates */
+    static camera = null;
+    /** Method to set shared camera */
+    static setCamera(cam) { Planet.camera = cam; }
 
     /**
      * @param {THREE.Scene}          scene
@@ -43,7 +47,11 @@ export class Planet {
             addLight = false,
             lightOptions = {},
             materials: materialOverrides = {},
-            symbol
+            symbol,
+            lodLevels = [],
+            // distant dot rendering pixel-size threshold in pixels
+            dotPixelSizeThreshold = 4,
+            dotColor = 0xffffff
         } = config;
 
         /* ---------- basic setup ---------- */
@@ -66,6 +74,11 @@ export class Planet {
         this.cloudThickness = cloudThickness;
         this.orbitElements = orbitElements;
         this.rotationOffset = 0; // prime-meridian alignment
+        // Store LOD levels for dynamic resolution
+        this.lodLevels = lodLevels;
+        // Store distant rendering parameters
+        this.dotPixelSizeThreshold = dotPixelSizeThreshold;
+        this.dotColor = dotColor;
 
         Planet.instances.push(this);
 
@@ -80,6 +93,8 @@ export class Planet {
         this.#initGroups();
         this.#initMaterials();
         this.#initMeshes();
+        // initialize distant dot mesh
+        this.#initDistantMesh();
 
         /* ---------- optional surface ---------- */
         if (addSurface) {
@@ -135,13 +150,27 @@ export class Planet {
 
     #initMeshes() {
         const scaledRadius = this.radius * (1 - this.oblateness);
-
-        /* --- planet core --- */
-        this.planetMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(scaledRadius, this.meshRes, this.meshRes),
-            this.surfaceMaterial
-        );
-        this.rotationGroup.add(this.planetMesh);
+        // --- planet core with dynamic LOD support ---
+        if (this.lodLevels?.length) {
+            this.planetLOD = new THREE.LOD();
+            for (const { meshRes, distance } of this.lodLevels) {
+                const sphere = new THREE.Mesh(
+                    new THREE.SphereGeometry(scaledRadius, meshRes, meshRes),
+                    this.surfaceMaterial
+                );
+                this.planetLOD.addLevel(sphere, distance);
+            }
+            this.rotationGroup.add(this.planetLOD);
+            // alias planetMesh to the LOD for compatibility
+            this.planetMesh = this.planetLOD;
+        } else {
+            // Fallback to single-resolution mesh
+            this.planetMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(scaledRadius, this.meshRes, this.meshRes),
+                this.surfaceMaterial
+            );
+            this.rotationGroup.add(this.planetMesh);
+        }
 
         /* --- atmosphere shell --- */
         if (this.atmosphereMaterial) {
@@ -254,12 +283,56 @@ export class Planet {
         this.scene.add(this.orbitLine);
     }
 
+    // Initialize a simple distant dot mesh
+    #initDistantMesh() {
+        const dotGeo = new THREE.SphereGeometry(1, 8, 8);
+        const dotMat = new THREE.MeshBasicMaterial({ color: this.dotColor, transparent: true, opacity: 0.7 });
+        this.distantMesh = new THREE.Mesh(dotGeo, dotMat);
+        this.distantMesh.visible = false;
+        this.rotationGroup.add(this.distantMesh);
+    }
+
     /* ===== frame updates ===== */
 
     update() {
+        // Distant rendering: switch to fuzzy dot based on pixel size
+        if (Planet.camera && this.distantMesh) {
+            const worldPos = new THREE.Vector3();
+            this.orbitGroup.getWorldPosition(worldPos);
+            const dist = worldPos.distanceTo(Planet.camera.position);
+            const fovY = THREE.MathUtils.degToRad(Planet.camera.fov);
+            const screenH = window.innerHeight;
+            // angular diameter of planet
+            const angularDiameter = 2 * Math.atan(this.radius / dist);
+            // projected size in pixels
+            const pixelHeight = (angularDiameter / fovY) * screenH;
+            if (pixelHeight < this.dotPixelSizeThreshold) {
+                // show dot, hide detailed meshes
+                this.distantMesh.visible = true;
+                this.planetMesh.visible = false;
+                this.atmosphereMesh && (this.atmosphereMesh.visible = false);
+                this.cloudMesh && (this.cloudMesh.visible = false);
+                this.glowMesh && (this.glowMesh.visible = false);
+                // scale dot so it appears roughly dotPixelSizeThreshold pixels tall
+                const angleTh = (this.dotPixelSizeThreshold / screenH) * fovY;
+                const rDot = Math.tan(angleTh / 2) * dist;
+                this.distantMesh.scale.setScalar(rDot);
+            } else {
+                // hide dot, show detailed meshes
+                this.distantMesh.visible = false;
+                this.planetMesh.visible = true;
+                this.atmosphereMesh && (this.atmosphereMesh.visible = true);
+                this.cloudMesh && (this.cloudMesh.visible = true);
+                this.glowMesh && (this.glowMesh.visible = true);
+                // update LOD if available
+                this.planetLOD && this.planetLOD.update(Planet.camera);
+            }
+        }
         this.#updateOrbit();
         this.#updateRotation();
         this.#updateLightDirection();
+        // fade out surface details when far away
+        if (this.surface && Planet.camera) this.surface.updateFade(Planet.camera);
     }
 
     #updateOrbit() {

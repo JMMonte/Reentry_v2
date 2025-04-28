@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
 
 export class SatelliteVisualizer {
+    /** Shared geometry and base material to reduce allocations */
+    static _sharedGeometry = new THREE.ConeGeometry(0.5, 2, 3);
+    static _sharedMaterial = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
     constructor(color, orientation, app3d) {
         this.color = color;
         this.orientation = orientation ? orientation.clone() : new THREE.Quaternion();
@@ -11,11 +14,10 @@ export class SatelliteVisualizer {
     }
 
     _createMesh() {
-        const geometry = new THREE.ConeGeometry(0.5, 2, 3);
-        const material = new THREE.MeshBasicMaterial({
-            color: this.color,
-            side: THREE.DoubleSide
-        });
+        // Use shared geometry and clone material for per-instance customization
+        const geometry = SatelliteVisualizer._sharedGeometry;
+        const material = SatelliteVisualizer._sharedMaterial.clone();
+        material.color = new THREE.Color(this.color);
         this.mesh = new THREE.Mesh(geometry, material);
         this.mesh.scale.setScalar(Constants.satelliteRadius);
         // Maintain relative size and orientation

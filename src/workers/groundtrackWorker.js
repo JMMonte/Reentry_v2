@@ -1,12 +1,12 @@
 // Worker for calculating satellite ground tracks
 
 import { propagateOrbit } from '../utils/OrbitIntegrator.js';
-import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { Constants } from '../utils/Constants.js';
-import * as THREE from 'three'; // Import THREE for Vector3 and Quaternion
 
-// Map of satellite id -> groundtrack points array ({lat, lon})
+// map of satellite id -> full groundtrack arrays (cache)
 let groundtrackMap = {};
+// how many points per chunk sent to the UI
+const CHUNK_SIZE = 50;
 
 // Throttle variables for progress updates
 const PROGRESS_THROTTLE_MS = 200; // Longer throttle for groundtrack as conversion is expensive
@@ -41,22 +41,17 @@ self.onmessage = async function (e) {
         const groundPoints = [];
         const batchSize = Math.max(1, Math.floor(propagatedPoints.length / 20)); // Yield approx 20 times
 
-        // Scratch vector for calculations
-        const scratchVec = new THREE.Vector3();
-
-        // Compute ground track points via ECI→ECEF→geodetic to match Earth-fixed frame
+        // Collect raw ECI positions + times and stream in chunks
         for (let i = 0; i < propagatedPoints.length; i++) {
             const { position: eciPosArray, timeOffset } = propagatedPoints[i];
-            scratchVec.set(eciPosArray[0], eciPosArray[1], eciPosArray[2]);
+            // raw ECI meters
+            const pos = { x: eciPosArray[0], y: eciPosArray[1], z: eciPosArray[2] };
             const pointTime = startTimestamp + timeOffset * 1000;
-            const gmst = PhysicsUtils.calculateGMST(pointTime);
-            // ECI to Earth-fixed ECEF
-            const ecefVec = PhysicsUtils.eciToEcef(scratchVec, gmst);
-            // ECEF to geodetic lat/lon
-            const { latitude: lat, longitude: lon } = PhysicsUtils.ecefToGeodetic(
-                ecefVec.x, ecefVec.y, ecefVec.z
-            );
-            groundPoints.push({ lat, lon, time: pointTime });
+            groundPoints.push({ time: pointTime, position: pos });
+            // stream a chunk every CHUNK_SIZE
+            if ((i + 1) % CHUNK_SIZE === 0) {
+                self.postMessage({ type: 'GROUNDTRACK_CHUNK', id, points: groundPoints.slice(-CHUNK_SIZE), seq });
+            }
 
             // Yield control periodically during conversion
             if ((i + 1) % batchSize === 0 && i < propagatedPoints.length - 1) {
@@ -65,12 +60,17 @@ self.onmessage = async function (e) {
         }
 
         groundtrackMap[id] = groundPoints;
+        // flush any remaining points
+        const rem = groundPoints.length % CHUNK_SIZE;
+        if (rem) {
+            self.postMessage({ type: 'GROUNDTRACK_CHUNK', id, points: groundPoints.slice(-rem), seq });
+        }
 
-        // Post the final array of {lat, lon} points
+        // Post the final array of lat/lon points
         self.postMessage({
             type: 'GROUNDTRACK_UPDATE',
             id,
-            points: groundPoints,
+            points: groundPoints, // now geodetic lat/lon + time
             seq
         });
 

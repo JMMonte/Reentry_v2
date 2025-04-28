@@ -7,6 +7,7 @@ export class Sun {
         this.scene = scene;
         this.timeUtils = timeUtils;  // Inject TimeUtils instance directly into Sun
         this.symbol = '☉';
+        this.name = 'sun';
         this.radius = Constants.sunRadius * Constants.scale * Constants.metersToKm;  // Scale down the Sun's radius
 
         const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down

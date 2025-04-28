@@ -152,40 +152,10 @@ export class OrbitPath {
 
     /** lightweight loader overlay (created once) */
     static _ensureLoader() {
-        if (typeof document === 'undefined' || document.getElementById('orbit-path-loader')) return;
-
-        /* keyframes */
-        if (!document.getElementById('orbit-path-spinner-style')) {
-            const sty = document.createElement('style');
-            sty.id = 'orbit-path-spinner-style';
-            sty.textContent = '@keyframes orbitPathSpin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}';
-            document.head.appendChild(sty);
-        }
-
-        const box = document.createElement('div');
-        box.id = 'orbit-path-loader';
-        Object.assign(box.style, {
-            position: 'absolute', bottom: '10px', left: '10px',
-            display: 'none', alignItems: 'center',
-            padding: '4px 8px', background: 'rgba(0,0,0,.6)',
-            color: '#fff', fontSize: '12px', borderRadius: '4px', zIndex: 1000,
-        });
-
-        const spin = document.createElement('div');
-        Object.assign(spin.style, {
-            width: '16px', height: '16px',
-            border: '2px solid #fff', borderTop: '2px solid transparent',
-            borderRadius: '50%', marginRight: '8px',
-            animation: 'orbitPathSpin 1s linear infinite',
-        });
-
-        box.appendChild(spin);
-        box.appendChild(document.createTextNode('Computing orbit…'));
-        document.body.appendChild(box);
+        // Loader overlay disabled for performance
     }
 
-    static _toggleLoader(show) {
-        const el = typeof document !== 'undefined' && document.getElementById('orbit-path-loader');
-        if (el) el.style.display = show ? 'flex' : 'none';
+    static _toggleLoader() {
+        // No-op to avoid DOM access
     }
 }

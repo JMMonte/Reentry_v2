@@ -202,14 +202,16 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
             size="icon"
             className="w-8 h-8 mr-2"
             onClick={() => {
-              const allTrue = Object.entries(defaultSettings).every(([key, setting]) =>
-                setting.type === 'range' ? true : settings[key]
+              // collect only boolean setting keys
+              const booleanKeys = Object.entries(defaultSettings)
+                .filter(([, setting]) => typeof setting.value === 'boolean')
+                .map(([key]) => key);
+              // check if all boolean settings are currently enabled
+              const allOn = booleanKeys.every(key =>
+                settings[key] !== undefined ? settings[key] : defaultSettings[key].value
               );
-              Object.entries(defaultSettings).forEach(([key, setting]) => {
-                if (setting.type !== 'range') {
-                  onSettingChange(key, !allTrue);
-                }
-              });
+              // toggle each boolean setting
+              booleanKeys.forEach(key => onSettingChange(key, !allOn));
             }}
           >
             <CheckSquare className="h-4 w-4" />

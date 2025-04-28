@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { Constants } from '../utils/Constants';
 
 export class ApsisVisualizer {
+    /** Shared sphere geometry for periapsis and apoapsis markers */
+    static _sphereGeometry = new THREE.SphereGeometry(1, 8, 8);
+    /** Shared materials */
+    static _periMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, depthWrite: false });
+    static _apoMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, transparent: true, opacity: 0.8, depthWrite: false });
     constructor(scene, color) {
         this.scene = scene;
         this.color = color;
@@ -9,26 +14,9 @@ export class ApsisVisualizer {
     }
 
     initializeApsides() {
-        // Create geometry for point markers
-        const sphereGeometry = new THREE.SphereGeometry(1, 16, 16);
-        
-        // Create materials with different colors for periapsis (red) and apoapsis (blue)
-        this.periapsisMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0xff0000,
-            transparent: true,
-            opacity: 0.8,
-            depthWrite: false
-        });
-        this.apoapsisMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0x0000ff,
-            transparent: true,
-            opacity: 0.8,
-            depthWrite: false
-        });
-
-        // Create meshes
-        this.periapsisMesh = new THREE.Mesh(sphereGeometry, this.periapsisMaterial);
-        this.apoapsisMesh = new THREE.Mesh(sphereGeometry, this.apoapsisMaterial);
+        // Create meshes using shared geometry and materials
+        this.periapsisMesh = new THREE.Mesh(ApsisVisualizer._sphereGeometry, ApsisVisualizer._periMaterial);
+        this.apoapsisMesh = new THREE.Mesh(ApsisVisualizer._sphereGeometry, ApsisVisualizer._apoMaterial);
 
         // Add onBeforeRender callback to maintain relative size
         const targetSize = 0.003; // Adjust this value to change the relative size
@@ -108,8 +96,8 @@ export class ApsisVisualizer {
         if (this.apoapsisMesh.parent) {
             this.scene.remove(this.apoapsisMesh);
         }
-        this.periapsisMaterial.dispose();
-        this.apoapsisMaterial.dispose();
+        this.periapsisMesh.material.dispose();
+        this.apoapsisMesh.material.dispose();
         this.periapsisMesh.geometry.dispose();
         this.apoapsisMesh.geometry.dispose();
     }

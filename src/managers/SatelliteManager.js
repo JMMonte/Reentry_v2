@@ -165,6 +165,8 @@ export class SatelliteManager {
         /* flush queued sats */
         this._satelliteAddQueue.forEach(sat => this._pushSatelliteToWorker(sat));
         this._satelliteAddQueue.length = 0;
+        // send initial bodies list so dynamicBodies is populated for the first tick
+        this._syncBodiesToWorker();
     }
 
     _teardownWorkerIfIdle() {
@@ -184,9 +186,10 @@ export class SatelliteManager {
         const f = this._kmToM;
         this._post('addSatellite', {
             id: sat.id,
+            mass: sat.mass,
+            size: sat.size,
             position: { x: sat.position.x * f, y: sat.position.y * f, z: sat.position.z * f },
             velocity: { x: sat.velocity.x * f, y: sat.velocity.y * f, z: sat.velocity.z * f },
-            mass: sat.mass,
         });
     }
 
@@ -212,21 +215,21 @@ export class SatelliteManager {
 
     /* ───────────────────────────── Internals ─────────────────────────────── */
 
-    /** Push Earth/Moon/Sun positions (in metres) to worker */
+    /** Push bodies list (planets + sun) to worker */
     _syncBodiesToWorker() {
-        const { moon, sun } = this.app3d;
-        /* Moon */
-        (moon.getMesh?.() ?? moon.moonMesh).getWorldPosition(this._moonPos).multiplyScalar(this._kmToM);
-        /* Sun */
-        (sun?.sun ?? sun?.sunLight ?? this._sunPos.set(0, 0, 0))
-            .getWorldPosition?.(this._sunPos)
-            ?.multiplyScalar?.(this._kmToM);
-
-        this._post('updateBodies', {
-            earthPosition: { x: 0, y: 0, z: 0 },
-            moonPosition: { x: this._moonPos.x, y: this._moonPos.y, z: this._moonPos.z },
-            sunPosition: { x: this._sunPos.x, y: this._sunPos.y, z: this._sunPos.z },
-        });
+        const bodies = [];
+        // collect all planets + sun
+        const all = [...(this.app3d.planets ?? []), this.app3d.sun];
+        for (const body of all.filter(b => b)) {
+            // find the mesh or light to sample position
+            const mesh = body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
+            if (!mesh) continue;
+            mesh.getWorldPosition(this._moonPos).multiplyScalar(this._kmToM);
+            const massKey = `${body.name}Mass`;
+            const mass = Constants[massKey] ?? 0;
+            bodies.push({ name: body.name, position: { x: this._moonPos.x, y: this._moonPos.y, z: this._moonPos.z }, mass });
+        }
+        this._post('updateBodies', { bodies });
     }
 
     /**
@@ -238,7 +241,8 @@ export class SatelliteManager {
         const showOrbits = this.app3d.getDisplaySetting('showOrbits');
         const orbitRateHz = this.app3d.getDisplaySetting('orbitUpdateInterval');
         const orbitMs = 1000 / orbitRateHz;
-        const shouldPaths = showOrbits && nowPerf - this._lastOrbitUpdate >= orbitMs;
+        // Throttle heavy orbit and ground-track sampling by interval only, not conditioned on orbit display
+        const shouldPaths = nowPerf - this._lastOrbitUpdate >= orbitMs;
 
         const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
         const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
@@ -286,14 +290,22 @@ export class SatelliteManager {
                 /* down-sample outside SOI */
                 if (r > Constants.earthSOI) pts = Math.max(10, Math.ceil(pts * 0.2));
 
-                /* update orbit & ground-track */
-                sat.orbitPath?.update(sat.position, sat.velocity, sat.id,
-                    [this._earth, this._moon, this._sun],
-                    periodS, pts, true);
-
-                sat.groundTrackPath?.update(epochMs, sat.position, sat.velocity, sat.id,
-                    [this._earth, this._moon, this._sun],
-                    periodS, pts);
+                /* update orbit & ground-track with dynamic bodies list */
+                const bodies = (this.app3d.planets ?? []).map(p => {
+                    const mesh = p.getMesh?.();
+                    const pos = new THREE.Vector3();
+                    mesh.getWorldPosition(pos).multiplyScalar(this._kmToM);
+                    const massKey = `${p.name}Mass`;
+                    const mass = Constants[massKey] ?? 0;
+                    return { name: p.name, position: pos, mass };
+                });
+                // add sun
+                const sunMesh = this.app3d.sun.getMesh?.() ?? this.app3d.sun.sunLight ?? this.app3d.sun;
+                const sunPos = new THREE.Vector3();
+                sunMesh.getWorldPosition(sunPos).multiplyScalar(this._kmToM);
+                bodies.push({ name: 'Sun', position: sunPos, mass: Constants.sunMass });
+                sat.orbitPath?.update(sat.position, sat.velocity, sat.id, bodies, periodS, pts, true);
+                sat.groundTrackPath?.update(epochMs, sat.position, sat.velocity, sat.id, bodies, periodS, pts);
 
                 pathsUpdated = true;
             } catch (err) {

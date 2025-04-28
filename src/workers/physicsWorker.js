@@ -2,20 +2,17 @@ import { Constants } from '../utils/Constants.js';
 import { adaptiveIntegrate, computeDragAcceleration } from '../utils/OrbitIntegrator.js';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import * as THREE from 'three';
-
+// Declarations for satellites managed by the worker
 let satellites = [];
 let manuallyManagedSatellites = []; // To store satellites managed manually
 // --- Simulation loop state ---
 let simulationInterval = null;
 let lastSimTime = null;
 let timeWarp = 1; // Default time warp
-let earthPosition = { x: 0, y: 0, z: 0 };
-let moonPosition = { x: 0, y: 0, z: 0 };
-let sunPosition = { x: 0, y: 0, z: 0 };
 // Scale factor for third-body perturbations (Moon and Sun)
 let perturbationScale = 1.0;
-// Scale factor for dynamic integration tolerance based on force magnitude
-let sensitivityScale = 1.0;
+// Dynamic bodies list supplied via updateBodies messages
+let dynamicBodies = [];
 
 self.onmessage = function (event) {
     let messageData;
@@ -47,18 +44,12 @@ self.onmessage = function (event) {
             timeWarp = Number(data.value);
             break;
         case 'updateBodies':
-            // Update earth/moon positions from main thread
-            if (data.earthPosition) earthPosition = data.earthPosition;
-            if (data.moonPosition) moonPosition = data.moonPosition;
-            if (data.sunPosition) sunPosition = data.sunPosition;
+            // Receive dynamic bodies list
+            if (data.bodies) dynamicBodies = data.bodies;
             break;
         case 'setPerturbationScale':
             // Scale for Moon/Sun perturbations (0 to 1)
             perturbationScale = Number(data.value);
-            break;
-        case 'setSensitivityScale':
-            // Scale for dynamic integration tolerance based on force magnitude
-            sensitivityScale = Number(data.value);
             break;
         case 'setTimeStep':
             // Update integration time step (in seconds) for adaptive integrator
@@ -80,12 +71,9 @@ self.onmessage = function (event) {
 function initPhysics(data) {
     Object.assign(Constants, data);
     satellites = [];
-    // Set initial earth/moon positions if provided
-    if (data.earthPosition) earthPosition = data.earthPosition;
-    if (data.moonPosition) moonPosition = data.moonPosition;
+    // dynamicBodies will be set via updateBodies messages
     // Set initial perturbation scale if provided
     if (data.perturbationScale !== undefined) perturbationScale = Number(data.perturbationScale);
-    if (data.sensitivityScale !== undefined) sensitivityScale = Number(data.sensitivityScale);
     // Notify that initialization is complete
     self.postMessage({
         type: 'initialized'
@@ -104,34 +92,23 @@ function simulationLoop() {
     const warpedDeltaTime = realDeltaTime * timeWarp;
     if (warpedDeltaTime <= 0) return;
 
-    // Adaptive integration per satellite over warpedDeltaTime using shared integrator
-    const bodiesArray = [
-        { position: earthPosition, mass: Constants.earthMass },
-        { position: moonPosition, mass: Constants.moonMass },
-        { position: sunPosition, mass: Constants.sunMass }
-    ];
+    // Full RK45 integration and debug metrics
+    const bodiesArray = dynamicBodies;  // each has {name, position, mass}
     satellites.forEach(satellite => {
-        // Override global ballistic coefficient for this satellite
+        // per-satellite ballistic coefficient
         Constants.ballisticCoefficient = satellite.ballisticCoefficient;
-        // Now adaptiveIntegrate and computeDragAcceleration will use per-satellite bc
         const posArr = satellite.position;
         const velArr = satellite.velocity;
-        // Use dynamic sensitivityScale for adaptive integration tolerance
+        // integrate one step
         const { pos, vel } = adaptiveIntegrate(
-            posArr,
-            velArr,
-            warpedDeltaTime,
-            bodiesArray,
-            perturbationScale,
-            undefined, // use default absolute tolerance
-            undefined, // use default relative tolerance
-            sensitivityScale
+            posArr, velArr, warpedDeltaTime,
+            bodiesArray, perturbationScale
         );
         satellite.position = pos;
         satellite.velocity = vel;
 
-        // Compute drag data
-        const r = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
+        // drag debug
+        const r = Math.hypot(pos[0], pos[1], pos[2]);
         const altitude = r - Constants.earthRadius;
         const density = PhysicsUtils.calculateAtmosphericDensity(altitude);
         const omega = 2 * Math.PI / Constants.siderialDay;
@@ -141,64 +118,63 @@ function simulationLoop() {
         const dragArr = computeDragAcceleration(posArr, velArr, satellite.ballisticCoefficient);
         const dragAcceleration = { x: dragArr[0], y: dragArr[1], z: dragArr[2] };
 
-        // Compute apsis data
-        const posVec = new THREE.Vector3(pos[0], pos[1], pos[2]);
-        const velVec = new THREE.Vector3(vel[0], vel[1], vel[2]);
+        // normalized velocity vector for visualization
+        const velMag = Math.hypot(vel[0], vel[1], vel[2]);
+        const velDir = velMag
+            ? { x: vel[0] / velMag, y: vel[1] / velMag, z: vel[2] / velMag }
+            : { x: 0, y: 0, z: 0 };
+        
+        // apsis debug
+        const posVec = new THREE.Vector3(...pos);
+        const velVec = new THREE.Vector3(...vel);
         const apsisData = PhysicsUtils.calculateDetailedOrbitalElements(
-            posVec,
-            velVec,
-            Constants.earthGravitationalParameter
+            posVec, velVec, Constants.earthGravitationalParameter
         );
 
-        // Compute perturbations: gravitational acceleration and force breakdown
+        // perturbation debug (per-body) with unit directions
         const G = Constants.G;
         const massSat = satellite.mass;
-        const x = pos[0], y = pos[1], z = pos[2];
-        // Earth
-        const muE = G * Constants.earthMass;
-        const rMagE = Math.sqrt(x*x + y*y + z*z);
-        const aEarth = { x: -x * muE / Math.pow(rMagE,3), y: -y * muE / Math.pow(rMagE,3), z: -z * muE / Math.pow(rMagE,3) };
-        // Moon
-        const moonPos = bodiesArray[1].position;
-        const dxM = moonPos.x - x, dyM = moonPos.y - y, dzM = moonPos.z - z;
-        const rMagM = Math.sqrt(dxM*dxM + dyM*dyM + dzM*dzM);
-        let aMoon = { x: 0, y: 0, z: 0 };
-        if (rMagM > 0) {
-            const muM = G * Constants.moonMass;
-            aMoon = { x: dxM * muM / Math.pow(rMagM,3), y: dyM * muM / Math.pow(rMagM,3), z: dzM * muM / Math.pow(rMagM,3) };
-        }
-        // Sun
-        const sunPos = bodiesArray[2].position;
-        const dxS = sunPos.x - x, dyS = sunPos.y - y, dzS = sunPos.z - z;
-        const rMagS = Math.sqrt(dxS*dxS + dyS*dyS + dzS*dzS);
-        let aSun = { x: 0, y: 0, z: 0 };
-        if (rMagS > 0) {
-            const muS = G * Constants.sunMass;
-            aSun = { x: dxS * muS / Math.pow(rMagS,3), y: dyS * muS / Math.pow(rMagS,3), z: dzS * muS / Math.pow(rMagS,3) };
-        }
-        // Total acceleration and force
-        const totalAcc = { x: aEarth.x + aMoon.x + aSun.x, y: aEarth.y + aMoon.y + aSun.y, z: aEarth.z + aMoon.z + aSun.z };
-        const forceEarth = { x: aEarth.x * massSat, y: aEarth.y * massSat, z: aEarth.z * massSat };
-        const forceMoon  = { x: aMoon.x  * massSat, y: aMoon.y  * massSat, z: aMoon.z  * massSat };
-        const forceSun   = { x: aSun.x   * massSat, y: aSun.y   * massSat, z: aSun.z   * massSat };
-        const totalForce = { x: forceEarth.x + forceMoon.x + forceSun.x, y: forceEarth.y + forceMoon.y + forceSun.y, z: forceEarth.z + forceMoon.z + forceSun.z };
-        const perturbation = {
-            acc:   { total: totalAcc, earth: aEarth, moon: aMoon, sun: aSun },
-            force: { total: totalForce, earth: forceEarth, moon: forceMoon, sun: forceSun }
+        let totalAcc = { x: 0, y: 0, z: 0 };
+        let totalForce = { x: 0, y: 0, z: 0 };
+        const accBreakdown = {};
+        const forceBreakdown = {};
+        const accDirBreakdown = {};
+        bodiesArray.forEach(b => {
+            const name = b.name;
+            const dx = b.position.x - pos[0];
+            const dy = b.position.y - pos[1];
+            const dz = b.position.z - pos[2];
+            const r2 = dx*dx + dy*dy + dz*dz;
+            if (r2 === 0) return;
+            const rLen = Math.sqrt(r2);
+            const dir = { x: dx/rLen, y: dy/rLen, z: dz/rLen };
+            const mu = G * b.mass;
+            const aMag = mu / r2; // GM/r^2 magnitude
+            const a = { x: dir.x * aMag, y: dir.y * aMag, z: dir.z * aMag };
+            totalAcc.x += a.x; totalAcc.y += a.y; totalAcc.z += a.z;
+            const f = { x: a.x * massSat, y: a.y * massSat, z: a.z * massSat };
+            totalForce.x += f.x; totalForce.y += f.y; totalForce.z += f.z;
+            accBreakdown[name] = a;
+            forceBreakdown[name] = f;
+            accDirBreakdown[name] = dir;
+        });
+
+        satellite.debug = {
+            dragData: { altitude, density, relativeVelocity, dragAcceleration },
+            apsisData,
+            velDir,
+            perturbation: {
+                acc: { total: totalAcc, ...accBreakdown },
+                accDir: accDirBreakdown,
+                force: { total: totalForce, ...forceBreakdown }
+            }
         };
-        // Attach all debug metrics
-        satellite.debug = { dragData: { altitude, density, relativeVelocity, dragAcceleration }, apsisData, perturbation };
     });
 
-    // Send all satellite updates (no orbits)
+    // emit full debug data
     self.postMessage({
         type: 'satellitesUpdate',
-        data: satellites.map(sat => ({
-            id: sat.id,
-            position: sat.position,
-            velocity: sat.velocity,
-            debug: sat.debug
-        }))
+        data: satellites.map(sat => ({ id: sat.id, position: sat.position, velocity: sat.velocity, debug: sat.debug }))
     });
 }
 

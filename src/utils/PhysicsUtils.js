@@ -624,7 +624,7 @@ export class PhysicsUtils {
     static eciTiltToLatLon(positionECI, gmst) {
         const v = positionECI.clone()
             .applyQuaternion(invTiltQuaternion)   // undo axial tilt
-            .applyAxisAngle(UP, -gmst);           // undo Earth rotation
+            .applyAxisAngle(UP, gmst);            // apply Earth rotation
 
         const r = v.length();
         const lat = THREE.MathUtils.radToDeg(Math.asin(v.z / r));

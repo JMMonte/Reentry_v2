@@ -18,8 +18,8 @@ import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 // Domain utilities ─────────────────────────────────────────────────────────────
 import { Constants } from '../utils/Constants.js';
-import { PlanetVectors } from '../utils/PlanetVectors.js';
 import { SatelliteVectors } from '../utils/SatelliteVectors.js';
+import { PlanetVectors } from '../utils/PlanetVectors.js';
 
 // Data layers ──────────────────────────────────────────────────────────────────
 import geojsonDataSovereignty from '../config/ne_50m_admin_0_sovereignty.json';
@@ -92,6 +92,11 @@ const createEarthConfig = () => ({
         addStates: true, addCities: true,
         addAirports: true, addSpaceports: true,
         addGroundStations: true, addObservatories: true,
+        markerSize: 0.7,
+        circleSegments: 32,
+        circleTextureSize: 64,
+        fadeStartFactor: 3.5, // fade out surface details at this distance
+        fadeEndFactor: 6.5 // fade out surface details at this distance
     },
     primaryGeojsonData: geojsonDataSovereignty,
     stateGeojsonData: geojsonDataStates,
@@ -102,6 +107,13 @@ const createEarthConfig = () => ({
     observatoriesData: geojsonDataObservatories,
     addLight: true,
     lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: true },
+    lodLevels: [
+        { meshRes: 16, distance: 10000 },
+        { meshRes: 32, distance: 5000 },
+        { meshRes: 64, distance: 2000 },
+        { meshRes: 128, distance: 1000 },
+    ],
+    dotPixelSizeThreshold: 1,
 });
 
 const createMoonConfig = (timeUtils) => {
@@ -114,6 +126,7 @@ const createMoonConfig = (timeUtils) => {
 
     return {
         name: 'moon',
+        dotPixelSizeThreshold: 1,
         symbol: '☾',
         radius: Constants.moonRadius * Constants.metersToKm * Constants.scale,
         rotationPeriod: 29.53058867 * Constants.secondsInDay, // synodic
@@ -123,11 +136,18 @@ const createMoonConfig = (timeUtils) => {
         surfaceOptions: {
             addLatitudeLines: true, latitudeStep: 10,
             addLongitudeLines: true, longitudeStep: 10,
-            addMissions: true
+            addMissions: true,
+            fadeStartFactor: 1.2,
+            fadeEndFactor: 2.0
         },
         missionsData: geojsonDataMissions,
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: 1000.5, helper: true },
+        lodLevels: [
+            { meshRes: 16, distance: 10000 },
+            { meshRes: 64, distance: 2000 },
+            { meshRes: 128, distance: 500 },
+        ],
         orbitalPeriod: 27.321661, // sidereal days
         orbitElements: {
             semiMajorAxis: Constants.semiMajorAxis,
@@ -190,6 +210,9 @@ const setupPostProcessing = (app) => {
  */
 export async function initScene(app) {
     const { scene, renderer, camera, timeUtils, textureManager } = app;
+    // Provide camera to Planet class for dynamic LOD updates
+    Planet.setCamera(camera);
+
     if (!scene || !renderer || !camera) throw new Error('Scene, camera, or renderer not set.');
     if (!textureManager) throw new Error('TextureManager not initialized.');
 
@@ -204,15 +227,30 @@ export async function initScene(app) {
     app.moon = new Planet(scene, renderer, timeUtils, textureManager, createMoonConfig(timeUtils));
 
     // 3. Helpers
-    app.planets = Planet.instances;
+    // restore planet list and planet vectors
+    app.planets = Planet.instances ?? [];
     app.planetVectors = app.planets.map(
         p => new PlanetVectors(p, scene, timeUtils, { name: p.name })
     );
-    const gravitySources = [
-        { name: 'earth', body: app.earth, mesh: app.earth.getMesh(), mass: Constants.earthMass },
-        { name: 'moon',  body: app.moon,  mesh: app.moon.getMesh(),  mass: Constants.moonMass },
-        { name: 'sun',   body: app.sun,   mesh: app.sun.sun,      mass: Constants.sunMass }
-    ];
+    const gravitySources = [];
+    for (const planet of app.planets ?? []) {
+        const mesh = planet.getMesh?.();
+        if (!mesh) continue;
+        gravitySources.push({
+            name: planet.name.toLowerCase(),
+            body: planet,
+            mesh,
+            mass: Constants[`${planet.name}Mass`] ?? 0
+        });
+    }
+    // add Sun as gravity source
+    const sunMesh = app.sun.sun ?? app.sun.sunLight ?? app.sun;
+    gravitySources.push({
+        name: 'sun',
+        body: app.sun,
+        mesh: sunMesh,
+        mass: Constants.sunMass
+    });
     app.satelliteVectors = new SatelliteVectors({
         scene,
         timeUtils,
