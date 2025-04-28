@@ -59,11 +59,9 @@ export function GroundTrackWindow({
 
     const planetList = usePlanetList(planets);
     const planet = planetList[selectedPlanet];
-    console.log('[GroundTrackWindow] selected planet:', planet?.name);
 
     // Prepare POI data from the planet's surface for canvas rendering
     const poiData = useMemo(() => {
-        console.log('[GroundTrackWindow] computing poiData for planet:', planet?.name);
         if (!planet?.surface) return {};
         return Object.entries(planet.surface.points).reduce((acc, [key, meshes]) => {
             acc[key] = meshes.map(mesh => {
@@ -74,7 +72,6 @@ export function GroundTrackWindow({
             return acc;
         }, {});
     }, [planet]);
-    console.log('[GroundTrackWindow] poiData:', poiData);
 
     // Clamp planet index if list changes
     useEffect(() => {
@@ -131,27 +128,22 @@ export function GroundTrackWindow({
     // Hook: cache planet surface to offscreen canvas
     useEffect(() => {
         if (!planet) return;
-        const texture = planet.getSurfaceTexture?.();
-        const src = texture?.image;
+        // getSurfaceTexture now returns the raw image (HTMLImageElement or Canvas)
+        const img = planet.getSurfaceTexture?.();
 
-        function draw(img) {
+        function draw(source) {
             const off = document.createElement('canvas');
-            off.width = img.width;
-            off.height = img.height;
-            off
-                .getContext('2d')
-                .drawImage(img, 0, 0);
+            off.width = source.width;
+            off.height = source.height;
+            off.getContext('2d').drawImage(source, 0, 0);
             setOffscreenCanvas(off);
         }
 
-        if (src instanceof HTMLImageElement) {
-            src.complete ? draw(src) : (src.onload = () => draw(src));
-        } else if (src instanceof HTMLCanvasElement) {
-            draw(src);
-        } else if (src?.src) {
-            const i = new Image();
-            i.src = src.src;
-            i.onload = () => draw(i);
+        if (img instanceof HTMLImageElement) {
+            // image may still be loading
+            img.complete ? draw(img) : (img.onload = () => draw(img));
+        } else if (img instanceof HTMLCanvasElement) {
+            draw(img);
         }
     }, [planet]);
 

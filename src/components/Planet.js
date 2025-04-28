@@ -20,6 +20,7 @@ export class Planet {
      * @param {object}               config
      */
     constructor(scene, renderer, timeManager, textureManager, config = {}) {
+        this.config = config;
         const {
             name,
             radius,
@@ -375,7 +376,19 @@ export class Planet {
 
     getMesh() { return this.planetMesh; }
     getTiltGroup() { return this.tiltGroup; }
-    getSurfaceTexture() { return this.planetMesh?.material?.map; }
+    /** Get the underlying image (HTMLImageElement or Canvas) for the surface texture */
+    getSurfaceTexture() {
+        const mesh = this.planetMesh;
+        let tex = null;
+        if (mesh instanceof THREE.LOD) {
+            // Level 0 is highest detail
+            tex = mesh.levels?.[0]?.object?.material?.map;
+        } else {
+            tex = mesh?.material?.map;
+        }
+        // Return the raw image (which may be an HTMLImageElement or HTMLCanvasElement)
+        return tex?.image;
+    }
 
     setSurfaceLinesVisible(v) { this.surface?.setSurfaceLinesVisible(v); }
     setCountryBordersVisible(v) { this.surface?.setCountryBordersVisible(v); }
@@ -392,5 +405,17 @@ export class Planet {
         const gmst = PhysicsUtils.calculateGMST(Date.now());
         const ecef = PhysicsUtils.eciToEcef(posEci, gmst);
         return PhysicsUtils.calculateIntersectionWithEarth(ecef);
+    }
+
+    /**
+     * Calculate the rotation angle (around Y-axis) for a given Julian Date.
+     * @param {number} JD - Julian Date.
+     * @param {number} rotationPeriod - Sidereal rotation period in seconds.
+     * @param {number} rotationOffset - Prime meridian offset in radians.
+     * @returns {number} Rotation angle in radians.
+     */
+    static getRotationAngleAtTime(JD, rotationPeriod, rotationOffset = 0) {
+        const secs = (JD - 2_451_545.0) * Constants.secondsInDay; // seconds since J2000
+        return (2 * Math.PI * (secs / rotationPeriod % 1)) + rotationOffset;
     }
 }

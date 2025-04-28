@@ -1,33 +1,39 @@
 import { PhysicsUtils } from './PhysicsUtils.js';
 import * as THREE from 'three';
+import { Constants } from './Constants.js';
+
+const tempVec = new THREE.Vector3();
 
 /**
- * Project a world-space position onto a planet's surface and return geodetic coordinates.
- * @param {THREE.Vector3} worldPos - Position in scene/world coordinates.
- * @param {Planet} planet - Planet instance whose surface defines the reference frame.
- * @returns {{latitude: number, longitude: number, altitude: number}} Geodetic coords: degrees lat, lon and altitude above surface.
+ * Project a world-space position (scaled Equatorial ECI units, 1 unit = 10 km)
+ * onto a planet's surface and return geodetic coordinates.
+ * Uses a spherical Earth model and applies Earth rotation via GMST.
+ * @param {THREE.Vector3} eciWorldPos - Scaled Equatorial ECI position (units) relative to planet center.
+ * @param {Planet} planet - Planet instance (radius in same units as scaled ECI*10).
+ * @param {number} epochMillis - Time for projection (ms since UTC epoch).
+ * @returns {{latitude: number, longitude: number, altitude: number}} Geodetic coords (deg, deg, km).
  */
-export function projectToGeodetic(worldPos, planet) {
-    if (!planet) return { latitude: 0, longitude: 0, altitude: 0 };
-    // Convert world position into planet's equatorial local frame (handle plain objects)
-    const local =
-        typeof worldPos.clone === 'function'
-            ? worldPos.clone()
-            : new THREE.Vector3(worldPos.x || 0, worldPos.y || 0, worldPos.z || 0);
-    // Use the mesh parent (rotationGroup) to include daily spin and tilt
-    const mesh = planet.getMesh?.();
-    const ref = (mesh && mesh.parent) || planet.getTiltGroup?.();
-    if (ref && typeof ref.worldToLocal === 'function') {
-        ref.worldToLocal(local);
+export function projectToGeodetic(eciWorldPos, planet, epochMillis) {
+    if (!planet || epochMillis == null) {
+        return { latitude: 0, longitude: 0, altitude: 0 };
     }
-    // Compute geodetic lat/lon on planet-centered coordinates (swap axes so Z is vertical)
-    const { latitude, longitude } = PhysicsUtils.cartesianToGeodetic(
-        local.x, local.z, local.y
-    );
-    // Altitude above surface in same units as radius
-    const radius = planet.radius;
-    const altitude = Math.sqrt(local.x * local.x + local.y * local.y + local.z * local.z) - radius;
-    return { latitude, longitude, altitude };
+    // 1. Convert simulation units (1 unit = 10 km) to kilometers
+    const posKm = tempVec.copy(eciWorldPos).multiplyScalar(10);
+    // 2. Ecliptic ECI → Equatorial ECI
+    const equatorialECI = PhysicsUtils.eciEclipticToEquatorial(posKm);
+    // 3. Equatorial ECI → ECEF (in km) via GMST rotation
+    const gmst = PhysicsUtils.calculateGMST(epochMillis);
+    const ecefKm = PhysicsUtils.eciToEcef(equatorialECI, gmst, new THREE.Vector3());
+    // 4. Convert to meters for ellipsoidal geodetic calculation
+    const ecefM = ecefKm.clone().multiplyScalar(1000);
+    const geodetic = PhysicsUtils.ecefToGeodetic(ecefM.x, ecefM.y, ecefM.z);
+    // Altitude returned in meters → convert to kilometers
+    const altitudeKm = geodetic.altitude * Constants.metersToKm;
+    return {
+        latitude: geodetic.latitude,
+        longitude: geodetic.longitude,
+        altitude: altitudeKm
+    };
 }
 
 /**
@@ -39,27 +45,32 @@ export function projectToGeodetic(worldPos, planet) {
  * @returns {{x: number, y: number}} Canvas pixel coordinates.
  */
 export function latLonToCanvas(lat, lon, width, height) {
-    const x = ((lon + 180) / 360) * width;
+    // Longitude: -180 to +180 -> 0 to width
+    // Latitude: +90 to -90 -> 0 to height
+    const x = ((lon + 180) % 360 / 360) * width; // Ensure positive lon wrap
     const y = ((90 - lat) / 180) * height;
     return { x, y };
 }
 
 /**
- * Project a 3D world-space position to canvas pixel coordinates, including geodetic data.
- * @param {THREE.Vector3} worldPos - Position in scene/world coordinates.
+ * Project a 3D world-space position (scaled Ecliptic ECI) to canvas pixel coordinates.
+ * @param {THREE.Vector3} eciWorldPos - Scaled Equatorial ECI position relative to planet center.
  * @param {Planet} planet - Planet instance for geodetic reference.
  * @param {number} width - Canvas width in pixels.
  * @param {number} height - Canvas height in pixels.
+ * @param {number} epochMillis - Time for projection (milliseconds since UTC epoch).
  * @returns {{x: number, y: number, latitude: number, longitude: number, altitude: number}}
  */
-export function projectWorldPosToCanvas(worldPos, planet, width, height) {
-    const geo = projectToGeodetic(worldPos, planet);
+export function projectWorldPosToCanvas(eciWorldPos, planet, width, height, epochMillis) {
+    console.log('[MapProjection] --- projectWorldPosToCanvas ---');
+    const geo = projectToGeodetic(eciWorldPos, planet, epochMillis);
     const { x, y } = latLonToCanvas(
         geo.latitude,
         geo.longitude,
         width,
         height
     );
+    console.log('[MapProjection] Canvas:', { x, y }, 'Geo:', geo);
     return {
         x,
         y,
@@ -67,4 +78,5 @@ export function projectWorldPosToCanvas(worldPos, planet, width, height) {
         longitude: geo.longitude,
         altitude: geo.altitude
     };
-} 
+}
+

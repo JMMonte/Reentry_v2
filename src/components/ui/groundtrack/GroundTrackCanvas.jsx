@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { drawGrid, drawPOI, rasteriseCoverage } from './utils';
-import { projectWorldPosToCanvas, latLonToCanvas } from '../../../utils/MapProjection';
+import { latLonToCanvas } from '../../../utils/MapProjection';
 import { Constants } from '../../../utils/Constants';
 import * as THREE from 'three';
 import { PhysicsUtils } from '../../../utils/PhysicsUtils';
@@ -33,14 +33,9 @@ export default function GroundTrackCanvas({
         const w = width;
         const h = height;
 
-        // DEBUG: Inspect map/texture and poiData
-        console.log('[GroundTrackCanvas] drawFrame start, planet:', planet?.name);
-        console.log('[GroundTrackCanvas] map(offscreen):', map, 'texture image:', planet?.getMesh?.()?.material?.map?.image);
-        console.log('[GroundTrackCanvas] poiData prop:', poiData);
-
         ctx.clearRect(0, 0, w, h);
-        // draw equirectangular texture: offscreen map or live mesh material
-        const imgSource = map || planet?.getMesh?.()?.material?.map?.image;
+        // draw equirectangular texture: prefer planet surface image, else offscreen map
+        const imgSource = planet?.getSurfaceTexture?.() || map;
         if (imgSource instanceof HTMLImageElement || imgSource instanceof HTMLCanvasElement) {
             ctx.drawImage(imgSource, 0, 0, w, h);
         }
@@ -64,25 +59,23 @@ export default function GroundTrackCanvas({
             });
         }
 
-        // Draw current satellite positions, using Earth-specific ECI→ECEF for Earth
+        // Draw current satellite positions by projecting ECI→world→canvas
         const k = Constants.metersToKm * Constants.scale;
         Object.entries(tracksRef.current).forEach(([id, pts]) => {
-            if (!pts?.length) return;
+            if (!pts?.length || !planet?.timeManager) return;
             const last = pts[pts.length - 1];
+            if (!last.position || last.time === undefined) return;
+
             const p = last.position;
-            // from raw ECI meters to world units
-            scratch.set(p.x * k, p.y * k, p.z * k);
-            let x, y;
-            if (planet.name === 'earth') {
-                // rotate ECI into ECEF using -GMST for correct direction
-                const gmst = PhysicsUtils.calculateGMST(last.time);
-                const ecef = PhysicsUtils.eciToEcef(scratch, gmst);
-                const { latitude, longitude } = PhysicsUtils.cartesianToGeodetic(ecef.x, ecef.y, ecef.z);
-                ({ x, y } = latLonToCanvas(latitude, longitude, w, h));
-            } else {
-                // other bodies: use world->canvas conversion
-                ({ x, y } = projectWorldPosToCanvas(scratch, planet, w, h));
-            }
+            scratch.set(p.x * k, p.y * k, p.z * k); // Scaled Ecliptic ECI
+
+            // Get current simulation time in milliseconds
+            const currentEpochMillis = planet.timeManager.getSimulatedTime().getTime();
+
+            // Convert ECI -> ECEF (accounting for axial tilt and rotation)
+            const gmst = PhysicsUtils.calculateGMST(currentEpochMillis);
+            const { lat: latitude, lon: longitude } = PhysicsUtils.eciTiltToLatLon(scratch, gmst);
+            const { x, y } = latLonToCanvas(latitude, longitude, w, h);
             const color = satsRef.current[id]?.color ?? 0xffffff;
             ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
             ctx.beginPath();
@@ -90,34 +83,43 @@ export default function GroundTrackCanvas({
             ctx.fill();
         });
 
-        // Draw ground-track polylines by projecting each ECI point
+        // Draw ground-track polylines by projecting each ECI position to canvas
         Object.entries(tracksRef.current).forEach(([id, pts]) => {
-            if (!pts?.length) return;
+            if (!pts?.length || !planet) return;
             const satColor = satsRef.current[id]?.color ?? 0xffffff;
             ctx.strokeStyle = `#${satColor.toString(16).padStart(6, '0')}`;
             ctx.lineWidth = 1;
             ctx.beginPath();
             let prevLon;
             pts.forEach((pt, idx) => {
+                if (!pt.position || pt.time === undefined) return; // Skip points without position or time
+
                 const p = pt.position;
-                scratch.set(p.x * k, p.y * k, p.z * k);
-                let lon, xpt, ypt;
-                if (planet.name === 'earth') {
-                    // rotate ECI into ECEF using -GMST for correct direction
-                    const gmst = PhysicsUtils.calculateGMST(pt.time);
-                    const ecef = PhysicsUtils.eciToEcef(scratch, gmst);
-                    const geo = PhysicsUtils.cartesianToGeodetic(ecef.x, ecef.y, ecef.z);
-                    lon = geo.longitude;
-                    ({ x: xpt, y: ypt } = latLonToCanvas(geo.latitude, geo.longitude, w, h));
+                scratch.set(p.x * k, p.y * k, p.z * k); // Scaled Ecliptic ECI
+
+                // Assuming pt.time is epoch milliseconds
+                const epochMillis = typeof pt.time === 'string' ? parseFloat(pt.time) : pt.time;
+                if (isNaN(epochMillis)) return; // Skip if time is invalid
+
+                // Convert ECI -> ECEF for this time
+                const gmstPt = PhysicsUtils.calculateGMST(epochMillis);
+                const { lat: latitudePt, lon } = PhysicsUtils.eciTiltToLatLon(scratch, gmstPt);
+                const { x: xpt, y: ypt } = latLonToCanvas(latitudePt, lon, w, h);
+
+                if (idx === 0) {
+                    ctx.moveTo(xpt, ypt);
                 } else {
-                    const res = projectWorldPosToCanvas(scratch, planet, w, h);
-                    lon = res.longitude;
-                    xpt = res.x;
-                    ypt = res.y;
+                    // Handle longitude wrap-around (-180 to 180)
+                    const lonDiff = lon - prevLon;
+                    if (Math.abs(lonDiff) > 180) {
+                        // Determine wrap direction (e.g., 170 to -170 is > 180 positive difference)
+                        // If crossing dateline eastwards (lon decreases drastically), move without line
+                        // If crossing dateline westwards (lon increases drastically), move without line
+                        ctx.moveTo(xpt, ypt);
+                    } else {
+                        ctx.lineTo(xpt, ypt);
+                    }
                 }
-                if (idx === 0) ctx.moveTo(xpt, ypt);
-                else if (Math.abs(lon - prevLon) > 180) ctx.moveTo(xpt, ypt);
-                else ctx.lineTo(xpt, ypt);
                 prevLon = lon;
             });
             ctx.stroke();
