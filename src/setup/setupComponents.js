@@ -46,9 +46,9 @@ const WEBGL_ATTRS = Object.freeze({
     alpha: true,
     depth: true,
     stencil: true,
-    antialias: true,
+    antialias: false,
     premultipliedAlpha: false,
-    preserveDrawingBuffer: true,
+    preserveDrawingBuffer: false,
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false
 });
@@ -67,7 +67,7 @@ export function setupRenderer(canvas) {
         canvas,
         context: gl,
         logarithmicDepthBuffer: true,
-        ...WEBGL_ATTRS          // carry over AA, alpha, etc.
+        ...WEBGL_ATTRS          // carry over settings (no MSAA)
     });
 
     // Runtime sanity check
@@ -83,7 +83,7 @@ export function setupRenderer(canvas) {
     renderer.toneMappingExposure = 1;
 
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     return renderer;
 }
