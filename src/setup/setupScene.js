@@ -227,13 +227,14 @@ export async function initScene(app) {
     app.moon = new Planet(scene, renderer, timeUtils, textureManager, createMoonConfig(timeUtils));
 
     // 3. Helpers
-    // restore planet list and planet vectors
-    app.planets = Planet.instances ?? [];
-    app.planetVectors = app.planets.map(
-        p => new PlanetVectors(p, scene, timeUtils, { name: p.name })
-    );
+    // gather all celestial bodies (earth, moon, sun)
+    app.celestialBodies = [app.earth, app.moon, app.sun];
+    // create vectors only for planetary bodies (skip Sun)
+    app.planetVectors = app.celestialBodies
+        .filter(b => typeof b.getMesh === 'function' && b.rotationGroup)
+        .map(b => new PlanetVectors(b, scene, timeUtils, { name: b.name }));
     const gravitySources = [];
-    for (const planet of app.planets ?? []) {
+    for (const planet of app.celestialBodies ?? []) {
         const mesh = planet.getMesh?.();
         if (!mesh) continue;
         gravitySources.push({

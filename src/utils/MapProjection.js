@@ -62,21 +62,8 @@ export function latLonToCanvas(lat, lon, width, height) {
  * @returns {{x: number, y: number, latitude: number, longitude: number, altitude: number}}
  */
 export function projectWorldPosToCanvas(eciWorldPos, planet, width, height, epochMillis) {
-    console.log('[MapProjection] --- projectWorldPosToCanvas ---');
     const geo = projectToGeodetic(eciWorldPos, planet, epochMillis);
-    const { x, y } = latLonToCanvas(
-        geo.latitude,
-        geo.longitude,
-        width,
-        height
-    );
-    console.log('[MapProjection] Canvas:', { x, y }, 'Geo:', geo);
-    return {
-        x,
-        y,
-        latitude: geo.latitude,
-        longitude: geo.longitude,
-        altitude: geo.altitude
-    };
+    const { x, y } = latLonToCanvas(geo.latitude, geo.longitude, width, height);
+    return { x, y, latitude: geo.latitude, longitude: geo.longitude, altitude: geo.altitude };
 }
 

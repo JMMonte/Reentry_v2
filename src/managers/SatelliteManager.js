@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { Satellite } from '../components/Satellite/Satellite.js';
+import { OrbitPath } from '../components/Satellite/OrbitPath.js';
 import { Constants } from '../utils/Constants.js';
 
 /**
@@ -218,8 +219,8 @@ export class SatelliteManager {
     /** Push bodies list (planets + sun) to worker */
     _syncBodiesToWorker() {
         const bodies = [];
-        // collect all planets + sun
-        const all = [...(this.app3d.planets ?? []), this.app3d.sun];
+        // collect all celestial bodies
+        const all = this.app3d.celestialBodies ?? [];
         for (const body of all.filter(b => b)) {
             // find the mesh or light to sample position
             const mesh = body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
@@ -244,6 +245,18 @@ export class SatelliteManager {
         // Throttle heavy orbit and ground-track sampling by interval only, not conditioned on orbit display
         const shouldPaths = nowPerf - this._lastOrbitUpdate >= orbitMs;
 
+        // Precompute dynamic bodies only once when updating paths
+        let dynamicBodies = [];
+        if (shouldPaths) {
+            const tmpPos = new THREE.Vector3();
+            (this.app3d.celestialBodies ?? []).forEach(body => {
+                const mesh = body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
+                if (!mesh) return;
+                mesh.getWorldPosition(tmpPos).multiplyScalar(this._kmToM);
+                const massKey = `${body.name}Mass`;
+                dynamicBodies.push({ name: body.name, position: tmpPos.clone(), mass: Constants[massKey] ?? 0 });
+            });
+        }
         const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
         const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
         const nonKeplFallbackDay = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 30;
@@ -290,22 +303,12 @@ export class SatelliteManager {
                 /* down-sample outside SOI */
                 if (r > Constants.earthSOI) pts = Math.max(10, Math.ceil(pts * 0.2));
 
-                /* update orbit & ground-track with dynamic bodies list */
-                const bodies = (this.app3d.planets ?? []).map(p => {
-                    const mesh = p.getMesh?.();
-                    const pos = new THREE.Vector3();
-                    mesh.getWorldPosition(pos).multiplyScalar(this._kmToM);
-                    const massKey = `${p.name}Mass`;
-                    const mass = Constants[massKey] ?? 0;
-                    return { name: p.name, position: pos, mass };
-                });
-                // add sun
-                const sunMesh = this.app3d.sun.getMesh?.() ?? this.app3d.sun.sunLight ?? this.app3d.sun;
-                const sunPos = new THREE.Vector3();
-                sunMesh.getWorldPosition(sunPos).multiplyScalar(this._kmToM);
-                bodies.push({ name: 'Sun', position: sunPos, mass: Constants.sunMass });
-                sat.orbitPath?.update(sat.position, sat.velocity, sat.id, bodies, periodS, pts, true);
-                sat.groundTrackPath?.update(epochMs, sat.position, sat.velocity, sat.id, bodies, periodS, pts);
+                // ensure we never exceed OrbitPath capacity
+                pts = Math.min(pts, OrbitPath.CAPACITY - 1);
+
+                // Update orbit & ground-track using precomputed dynamicBodies
+                sat.orbitPath?.update(sat.position, sat.velocity, sat.id, dynamicBodies, periodS, pts, true);
+                sat.groundTrackPath?.update(epochMs, sat.position, sat.velocity, sat.id, dynamicBodies, periodS, pts);
 
                 pathsUpdated = true;
             } catch (err) {
@@ -349,5 +352,12 @@ export class SatelliteManager {
         this._worker?.terminate?.();
         this._worker = null;
         this._workerReady = false;
+    }
+
+    /**
+     * Force an immediate orbit path update on next frame by resetting throttle.
+     */
+    refreshOrbitPaths() {
+        this._lastOrbitUpdate = 0;
     }
 }

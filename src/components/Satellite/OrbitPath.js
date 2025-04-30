@@ -15,7 +15,7 @@ import { Constants } from '../../utils/Constants.js';
  */
 export class OrbitPath {
     /** Max vertices reserved for every orbit line */
-    static CAPACITY = 20_000;
+    static get CAPACITY() { return 20000; }
 
     constructor(color) {
         /* sequence bookkeeping */
@@ -26,7 +26,7 @@ export class OrbitPath {
         const geom = new THREE.BufferGeometry();
         geom.setAttribute(
             'position',
-            new THREE.BufferAttribute(new Float32Array(OrbitPath.CAPACITY * 3), 3),
+            new THREE.BufferAttribute(new Float32Array(OrbitPath.CAPACITY * 3), 3)
         );
         geom.setDrawRange(0, 0);
 
@@ -47,6 +47,10 @@ export class OrbitPath {
         /* shared worker bootstrap */
         if (!OrbitPath._worker) OrbitPath._initSharedWorker();
         this.worker = OrbitPath._worker;
+
+        // track last drawn count and current buffer capacity
+        this._lastDrawCount = 0;
+        this._capacity = OrbitPath.CAPACITY;
     }
 
     /* ───────────────────────── Public API ───────────────────────── */
@@ -55,11 +59,20 @@ export class OrbitPath {
      * Ask the worker to (re)compute the orbit path.
      * All vectors are ECI metres / m s⁻¹.
      */
-    update(position, velocity, id,
-        bodies = [], period,
-        numPoints = this._maxOrbitPoints,
-        allowFullEllipse = false) {
+    update(position, velocity, id, bodies, period, numPoints, allowFullEllipse) {
+        // set default values for optional args
+        bodies = (bodies !== undefined && bodies !== null) ? bodies : [];
+        numPoints = (numPoints !== undefined && numPoints !== null) ? numPoints : (this._capacity - 1);
+        allowFullEllipse = !!allowFullEllipse;
 
+        // ensure geometry buffer can hold all points (origin + numPoints)
+        const requiredPoints = numPoints + 1;
+        if (requiredPoints > this._capacity) {
+            this._capacity = requiredPoints;
+            // reallocate position attribute
+            const newAttr = new THREE.BufferAttribute(new Float32Array(this._capacity * 3), 3);
+            this.orbitLine.geometry.setAttribute('position', newAttr);
+        }
         this._currentId = id;
         this._period = period;
         this._numPoints = numPoints;
@@ -81,7 +94,7 @@ export class OrbitPath {
             bodies: bodiesMsg,
             period,
             numPoints,
-            perturbationScale: window.app3d?.getDisplaySetting('perturbationScale') ?? 1,
+            perturbationScale: (window.app3d && window.app3d.getDisplaySetting('perturbationScale')) || 1,
             seq: ++this._seq,
             allowFullEllipse,
         });
@@ -89,9 +102,14 @@ export class OrbitPath {
 
     setVisible(v) {
         this.orbitLine.visible = v;
+        const geom = this.orbitLine.geometry;
         if (!v) {
-            this.orbitLine.geometry.setDrawRange(0, 0);
-            this.orbitLine.geometry.attributes.position.needsUpdate = true;
+            geom.setDrawRange(0, 0);
+            geom.attributes.position.needsUpdate = true;
+        } else if (this._lastDrawCount > 0) {
+            // restore previous draw range immediately
+            geom.setDrawRange(0, this._lastDrawCount);
+            geom.attributes.position.needsUpdate = true;
         }
     }
     setColor(c) { this.orbitLine.material.color.set(c); }
@@ -112,7 +130,11 @@ export class OrbitPath {
         this._lastSeq = seq;
 
         const pts = orbitPoints instanceof Float32Array ? orbitPoints : new Float32Array(orbitPoints);
-        const n = Math.min(Math.floor(pts.length / 3), OrbitPath.CAPACITY - 1);
+        // Determine how many vertices we can draw based on the current buffer capacity
+        const attr = this.orbitLine.geometry.attributes.position;
+        const maxVerts = Math.floor(attr.array.length / 3);
+        const sampleCount = Math.floor(pts.length / 3);
+        const n = Math.min(sampleCount, maxVerts - 1);
 
         /* fire raw-data event for external consumers */
         document.dispatchEvent(new CustomEvent('orbitDataUpdate', {
@@ -120,7 +142,6 @@ export class OrbitPath {
         }));
 
         /* write into VBO – origin then prediction points */
-        const attr = this.orbitLine.geometry.attributes.position;
         const buffer = attr.array;
 
         buffer[0] = this._originKm.x;
@@ -130,6 +151,9 @@ export class OrbitPath {
 
         this.orbitLine.geometry.setDrawRange(0, n + 1);
         attr.needsUpdate = true;
+
+        // capture last count for visibility toggling
+        this._lastDrawCount = n + 1;
     }
 
     /* ─────────────────────────── Static infra ────────────────────────── */

@@ -143,6 +143,14 @@ export class DisplaySettingsManager {
                     app3d.sceneManager.composers.fxaaPass.enabled = value;
                 }
                 break;
+            // Force immediate orbit path recalculation when prediction/points/interval change
+            case 'orbitUpdateInterval':
+            case 'orbitPredictionInterval':
+            case 'orbitPointsPerPeriod':
+                if (app3d.satellites?.refreshOrbitPaths) {
+                    app3d.satellites.refreshOrbitPaths();
+                }
+                break;
             case 'pixelRatio': {
                 // Update renderer pixel ratio
                 if (app3d.renderer) {

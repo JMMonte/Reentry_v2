@@ -70,6 +70,7 @@ export function DraggableModal({
       startX: e.clientX,
       startHeight: modalRef.current.offsetHeight,
       startWidth: modalRef.current.offsetWidth,
+      startLeft: position.x,
       direction,
     };
   };
@@ -81,7 +82,11 @@ export function DraggableModal({
       setPosition({ x: newX, y: newY });
     }
     if (resizeRef.current.isResizing) {
-      if (resizeRef.current.direction === 'vertical' || resizeRef.current.direction === 'both') {
+      // Vertical bottom resize (including corners)
+      if (
+        resizeRef.current.direction === 'vertical' ||
+        (typeof resizeRef.current.direction === 'string' && resizeRef.current.direction.includes('both'))
+      ) {
         const deltaY = e.clientY - resizeRef.current.startY;
         const newHeight = Math.max(
           minHeight || 0,
@@ -92,7 +97,11 @@ export function DraggableModal({
         );
         setHeight(newHeight);
       }
-      if (resizeRef.current.direction === 'horizontal' || resizeRef.current.direction === 'both') {
+      // Horizontal right resize
+      if (
+        resizeRef.current.direction === 'horizontal-right' ||
+        resizeRef.current.direction === 'both-right'
+      ) {
         const deltaX = e.clientX - resizeRef.current.startX;
         const newWidth = Math.max(
           minWidth,
@@ -102,6 +111,25 @@ export function DraggableModal({
           )
         );
         setWidth(newWidth);
+      }
+      // Horizontal left resize (keeping right edge fixed)
+      if (
+        resizeRef.current.direction === 'horizontal-left' ||
+        resizeRef.current.direction === 'both-left'
+      ) {
+        const rawDeltaX = e.clientX - resizeRef.current.startX;
+        const possibleWidth = resizeRef.current.startWidth - rawDeltaX;
+        const newWidth = Math.max(
+          minWidth,
+          Math.min(
+            possibleWidth,
+            maxWidth || window.innerWidth * 0.9
+          )
+        );
+        const deltaWidth = resizeRef.current.startWidth - newWidth;
+        const newX = resizeRef.current.startLeft + deltaWidth;
+        setWidth(newWidth);
+        setPosition((prev) => ({ x: newX, y: prev.y }));
       }
     }
   };
@@ -139,7 +167,7 @@ export function DraggableModal({
   return (
     <div
       ref={modalRef}
-      className={`fixed bg-background/80 backdrop-blur-sm border rounded-lg shadow-lg ${className}`}
+      className={`fixed bg-background/80 backdrop-blur-sm border rounded-lg shadow-lg ${className} group`}
       style={{ 
         left: position.x,
         top: position.y,
@@ -188,23 +216,37 @@ export function DraggableModal({
           </div>
           {resizable && (
             <>
+              {/* Left resize handle */}
+              <div
+                className="absolute top-2 bottom-2 -left-px w-1 cursor-ew-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
+                onMouseDown={(e) => startResizing(e, 'horizontal-left')}
+              />
               {/* Bottom resize handle */}
               <div
-                className="absolute bottom-0 left-2 right-2 h-2 bg-secondary/50 cursor-ns-resize hover:bg-primary/50 flex items-center justify-center border-t rounded-b"
+                className="absolute -bottom-px left-0 right-0 h-1 cursor-ns-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
                 onMouseDown={(e) => startResizing(e, 'vertical')}
               >
                 <GripHorizontal className="h-3 w-3 text-muted-foreground" />
               </div>
+              {/* Bottom-left corner resize handle */}
+              <div
+                className="absolute -bottom-px -left-px w-4 h-4 cursor-nesw-resize opacity-100 flex items-center justify-center"
+                onMouseDown={(e) => startResizing(e, 'both-left')}
+              >
+                <GripHorizontal className="h-2 w-2 text-muted-foreground" />
+              </div>
               {/* Right resize handle */}
               <div
-                className="absolute top-2 bottom-2 right-0 w-2 bg-secondary/50 cursor-ew-resize hover:bg-primary/50"
-                onMouseDown={(e) => startResizing(e, 'horizontal')}
+                className="absolute top-2 bottom-2 -right-px w-1 cursor-ew-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
+                onMouseDown={(e) => startResizing(e, 'horizontal-right')}
               />
               {/* Corner resize handle */}
               <div
-                className="absolute bottom-0 right-0 w-4 h-4 bg-secondary/50 cursor-nwse-resize hover:bg-primary/50 rounded-bl"
-                onMouseDown={(e) => startResizing(e, 'both')}
-              />
+                className="absolute -bottom-px -right-px w-4 h-4 cursor-nwse-resize opacity-100 flex items-center justify-center"
+                onMouseDown={(e) => startResizing(e, 'both-right')}
+              >
+                <GripHorizontal className="h-2 w-2 text-muted-foreground" />
+              </div>
             </>
           )}
         </>

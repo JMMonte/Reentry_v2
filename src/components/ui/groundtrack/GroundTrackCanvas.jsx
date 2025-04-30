@@ -1,10 +1,9 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { drawGrid, drawPOI, rasteriseCoverage } from './utils';
-import { latLonToCanvas } from '../../../utils/MapProjection';
+import { drawPOI, rasteriseCoverage } from './utils';
+import { projectWorldPosToCanvas, latLonToCanvas } from '../../../utils/MapProjection';
 import { Constants } from '../../../utils/Constants';
 import * as THREE from 'three';
-import { PhysicsUtils } from '../../../utils/PhysicsUtils';
 
 const SAT_DOT_RADIUS = 4;
 
@@ -24,7 +23,6 @@ export default function GroundTrackCanvas({
     useEffect(() => { tracksRef.current = tracks; }, [tracks]);
     const satsRef = useRef(satellites);
     useEffect(() => { satsRef.current = satellites; }, [satellites]);
-    const scratch = new THREE.Vector3();
 
     const drawFrame = useCallback(() => {
         const canvas = canvasRef.current;
@@ -32,6 +30,12 @@ export default function GroundTrackCanvas({
         const ctx = canvas.getContext('2d');
         const w = width;
         const h = height;
+        // Get current simulation time once per frame (fallback to real time)
+        const currentEpochMillis = planet && planet.timeManager
+            ? planet.timeManager.getSimulatedTime().getTime()
+            : Date.now();
+        // scale factor (meters → sim units)
+        const k = Constants.metersToKm * Constants.scale;
 
         ctx.clearRect(0, 0, w, h);
         // draw equirectangular texture: prefer planet surface image, else offscreen map
@@ -39,7 +43,6 @@ export default function GroundTrackCanvas({
         if (imgSource instanceof HTMLImageElement || imgSource instanceof HTMLCanvasElement) {
             ctx.drawImage(imgSource, 0, 0, w, h);
         }
-        drawGrid(ctx, w, h);
 
         if (showCoverage) {
             Object.values(satsRef.current).forEach(sat => {
@@ -59,23 +62,25 @@ export default function GroundTrackCanvas({
             });
         }
 
-        // Draw current satellite positions by projecting ECI→world→canvas
-        const k = Constants.metersToKm * Constants.scale;
+        // Draw current satellite positions by projecting ECI→canvas
         Object.entries(tracksRef.current).forEach(([id, pts]) => {
-            if (!pts?.length || !planet?.timeManager) return;
+            if (!pts?.length) return;
             const last = pts[pts.length - 1];
             if (!last.position || last.time === undefined) return;
 
-            const p = last.position;
-            scratch.set(p.x * k, p.y * k, p.z * k); // Scaled Ecliptic ECI
-
-            // Get current simulation time in milliseconds
-            const currentEpochMillis = planet.timeManager.getSimulatedTime().getTime();
-
-            // Convert ECI -> ECEF (accounting for axial tilt and rotation)
-            const gmst = PhysicsUtils.calculateGMST(currentEpochMillis);
-            const { lat: latitude, lon: longitude } = PhysicsUtils.eciTiltToLatLon(scratch, gmst);
-            const { x, y } = latLonToCanvas(latitude, longitude, w, h);
+            // Project last position to canvas (scale from meters to sim units)
+            const simPos = new THREE.Vector3(
+                last.position.x * k,
+                last.position.y * k,
+                last.position.z * k
+            );
+            const { x, y } = projectWorldPosToCanvas(
+                simPos,
+                planet,
+                w,
+                h,
+                currentEpochMillis
+            );
             const color = satsRef.current[id]?.color ?? 0xffffff;
             ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
             ctx.beginPath();
@@ -94,17 +99,24 @@ export default function GroundTrackCanvas({
             pts.forEach((pt, idx) => {
                 if (!pt.position || pt.time === undefined) return; // Skip points without position or time
 
-                const p = pt.position;
-                scratch.set(p.x * k, p.y * k, p.z * k); // Scaled Ecliptic ECI
+                // Parse time
+                const { position, time } = pt;
+                const epochMillis = typeof time === 'string' ? parseFloat(time) : time;
+                if (isNaN(epochMillis) || !position) return;
 
-                // Assuming pt.time is epoch milliseconds
-                const epochMillis = typeof pt.time === 'string' ? parseFloat(pt.time) : pt.time;
-                if (isNaN(epochMillis)) return; // Skip if time is invalid
-
-                // Convert ECI -> ECEF for this time
-                const gmstPt = PhysicsUtils.calculateGMST(epochMillis);
-                const { lat: latitudePt, lon } = PhysicsUtils.eciTiltToLatLon(scratch, gmstPt);
-                const { x: xpt, y: ypt } = latLonToCanvas(latitudePt, lon, w, h);
+                // Project position to canvas at point time (scale from meters to sim units)
+                const simPosPt = new THREE.Vector3(
+                    position.x * k,
+                    position.y * k,
+                    position.z * k
+                );
+                const { x: xpt, y: ypt, longitude: lon } = projectWorldPosToCanvas(
+                    simPosPt,
+                    planet,
+                    w,
+                    h,
+                    epochMillis
+                );
 
                 if (idx === 0) {
                     ctx.moveTo(xpt, ypt);
@@ -154,9 +166,7 @@ export default function GroundTrackCanvas({
                 polys.forEach(poly => {
                     poly.forEach(ring => {
                         ctx.beginPath();
-                        ring.forEach((coord, i) => {
-                            const lon = coord[0];
-                            const lat = coord[1];
+                        ring.forEach(([lon, lat], i) => {
                             const { x, y } = latLonToCanvas(lat, lon, w, h);
                             if (i) ctx.lineTo(x, y);
                             else ctx.moveTo(x, y);

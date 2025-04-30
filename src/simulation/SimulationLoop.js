@@ -79,6 +79,20 @@ export class SimulationLoop {
             this.app.previewNode.predictedOrbit.setVisible(true);
         }
 
+        // Bulk preview nodes update (for array of previewNodes)
+        if (Array.isArray(this.app.previewNodes) && this.app.previewNodes.length) {
+            const now2 = performance.now();
+            this.app.previewNodes.forEach(node => {
+                // throttle each preview update to 10Hz
+                if ((node._lastPredTime ?? 0) < now2 - 100) {
+                    node.update();
+                    node._lastPredTime = now2;
+                }
+                // ensure preview orbit remains visible
+                if (node.predictedOrbit) node.predictedOrbit.orbitLine.visible = true;
+            });
+        }
+
         // Throttle radial grid fading (10Hz)
         if (this.sceneManager.radialGrid && timestamp - this._lastFadingTime > 100) {
             this.sceneManager.radialGrid.updateFading(this.sceneManager.camera);
