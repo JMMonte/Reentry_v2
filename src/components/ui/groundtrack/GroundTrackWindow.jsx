@@ -128,7 +128,7 @@ export function GroundTrackWindow({
     // Hook: cache planet surface to offscreen canvas
     useEffect(() => {
         if (!planet) return;
-        // getSurfaceTexture now returns the raw image (HTMLImageElement or Canvas)
+        // getSurfaceTexture returns the raw image (HTMLImageElement or Canvas)
         const img = planet.getSurfaceTexture?.();
 
         function draw(source) {

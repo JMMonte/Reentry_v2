@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { drawPOI, rasteriseCoverage } from './utils';
+import { drawGrid, drawPOI, rasteriseCoverage } from './utils';
 import { projectWorldPosToCanvas, latLonToCanvas } from '../../../utils/MapProjection';
 import { Constants } from '../../../utils/Constants';
 import * as THREE from 'three';
@@ -30,18 +30,19 @@ export default function GroundTrackCanvas({
         const ctx = canvas.getContext('2d');
         const w = width;
         const h = height;
+        const k = Constants.metersToKm * Constants.scale;
         // Get current simulation time once per frame (fallback to real time)
         const currentEpochMillis = planet && planet.timeManager
             ? planet.timeManager.getSimulatedTime().getTime()
             : Date.now();
-        // scale factor (meters → sim units)
-        const k = Constants.metersToKm * Constants.scale;
 
         ctx.clearRect(0, 0, w, h);
         // draw equirectangular texture: prefer planet surface image, else offscreen map
         const imgSource = planet?.getSurfaceTexture?.() || map;
         if (imgSource instanceof HTMLImageElement || imgSource instanceof HTMLCanvasElement) {
             ctx.drawImage(imgSource, 0, 0, w, h);
+            // overlay our grid (to avoid baked grid on texture)
+            drawGrid(ctx, w, h);
         }
 
         if (showCoverage) {
@@ -68,14 +69,13 @@ export default function GroundTrackCanvas({
             const last = pts[pts.length - 1];
             if (!last.position || last.time === undefined) return;
 
-            // Project last position to canvas (scale from meters to sim units)
-            const simPos = new THREE.Vector3(
-                last.position.x * k,
-                last.position.y * k,
-                last.position.z * k
-            );
+            // Project last position to canvas (worker outputs ECI in meters)
             const { x, y } = projectWorldPosToCanvas(
-                simPos,
+                new THREE.Vector3(
+                    last.position.x * k,
+                    last.position.y * k,
+                    last.position.z * k
+                ),
                 planet,
                 w,
                 h,
@@ -104,14 +104,13 @@ export default function GroundTrackCanvas({
                 const epochMillis = typeof time === 'string' ? parseFloat(time) : time;
                 if (isNaN(epochMillis) || !position) return;
 
-                // Project position to canvas at point time (scale from meters to sim units)
-                const simPosPt = new THREE.Vector3(
-                    position.x * k,
-                    position.y * k,
-                    position.z * k
-                );
+                // Project position to canvas at point time (worker outputs ECI in meters)
                 const { x: xpt, y: ypt, longitude: lon } = projectWorldPosToCanvas(
-                    simPosPt,
+                    new THREE.Vector3(
+                        position.x * k,
+                        position.y * k,
+                        position.z * k
+                    ),
                     planet,
                     w,
                     h,
@@ -219,6 +218,7 @@ GroundTrackCanvas.propTypes = {
         ),
     ).isRequired,
     layers: PropTypes.shape({
+        grid: PropTypes.bool.isRequired,
         cities: PropTypes.bool.isRequired,
         airports: PropTypes.bool.isRequired,
         spaceports: PropTypes.bool.isRequired,
