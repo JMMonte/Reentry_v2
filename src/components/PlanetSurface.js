@@ -7,7 +7,7 @@ import * as THREE from 'three';
 export class PlanetSurface {
     /**
      * @param {THREE.Object3D} parentMesh — the planet mesh (or a group) to attach children to
-     * @param {number}         radius     — planet radius (scene units)
+     * @param {number}         planetRadius — core planet radius (scene units)
      * @param {object}         countryGeo — GeoJSON with national borders
      * @param {object}         stateGeo   — GeoJSON with state / province borders
      * @param {object}         opts       — configuration options:
@@ -15,16 +15,17 @@ export class PlanetSurface {
      *   @param {number} [opts.circleTextureSize=32]   — size of the point texture
      *   @param {number} [opts.circleSegments=16]      — segments for circle geometry
      *   @param {number} [opts.markerSize=1]           — radius of the marker circle
-     *   @param {number} [opts.fadeStartFactor=2.0]      — fade out surface features between these radius multiples
-     *   @param {number} [opts.fadeEndFactor=3.0]        — fade out surface features between these radius multiples
+     *   @param {number} [opts.fadeStartPixelSize=50]   — Default: fade starts when planet apparent height < 50px
+     *   @param {number} [opts.fadeEndPixelSize=15]      — Default: fully faded when planet apparent height < 15px
      */
     constructor(
         parentMesh,
-        radius,
+        planetRadius,
         countryGeo,
         stateGeo,
         opts = {}
     ) {
+        
         this.root = parentMesh;
         // Destructure options with defaults
         const {
@@ -32,17 +33,18 @@ export class PlanetSurface {
             circleTextureSize = 64,
             circleSegments = 16,
             markerSize = 1,
-            fadeStartFactor = 2.0,
-            fadeEndFactor = 3.0
+            fadeStartPixelSize = 50,
+            fadeEndPixelSize = 15
         } = opts;
         // Assign properties
         this.heightOffset = heightOffset;
         this.circleTextureSize = circleTextureSize;
         this.circleSegments = circleSegments;
         this.markerSize = markerSize;
-        this.radius = radius + heightOffset;
-        this.fadeStartDistance = this.radius * fadeStartFactor;
-        this.fadeEndDistance = this.radius * fadeEndFactor;
+        this.planetRadius = planetRadius;
+        this.radius = planetRadius + heightOffset;
+        this.fadeStartPixelSize = fadeStartPixelSize;
+        this.fadeEndPixelSize = fadeEndPixelSize;
         this.countryGeo = countryGeo;
         this.stateGeo = stateGeo;
 
@@ -84,6 +86,19 @@ export class PlanetSurface {
         this.points = {
             cities: [], airports: [], spaceports: [],
             groundStations: [], observatories: [], missions: []
+        };
+
+        // Internal state for line visibility toggles
+        this.lineVisibility = {
+            surfaceLines: true, // Default state for graticules
+            countryBorders: true, // Default state for country borders
+            states: true       // Default state for state borders
+        };
+
+        // Internal state for visibility toggles
+        this.pointVisibility = {
+            cities: true, airports: true, spaceports: true,
+            groundStations: true, observatories: true, missions: true
         };
     }
 
@@ -185,11 +200,29 @@ export class PlanetSurface {
 
     /* ===== visibility helpers ===== */
 
-    #setPointsVisible(cat, v) { this.points[cat].forEach(m => m.visible = v); }
+    #setPointsVisible(cat, v) {
+        // Update internal state
+        this.pointVisibility[cat] = v;
+        // Update actual mesh visibility immediately based on current fade opacity
+        // This avoids waiting for the next updateFade call
+        this.points[cat].forEach(m => {
+            const currentOpacity = m.material.opacity;
+            m.visible = v && currentOpacity > 0;
+        });
+    }
 
-    setSurfaceLinesVisible(v) { this.surfaceLines.forEach(l => l.visible = v); }
-    setCountryBordersVisible(v) { this.countryBorders.forEach(b => b.visible = v); }
-    setStatesVisible(v) { this.states.forEach(s => s.visible = v); }
+    setSurfaceLinesVisible(v) {
+        this.lineVisibility.surfaceLines = v;
+        this.surfaceLines.forEach(l => { l.visible = v && l.material.opacity > 0; });
+    }
+    setCountryBordersVisible(v) {
+        this.lineVisibility.countryBorders = v;
+        this.countryBorders.forEach(b => { b.visible = v && b.material.opacity > 0; });
+    }
+    setStatesVisible(v) {
+        this.lineVisibility.states = v;
+        this.states.forEach(s => { s.visible = v && s.material.opacity > 0; });
+    }
 
     setCitiesVisible(v) { this.#setPointsVisible('cities', v); }
     setAirportsVisible(v) { this.#setPointsVisible('airports', v); }
@@ -217,29 +250,60 @@ export class PlanetSurface {
     }
 
     /**
-     * Update feature opacity based on camera distance to surface.
+     * Update feature opacity based on camera distance and planet's apparent size.
      * @param {THREE.Camera} camera
      */
     updateFade(camera) {
-        if (!camera) return;
+        if (!camera || !window) return;
+
         const worldPos = new THREE.Vector3();
         this.root.getWorldPosition(worldPos);
         const dist = worldPos.distanceTo(camera.position);
+
+        const fovY = THREE.MathUtils.degToRad(camera.fov);
+        const screenH = window.innerHeight;
+        const angularDiameter = 2 * Math.atan(this.planetRadius / dist);
+        const pixelHeight = (angularDiameter / fovY) * screenH;
+
         let opacity;
-        if (dist <= this.fadeStartDistance) {
+        if (pixelHeight >= this.fadeStartPixelSize) {
             opacity = 1;
-        } else if (dist >= this.fadeEndDistance) {
+        } else if (pixelHeight <= this.fadeEndPixelSize) {
             opacity = 0;
         } else {
-            opacity = (this.fadeEndDistance - dist) / (this.fadeEndDistance - this.fadeStartDistance);
+            opacity = (pixelHeight - this.fadeEndPixelSize) / (this.fadeStartPixelSize - this.fadeEndPixelSize);
         }
+
+        // Clamp opacity
+        const clampedOpacity = Math.max(0, Math.min(1, opacity));
+
         // Apply to graticules, borders, and states
-        this.surfaceLines.forEach(line => { line.material.opacity = opacity; });
-        this.countryBorders.forEach(line => { line.material.opacity = opacity; });
-        this.states.forEach(line => { line.material.opacity = opacity; });
-        // Apply to point features
-        Object.values(this.points).flat().forEach(mesh => {
-            mesh.material.opacity = opacity;
+        const surfaceLinesVisible = this.lineVisibility.surfaceLines;
+        this.surfaceLines.forEach(line => {
+            line.material.opacity = clampedOpacity;
+            line.visible = surfaceLinesVisible && clampedOpacity > 0;
         });
+
+        const countryBordersVisible = this.lineVisibility.countryBorders;
+        this.countryBorders.forEach(line => {
+            line.material.opacity = clampedOpacity;
+            line.visible = countryBordersVisible && clampedOpacity > 0;
+        });
+
+        const statesVisible = this.lineVisibility.states;
+        this.states.forEach(line => {
+            line.material.opacity = clampedOpacity;
+            line.visible = statesVisible && clampedOpacity > 0;
+        });
+
+        // Apply to point features, respecting individual visibility toggles
+        for (const category in this.points) {
+            const isCategoryVisible = this.pointVisibility[category];
+            this.points[category].forEach(mesh => {
+                mesh.material.opacity = clampedOpacity;
+                // Visible only if category toggle is on AND fade opacity > 0
+                mesh.visible = isCategoryVisible && clampedOpacity > 0;
+            });
+        }
     }
 }

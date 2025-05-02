@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Planet } from '../components/Planet.js';
 
 class CameraControls {
     constructor(camera, controls) {
@@ -71,11 +70,11 @@ class CameraControls {
             target = value; // direct satellite object
         } else {
             // Planet selection by name
-            target = Planet.instances.find(p => p.name === value);
+            target = app3d.celestialBodies?.find(p => p.name === value);
         }
-        // Fallback to first planet if nothing matched
+        // Fallback to first *planet* if nothing matched
         if (!target) {
-            const fallback = Planet.instances[0];
+            const fallback = app3d.celestialBodies?.find(p => typeof p.getMesh === 'function'); // Find first actual planet
             if (fallback) {
                 console.warn(`CameraControls.follow: no body found for '${value}', falling back to '${fallback.name}'`);
                 target = fallback;

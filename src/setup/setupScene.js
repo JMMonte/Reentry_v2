@@ -21,54 +21,32 @@ import { Constants } from '../utils/Constants.js';
 import { SatelliteVectors } from '../utils/SatelliteVectors.js';
 import { PlanetVectors } from '../utils/PlanetVectors.js';
 
-// Data layers ──────────────────────────────────────────────────────────────────
-import geojsonDataSovereignty from '../config/ne_50m_admin_0_sovereignty.json';
-import geojsonDataStates from '../config/ne_110m_admin_1_states_provinces.json';
+// Config ───────────────────────────────────────────────────────────────────────
 import {
-    geojsonDataCities,
-    geojsonDataAirports,
-    geojsonDataSpaceports,
-    geojsonDataGroundStations,
-    geojsonDataObservatories,
-    geojsonDataMissions
-} from '../config/geojsonData.js';
-
-// Textures ─────────────────────────────────────────────────────────────────────
-import {
-    earthTexture, earthSpecTexture, earthNormalTexture,
-    cloudTexture, moonTexture, moonBump
-} from '../config/textures.js';
+    celestialBodiesConfig,
+    textureDefinitions,
+    ambientLightConfig,
+    bloomConfig
+} from '../config/celestialBodiesConfig.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
-// 2. STATIC CONFIGURATION
+// 2. STATIC CONFIGURATION - Moved to celestialBodiesConfig.js
 // ──────────────────────────────────────────────────────────────────────────────
-const TEXTURE_DEFINITIONS = [
-    { key: 'earthTexture', src: earthTexture },
-    { key: 'earthSpecTexture', src: earthSpecTexture },
-    { key: 'earthNormalTexture', src: earthNormalTexture },
-    { key: 'cloudTexture', src: cloudTexture },
-    { key: 'moonTexture', src: moonTexture },
-    { key: 'moonBump', src: moonBump },
-];
-
-const AMBIENT_LIGHT_CONFIG = { color: 0xffffff, intensity: 0.1 };
-
-const BLOOM_CONFIG = { strength: 0.3, radius: 0.999, threshold: 0.99 };
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 3. HELPERS
 // ──────────────────────────────────────────────────────────────────────────────
 const addAmbientLight = (scene) => {
     const light = new THREE.AmbientLight(
-        AMBIENT_LIGHT_CONFIG.color,
-        AMBIENT_LIGHT_CONFIG.intensity
+        ambientLightConfig.color,
+        ambientLightConfig.intensity
     );
     light.name = 'ambientLight';
     scene.add(light);
 };
 
 const loadTextures = async (textureManager) => {
-    const tasks = TEXTURE_DEFINITIONS.map(({ key, src }) => ({
+    const tasks = textureDefinitions.map(({ key, src }) => ({
         name: key,
         url: src,
         fallbackUrl: `${src}?url`
@@ -76,102 +54,36 @@ const loadTextures = async (textureManager) => {
     await textureManager.loadAllTextures(tasks);
 };
 
-const createEarthConfig = () => ({
-    name: 'earth',
-    symbol: '♁',
-    radius: Constants.earthRadius * Constants.scale * Constants.metersToKm,
-    tilt: Constants.earthInclination,
-    meshRes: 64,
-    atmosphereThickness: 10,
-    cloudThickness: 0.1,
-    addSurface: true,
-    surfaceOptions: {
-        addLatitudeLines: true, latitudeStep: 10,
-        addLongitudeLines: true, longitudeStep: 10,
-        addCountryBorders: true,
-        addStates: true, addCities: true,
-        addAirports: true, addSpaceports: true,
-        addGroundStations: true, addObservatories: true,
-        markerSize: 0.7,
-        circleSegments: 32,
-        circleTextureSize: 64,
-        fadeStartFactor: 3.5, // fade out surface details at this distance
-        fadeEndFactor: 6.5 // fade out surface details at this distance
-    },
-    primaryGeojsonData: geojsonDataSovereignty,
-    stateGeojsonData: geojsonDataStates,
-    cityData: geojsonDataCities,
-    airportsData: geojsonDataAirports,
-    spaceportsData: geojsonDataSpaceports,
-    groundStationsData: geojsonDataGroundStations,
-    observatoriesData: geojsonDataObservatories,
-    addLight: true,
-    lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: true },
-    lodLevels: [
-        { meshRes: 16, distance: 10000 },
-        { meshRes: 32, distance: 5000 },
-        { meshRes: 64, distance: 2000 },
-        { meshRes: 128, distance: 1000 },
-    ],
-    dotPixelSizeThreshold: 1,
-});
+/**
+ * Retrieves the Earth configuration object.
+ * @returns {object} The Earth configuration.
+ */
+const getEarthConfig = () => {
+    return celestialBodiesConfig.earth;
+};
 
+/**
+ * Creates the Moon configuration object, dynamically calculating argument of periapsis.
+ * @param {object} timeUtils - Utility object for time calculations.
+ * @returns {object} The Moon configuration.
+ */
 const createMoonConfig = (timeUtils) => {
+    // Get base config
+    const moonConfig = { ...celestialBodiesConfig.moon }; // Clone to avoid modifying original
+
     // --- derive argument of periapsis at runtime
     const JD = timeUtils.getJulianDate();
     const T = (JD - 2451545.0) / 36525;
     const lamPi = 83.353246 + 4069.0137287 * T - 0.01032 * T * T - T ** 3 / 80000;
-    const argPerDeg =
-        lamPi - THREE.MathUtils.radToDeg(Constants.ascendingNode) + 80; // empirical offset
+    const argPerDeg = lamPi - THREE.MathUtils.radToDeg(Constants.ascendingNode) + 80; // empirical offset
 
-    return {
-        name: 'moon',
-        dotPixelSizeThreshold: 1,
-        symbol: '☾',
-        radius: Constants.moonRadius * Constants.metersToKm * Constants.scale,
-        rotationPeriod: 29.53058867 * Constants.secondsInDay, // synodic
-        meshRes: 128,
-        tilt: 0,
-        addSurface: true,
-        surfaceOptions: {
-            addLatitudeLines: true, latitudeStep: 10,
-            addLongitudeLines: true, longitudeStep: 10,
-            addMissions: true,
-            fadeStartFactor: 1.2,
-            fadeEndFactor: 2.0
-        },
-        missionsData: geojsonDataMissions,
-        addLight: true,
-        lightOptions: { color: 0x6699ff, intensity: 1000.5, helper: true },
-        lodLevels: [
-            { meshRes: 16, distance: 10000 },
-            { meshRes: 64, distance: 2000 },
-            { meshRes: 128, distance: 500 },
-        ],
-        orbitalPeriod: 27.321661, // sidereal days
-        orbitElements: {
-            semiMajorAxis: Constants.semiMajorAxis,
-            eccentricity: Constants.eccentricity,
-            inclination: Constants.inclination,
-            longitudeOfAscendingNode: Constants.ascendingNode,
-            argumentOfPeriapsis: THREE.MathUtils.degToRad(argPerDeg),
-            mu: Constants.earthGravitationalParameter,
-        },
-        materials: {
-            createSurfaceMaterial: (tm, anisotropy) => {
-                const mat = new THREE.MeshPhongMaterial({
-                    map: tm.getTexture('moonTexture'),
-                    bumpMap: tm.getTexture('moonBump'),
-                    bumpScale: 3.9
-                });
-                if (mat.map) mat.map.anisotropy = anisotropy;
-                if (mat.bumpMap) mat.bumpMap.anisotropy = anisotropy;
-                return mat;
-            },
-            createCloudMaterial: () => null,
-            createGlowMaterial: () => null
-        }
+    // Update the argument of periapsis in the copied config
+    moonConfig.orbitElements = {
+        ...moonConfig.orbitElements,
+        argumentOfPeriapsis: THREE.MathUtils.degToRad(argPerDeg)
     };
+
+    return moonConfig;
 };
 
 const setupPostProcessing = (app) => {
@@ -191,9 +103,9 @@ const setupPostProcessing = (app) => {
 
     const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        BLOOM_CONFIG.strength,
-        BLOOM_CONFIG.radius,
-        BLOOM_CONFIG.threshold
+        bloomConfig.strength,
+        bloomConfig.radius,
+        bloomConfig.threshold
     );
     bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2);
     bloomPass.renderToScreen = true;
@@ -222,8 +134,8 @@ export async function initScene(app) {
     new BackgroundStars(scene, camera);
 
     // 2. Planetary bodies
-    app.earth = new Planet(scene, renderer, timeUtils, textureManager, createEarthConfig());
-    app.sun = new Sun(scene, timeUtils);
+    app.earth = new Planet(scene, renderer, timeUtils, textureManager, getEarthConfig());
+    app.sun = new Sun(scene, timeUtils, celestialBodiesConfig.sun); // Pass sun config
     app.moon = new Planet(scene, renderer, timeUtils, textureManager, createMoonConfig(timeUtils));
 
     // 3. Helpers
@@ -233,25 +145,33 @@ export async function initScene(app) {
     app.planetVectors = app.celestialBodies
         .filter(b => typeof b.getMesh === 'function' && b.rotationGroup)
         .map(b => new PlanetVectors(b, scene, timeUtils, { name: b.name }));
+
     const gravitySources = [];
     for (const planet of app.celestialBodies ?? []) {
         const mesh = planet.getMesh?.();
         if (!mesh) continue;
+        const config = celestialBodiesConfig[planet.name.toLowerCase()];
+        if (!config) continue; // Skip if no config found
+
         gravitySources.push({
             name: planet.name.toLowerCase(),
             body: planet,
-            mesh,
-            mass: Constants[`${planet.name}Mass`] ?? 0
+            mesh: mesh,
+            mass: config.mass ?? 0 // Use mass from config
         });
     }
     // add Sun as gravity source
     const sunMesh = app.sun.sun ?? app.sun.sunLight ?? app.sun;
-    gravitySources.push({
-        name: 'sun',
-        body: app.sun,
-        mesh: sunMesh,
-        mass: Constants.sunMass
-    });
+    const sunConfig = celestialBodiesConfig.sun;
+    if (sunConfig) { // Check if sun config exists
+        gravitySources.push({
+            name: 'sun',
+            body: app.sun,
+            mesh: sunMesh,
+            mass: sunConfig.mass ?? Constants.sunMass // Fallback just in case
+        });
+    }
+
     app.satelliteVectors = new SatelliteVectors({
         scene,
         timeUtils,

@@ -1,8 +1,9 @@
 // timeControls.js
 
+import { timeWarpOptions } from '../utils/timeWarpOptions';
+
 export function initTimeControls(timeUtils) {
-  const timeWarpOptions = [0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
-  let currentTimeWarpIndex = 1; // Start at 1x
+  let currentTimeWarpIndex = timeWarpOptions.indexOf(1); // Start at 1x
 
   // Listen for time warp update events from React
   document.addEventListener('updateTimeWarp', (event) => {

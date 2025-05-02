@@ -139,12 +139,17 @@ export const getSatelliteOptions = (satellites) => {
 };
 
 /**
- * Get options for planets based on Planet.instances
+ * Get options for planets based on instantiated celestial bodies
+ * @param {Array<Planet|Sun>} celestialBodies - Array of instantiated bodies (e.g., from app.celestialBodies)
  * @returns {Array<{value:string, text:string}>}
  */
-export const getPlanetOptions = () => {
-  return Planet.instances.map(planet => ({
-    value: planet.name,
-    text: planet.name.charAt(0).toUpperCase() + planet.name.slice(1),
+export const getPlanetOptions = (celestialBodies) => {
+  // Filter for instances that have a 'getMesh' method (likely planets, not Sun)
+  // and have a valid name.
+  return (celestialBodies || [])
+    .filter(body => typeof body?.getMesh === 'function' && body.name) 
+    .map(planet => ({
+      value: planet.name,
+      text: planet.name.charAt(0).toUpperCase() + planet.name.slice(1),
   }));
 };

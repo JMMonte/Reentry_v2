@@ -4,14 +4,12 @@ import { supabase } from '../../../supabaseClient';
 import LogoMenu from './LogoMenu';
 import BodySelector from './BodySelector';
 import TimeControls from './TimeControls';
-import { getBodyDisplayName, getSatelliteOptions } from '../../../utils/BodySelectionUtils';
+import { getBodyDisplayName, getSatelliteOptions, getPlanetOptions } from '../../../utils/BodySelectionUtils';
 import { saveAs } from 'file-saver';
 import LZString from 'lz-string';
 import ActionButtons from './ActionButtons';
 import UserMenu from './UserMenu';
-
-// Time warp options
-const timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
+import { timeWarpOptions } from '../../../utils/timeWarpOptions';
 
 // Function to get next time warp value
 const getNextTimeWarp = (currentTimeWarp, increase) => {
@@ -77,10 +75,13 @@ export function Navbar({
   }, []);
   const [planetOptions, setPlanetOptions] = useState([]);
   const [user, setUser] = useState(null);
+  // Store the satellite map for getDisplayValue
+  const [satelliteMap, setSatelliteMap] = useState(() => satellites);
 
   // Helper function to get the display value
   const getDisplayValue = (value) => {
-    return getBodyDisplayName(value, satellites);
+    // Use the stored satellite map
+    return getBodyDisplayName(value, satelliteMap);
   };
 
   // Listen for satellite deletion events
@@ -112,6 +113,21 @@ export function Navbar({
       listener?.subscription?.unsubscribe?.();
     };
   }, []);
+
+  // Update planet and satellite options when App3D instance is ready or satellites change
+  useEffect(() => {
+    const app = app3DRef.current;
+    if (app) {
+      // Update planet options
+      const bodies = app.celestialBodies || [];
+      setPlanetOptions(getPlanetOptions(bodies));
+      
+      // Update satellite options and map
+      const sats = app.satellites?.getSatellites?.() || satellites; // Use prop as fallback
+      setSatelliteOptions(getSatelliteOptions(sats));
+      setSatelliteMap(sats); // Store the map for getDisplayValue
+    }
+  }, [app3DRef, satellites]); // Depend on app3DRef and satellites prop
 
   // When dropdown changes, update React state and directly drive cameraControls
   const handleBodyChange = (eventOrValue) => {
@@ -166,23 +182,6 @@ export function Navbar({
     await supabase.auth.signOut();
     setUser(null);
   };
-
-  // Update planet options when scene is ready
-  useEffect(() => {
-    const handleSceneReady = () => {
-      const app = app3DRef.current;
-      const planets = app?.planets || [];
-      const options = planets.map(p => ({
-        value: p.name,
-        text: p.name.charAt(0).toUpperCase() + p.name.slice(1),
-      }));
-      setPlanetOptions(options);
-    };
-    document.addEventListener('sceneReady', handleSceneReady);
-    // Also update once on mount in case scene is already ready
-    handleSceneReady();
-    return () => document.removeEventListener('sceneReady', handleSceneReady);
-  }, []);
 
   return (
     <div className="fixed top-0 left-0 right-0 h-[72px] flex items-center justify-between z-20 bg-gradient-to-b from-background/90 to-transparent backdrop-blur-sm px-4">
@@ -250,7 +249,11 @@ Navbar.propTypes = {
   ]).isRequired,
   onSimulatedTimeChange: PropTypes.func.isRequired,
   app3DRef: PropTypes.shape({ current: PropTypes.object }),
-  satellites: PropTypes.array.isRequired,
+  // Accept satellites as object (Map or plain object) or array
+  satellites: PropTypes.oneOfType([
+    PropTypes.object, 
+    PropTypes.array
+  ]), 
   onImportState: PropTypes.func.isRequired,
   shareModalOpen: PropTypes.bool.isRequired,
   setShareModalOpen: PropTypes.func.isRequired,

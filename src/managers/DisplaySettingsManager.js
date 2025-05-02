@@ -128,6 +128,12 @@ export class DisplaySettingsManager {
                     if (typeof p.setStatesVisible === 'function') p.setStatesVisible(value);
                 });
                 break;
+            case 'showSOI':
+                // Toggle sphere of influence rim glow on all planets
+                Planet.instances.forEach(p => {
+                    if (typeof p.setSOIVisible === 'function') p.setSOIVisible(value);
+                });
+                break;
             case 'showMoonOrbit':
                 if (app3d.moon?.setOrbitVisible) app3d.moon.setOrbitVisible(value);
                 break;

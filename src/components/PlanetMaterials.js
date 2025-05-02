@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import atmosphereFragmentShader from '../assets/shaders/atmosphereFragmentShader.glsl';
 import atmosphereVertexShader from '../assets/shaders/atmosphereVertexShader.glsl';
+import soiVertexShader from '../assets/shaders/soiVertexShader.glsl';
+import soiFragmentShader from '../assets/shaders/soiFragmentShader.glsl';
 
 // Inlined from EarthMaterials.js
 function createEarthMaterial(textureManager, anisotropy) {
@@ -61,9 +63,9 @@ function createAtmosphereMaterial(earthRadius, {
         }
     });
 }
-function createGlowMaterial(earthRadius, options = {}) {
+function createGlowMaterial(planetRadius, options = {}) {
     // reuse volumetric atmosphere shader for realistic glow halo
-    const mat = createAtmosphereMaterial(earthRadius, options);
+    const mat = createAtmosphereMaterial(planetRadius, options);
     mat.side = THREE.BackSide;
     mat.blending = THREE.AdditiveBlending;
     mat.transparent = true;
@@ -73,6 +75,23 @@ function createGlowMaterial(earthRadius, options = {}) {
     if (mat.uniforms.lightIntensity) mat.uniforms.lightIntensity.value *= 0.7;
     if (mat.uniforms.ambientIntensity) mat.uniforms.ambientIntensity.value = 0.0;
     return mat;
+}
+// Create a shader material for Sphere of Influence rim glow using fresnel effect
+function createSoiMaterial(options = {}) {
+    const { color = new THREE.Color(0x8888ff), power = 2.0 } = options;
+    return new THREE.ShaderMaterial({
+        vertexShader: soiVertexShader,
+        fragmentShader: soiFragmentShader,
+        side: THREE.FrontSide,     // draw only the outer faces so the rim glows as an edge
+        transparent: true,
+        depthTest: true,          // <-- Enable depth testing
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+            color: { value: color },
+            power: { value: power }
+        }
+    });
 }
 
 export class PlanetMaterials {
@@ -85,10 +104,12 @@ export class PlanetMaterials {
         this.cloudCreator = materialsConfig.createCloudMaterial || createCloudMaterial;
         this.atmosphereCreator = createAtmosphereMaterial;
         this.glowCreator = materialsConfig.createGlowMaterial || createGlowMaterial;
+        this.soiCreator = materialsConfig.createSOIMaterial || createSoiMaterial;
         // Options for atmosphere and glow
         this.atmosphereOptions = materialsConfig.atmosphereOptions || {};
         this.glowScale = materialsConfig.glowScale || 0.01;
         this.glowRenderOrder = materialsConfig.glowRenderOrder || 2;
+        this.soiOptions = materialsConfig.soiOptions || {};
     }
 
     getSurfaceMaterial() {
@@ -118,5 +139,11 @@ export class PlanetMaterials {
 
     getGlowParameters() {
         return { scale: this.glowScale, renderOrder: this.glowRenderOrder };
+    }
+
+    /** Get the Sphere of Influence rim glow material */
+    getSOIMaterial(options = {}) {
+        const opts = { ...this.soiOptions, ...options };
+        return this.soiCreator(opts);
     }
 } 

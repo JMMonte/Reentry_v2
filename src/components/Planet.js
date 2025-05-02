@@ -29,6 +29,7 @@ export class Planet {
             rotationPeriod = 86_400,
             orbitalPeriod = 365.25,
             tilt = 0,
+            rotationOffset = 0,
             meshRes = 128,
             atmosphereRes = 128,
             cloudRes = 128,
@@ -52,7 +53,9 @@ export class Planet {
             lodLevels = [],
             // distant dot rendering pixel-size threshold in pixels
             dotPixelSizeThreshold = 4,
-            dotColor = 0xffffff
+            dotColor = 0xffffff,
+            // sphere-of-influence radius, in multiples of planet radius
+            soiRadius = 0
         } = config;
 
         /* ---------- basic setup ---------- */
@@ -62,6 +65,7 @@ export class Planet {
         this.renderer = renderer;
         this.timeManager = timeManager;
         this.textureManager = textureManager;
+        // Scene units = config units
         this.orbitRadius = orbitRadius;
         this.radius = radius;
         this.oblateness = oblateness;
@@ -74,12 +78,16 @@ export class Planet {
         this.atmosphereThickness = atmosphereThickness;
         this.cloudThickness = cloudThickness;
         this.orbitElements = orbitElements;
-        this.rotationOffset = 0; // prime-meridian alignment
+        this.rotationOffset = rotationOffset;
         // Store LOD levels for dynamic resolution
         this.lodLevels = lodLevels;
         // Store distant rendering parameters
         this.dotPixelSizeThreshold = dotPixelSizeThreshold;
         this.dotColor = dotColor;
+        // SOI radius as a multiple of planet radius
+        this.soiRadius = this.radius * soiRadius;
+
+        console.log(`Planet [${this.name}] Constructor: Initial radius from config = ${this.radius}`); // DEBUG
 
         Planet.instances.push(this);
 
@@ -96,9 +104,16 @@ export class Planet {
         this.#initMeshes();
         // initialize distant dot mesh
         this.#initDistantMesh();
+        // initialize Sphere of Influence rim glow mesh
+        if (this.soiRadius > 0) this.#initSoiMesh();
 
         /* ---------- optional surface ---------- */
         if (addSurface) {
+            console.log(`Planet [${this.name}] Constructor: Passing radius ${this.radius} to PlanetSurface`); // DEBUG
+            // Add planet name to userData before passing the mesh to PlanetSurface
+            // This helps with debugging messages from PlanetSurface
+            this.planetMesh.userData.planetName = this.name;
+
             this.surface = new PlanetSurface(
                 this.planetMesh,
                 this.radius,
@@ -119,6 +134,8 @@ export class Planet {
 
         /* ---------- optional planet light ---------- */
         if (addLight) this.#addLight(lightOptions);
+        // initialize orientation and position based on simulated time
+        this.update();
     }
 
     /* ===== private helpers ===== */
@@ -290,7 +307,31 @@ export class Planet {
         const dotMat = new THREE.MeshBasicMaterial({ color: this.dotColor, transparent: true, opacity: 0.7 });
         this.distantMesh = new THREE.Mesh(dotGeo, dotMat);
         this.distantMesh.visible = false;
-        this.rotationGroup.add(this.distantMesh);
+        // Add to orbitGroup so it follows the planet's orbital position but doesn't spin/tilt
+        this.orbitGroup.add(this.distantMesh);
+    }
+
+    // Initialize Sphere of Influence rim glow mesh
+    #initSoiMesh() {
+        if (!this.materials.getSOIMaterial) {
+            console.warn(`Planet ${this.name}: SOI material creator not found, skipping SOI mesh.`);
+            return;
+        }
+        const soiGeo = new THREE.SphereGeometry(this.soiRadius, 64, 32); // Use higher res for smoother edge
+        const soiMat = this.materials.getSOIMaterial();
+        if (!soiMat) {
+            console.warn(`Planet ${this.name}: SOI material failed to create, skipping SOI mesh.`);
+            return;
+        }
+        this.soiMesh = new THREE.Mesh(soiGeo, soiMat);
+        // Make sure SOI glow is visible initially (will be controlled by update)
+        this.soiMesh.visible = true;
+        // Ensure SOI glow draws after atmosphere glow (if any) but before distant dot
+        const { renderOrder: glowRenderOrder = 0 } = this.materials.getGlowParameters?.() || {};
+        this.soiMesh.renderOrder = glowRenderOrder + 1;
+        // Attach to tiltGroup so it doesn't spin with planet rotation but respects tilt
+        this.tiltGroup.add(this.soiMesh);
+        console.log(`Planet ${this.name}: SOI mesh added with radius ${this.soiRadius.toFixed(2)}`);
     }
 
     /* ===== frame updates ===== */
@@ -339,7 +380,7 @@ export class Planet {
     #updateOrbit() {
         if (this.orbitElements) {
             const JD = this.timeManager.getJulianDate();
-            const tSeconds = (JD - 2_451_545.0) * Constants.secondsInDay; // since J2000
+            const tSeconds = (JD - 2_451_545.0) * Constants.secondsInDay;
             this.orbitGroup.position.copy(
                 PhysicsUtils.getPositionAtTime(this.orbitElements, tSeconds)
             );
@@ -399,6 +440,8 @@ export class Planet {
     setGroundStationsVisible(v) { this.surface?.setGroundStationsVisible(v); }
     setObservatoriesVisible(v) { this.surface?.setObservatoriesVisible(v); }
     setMissionsVisible(v) { this.surface?.setMissionsVisible(v); }
+    /** Set visibility of the Sphere of Influence rim glow */
+    setSOIVisible(v) { if (this.soiMesh) this.soiMesh.visible = v; }
 
     /** Convert ECI to surface lat/lon */
     convertEciToGround(posEci) {

@@ -84,13 +84,14 @@ export const defaultSettings = {
   hyperbolicPointsMultiplier: { value: 10, name: 'Hyperbolic Point Multiplier', icon: Circle, type: 'number', min: 1, max: 100, step: 1,
     description: 'Multiplier for sample points on hyperbolic trajectories to improve tail resolution.'
   },
+  showSOI: { value: false, name: 'SOI Sphere', icon: Circle, description: 'Show the sphere of influence rim glow around planets.' },
 };
 
 // Group settings by category
 const categories = [
   {
     name: 'Rendering',
-    keys: ['showGrid', 'showVectors', 'showAxis', 'enableFXAA', 'pixelRatio'],
+    keys: ['showGrid', 'showVectors', 'showAxis', 'enableFXAA', 'pixelRatio', 'showSOI'],
   },
   {
     name: 'Map Features',
@@ -281,7 +282,7 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
                       ) : (
                         <Switch
                           className="scale-[0.6]"
-                          checked={settings[key] || false}
+                          checked={settings[key] !== undefined ? settings[key] : setting.value}
                           onCheckedChange={(checked) => onSettingChange(key, checked)}
                         />
                       )}
