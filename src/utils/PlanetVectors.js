@@ -200,7 +200,30 @@ export class PlanetVectors {
 
     // Fade labels based on camera distance: fully visible until fadeStart, then fade out to zero at fadeEnd
     updateFading(camera) {
-        // delegate fading to LabelFader
-        if (this.labelFader) this.labelFader.update(camera);
+        if (!this.labelFader || !this.labelFader.sprites?.length || !this.body?.getMesh) return;
+
+        const center = new THREE.Vector3();
+        this.body.getMesh().getWorldPosition(center);
+        const distToCenter = camera.position.distanceTo(center);
+
+        const { fadeStart, fadeEnd } = this.labelFader;
+        let opacity = 1;
+
+        if (distToCenter > fadeStart) {
+            opacity = distToCenter >= fadeEnd
+                ? 0
+                : 1 - (distToCenter - fadeStart) / (fadeEnd - fadeStart);
+            opacity = Math.max(0, Math.min(1, opacity));
+        }
+
+        // Apply the calculated opacity to all labels (Sprites)
+        this.labelFader.sprites.forEach(label => {
+            if (label && label.material) {
+                label.material.opacity = opacity;
+                label.material.transparent = opacity < 1;
+                label.material.needsUpdate = true;
+                label.material.depthWrite = opacity === 1; // Only write depth when fully opaque
+            }
+        });
     }
 } 

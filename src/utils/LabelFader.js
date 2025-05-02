@@ -1,4 +1,4 @@
-import * as THREE from 'three'; // Re-added import
+import * as THREE from 'three';
 
 export class LabelFader {
     constructor(sprites, fadeStart, fadeEnd) {

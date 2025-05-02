@@ -97,7 +97,7 @@ export const planetConfigs = {
     Moon: {
         name: 'Moon',
         radius: Constants.moonRadius, // meters
-        rotationPeriod: Constants.moonRotationPeriod, // seconds
+        rotationPeriod: Constants.moonOrbitalPeriod, // seconds - Changed to match orbital period
         orbitalPeriod: Constants.moonOrbitalPeriod, // days
         meshRes: 64,
         materials: {

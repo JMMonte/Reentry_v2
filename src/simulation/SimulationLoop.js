@@ -71,6 +71,11 @@ export class SimulationLoop {
         // Then sync camera to follow updated body position
         this.cameraControls.updateCameraPosition();
 
+        // Update planet vector label fading
+        if (this.app?.planetVectors) {
+            this.app.planetVectors.forEach(pv => pv.updateFading(this.sceneManager.camera));
+        }
+
         // Preview node update (throttled to 10Hz)
         if (this.app.previewNode) {
             const now = performance.now();
