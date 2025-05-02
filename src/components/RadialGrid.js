@@ -1,147 +1,132 @@
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants';
-import { OrbitalRegimes } from '../config/OrbitalRegimes.js';
+import { Constants } from '../utils/Constants.js';
 import { LabelFader } from '../utils/LabelFader.js';
 
 export class RadialGrid {
     /**
-     * Create a radial grid attached to an optional parentGroup (e.g., Earth Tilt Group). 
-     * @param {THREE.Scene} scene - The Three.js scene.
-     * @param {THREE.Object3D} [parentGroup] - Optional parent group to attach the grid to.
+     * Create a radial grid attached to a specific planet based on its configuration.
+     * @param {Planet} planet - The planet instance this grid belongs to.
+     * @param {object} config - The radialGridConfig object from planetConfigs.js.
      */
-    constructor(scene, parentGroup) {
-        this.scene = scene;
-        // Attach to provided parentGroup or fall back to scene
-        this.parentGroup = parentGroup || scene;
+    constructor(planet, config) {
+        this.planet = planet;
+        this.config = config;
+        // Attach to the planet's tilt group so grid orientation matches planet tilt
+        this.parentGroup = planet.getTiltGroup();
         this.group = new THREE.Group();
-        this.group.name = 'radialGrid';
+        this.group.name = `${planet.name}_radialGrid`;
         this.parentGroup.add(this.group);
-        this.labels = [];  // Store labels so we don't recreate them
         this.labelsSprites = []; // Store sprite labels for fading
-        
+
+        if (!config) {
+            console.warn(`RadialGrid: No config provided for planet ${planet.name}. Grid will not be created.`);
+            return;
+        }
+
         this.createGrid();
-        this.createLabels();
-        // Initialize label fading based on each label's distance
-        const maxRadius = (Constants.earthRadius + Constants.earthHillSphere) * Constants.metersToKm * Constants.scale;
-        const fadeStart = maxRadius * 0.05;
-        const fadeEnd = maxRadius * 0.2;
-        this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
+
+        // Initialize label fading
+        if (this.labelsSprites.length > 0 && config.maxDisplayRadius && config.fadeFactors) {
+            const planetRadiusMeters = this.planet.radius; // Get planet radius in meters
+            const maxDisplayRadiusMeters = planetRadiusMeters + config.maxDisplayRadius;
+            const maxRadiusScaled = maxDisplayRadiusMeters * Constants.metersToKm * Constants.scale;
+            const fadeStart = maxRadiusScaled * config.fadeFactors.start;
+            const fadeEnd = maxRadiusScaled * config.fadeFactors.end;
+            this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
+        } else {
+            this.labelFader = null;
+        }
     }
 
     createGrid() {
-        // Clear existing grid and labels
-        while (this.group.children.length > 0) {
-            const child = this.group.children[0];
-            this.group.remove(child);
-            if (child.material) {
-                child.material.dispose();
-            }
-            if (child.geometry) {
-                child.geometry.dispose();
-            }
-        }
-        this.labels.forEach(label => {
-            if (label.element && label.element.parentNode) {
-                label.element.parentNode.removeChild(label.element);
-            }
-        });
-        this.labels = [];
+        const { circles = [], radialLines, markerStep, labelMarkerStep, maxDisplayRadius } = this.config;
+        const planetRadiusMeters = this.planet.radius;
 
-        // Create circles for each orbital regime
-        const material = new THREE.LineBasicMaterial({ 
-            color: 0x888888,  // Lighter gray
+        // --- Materials ---
+        const solidMaterial = new THREE.LineBasicMaterial({
+            color: 0x888888,
             transparent: true,
-            opacity: 0.6      // Increased opacity
+            opacity: 0.6
         });
 
-        // Add Earth radius reference circle
-        this.createCircle(Constants.earthRadius, material);
-
-        // LEO circles (add Earth radius since orbits are from surface)
-        this.createCircle(Constants.earthRadius + OrbitalRegimes.LEO.min, material);
-        this.createCircle(Constants.earthRadius + OrbitalRegimes.LEO.max, material);
-
-        // MEO circles
-        this.createCircle(Constants.earthRadius + OrbitalRegimes.MEO.min, material);
-        this.createCircle(Constants.earthRadius + OrbitalRegimes.MEO.max, material);
-
-        // GEO circle
-        this.createCircle(Constants.earthRadius + OrbitalRegimes.GEO.altitude, material);
-
-        // HEO indicators (we'll use dashed lines for this)
-        const heoMaterial = new THREE.LineDashedMaterial({
-            color: 0x888888,  // Lighter gray
-            dashSize: 500 * Constants.scale,
-            gapSize: 300 * Constants.scale,
+        const dashedMaterialBase = {
+            color: 0x888888,
             transparent: true,
-            opacity: 0.6      // Increased opacity
-        });
+            opacity: 0.6,
+            dashSize: 500 * Constants.scale, // Default dash size
+            gapSize: 300 * Constants.scale // Default gap size
+        };
 
-        this.createCircle(Constants.earthRadius + OrbitalRegimes.HEO.perigee, heoMaterial, true);
-        this.createCircle(Constants.earthRadius + OrbitalRegimes.HEO.apogee, heoMaterial, true);
-
-        // Intermediate radial markers
         const markerMaterial = new THREE.LineBasicMaterial({
             color: 0x888888,
             transparent: true,
-            opacity: 0.2  // More transparent
+            opacity: 0.2
         });
 
-        // Create markers every 50,000 km up to lunar orbit
-        const markerStep = 50000 * Constants.kmToMeters;  // 50,000 km in meters
-        for (let r = Constants.earthRadius + markerStep; r <= Constants.earthRadius + Constants.moonOrbitRadius; r += markerStep) {
-            this.createCircle(r, markerMaterial);
-            // Add label for round numbers
-            if (((r - Constants.earthRadius) / Constants.kmToMeters) % 100000 === 0) {
-                this.createLabel(`${((r - Constants.earthRadius) / Constants.kmToMeters).toFixed(0)}k km`, r);
+        // --- Circles from Config ---
+        circles.forEach(circleConfig => {
+            const radiusFromCenterMeters = planetRadiusMeters + circleConfig.radius; // Add planet radius to altitude
+            let material = solidMaterial;
+            let isDashed = false;
+            if (circleConfig.style === 'dashed') {
+                const dashScale = circleConfig.dashScale || 1;
+                material = new THREE.LineDashedMaterial({
+                    ...dashedMaterialBase,
+                    dashSize: dashedMaterialBase.dashSize * dashScale,
+                    gapSize: dashedMaterialBase.gapSize * dashScale,
+                });
+                isDashed = true;
+            }
+            this.createCircle(radiusFromCenterMeters, material, isDashed);
+            if (circleConfig.label) {
+                this.createLabel(circleConfig.label, radiusFromCenterMeters);
+            }
+        });
+
+        // --- Intermediate Markers & Labels ---
+        const maxAltitudeMeters = maxDisplayRadius || (circles.length > 0 ? Math.max(...circles.map(c => c.radius)) : 0);
+        const maxRadiusFromCenterMeters = planetRadiusMeters + maxAltitudeMeters;
+
+        if (markerStep && markerStep > 0) {
+            for (let alt = markerStep; alt <= maxAltitudeMeters; alt += markerStep) {
+                const radiusMeters = planetRadiusMeters + alt;
+                this.createCircle(radiusMeters, markerMaterial);
+
+                // Add labels for specified steps
+                if (labelMarkerStep && labelMarkerStep > 0 && alt % labelMarkerStep === 0) {
+                    const labelText = `${(alt / Constants.kmToMeters).toFixed(0)}k km`;
+                    this.createLabel(labelText, radiusMeters);
+                }
             }
         }
 
-        // Lunar orbit (average distance)
-        const lunarMaterial = new THREE.LineDashedMaterial({
-            color: 0x888888,
-            dashSize: 1000 * Constants.scale,
-            gapSize: 500 * Constants.scale,
-            transparent: true,
-            opacity: 0.4
-        });
-        this.createCircle(Constants.earthRadius + Constants.moonOrbitRadius, lunarMaterial, true);
+        // --- Radial Lines ---
+        if (radialLines && radialLines.count > 0) {
+            const lineCount = radialLines.count;
+            const maxScaledRadius = maxRadiusFromCenterMeters * Constants.metersToKm * Constants.scale;
 
-        // SOI and Hill sphere
-        const sphereMaterial = new THREE.LineDashedMaterial({
-            color: 0x888888,
-            dashSize: 2000 * Constants.scale,
-            gapSize: 1000 * Constants.scale,
-            transparent: true,
-            opacity: 0.3
-        });
-        this.createCircle(Constants.earthRadius + Constants.earthSOI, sphereMaterial, true);
-        this.createCircle(Constants.earthRadius + Constants.earthHillSphere, sphereMaterial, true);
+            for (let i = 0; i < lineCount; i++) {
+                const angle = (i / lineCount) * Math.PI * 2;
+                const geometry = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0), // Start at center
+                    new THREE.Vector3(
+                        Math.cos(angle) * maxScaledRadius,
+                        Math.sin(angle) * maxScaledRadius,
+                        0
+                    )
+                ]);
 
-        // Create radial lines with increased opacity
-        const radialCount = 12; // One line every 30 degrees
-        for (let i = 0; i < radialCount; i++) {
-            const angle = (i / radialCount) * Math.PI * 2;
-            const maxRadius = (Constants.earthRadius + Constants.earthHillSphere) * Constants.metersToKm * Constants.scale;
-            
-            const geometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(
-                    Math.cos(angle) * maxRadius,
-                    Math.sin(angle) * maxRadius,
-                    0
-                )
-            ]);
-            
-            const line = new THREE.Line(geometry, material);
-            this.group.add(line);
+                // Use the standard solid material for radial lines
+                const line = new THREE.Line(geometry, solidMaterial);
+                this.group.add(line);
+            }
         }
     }
 
-    createCircle(radius, material, isDashed = false) {
-        // Convert from meters to simulation units (scaled km)
-        const scaledRadius = (radius * Constants.metersToKm * Constants.scale);
-        const segments = 128; // Increased segment count for smoother circles
+    createCircle(radiusMeters, material, isDashed = false) {
+        // Convert from meters (center) to simulation units (scaled km)
+        const scaledRadius = (radiusMeters * Constants.metersToKm * Constants.scale);
+        const segments = 128;
         const circleGeometry = new THREE.BufferGeometry();
         const positions = new Float32Array((segments + 1) * 3);
 
@@ -154,72 +139,56 @@ export class RadialGrid {
 
         circleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         const circle = new THREE.Line(circleGeometry, material);
-        
+
         if (isDashed) {
             circle.computeLineDistances();
         }
-        
+
         this.group.add(circle);
     }
 
-    createLabels() {
-        // Create labels for each orbital regime
-        this.createLabel('LEO', Constants.earthRadius + OrbitalRegimes.LEO.min);
-        this.createLabel('MEO', Constants.earthRadius + OrbitalRegimes.MEO.min);
-        this.createLabel('GEO', Constants.earthRadius + OrbitalRegimes.GEO.altitude);
-        this.createLabel('HEO', Constants.earthRadius + OrbitalRegimes.HEO.perigee);
-        this.createLabel('Lunar Orbit', Constants.earthRadius + Constants.moonOrbitRadius);
-        this.createLabel('SOI', Constants.earthRadius + Constants.earthSOI);
-        this.createLabel('Hill Sphere', Constants.earthRadius + Constants.earthHillSphere);
-    }
-
-    // Create a simple text sprite with white text
     createTextSprite(text) {
-        // Set up canvas for text
-        const fontSize = 16; // use smaller font for simpler rendering
+        const fontSize = 16;
         const font = `${fontSize}px sans-serif`;
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         ctx.font = font;
-        // Measure and size canvas
         const metrics = ctx.measureText(text);
         const textWidth = Math.ceil(metrics.width);
         const textHeight = fontSize;
         canvas.width = textWidth;
         canvas.height = textHeight;
-        // Render text
         ctx.font = font;
         ctx.fillStyle = '#ffffff';
         ctx.textBaseline = 'top';
         ctx.fillText(text, 0, 0);
-        // Create texture and sprite
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         const material = new THREE.SpriteMaterial({ map: texture, transparent: true, sizeAttenuation: false });
         const sprite = new THREE.Sprite(material);
-        // Keep sprite at constant screen size, using pixelScale to reduce size
-        const pixelScale = 0.0005; // fraction of pixel dimensions for on-screen size
+        const pixelScale = 0.0005;
         sprite.scale.set(textWidth * pixelScale, textHeight * pixelScale, 1);
         return sprite;
     }
 
-    // Replace createLabel to use sprite-based text
-    createLabel(text, radius) {
+    createLabel(text, radiusMeters) {
         const sprite = this.createTextSprite(text);
-        const scaledRadius = radius * Constants.metersToKm * Constants.scale;
-        sprite.position.set(scaledRadius, 0, 0); // X, Y, Z
-        sprite.position.set(Math.cos(0) * scaledRadius, Math.sin(0) * scaledRadius, 0); // Place on XY plane at angle 0
+        const scaledRadius = radiusMeters * Constants.metersToKm * Constants.scale;
+        // Position label slightly outside the circle, at angle 0 (positive X)
+        const offset = 1.02; // Place label slightly outside the radius
+        sprite.position.set(scaledRadius * offset, 0, 0);
         this.group.add(sprite);
         this.labelsSprites.push(sprite);
     }
 
     /**
-     * Fade labels based on camera distance: fully visible until fadeStart,
-     * then fade out to zero at fadeEnd.
+     * Update label fading based on camera distance.
+     * @param {THREE.Camera} camera - The scene camera.
      */
     updateFading(camera) {
-        // delegate to centralized LabelFader
-        this.labelFader.update(camera);
+        if (this.labelFader) {
+            this.labelFader.update(camera);
+        }
     }
 
     setVisible(visible) {
@@ -227,13 +196,32 @@ export class RadialGrid {
     }
 
     dispose() {
+        // Dispose geometries and materials
         this.group.traverse((object) => {
             if (object instanceof THREE.Line) {
-                object.geometry.dispose();
-                object.material.dispose();
+                if (object.geometry) object.geometry.dispose();
+                if (object.material) {
+                    // If material is an array, dispose each element
+                    if (Array.isArray(object.material)) {
+                        object.material.forEach(material => material.dispose());
+                    } else {
+                        object.material.dispose();
+                    }
+                }
+            } else if (object instanceof THREE.Sprite) {
+                if (object.material.map) object.material.map.dispose();
+                if (object.material) object.material.dispose();
             }
         });
-        // Remove group from its parent
-        this.parentGroup.remove(this.group);
+
+        // Remove labels sprites explicitly if needed (LabelFader might handle this)
+        this.labelsSprites = [];
+
+        // Remove the group from its parent (the planet's tilt group)
+        if (this.parentGroup) {
+            this.parentGroup.remove(this.group);
+        }
+        // Optional: Clean up LabelFader if it holds references
+        // this.labelFader?.dispose(); // Assuming LabelFader has a dispose method
     }
 }

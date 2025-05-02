@@ -102,10 +102,6 @@ const categories = [
     keys: ['showCities', 'showAirports', 'showSpaceports', 'showGroundStations', 'showObservatories', 'showMissions'],
   },
   {
-    name: 'Moon',
-    keys: ['showMoonOrbit', 'showMoonTraces', 'showMoonSurfaceLines'],
-  },
-  {
     name: 'Satellites',
     keys: ['showOrbits', 'showSatVectors', 'showSatConnections'],
   },
