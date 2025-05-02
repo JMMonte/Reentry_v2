@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
-import { OrbitalRegimes } from './OrbitalRegimes.js';
 import {
     earthTexture, earthSpecTexture, earthNormalTexture,
     cloudTexture, moonTexture, moonBump
@@ -16,24 +15,27 @@ import {
     geojsonDataMissions
 } from './geojsonData.js';
 
-// Pre-calculate radii using constants to isolate calculation
-//const earthScaledRadius = (Constants.earthRadius * Constants.metersToKm) * Constants.scale;
-//const moonScaledRadius = (Constants.moonRadius * Constants.metersToKm) * Constants.scale;
-//console.log(`DEBUG Pre-calculation: Earth radius = ${earthScaledRadius}, Moon radius = ${moonScaledRadius}`);
+// Reusable constants
+const earthRadius = 6378136.6 * Constants.scale * Constants.metersToKm;
+const earthMass = 5.9722 * 10 ** 24; // kg
+const moonRadius = 1737400 * Constants.scale * Constants.metersToKm;
+const moonMass = 7.34767309 * 10 ** 22; // kg
+const earthGravitationalParameter = Constants.G * earthMass; // m^3/s^2
+
 
 export const celestialBodiesConfig = {
     earth: {
         name: 'earth',
         symbol: '♁',
-        mass: Constants.earthMass, // kg
+        mass: earthMass, // kg
         // Correct radius calculation: Convert meters to km, then apply desired scene scale factor (0.0001)
-        radius: Constants.earthRadius * Constants.scale * Constants.metersToKm, // Scene units (~637.8)
-        tilt: Constants.earthInclination, // degrees
-        rotationPeriod: Constants.siderialDay, // Use sidereal day
+        radius: earthRadius, // Scene units (~637.8)
+        tilt: 23.439281, // degrees
+        rotationPeriod: 86400, // seconds
         rotationOffset: 4.89496121, // GMST at J2000 epoch
         meshRes: 64,
-        atmosphereThickness: 10,
-        cloudThickness: 0.1,
+        atmosphereThickness: 10, // in 10000s of meters
+        cloudThickness: 0.1, // in 10000s of meters
         addSurface: true,
         surfaceOptions: {
             addLatitudeLines: true, latitudeStep: 10,
@@ -89,30 +91,27 @@ export const celestialBodiesConfig = {
             })
         },
         radialGridConfig: {
-            maxDisplayRadius: Constants.earthHillSphere,
+            maxDisplayRadius: 1.5e9,
             circles: [
-                { radius: OrbitalRegimes.LEO.min, label: "LEO Min", style: "major" },
-                { radius: OrbitalRegimes.LEO.max, label: "LEO Max", style: "major" },
-                { radius: OrbitalRegimes.MEO.min, label: "MEO Min", style: "major" },
-                { radius: OrbitalRegimes.MEO.max, label: "MEO Max", style: "major" },
-                { radius: OrbitalRegimes.GEO.altitude, label: "GEO", style: "major" },
-                { radius: OrbitalRegimes.HEO.perigee, label: "HEO Peri.", style: "dashed-major" },
-                { radius: OrbitalRegimes.HEO.apogee, label: "HEO Apo.", style: "dashed-major" },
-                { radius: Constants.moonOrbitRadius, label: 'Lunar Orbit', style: "dashed" },
-                { radius: Constants.earthSOI, label: 'SOI', style: "dashed-major", dashScale: 2 },
-                { radius: Constants.earthHillSphere, label: 'Hill Sphere', style: "dashed-major", dashScale: 3 }
+                { radius: 200 * Constants.kmToMeters, label: "LEO Min", style: "major" },
+                { radius: 2000 * Constants.kmToMeters, label: "LEO Max", style: "major" },
+                { radius: 35786 * Constants.kmToMeters, label: "MEO Max", style: "major" },
+                { radius: 42164 * Constants.kmToMeters, label: "GEO", style: "major" },
+                { radius: 384400000, label: 'Lunar Orbit', style: "dashed" },
+                { radius: 0.929e9, label: 'SOI', style: "dashed-major", dashScale: 2 },
+                { radius: 1.5e9, label: 'Hill Sphere', style: "dashed-major", dashScale: 3 }
             ],
-            markerStep: 50000 * Constants.kmToMeters,
+            markerStep: 100000 * Constants.kmToMeters,
             labelMarkerStep: 100000 * Constants.kmToMeters,
-            radialLines: { count: 12 },
+            radialLines: { count: 22 },
         }
     },
     moon: {
         name: 'moon',
         symbol: '☾',
-        mass: Constants.moonMass, // kg
+        mass: moonMass, // kg
         // Correct radius calculation: Convert meters to km, then apply desired scene scale factor (0.1)
-        radius: Constants.moonRadius * Constants.scale * Constants.metersToKm, // Scene units, consistent with Earth
+        radius: moonRadius, // Scene units, consistent with Earth
         rotationPeriod: 29.53058867 * Constants.secondsInDay, // synodic period
         meshRes: 128,
         tilt: 0, // Tilt relative to its orbit, handled by orbital elements
@@ -139,12 +138,12 @@ export const celestialBodiesConfig = {
         orbitalPeriod: 27.321661, // sidereal days
         soiRadius: 10.3,
         orbitElements: { // Base elements, argumentOfPeriapsis might be updated dynamically
-            semiMajorAxis: Constants.semiMajorAxis,
-            eccentricity: Constants.eccentricity,
-            inclination: Constants.inclination,
-            longitudeOfAscendingNode: Constants.ascendingNode,
-            argumentOfPeriapsis: THREE.MathUtils.degToRad(0), // Placeholder, calculated dynamically
-            mu: Constants.earthGravitationalParameter,
+            semiMajorAxis: 384400000,
+            eccentricity: 0.0549,
+            inclination: 5.145 * (Math.PI / 180), // Inclination in radians
+            longitudeOfAscendingNode: -11.26064 * (Math.PI / 180), // Longitude of ascending node in radians
+            argumentOfPeriapsis: 318.15 * (Math.PI / 180), // Argument of periapsis in radians
+            mu: earthGravitationalParameter, // Gravitational parameter in m^3/s^2
         },
         materials: {
             createSurfaceMaterial: (tm, anisotropy) => {
@@ -161,20 +160,20 @@ export const celestialBodiesConfig = {
             createGlowMaterial: () => null
         },
         radialGridConfig: {
-            maxDisplayRadius: 1000000,
+            maxDisplayRadius: 14500000 * 2,
             circles: [
                 { radius: 100000, label: "LLO", style: "major" },      // Major style for LLO
                 { radius: 500000, label: "500km", style: "minor" },     // Minor style
                 { radius: 1000000, label: "1000km", style: "minor" },    // Minor style
+                { radius: 14500000, label: 'SOI', style: "dashed-major", dashScale: 2 },
             ],
-            radialLines: { count: 8 },
+            radialLines: { count: 22 },
         }
     },
     sun: {
         name: 'sun',
-        mass: Constants.sunMass,
-        // Other parameters like radius, color, intensity could be added here
-        // if the Sun class is refactored to accept them.
+        mass: 1.989 * 10 ** 30,
+        radius: 695700000,
     }
 };
 

@@ -293,11 +293,10 @@ class App3D extends EventTarget {
     // ──────────────────────────────────────────────────────────────────────────
     /**
      * Called each frame from the SimulationLoop.
-     * @param {Date} currentTime – current simulated time
      */
-    updateScene(currentTime) {
+    updateScene() {
         // Log start of updateScene
-        // console.log(`App3D updateScene: Called at ${currentTime.toISOString()}`);
+        // console.log(`App3D updateScene: Called`);
 
         // Update planets (which includes their grids)
         Planet.instances.forEach(p => {
@@ -307,7 +306,7 @@ class App3D extends EventTarget {
         });
 
         // Update Sun position
-        this.sun?.updatePosition?.(currentTime);
+        this.sun?.updatePosition?.(this.camera);
 
         // planet & satellite vectors
         if (this.displaySettingsManager.getSetting('showVectors')) {

@@ -160,17 +160,14 @@ export async function initScene(app) {
             mass: config.mass ?? 0 // Use mass from config
         });
     }
-    // add Sun as gravity source
+    // add Sun as gravity source - now uses the mass getter
     const sunMesh = app.sun.sun ?? app.sun.sunLight ?? app.sun;
-    const sunConfig = celestialBodiesConfig.sun;
-    if (sunConfig) { // Check if sun config exists
-        gravitySources.push({
-            name: 'sun',
-            body: app.sun,
-            mesh: sunMesh,
-            mass: sunConfig.mass ?? Constants.sunMass // Fallback just in case
-        });
-    }
+    gravitySources.push({
+        name: 'sun',
+        body: app.sun,
+        mesh: sunMesh,
+        mass: app.sun.mass // Use the getter from Sun class
+    });
 
     app.satelliteVectors = new SatelliteVectors({
         scene,

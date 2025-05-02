@@ -3,12 +3,24 @@ import { Constants } from '../utils/Constants.js';
 import { Lensflare, LensflareElement } from '../addons/Lensflare.js';
 
 export class Sun {
-    constructor(scene, timeUtils) {
+    constructor(scene, timeUtils, config) {
         this.scene = scene;
         this.timeUtils = timeUtils;  // Inject TimeUtils instance directly into Sun
+        this.config = config; // Store config
         this.symbol = '☉';
-        this.name = 'sun';
-        this.radius = Constants.sunRadius * Constants.scale * Constants.metersToKm;  // Scale down the Sun's radius
+        this.name = config.name || 'sun';
+        this.radius = config.radius * Constants.scale * Constants.metersToKm;
+        // Store initial flare specs for later scaling
+        this.initialFlareSpecs = [
+            { url: '/assets/texture/lensflare/lensflare0.png', size: 700, distance: 0.0 },
+            { url: '/assets/texture/lensflare/lensflare2.png', size: 512, distance: 0.6 },
+            { url: '/assets/texture/lensflare/lensflare3.png', size: 60, distance: 0.7 },
+            { url: '/assets/texture/lensflare/lensflare3.png', size: 70, distance: 0.9 },
+            { url: '/assets/texture/lensflare/lensflare3.png', size: 120, distance: 1.0 }
+        ];
+        // Define a reference distance (e.g., Earth's average orbit radius) for 1x scale
+        this.referenceDistance = Constants.AU * Constants.scale * Constants.metersToKm; // Earth's average orbital radius
+
 
         const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down
         const material = new THREE.MeshPhongMaterial({
@@ -32,25 +44,49 @@ export class Sun {
 
         // Add official lens flare effect
         const textureLoader = new THREE.TextureLoader();
-        const lensflare = new Lensflare();
-        [
-            { url: '/assets/texture/lensflare/lensflare0.png', size: 700, distance: 0.0 },
-            { url: '/assets/texture/lensflare/lensflare2.png', size: 512, distance: 0.6 },
-            { url: '/assets/texture/lensflare/lensflare3.png', size: 60, distance: 0.7 },
-            { url: '/assets/texture/lensflare/lensflare3.png', size: 70, distance: 0.9 },
-            { url: '/assets/texture/lensflare/lensflare3.png', size: 120, distance: 1.0 }
-        ].forEach(spec => {
+        this.lensflare = new Lensflare(); // Store lensflare instance
+        this.initialFlareSpecs.forEach(spec => {
             const tex = textureLoader.load(spec.url);
-            lensflare.addElement(new LensflareElement(tex, spec.size, spec.distance, new THREE.Color(0xffffff)));
+            this.lensflare.addElement(new LensflareElement(tex, spec.size, spec.distance, new THREE.Color(0xffffff)));
         });
-        this.sunLight.add(lensflare);
+        this.sunLight.add(this.lensflare);
     }
 
-    updatePosition() {
+    updatePosition(camera) { // Accept camera object
         // Smoothly update sun position each simulation step
         const position = this.timeUtils.getSunPosition();
         // Directly update mesh and light positions
         this.sun.position.copy(position);
         this.sunLight.position.copy(position);
+
+        // Update lens flare size based on distance
+        // Ensure camera, lensflare, and lensflare.elements are valid before proceeding
+        if (camera && this.lensflare && Array.isArray(this.lensflare.elements)) {
+            // Calculate Inverse Square Scale Factor
+            const distance = camera.position.distanceTo(this.sun.position);
+            const effectiveDistance = Math.max(distance, this.radius * 2);
+            const scaleFactor = Math.max(0.05, Math.min(10.0,
+                (this.referenceDistance * this.referenceDistance) / (effectiveDistance * effectiveDistance)
+            ));
+
+            this.lensflare.elements.forEach((element, index) => {
+                const initialSpec = this.initialFlareSpecs[index];
+                if (initialSpec) {
+                    // Resize element based on distance
+                    element.size = initialSpec.size * scaleFactor;
+                } else {
+                    console.warn(`Sun.updatePosition: no initialSpec for element ${index}`);
+                }
+            });
+        } else if (camera && this.lensflare && !Array.isArray(this.lensflare.elements)) {
+            // Log specific case where lensflare exists but elements is not an array
+            console.error('[Sun updatePosition] this.lensflare exists, but this.lensflare.elements is not an array!', this.lensflare.elements);
+        }
+        // No need for an else if this.lensflare is undefined, App3D's optional chaining handles that.
+    }
+
+    // Add a getter for mass if needed later (e.g., for gravity calculations)
+    get mass() {
+        return this.config.mass;
     }
 }

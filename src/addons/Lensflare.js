@@ -100,6 +100,7 @@ class Lensflare extends Mesh {
         const mesh1 = new Mesh(geometry, material1a);
 
         const elements = [];
+        this.elements = elements;
 
         const shader = LensflareElement.Shader;
 
@@ -110,7 +111,8 @@ class Lensflare extends Mesh {
                 'occlusionMap': { value: occlusionMap },
                 'color': { value: new Color(0xffffff) },
                 'scale': { value: new Vector2() },
-                'screenPosition': { value: new Vector3() }
+                'screenPosition': { value: new Vector3() },
+                'distanceScale': { value: 1.0 }
             },
             vertexShader: shader.vertexShader,
             fragmentShader: shader.fragmentShader,
@@ -200,11 +202,12 @@ class Lensflare extends Mesh {
                     uniforms['map'].value = element.texture;
                     uniforms['screenPosition'].value.x = positionScreen.x + vecX * element.distance;
                     uniforms['screenPosition'].value.y = positionScreen.y + vecY * element.distance;
-
-                    size = element.size / viewport.w;
-                    const invAspect = viewport.w / viewport.z;
-
-                    uniforms['scale'].value.set(size * invAspect, size);
+                    uniforms['distanceScale'].value = element.distanceScale !== undefined ? element.distanceScale : 1.0;
+                    const distScale = element.distanceScale !== undefined ? element.distanceScale : 1.0;
+                    const scaledSize = element.size * distScale;
+                    size = scaledSize / viewport.w;
+                    const invAspectLoop = viewport.w / viewport.z;
+                    uniforms['scale'].value.set(size * invAspectLoop, size);
 
                     material2.uniformsNeedUpdate = true;
 
@@ -244,7 +247,8 @@ LensflareElement.Shader = {
         'occlusionMap': { value: null },
         'color': { value: null },
         'scale': { value: null },
-        'screenPosition': { value: null }
+        'screenPosition': { value: null },
+        'distanceScale': { value: 1.0 }
     },
     vertexShader: /* glsl */`
         precision highp float;
@@ -278,6 +282,7 @@ LensflareElement.Shader = {
         uniform vec3 color;
         varying vec2 vUV;
         varying float vVisibility;
+        uniform float distanceScale;
 
         void main() {
             vec4 texture = texture2D(map, vUV);

@@ -52,7 +52,7 @@ export class Constants {
 
 
     // Orbital elements for the Moon
-    static semiMajorAxis = 384400000; // Semi-major axis in km
+    static semiMajorAxis = 384400000; // Semi-major axis in meters
     static eccentricity = 0.0549; // Orbital eccentricity
     static inclination = 5.145 * (Math.PI / 180); // Inclination in radians
     static ascendingNode = -11.26064 * (Math.PI / 180); // Longitude of ascending node in radians
