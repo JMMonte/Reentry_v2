@@ -296,9 +296,18 @@ class App3D extends EventTarget {
      * @param {Date} currentTime – current simulated time
      */
     updateScene(currentTime) {
-        this.earth?.update?.();
+        // Log start of updateScene
+        // console.log(`App3D updateScene: Called at ${currentTime.toISOString()}`);
+
+        // Update planets (which includes their grids)
+        Planet.instances.forEach(p => {
+            // Log before calling planet.update()
+            // console.log(`App3D updateScene: Calling update for ${p.name}`);
+            p.update();
+        });
+
+        // Update Sun position
         this.sun?.updatePosition?.(currentTime);
-        this.moon?.update?.();
 
         // planet & satellite vectors
         if (this.displaySettingsManager.getSetting('showVectors')) {

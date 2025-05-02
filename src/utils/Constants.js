@@ -50,6 +50,7 @@ export class Constants {
     static earthSOI = 0.929e9; // Earth's sphere of influence in meters (roughly 929,000 km)
     static earthHillSphere = 1.5e9; // Earth's Hill sphere in meters (roughly 1.5 million km)
 
+
     // Orbital elements for the Moon
     static semiMajorAxis = 384400000; // Semi-major axis in km
     static eccentricity = 0.0549; // Orbital eccentricity

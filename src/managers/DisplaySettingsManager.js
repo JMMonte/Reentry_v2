@@ -61,8 +61,12 @@ export class DisplaySettingsManager {
                 break;
             }
             case 'showGrid': {
-                const rg = app3d.sceneManager?.radialGrid;
-                if (rg && typeof rg.setVisible === 'function') rg.setVisible(value);
+                // Iterate through planets and set grid visibility
+                Planet.instances.forEach(planet => {
+                    if (planet.radialGrid && typeof planet.setRadialGridVisible === 'function') {
+                        planet.setRadialGridVisible(value);
+                    }
+                });
                 break;
             }
             case 'showVectors':

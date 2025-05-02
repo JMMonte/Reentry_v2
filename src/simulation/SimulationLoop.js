@@ -65,6 +65,8 @@ export class SimulationLoop {
 
         // Update simulation bodies
         this.satellites.updateAll(currentTime, delta, warpedDelta);
+        // Log before calling app.updateScene
+        // console.log(`SimLoop: Calling app.updateScene at ${currentTime.toISOString()}`);
         this.app.updateScene(currentTime);
         // Then sync camera to follow updated body position
         this.cameraControls.updateCameraPosition();

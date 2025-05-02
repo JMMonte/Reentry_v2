@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { RadialGrid } from '../components/RadialGrid.js';
+// import { RadialGrid } from '../components/RadialGrid.js'; // Removed import
 import { initScene } from '../setup/setupScene.js';         // new API
 import { setupPhysicsWorld } from '../setup/setupComponents.js';
 
@@ -27,7 +27,7 @@ export class SceneManager {
 
         // UI helpers
         this.labelRenderer = null;
-        this.radialGrid = null;
+        // this.radialGrid = null; // Removed property
 
         // EffectComposer instances
         this.composers = {};
@@ -60,13 +60,13 @@ export class SceneManager {
         /* 5 ─ one call sets up textures, lights, bodies, bloom, etc. */
         await initScene(this.app);
 
-        /* 6 ─ optional ecliptic-plane helper grid */
-        this.radialGrid = new RadialGrid(this.scene);
-        if (this.app.displaySettingsManager) {
-            this.radialGrid.setVisible(
-                this.app.displaySettingsManager.getSetting('showGrid')
-            );
-        }
+        /* 6 ─ optional ecliptic-plane helper grid (REMOVED - now handled per-planet) */
+        // this.radialGrid = new RadialGrid(this.scene);
+        // if (this.app.displaySettingsManager) {
+        //     this.radialGrid.setVisible(
+        //         this.app.displaySettingsManager.getSetting('showGrid')
+        //     );
+        // }
     }
 
     /** Dispose of WebGL resources and DOM side-effects. */
@@ -106,7 +106,7 @@ export class SceneManager {
         Object.values(this.composers).forEach(c => c?.dispose?.());
         this.composers = {};
 
-        // Grid helper
-        this.radialGrid = null;
+        // Grid helper (REMOVED)
+        // this.radialGrid = null;
     }
 }

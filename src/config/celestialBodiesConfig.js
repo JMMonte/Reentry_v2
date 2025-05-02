@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
+import { OrbitalRegimes } from './OrbitalRegimes.js';
 import {
     earthTexture, earthSpecTexture, earthNormalTexture,
     cloudTexture, moonTexture, moonBump
@@ -86,6 +87,24 @@ export const celestialBodiesConfig = {
                 opacity: 0.8,
                 blending: THREE.AdditiveBlending
             })
+        },
+        radialGridConfig: {
+            maxDisplayRadius: Constants.earthHillSphere,
+            circles: [
+                { radius: OrbitalRegimes.LEO.min, label: "LEO Min", style: "major" },
+                { radius: OrbitalRegimes.LEO.max, label: "LEO Max", style: "major" },
+                { radius: OrbitalRegimes.MEO.min, label: "MEO Min", style: "major" },
+                { radius: OrbitalRegimes.MEO.max, label: "MEO Max", style: "major" },
+                { radius: OrbitalRegimes.GEO.altitude, label: "GEO", style: "major" },
+                { radius: OrbitalRegimes.HEO.perigee, label: "HEO Peri.", style: "dashed-major" },
+                { radius: OrbitalRegimes.HEO.apogee, label: "HEO Apo.", style: "dashed-major" },
+                { radius: Constants.moonOrbitRadius, label: 'Lunar Orbit', style: "dashed" },
+                { radius: Constants.earthSOI, label: 'SOI', style: "dashed-major", dashScale: 2 },
+                { radius: Constants.earthHillSphere, label: 'Hill Sphere', style: "dashed-major", dashScale: 3 }
+            ],
+            markerStep: 50000 * Constants.kmToMeters,
+            labelMarkerStep: 100000 * Constants.kmToMeters,
+            radialLines: { count: 12 },
         }
     },
     moon: {
@@ -140,6 +159,15 @@ export const celestialBodiesConfig = {
             },
             createCloudMaterial: () => null,
             createGlowMaterial: () => null
+        },
+        radialGridConfig: {
+            maxDisplayRadius: 1000000,
+            circles: [
+                { radius: 100000, label: "LLO", style: "major" },      // Major style for LLO
+                { radius: 500000, label: "500km", style: "minor" },     // Minor style
+                { radius: 1000000, label: "1000km", style: "minor" },    // Minor style
+            ],
+            radialLines: { count: 8 },
         }
     },
     sun: {

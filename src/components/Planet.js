@@ -3,6 +3,7 @@ import { PhysicsUtils } from '../utils/PhysicsUtils.js';
 import { Constants } from '../utils/Constants.js';
 import { PlanetSurface } from './PlanetSurface.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
+import { RadialGrid } from './RadialGrid.js';
 
 export class Planet {
     /** Registry holding every created planet */
@@ -55,7 +56,9 @@ export class Planet {
             dotPixelSizeThreshold = 4,
             dotColor = 0xffffff,
             // sphere-of-influence radius, in multiples of planet radius
-            soiRadius = 0
+            soiRadius = 0,
+            // NEW: Config object for the radial grid
+            radialGridConfig = null
         } = config;
 
         /* ---------- basic setup ---------- */
@@ -130,6 +133,14 @@ export class Planet {
                 observatoriesData,
                 missionsData
             });
+        }
+
+        /* ---------- optional radial grid ---------- */
+        this.radialGrid = null; // Initialize property
+        if (radialGridConfig) {
+            // Pass `this` (the planet instance) and the config to RadialGrid
+            this.radialGrid = new RadialGrid(this, radialGridConfig);
+            console.log(`Planet [${this.name}] Constructor: RadialGrid created.`); // DEBUG
         }
 
         /* ---------- optional planet light ---------- */
@@ -324,11 +335,9 @@ export class Planet {
             return;
         }
         this.soiMesh = new THREE.Mesh(soiGeo, soiMat);
-        // Make sure SOI glow is visible initially (will be controlled by update)
         this.soiMesh.visible = true;
-        // Ensure SOI glow draws after atmosphere glow (if any) but before distant dot
-        const { renderOrder: glowRenderOrder = 0 } = this.materials.getGlowParameters?.() || {};
-        this.soiMesh.renderOrder = glowRenderOrder + 1;
+        // Ensure SOI renders BEFORE default objects (like the grid)
+        this.soiMesh.renderOrder = -1; // Lower number renders earlier
         // Attach to tiltGroup so it doesn't spin with planet rotation but respects tilt
         this.tiltGroup.add(this.soiMesh);
         console.log(`Planet ${this.name}: SOI mesh added with radius ${this.soiRadius.toFixed(2)}`);
@@ -341,7 +350,12 @@ export class Planet {
         if (Planet.camera && this.distantMesh) {
             const worldPos = new THREE.Vector3();
             this.orbitGroup.getWorldPosition(worldPos);
-            const dist = worldPos.distanceTo(Planet.camera.position);
+            // Use planetMesh world position for consistency if available
+            const detailMeshWorldPos = new THREE.Vector3();
+            this.planetMesh.getWorldPosition(detailMeshWorldPos);
+            const cameraPos = Planet.camera.position;
+
+            const dist = detailMeshWorldPos.distanceTo(cameraPos);
             const fovY = THREE.MathUtils.degToRad(Planet.camera.fov);
             const screenH = window.innerHeight;
             // angular diameter of planet
@@ -370,29 +384,52 @@ export class Planet {
                 this.planetLOD && this.planetLOD.update(Planet.camera);
             }
         }
-        this.#updateOrbit();
-        this.#updateRotation();
-        this.#updateLightDirection();
+        // Log before orbit update
+        // if (!this._planetLogCounter || this._planetLogCounter % 60 === 0) console.log(`Planet [${this.name}] update: Calling internal updates`);
+        this.#updateOrbit(); // Calculate and set orbitGroup position
+        this.#updateRotation(); // Update rotationGroup rotation
+        this.#updateLightDirection(); // Update shader uniforms
+
         // fade out surface details when far away
         if (this.surface && Planet.camera) this.surface.updateFade(Planet.camera);
+        // Update radial grid label fading
+        if (this.radialGrid && Planet.camera) {
+            this.radialGrid.updateFading(Planet.camera);
+        }
+        // Update radial grid position
+        if (this.radialGrid) {
+            this.radialGrid.updatePosition();
+        }
+        // this._planetLogCounter = (this._planetLogCounter || 0) + 1;
     }
 
     #updateOrbit() {
+        let newPosition = null;
         if (this.orbitElements) {
             const JD = this.timeManager.getJulianDate();
             const tSeconds = (JD - 2_451_545.0) * Constants.secondsInDay;
-            this.orbitGroup.position.copy(
-                PhysicsUtils.getPositionAtTime(this.orbitElements, tSeconds)
-            );
+            newPosition = PhysicsUtils.getPositionAtTime(this.orbitElements, tSeconds);
+            this.orbitGroup.position.copy(newPosition);
         } else if (this.orbitRadius > 0) {
+            // Handle simple circular orbit (less common)
             const dayFrac = this.timeManager.dayOfYear + this.timeManager.fractionOfDay;
             const angle = (2 * Math.PI * dayFrac) / this.orbitalPeriod;
-            this.orbitGroup.position.set(
-                this.orbitRadius * Math.cos(angle),
-                0,
-                this.orbitRadius * Math.sin(angle)
-            );
+            newPosition = new THREE.Vector3(
+                 this.orbitRadius * Math.cos(angle),
+                 0, // Assuming orbit in XZ plane relative to parent
+                 this.orbitRadius * Math.sin(angle)
+             );
+             this.orbitGroup.position.copy(newPosition);
+        } else {
+             // Body is likely stationary at the origin relative to its parent
+             newPosition = this.orbitGroup.position; // Use current position (likely 0,0,0)
         }
+
+        // Log the calculated position
+        // if (newPosition && (!this._orbitLogCounter || this._orbitLogCounter % 60 === 0)) {
+        //    console.log(`Planet [${this.name}] #updateOrbit: New world pos target`, newPosition.toArray().map(v => v.toFixed(2)));
+        // }
+        // this._orbitLogCounter = (this._orbitLogCounter || 0) + 1;
     }
 
     #updateRotation() {
@@ -417,16 +454,26 @@ export class Planet {
 
     getMesh() { return this.planetMesh; }
     getTiltGroup() { return this.tiltGroup; }
+    getOrbitGroup() { return this.orbitGroup; }
     /** Get the underlying image (HTMLImageElement or Canvas) for the surface texture */
     getSurfaceTexture() {
         const mesh = this.planetMesh;
         let tex = null;
-        if (mesh instanceof THREE.LOD) {
-            // Level 0 is highest detail
-            tex = mesh.levels?.[0]?.object?.material?.map;
-        } else {
-            tex = mesh?.material?.map;
-        }
+
+        // Function to get material from an object, handling LOD
+        const getMaterial = (obj) => {
+            if (obj instanceof THREE.LOD) {
+                // Try to get from highest detail level first
+                return obj.levels?.[0]?.object?.material;
+            } else if (obj instanceof THREE.Mesh) {
+                return obj.material;
+            }
+            return null;
+        };
+
+        const material = getMaterial(mesh);
+        tex = material?.map;
+
         // Return the raw image (which may be an HTMLImageElement or HTMLCanvasElement)
         return tex?.image;
     }
@@ -442,6 +489,12 @@ export class Planet {
     setMissionsVisible(v) { this.surface?.setMissionsVisible(v); }
     /** Set visibility of the Sphere of Influence rim glow */
     setSOIVisible(v) { if (this.soiMesh) this.soiMesh.visible = v; }
+    /** Set visibility of the Radial Grid */
+    setRadialGridVisible(visible) {
+        if (this.radialGrid) {
+            this.radialGrid.setVisible(visible);
+        }
+    }
 
     /** Convert ECI to surface lat/lon */
     convertEciToGround(posEci) {
@@ -460,5 +513,54 @@ export class Planet {
     static getRotationAngleAtTime(JD, rotationPeriod, rotationOffset = 0) {
         const secs = (JD - 2_451_545.0) * Constants.secondsInDay; // seconds since J2000
         return (2 * Math.PI * (secs / rotationPeriod % 1)) + rotationOffset;
+    }
+
+    /** Dispose of planet resources */
+    dispose() {
+        // Remove groups from scene
+        if (this.orbitGroup.parent) this.orbitGroup.parent.remove(this.orbitGroup);
+        if (this.orbitLine && this.orbitLine.parent) this.orbitLine.parent.remove(this.orbitLine);
+
+        // Dispose geometries and materials within groups
+        this.orbitGroup.traverse((object) => {
+            if (object.geometry) object.geometry.dispose();
+            if (object.material) {
+                if (Array.isArray(object.material)) {
+                    object.material.forEach(mat => mat.dispose());
+                } else {
+                    object.material.dispose();
+                }
+                // Dispose textures associated with materials
+                for (const key of Object.keys(object.material)) {
+                    if (object.material[key] instanceof THREE.Texture) {
+                        object.material[key].dispose();
+                    }
+                }
+            }
+        });
+
+        // Dispose orbit line geometry/material
+        if (this.orbitLine) {
+            if (this.orbitLine.geometry) this.orbitLine.geometry.dispose();
+            if (this.orbitLine.material) this.orbitLine.material.dispose();
+        }
+
+        // Dispose PlanetSurface if it exists
+        if (this.surface && typeof this.surface.dispose === 'function') {
+            this.surface.dispose();
+        }
+
+        // Dispose RadialGrid if it exists
+        if (this.radialGrid && typeof this.radialGrid.dispose === 'function') {
+            this.radialGrid.dispose();
+        }
+
+        // Remove instance from registry
+        const index = Planet.instances.indexOf(this);
+        if (index > -1) {
+            Planet.instances.splice(index, 1);
+        }
+
+        console.log(`Planet [${this.name}] disposed.`);
     }
 }
