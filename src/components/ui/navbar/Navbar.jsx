@@ -4,7 +4,6 @@ import { supabase } from '../../../supabaseClient';
 import LogoMenu from './LogoMenu';
 import BodySelector from './BodySelector';
 import TimeControls from './TimeControls';
-import { getBodyDisplayName, getSatelliteOptions, getPlanetOptions } from '../../../utils/BodySelectionUtils';
 import { saveAs } from 'file-saver';
 import LZString from 'lz-string';
 import ActionButtons from './ActionButtons';
@@ -47,55 +46,17 @@ export function Navbar({
   simulatedTime,
   onSimulatedTimeChange,
   app3DRef,
-  satellites,
   onImportState,
   shareModalOpen,
   setShareModalOpen,
   setShareUrl,
   setIsAuthOpen,
-  setAuthMode
+  setAuthMode,
+  planetOptions,
+  satelliteOptions,
+  getDisplayValue
 }) {
-  // Satellite dropdown options state, updated from props and fallback events
-  const [satelliteOptions, setSatelliteOptions] = useState(() => getSatelliteOptions(satellites));
-  // Update when satellites prop changes
-  useEffect(() => {
-    setSatelliteOptions(getSatelliteOptions(satellites));
-  }, [satellites]);
-  // Fallback update on SatelliteManager events
-  useEffect(() => {
-    const handleListUpdated = (e) => {
-      const satsMap = e.detail?.satellites;
-      if (satsMap) {
-        const arr = Object.values(satsMap);
-        setSatelliteOptions(getSatelliteOptions(arr));
-      }
-    };
-    document.addEventListener('satelliteListUpdated', handleListUpdated);
-    return () => document.removeEventListener('satelliteListUpdated', handleListUpdated);
-  }, []);
-  const [planetOptions, setPlanetOptions] = useState([]);
   const [user, setUser] = useState(null);
-  // Store the satellite map for getDisplayValue
-  const [satelliteMap, setSatelliteMap] = useState(() => satellites);
-
-  // Helper function to get the display value
-  const getDisplayValue = (value) => {
-    // Use the stored satellite map
-    return getBodyDisplayName(value, satelliteMap);
-  };
-
-  // Listen for satellite deletion events
-  useEffect(() => {
-    const handleSatelliteDeleted = (event) => {
-      // reset selection if deleted body matches
-      if (selectedBody === `satellite-${event.detail.id}`) {
-        onBodySelect('none');
-      }
-    };
-
-    document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
-    return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
-  }, [selectedBody, onBodySelect]);
 
   // Fetch user on mount and listen for auth state changes
   useEffect(() => {
@@ -114,34 +75,12 @@ export function Navbar({
     };
   }, []);
 
-  // Update planet and satellite options when App3D instance is ready or satellites change
-  useEffect(() => {
-    const app = app3DRef.current;
-    if (app) {
-      // Update planet options
-      const bodies = app.celestialBodies || [];
-      setPlanetOptions(getPlanetOptions(bodies));
-      
-      // Update satellite options and map
-      const sats = app.satellites?.getSatellites?.() || satellites; // Use prop as fallback
-      setSatelliteOptions(getSatelliteOptions(sats));
-      setSatelliteMap(sats); // Store the map for getDisplayValue
-    }
-  }, [app3DRef, satellites]); // Depend on app3DRef and satellites prop
-
-  // When dropdown changes, update React state and directly drive cameraControls
+  // When dropdown changes, update selection
   const handleBodyChange = (eventOrValue) => {
     const value = typeof eventOrValue === 'object'
       ? eventOrValue.target.value
       : eventOrValue;
-    const selected = value || 'none';
-    // update application state
-    onBodySelect(selected);
-    // directly follow in 3D camera controls
-    const app = app3DRef.current;
-    if (app?.cameraControls?.follow) {
-      app.cameraControls.follow(selected, app);
-    }
+    onBodySelect(value || 'none');
   };
 
   // --- Save/Import/Share Simulation State ---
@@ -326,12 +265,10 @@ Navbar.propTypes = {
     PropTypes.instanceOf(Date)
   ]).isRequired,
   onSimulatedTimeChange: PropTypes.func.isRequired,
-  app3DRef: PropTypes.shape({ current: PropTypes.object }),
-  // Accept satellites as object (Map or plain object) or array
-  satellites: PropTypes.oneOfType([
-    PropTypes.object, 
-    PropTypes.array
-  ]), 
+  app3DRef: PropTypes.shape({ current: PropTypes.object }).isRequired,
+  planetOptions: PropTypes.array.isRequired,
+  satelliteOptions: PropTypes.array.isRequired,
+  getDisplayValue: PropTypes.func.isRequired,
   onImportState: PropTypes.func.isRequired,
   shareModalOpen: PropTypes.bool.isRequired,
   setShareModalOpen: PropTypes.func.isRequired,

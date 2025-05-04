@@ -228,7 +228,7 @@ export class SimulationStateManager {
             target: { x: camControls.controls.target.x, y: camControls.controls.target.y, z: camControls.controls.target.z },
             spherical: { radius: camControls.sphericalRadius, phi: camControls.sphericalPhi, theta: camControls.sphericalTheta },
             focusedBody: (() => {
-                const fb = camControls.followingBody;
+                const fb = camControls.followTarget;
                 if (!fb) return 'none';
                 if (fb === this.app.earth) return 'earth';
                 if (fb === this.app.moon) return 'moon';

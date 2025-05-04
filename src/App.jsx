@@ -10,6 +10,7 @@ import './styles/globals.css';
 import './styles/animations.css';
 import LZString from 'lz-string';
 import { SimulationProvider } from './simulation/SimulationContext';
+import { useBodySelection } from './hooks/useBodySelection';
 
 const ToastContext = createContext({ showToast: () => { } });
 
@@ -83,7 +84,6 @@ function App3DMain() {
   const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
   const [satellites, setSatellites] = useState({});
-  const [selectedBody, setSelectedBody] = useState('earth');
   const [timeWarp, setTimeWarp] = useState(1);
   const [simulatedTime, setSimulatedTime] = useState(new Date());
   const [displaySettings, setDisplaySettings] = useState(() => getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash()));
@@ -120,9 +120,6 @@ function App3DMain() {
   useEffect(() => {
     if (importedState && importedState.displaySettings) {
       setDisplaySettings(getInitialDisplaySettings(importedState));
-    }
-    if (importedState && importedState.camera && typeof importedState.camera.focusedBody !== 'undefined') {
-      setSelectedBody(importedState.camera.focusedBody || 'earth');
     }
   }, [importedState]);
   useEffect(() => {
@@ -167,7 +164,7 @@ function App3DMain() {
           {
             id: satellite.id,
             satellite,
-            onBodySelect: handleBodySelect,
+            onBodySelect: handleBodyChange,
             onClose: () => app3d.removeDebugWindow(satellite.id)
           }
         ];
@@ -192,15 +189,18 @@ function App3DMain() {
       app3d.timeUtils.setSimulatedTime(newTime);
     }
   };
-  const handleBodySelect = (value) => {
-    setSelectedBody(value);
-    if (!window.handlingBodySelectedEvent) {
-      window.handlingBodySelectedEvent = true;
-      document.dispatchEvent(new CustomEvent('bodySelected', { detail: { body: value } }));
-      window.handlingBodySelectedEvent = false;
-    }
-  };
-  // Update camera target when scene is ready and selectedBody changes
+  const {
+    selectedBody,
+    handleBodyChange,
+    planetOptions,
+    satelliteOptions,
+    getDisplayValue
+  } = useBodySelection({
+    app3dRef: { current: app3d },
+    satellites: Object.values(satellites),
+    importedState,
+    ready
+  });
   useEffect(() => {
     if (controller?.app3d?.updateSelectedBody && ready) {
       controller.app3d.updateSelectedBody(selectedBody);
@@ -269,9 +269,8 @@ ${shareUrl}`);
         if (state.displaySettings) {
           setDisplaySettings(getInitialDisplaySettings(state));
         }
-        if (state.camera && typeof state.camera.focusedBody !== 'undefined') {
-          setSelectedBody(state.camera.focusedBody || 'earth');
-        }
+        // Update imported state so the body-selection hook can restore focus
+        setImportedState(state);
         const json = JSON.stringify(state);
         const compressed = LZString.compressToEncodedURIComponent(json);
         ignoreNextHashChange.current = true;
@@ -326,7 +325,7 @@ ${shareUrl}`);
     isDisplayOptionsOpen,
     isSatelliteModalOpen,
     selectedBody,
-    onBodySelect: handleBodySelect,
+    onBodySelect: handleBodyChange,
     timeWarp,
     onTimeWarpChange: setTimeWarp,
     simulatedTime,
@@ -342,7 +341,10 @@ ${shareUrl}`);
     setIsAuthOpen,
     setAuthMode,
     simulationOpen: isSimulationOpen,
-    setSimulationOpen: setIsSimulationOpen
+    setSimulationOpen: setIsSimulationOpen,
+    planetOptions,
+    satelliteOptions,
+    getDisplayValue
   };
   const chatModalProps = {
     isOpen: isChatVisible,
@@ -365,7 +367,7 @@ ${shareUrl}`);
     satellites,
     isOpen: isSatelliteListVisible,
     setIsOpen: setIsSatelliteListVisible,
-    onBodySelect: handleBodySelect,
+    onBodySelect: handleBodyChange,
     debugWindows,
     app3d
   };
