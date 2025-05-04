@@ -58,13 +58,12 @@ export class SimulationLoop {
 
         const timestamp = performance.now();
         this.timeUtils.update(timestamp);
-        const currentTime = this.timeUtils.getSimulatedTime();
-        const delta = (timestamp - this._lastTime) / 1000;
-        this._lastTime = timestamp;
-        const warpedDelta = delta * this.timeUtils.timeWarp;
+        // Update physics world (planets & satellites dynamics)
+        this.app.physicsWorld.update();
 
-        // Update simulation bodies
-        this.satellites.updateAll(currentTime, delta, warpedDelta);
+        // SatelliteManager physics worker is deprecated: using PhysicsWorld dynamics
+        // this.satellites.updateAll(currentTime, delta, warpedDelta);
+
         // Log before calling app.updateScene
         // console.log(`SimLoop: Calling app.updateScene at ${currentTime.toISOString()}`);
         this.app.updateScene();

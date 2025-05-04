@@ -20,11 +20,11 @@ uniform float atmoYScale;        // Y flatten, top of atmo
 
 /* *** NEW: converts world-space vectors -> planet local frame *** */
 uniform mat3 planetFrame;
+uniform vec3 planetPosition;
 
 /* ---------- varyings ---------- */
-varying float fov;
-varying vec4 vWorldPosition;    // world-space eye
-varying vec3 viewRay;           // camera-space view dir
+varying vec3 vLocalPos;         // Vertex position in local frame
+varying vec3 vRelativeEyeLocal; // Camera position relative to planet, in local frame
 
 /* ---------- constants ---------- */
 const float MAX = 100000.0;
@@ -176,34 +176,32 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float L) {
 
 /* ========== main ========== */
 void main() {
-    /* world-space vectors */
-    vec4 wr = inverse(viewMatrix) * vec4(viewRay, 0.0);
-    vec3 dirW = normalize(wr.xyz);
-    vec3 eyeW = vWorldPosition.xyz;
-    vec3 lW = normalize(lightPosition - eyeW);
+    // 1. View direction from camera towards vertex, in local frame
+    vec3 eyeLocal = vRelativeEyeLocal;           // Ray origin: camera pos relative to planet center, in local frame
+    vec3 vertexLocal = vLocalPos;                // Vertex position in local frame
+    vec3 dirLocal = normalize(vertexLocal - eyeLocal); // Ray direction
 
-    /* convert to planet local frame (axis before tilt) */
-    vec3 dir = planetFrame * dirW;
-    vec3 eye = planetFrame * eyeW;
-    vec3 l = planetFrame * lW;
+    // 2. Light direction relative to planet center, in local frame
+    vec3 relativeLightWorld = lightPosition - planetPosition; // Sun pos relative to planet, world frame
+    vec3 lightLocal = planetFrame * normalize(relativeLightWorld); // Light direction in local frame
 
-    /* atmosphere intersection */
-    vec2 e = ray_vs_ellipsoid(eye, dir, atmoRadius, atmoYScale);
+    /* Atmosphere intersection (using local coords relative to center) */
+    vec2 e = ray_vs_ellipsoid(eyeLocal, dirLocal, atmoRadius, atmoYScale);
     if(e.x > e.y) {
-        gl_FragColor = vec4(0.0);
+        discard; // No intersection, discard fragment
         return;
     }
 
     /* clip to surface */
-    vec2 f = ray_vs_ellipsoid(eye, dir, surfaceRadius, polarScale);
+    vec2 f = ray_vs_ellipsoid(eyeLocal, dirLocal, surfaceRadius, polarScale);
     e.y = min(e.y, f.x);
 
-    /* integrate */
-    vec4 I = in_scatter(eye, dir, e, l, lightIntensity);
+    /* Integrate (passing local coords relative to center) */
+    vec4 I = in_scatter(eyeLocal, dirLocal, e, lightLocal, lightIntensity);
 
     /* final exposure, horizon tweaks (still in local frame) */
-    float hGrad = calculateHorizonGradient(eye, dir);
-    float sunDot = dot(normalize(l), vec3(0.0, 0.0, 1.0));
+    float hGrad = calculateHorizonGradient(eyeLocal, dirLocal);
+    float sunDot = dot(dirLocal, -lightLocal); // Cos angle between view dir and light dir
 
     /* exposure */
     float expT = mix(0.85, 1.7, smoothstep(0.0, 0.5, sunDot));
@@ -221,7 +219,7 @@ void main() {
     col.a = clamp(alpha, 0.0, 1.0);
 
     /* ambient multiple scattering approx. */
-    col.rgb += col.rgb * 0.3 * (1.0 - hGrad) * max(dot(dir, l), 0.0);
+    col.rgb += col.rgb * 0.3 * (1.0 - hGrad) * max(dot(dirLocal, lightLocal), 0.0); // Use local light dir
 
     gl_FragColor = col;
 

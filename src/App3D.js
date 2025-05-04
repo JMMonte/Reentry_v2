@@ -34,6 +34,7 @@ import { initTimeControls } from './controls/timeControls.js';
 import { setupEventListeners as setupGlobalListeners }
     from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
+import { PhysicsWorld } from './world/PhysicsWorld.js';
 
 // Domain helpers
 import {
@@ -96,6 +97,7 @@ class App3D extends EventTarget {
         // — Misc util — --------------------------------------------------------
         this._timeUtils = new TimeUtils({ simulatedTime: new Date().toISOString() });
         this._stats = new Stats();
+        this.physicsWorld = new PhysicsWorld({ timeUtils: this._timeUtils });
 
         // — Workers & helpers — -----------------------------------------------
         this._lineOfSightWorker = null;
@@ -135,6 +137,9 @@ class App3D extends EventTarget {
         try {
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
+
+            // Load planets & sun into physics world
+            this.physicsWorld.loadFromPlanets(this.celestialBodies);
 
             this._initAxisHelper();
             this._initPOIPicking();
@@ -295,18 +300,47 @@ class App3D extends EventTarget {
      * Called each frame from the SimulationLoop.
      */
     updateScene() {
-        // Log start of updateScene
-        // console.log(`App3D updateScene: Called`);
+        // Sync PhysicsWorld satellite positions to visualizers
+        const kmToM = 1 / Constants.metersToKm;
+        this.physicsWorld.satellites.forEach((psat, id) => {
+            const satVis = this.satellites.getSatellites()[id];
+            if (satVis && psat.position && psat.velocity) {
+                const posM = psat.position.clone().multiplyScalar(kmToM);
+                const velM = psat.velocity.clone().multiplyScalar(kmToM);
+                satVis.updatePosition(posM, velM, psat.debug);
+            }
+        });
 
         // Update planets (which includes their grids)
         Planet.instances.forEach(p => {
-            // Log before calling planet.update()
-            // console.log(`App3D updateScene: Calling update for ${p.name}`);
             p.update();
         });
+        // Sync physics world positions to Three.js planets and Sun (after built-in updates)
+        this.physicsWorld.bodies.forEach(body => {
+            if (body.name.toLowerCase() === 'sun' && this.sun) {
+                // Set Sun mesh and light position from PhysicsWorld
+                this.sun.sun.position.copy(body.position);
+                this.sun.sunLight.position.copy(body.position);
+            }
+            const planet = Planet.instances.find(p => p.name === body.name);
+            if (planet && body.position) {
+                planet.getOrbitGroup().position.set(
+                    body.position.x,
+                    body.position.y,
+                    body.position.z
+                );
+            }
+        });
 
-        // Update Sun position
-        this.sun?.updatePosition?.(this.camera);
+        // Update Radial Grids after planets have their final positions
+        Planet.instances.forEach(p => {
+            p.radialGrid?.updatePosition();
+        });
+
+        // Update Planet Shader Uniforms after final positions are set
+        Planet.instances.forEach(p => {
+            p.updateShaderUniforms();
+        });
 
         // planet & satellite vectors
         if (this.displaySettingsManager.getSetting('showVectors')) {
@@ -342,6 +376,12 @@ class App3D extends EventTarget {
                 break;
             case 'sensitivityScale':
                 this.satellites.setSensitivityScale(value);
+                break;
+            case 'useAstronomy':
+                this.physicsWorld.setUseAstronomy(value);
+                break;
+            case 'useRemoteCompute':
+                this.physicsWorld.setUseRemote(value);
                 break;
         }
     }
@@ -527,7 +567,10 @@ class App3D extends EventTarget {
 
     // Display-linked getters / setters
     getDisplaySetting(k) { return this.displaySettingsManager.getSetting(k); }
-    updateTimeWarp(v) { this.timeUtils.setTimeWarp(v); }
+    updateTimeWarp(v) {
+        this.timeUtils.setTimeWarp(v);
+        this.physicsWorld.setTimeWarp(v);
+    }
 
     /**
      * Update camera to follow a new body selection (string or object).

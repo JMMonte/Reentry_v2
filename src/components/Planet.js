@@ -339,17 +339,9 @@ export class Planet {
 
     /* ===== per-frame ===== */
     update() {
-        /* update planetFrame */
-        if (this.atmosphereMaterial?.uniforms?.planetFrame) {
-            const m = new THREE.Matrix3()
-                .setFromMatrix4(this.rotationGroup.matrixWorld)
-                .invert();
-            this.atmosphereMaterial.uniforms.planetFrame.value.copy(m);
-            if (this.glowMaterial?.uniforms?.planetFrame)
-                this.glowMaterial.uniforms.planetFrame.value.copy(m);
-        }
+        this.#updateRotation(); // Only handle rotation and internal visual state here
+        // Shader uniforms are now updated externally by App3D after final position sync
 
-        /* LOD → dot switch */
         if (Planet.camera && this.distantMesh) {
             const planetPos = new THREE.Vector3();
             this.planetMesh.getWorldPosition(planetPos);
@@ -377,31 +369,6 @@ export class Planet {
                 this.planetLOD && this.planetLOD.update(Planet.camera);
             }
         }
-
-        this.#updateOrbit();
-        this.#updateRotation();
-        this.#updateLightDirection();
-
-        this.surface && Planet.camera && this.surface.updateFade(Planet.camera);
-        this.radialGrid && Planet.camera && this.radialGrid.updateFading(Planet.camera);
-        this.radialGrid && this.radialGrid.updatePosition();
-    }
-
-    #updateOrbit() {
-        if (this.orbitElements) {
-            const JD = this.timeManager.getJulianDate();
-            const t = (JD - 2451545.0) * Constants.secondsInDay;
-            this.orbitGroup.position.copy(
-                PhysicsUtils.getPositionAtTime(this.orbitElements, t)
-            );
-        } else if (this.orbitRadius > 0) {
-            const d = this.timeManager.dayOfYear + this.timeManager.fractionOfDay;
-            const ang = (2 * Math.PI * d) / this.orbitalPeriod;
-            this.orbitGroup.position.set(
-                this.orbitRadius * Math.cos(ang), 0,
-                this.orbitRadius * Math.sin(ang)
-            );
-        }
     }
 
     #updateRotation() {
@@ -411,10 +378,49 @@ export class Planet {
             (2 * Math.PI * (secs / this.rotationPeriod % 1)) + this.rotationOffset;
     }
 
+    /** Update shader uniforms based on current world state. Call AFTER final position sync. */
+    updateShaderUniforms() {
+        if (this.atmosphereMaterial?.uniforms?.planetFrame || this.glowMaterial?.uniforms?.planetFrame) {
+            const worldOrientation = new THREE.Quaternion();
+            const groupToUse = this.rotationGroup;
+            groupToUse.getWorldQuaternion(worldOrientation);
+            const invRotationMatrix = new THREE.Matrix4().makeRotationFromQuaternion(worldOrientation).invert();
+            const planetFrameMatrix = new THREE.Matrix3().setFromMatrix4(invRotationMatrix);
+
+            if (this.atmosphereMaterial?.uniforms?.planetFrame) {
+                this.atmosphereMaterial.uniforms.planetFrame.value.copy(planetFrameMatrix);
+            }
+            if (this.glowMaterial?.uniforms?.planetFrame) {
+                this.glowMaterial.uniforms.planetFrame.value.copy(planetFrameMatrix);
+            }
+        }
+
+        if (this.atmosphereMaterial?.uniforms?.planetPosition) {
+            const worldPos = new THREE.Vector3();
+            const meshToUse = this.planetLOD || this.planetMesh;
+            meshToUse.getWorldPosition(worldPos);
+            this.atmosphereMaterial.uniforms.planetPosition.value.copy(worldPos);
+        }
+        if (this.glowMaterial?.uniforms?.planetPosition) {
+            const worldPos = new THREE.Vector3();
+            const meshToUse = this.planetLOD || this.planetMesh;
+            meshToUse.getWorldPosition(worldPos);
+            this.glowMaterial.uniforms.planetPosition.value.copy(worldPos);
+        }
+
+        this.#updateLightDirection();
+    }
+
     #updateLightDirection() {
-        const sun = this.timeManager.getSunPosition();
-        this.atmosphereMaterial?.uniforms?.lightPosition.value.copy(sun);
-        this.glowMaterial?.uniforms?.lightPosition.value.copy(sun);
+        let sunPos = null;
+        if (window.app3d?.physicsWorld) {
+            const sunBody = window.app3d.physicsWorld.bodies.find(b => b.name.toLowerCase() === 'sun');
+            if (sunBody) sunPos = sunBody.position;
+        }
+        if (sunPos) {
+            this.atmosphereMaterial?.uniforms?.lightPosition.value.copy(sunPos);
+            this.glowMaterial?.uniforms?.lightPosition.value.copy(sunPos);
+        }
     }
 
     /* ===== public ===== */

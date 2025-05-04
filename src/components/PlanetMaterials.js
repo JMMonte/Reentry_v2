@@ -67,6 +67,8 @@ function createAtmosphereMaterial(earthRadius, {
             // Ellipsoid scaling uniforms (overridden per-mesh)
             polarScale:   { value: 1.0 },
             atmoYScale:   { value: 1.0 },
+            // New: world position of the planet
+            planetPosition: { value: new THREE.Vector3() },
         }
     });
 }

@@ -52,15 +52,9 @@ export class Sun {
         this.sunLight.add(this.lensflare);
     }
 
-    updatePosition(camera) { // Accept camera object
-        // Smoothly update sun position each simulation step
-        const position = this.timeUtils.getSunPosition();
-        // Directly update mesh and light positions
-        this.sun.position.copy(position);
-        this.sunLight.position.copy(position);
-
-        // Update lens flare size based on distance
-        // Ensure camera, lensflare, and lensflare.elements are valid before proceeding
+    // The Sun's position is now set externally from App3D/PhysicsWorld.
+    // This method only updates lens flare size based on camera distance.
+    updateLensFlare(camera) {
         if (camera && this.lensflare && Array.isArray(this.lensflare.elements)) {
             // Calculate Inverse Square Scale Factor
             const distance = camera.position.distanceTo(this.sun.position);
@@ -75,14 +69,13 @@ export class Sun {
                     // Resize element based on distance
                     element.size = initialSpec.size * scaleFactor;
                 } else {
-                    console.warn(`Sun.updatePosition: no initialSpec for element ${index}`);
+                    console.warn(`Sun.updateLensFlare: no initialSpec for element ${index}`);
                 }
             });
         } else if (camera && this.lensflare && !Array.isArray(this.lensflare.elements)) {
             // Log specific case where lensflare exists but elements is not an array
-            console.error('[Sun updatePosition] this.lensflare exists, but this.lensflare.elements is not an array!', this.lensflare.elements);
+            console.error('[Sun updateLensFlare] this.lensflare exists, but this.lensflare.elements is not an array!', this.lensflare.elements);
         }
-        // No need for an else if this.lensflare is undefined, App3D's optional chaining handles that.
     }
 
     // Add a getter for mass if needed later (e.g., for gravity calculations)

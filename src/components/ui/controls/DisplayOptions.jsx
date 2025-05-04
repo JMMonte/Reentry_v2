@@ -19,7 +19,8 @@ import {
   Link,
   CheckSquare,
   Loader2,
-  Info
+  Info,
+  Cloud
 } from 'lucide-react';
 import { DraggableModal } from '../modal/DraggableModal';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../tooltip';
@@ -27,6 +28,8 @@ import PropTypes from 'prop-types';
 
 // Default settings with display options metadata
 export const defaultSettings = {
+  useRemoteCompute: { value: false, name: 'Remote Compute (WIP)', icon: Cloud,
+    description: 'Work in progress: remote compute coming soon.', type: 'boolean' },
   showGrid: { value: true, name: 'Grid', icon: Grid,
     description: 'Show a grid overlay to help with navigation and orientation.'
   },
@@ -107,7 +110,7 @@ const categories = [
   },
   {
     name: 'Simulation',
-    keys: ['orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'physicsTimeStep', 'perturbationScale', 'sensitivityScale', 'nonKeplerianFallbackDays', 'hyperbolicPointsMultiplier'],
+    keys: ['useRemoteCompute', 'orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'physicsTimeStep', 'perturbationScale', 'sensitivityScale', 'nonKeplerianFallbackDays', 'hyperbolicPointsMultiplier'],
   },
   {
     name: 'Lighting',
@@ -276,11 +279,24 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
                           onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
                         />
                       ) : (
-                        <Switch
-                          className="scale-[0.6]"
-                          checked={settings[key] !== undefined ? settings[key] : setting.value}
-                          onCheckedChange={(checked) => onSettingChange(key, checked)}
-                        />
+                        key === 'useRemoteCompute' ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Switch
+                                className="scale-[0.6] opacity-50 cursor-not-allowed"
+                                checked={false}
+                                disabled
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent sideOffset={4}>Work in progress</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <Switch
+                            className="scale-[0.6]"
+                            checked={settings[key] !== undefined ? settings[key] : setting.value}
+                            onCheckedChange={(checked) => onSettingChange(key, checked)}
+                          />
+                        )
                       )}
                     </div>
                   </div>
