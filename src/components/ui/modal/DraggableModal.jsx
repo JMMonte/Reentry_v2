@@ -37,6 +37,7 @@ export function DraggableModal({
   const contentRef = useRef(null);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0 });
   const resizeRef = useRef({ isResizing: false, startY: 0, startX: 0, startHeight: 0, startWidth: 0, direction: null });
+  const [isMobile, setIsMobile] = useState(false);
 
   // Update dimensions based on content only for resizable modals
   useEffect(() => {
@@ -51,6 +52,13 @@ export function DraggableModal({
       }
     }
   }, [isCollapsed, children, resizable, height]);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 640);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const startDragging = (e) => {
     // Bring this modal to front
@@ -162,29 +170,48 @@ export function DraggableModal({
     }
   }, [isOpen]);
 
+  // On mobile, align modal to bottom and make it almost full height (minus navbar)
+  let modalStyle = {};
+  if (isMobile) {
+    modalStyle = {
+      left: '1vw',
+      top: 'unset',
+      bottom: 0,
+      width: '98vw',
+      minWidth: 0,
+      maxWidth: '98vw',
+      height: 'calc(100vh - 76px)', // 72px navbar + 4px gap
+      minHeight: 0,
+      maxHeight: 'calc(100vh - 76px)',
+      zIndex,
+    };
+  } else {
+    modalStyle = {
+      left: position.x,
+      top: position.y,
+      height: isCollapsed ? 'auto' : (resizable ? height : 'auto'),
+      width: resizable ? width : 'auto',
+      minHeight: isCollapsed ? 'auto' : minHeight,
+      minWidth,
+      maxHeight: isCollapsed ? 'auto' : (resizable ? (maxHeight || window.innerHeight * 0.9) : 'none'),
+      maxWidth: resizable ? (maxWidth || window.innerWidth * 0.9) : 'none',
+      zIndex,
+    };
+  }
+
   if (!isOpen) return null;
 
   return (
     <div
       ref={modalRef}
-      className={`fixed bg-background/80 backdrop-blur-sm border rounded-lg shadow-lg ${className} group`}
-      style={{ 
-        left: position.x,
-        top: position.y,
-        height: isCollapsed ? 'auto' : (resizable ? height : 'auto'),
-        width: resizable ? width : 'auto',
-        minHeight: isCollapsed ? 'auto' : minHeight,
-        minWidth,
-        maxHeight: isCollapsed ? 'auto' : (resizable ? (maxHeight || window.innerHeight * 0.9) : 'none'),
-        maxWidth: resizable ? (maxWidth || window.innerWidth * 0.9) : 'none',
-        zIndex,
-      }}
+      className={`fixed bg-background/80 backdrop-blur-sm border rounded-lg shadow-lg ${className} group ${isMobile ? 'touch-none' : ''}`}
+      style={modalStyle}
       onMouseDown={bringToFront}
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between p-2 bg-secondary/50 cursor-move select-none rounded-t-lg"
-        onMouseDown={startDragging}
+        className={`flex items-center justify-between p-2 bg-secondary/50 select-none rounded-t-lg ${isMobile ? '' : 'cursor-move'}`}
+        onMouseDown={isMobile ? undefined : startDragging}
       >
         <div className="flex items-center gap-2">
           {leftElement}
@@ -206,15 +233,16 @@ export function DraggableModal({
         <>
           <div 
             ref={contentRef} 
-            className={`modal-content overflow-auto ${resizable ? 'pb-2' : ''}`}
+            className={`modal-content overflow-auto ${resizable && !isMobile ? 'pb-2' : ''}`}
             style={{ 
-              height: resizable ? 'calc(100% - 48px)' : 'auto',
+              height: resizable && !isMobile ? 'calc(100% - 48px)' : 'auto',
               padding: '8px'
             }}
           >
             {children}
           </div>
-          {resizable && (
+          {/* Resize handles only on desktop */}
+          {resizable && !isMobile && (
             <>
               {/* Left resize handle */}
               <div

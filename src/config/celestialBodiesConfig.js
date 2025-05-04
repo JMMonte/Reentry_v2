@@ -50,7 +50,7 @@ export const celestialBodiesConfig = {
             circleTextureSize: 32,
             fadeStartPixelSize: 700,
             fadeEndPixelSize: 600,
-            heightOffset: 2
+            heightOffset: 0
         },
         primaryGeojsonData: geojsonDataSovereignty,
         stateGeojsonData: geojsonDataStates,

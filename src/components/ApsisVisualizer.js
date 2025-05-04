@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants';
 
 export class ApsisVisualizer {
     /** Shared sphere geometry for periapsis and apoapsis markers */

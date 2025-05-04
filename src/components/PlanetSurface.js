@@ -11,7 +11,7 @@ export class PlanetSurface {
      * @param {object}         countryGeo — GeoJSON with national borders
      * @param {object}         stateGeo   — GeoJSON with state / province borders
      * @param {object}         opts       — configuration options:
-     *   @param {number} [opts.heightOffset=10]       — offset above the surface
+     *   @param {number} [opts.heightOffset=2]       — offset above the surface
      *   @param {number} [opts.circleTextureSize=32]   — size of the point texture
      *   @param {number} [opts.circleSegments=16]      — segments for circle geometry
      *   @param {number} [opts.markerSize=1]           — radius of the marker circle
@@ -29,7 +29,7 @@ export class PlanetSurface {
         this.root = parentMesh;
         // Destructure options with defaults
         const {
-            heightOffset = 10,
+            heightOffset = 2,
             circleTextureSize = 64,
             circleSegments = 16,
             markerSize = 1,
