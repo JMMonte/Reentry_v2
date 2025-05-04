@@ -63,7 +63,10 @@ function createAtmosphereMaterial(earthRadius, {
             densityScale: { value: densityScale },
             atmoColorNear: { value: colorNear },
             atmoColorFar: { value: colorFar },
-            worldScale: { value: 1.0 },
+            worldScale: { value: Constants.scale },
+            // Ellipsoid scaling uniforms (overridden per-mesh)
+            polarScale:   { value: 1.0 },
+            atmoYScale:   { value: 1.0 },
         }
     });
 }

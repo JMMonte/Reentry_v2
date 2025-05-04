@@ -55,35 +55,28 @@ const loadTextures = async (textureManager) => {
 };
 
 /**
- * Retrieves the Earth configuration object.
- * @returns {object} The Earth configuration.
- */
-const getEarthConfig = () => {
-    return celestialBodiesConfig.earth;
-};
-
-/**
- * Creates the Moon configuration object, dynamically calculating argument of periapsis.
+ * Retrieves the configuration for any celestial body by key.
+ * @param {string} key - The body key in celestialBodiesConfig.
  * @param {object} timeUtils - Utility object for time calculations.
- * @returns {object} The Moon configuration.
+ * @returns {object} The body configuration.
  */
-const createMoonConfig = (timeUtils) => {
-    // Get base config
-    const moonConfig = { ...celestialBodiesConfig.moon }; // Clone to avoid modifying original
-
-    // --- derive argument of periapsis at runtime
-    const JD = timeUtils.getJulianDate();
-    const T = (JD - 2451545.0) / 36525;
-    const lamPi = 83.353246 + 4069.0137287 * T - 0.01032 * T * T - T ** 3 / 80000;
-    const argPerDeg = lamPi - THREE.MathUtils.radToDeg(Constants.ascendingNode) + 80; // empirical offset
-
-    // Update the argument of periapsis in the copied config
-    moonConfig.orbitElements = {
-        ...moonConfig.orbitElements,
-        argumentOfPeriapsis: THREE.MathUtils.degToRad(argPerDeg)
-    };
-
-    return moonConfig;
+const getBodyConfig = (key, timeUtils) => {
+    const baseConfig = celestialBodiesConfig[key];
+    if (!baseConfig) throw new Error(`Configuration for '${key}' not found.`);
+    // Dynamic adjustment for the Moon's argument of periapsis
+    if (key === 'moon') {
+        const moonConfig = { ...baseConfig };
+        const JD = timeUtils.getJulianDate();
+        const T = (JD - 2451545.0) / 36525;
+        const lamPi = 83.353246 + 4069.0137287 * T - 0.01032 * T * T - T ** 3 / 80000;
+        const argPerDeg = lamPi - THREE.MathUtils.radToDeg(Constants.ascendingNode) + 80; // empirical offset
+        moonConfig.orbitElements = {
+            ...moonConfig.orbitElements,
+            argumentOfPeriapsis: THREE.MathUtils.degToRad(argPerDeg)
+        };
+        return moonConfig;
+    }
+    return baseConfig;
 };
 
 const setupPostProcessing = (app) => {
@@ -134,9 +127,9 @@ export async function initScene(app) {
     new BackgroundStars(scene, camera);
 
     // 2. Planetary bodies
-    app.earth = new Planet(scene, renderer, timeUtils, textureManager, getEarthConfig());
-    app.sun = new Sun(scene, timeUtils, celestialBodiesConfig.sun); // Pass sun config
-    app.moon = new Planet(scene, renderer, timeUtils, textureManager, createMoonConfig(timeUtils));
+    app.earth = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('earth', timeUtils));
+    app.sun = new Sun(scene, timeUtils, getBodyConfig('sun', timeUtils)); // Pass sun config
+    app.moon = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('moon', timeUtils));
 
     // 3. Helpers
     // gather all celestial bodies (earth, moon, sun)

@@ -92,7 +92,7 @@ export function setupRenderer(canvas) {
 export function setupControls(camera, renderer) {
     const controls = new OrbitControls(camera, renderer.domElement);
 
-    controls.minDistance = 100_000 * 2;
+    controls.minDistance = 1;
     controls.maxDistance = 500_000_000;
 
     return controls;

@@ -34,8 +34,9 @@ export const celestialBodiesConfig = {
         rotationPeriod: 86400, // seconds
         rotationOffset: 4.89496121, // GMST at J2000 epoch
         meshRes: 64,
-        atmosphereThickness: 60, // in 10000s of meters
-        cloudThickness: 2, // in 10000s of meters
+        oblateness: 0.0033528106647474805,
+        atmosphereThickness: 60, // in kilometers
+        cloudThickness: 2, // in kilometers
         addSurface: true,
         surfaceOptions: {
             addLatitudeLines: true, latitudeStep: 10,

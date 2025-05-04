@@ -34,8 +34,10 @@ export class PlanetSurface {
             circleSegments = 16,
             markerSize = 1,
             fadeStartPixelSize = 50,
-            fadeEndPixelSize = 15
+            fadeEndPixelSize = 15,
+            polarScale = 1.0
         } = opts;
+        this.polarScale = polarScale;
         // Assign properties
         this.heightOffset = heightOffset;
         this.circleTextureSize = circleTextureSize;
@@ -236,7 +238,10 @@ export class PlanetSurface {
     #spherical(lon, lat) {
         const phi = THREE.MathUtils.degToRad(90 - lat);
         const theta = THREE.MathUtils.degToRad(lon + 90);
-        return new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
+        // Compute spherical position, then flatten along local Y-axis
+        const pos = new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
+        pos.y *= this.polarScale;
+        return pos;
     }
 
     #createCircleTexture(size) {
