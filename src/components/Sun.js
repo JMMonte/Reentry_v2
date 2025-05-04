@@ -9,7 +9,7 @@ export class Sun {
         this.config = config; // Store config
         this.symbol = '☉';
         this.name = config.name || 'sun';
-        this.radius = config.radius * Constants.scale * Constants.metersToKm;
+        this.radius = config.radius * Constants.metersToKm;
         // Store initial flare specs for later scaling
         this.initialFlareSpecs = [
             { url: '/assets/texture/lensflare/lensflare0.png', size: 700, distance: 0.0 },
@@ -19,7 +19,7 @@ export class Sun {
             { url: '/assets/texture/lensflare/lensflare3.png', size: 120, distance: 1.0 }
         ];
         // Define a reference distance (e.g., Earth's average orbit radius) for 1x scale
-        this.referenceDistance = Constants.AU * Constants.scale * Constants.metersToKm; // Earth's average orbital radius
+        this.referenceDistance = Constants.AU * Constants.metersToKm; // Earth's average orbital radius
 
 
         const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down

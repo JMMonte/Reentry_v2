@@ -235,7 +235,7 @@ class App3D extends EventTarget {
         this.scene.add(this.axisHelper);
 
         // fade logic
-        const maxR = (Constants.earthRadius + Constants.earthHillSphere) * KM * Constants.scale;
+        const maxR = (Constants.earthRadius + Constants.earthHillSphere) * KM;
         this.axisLabelFader = new LabelFader(this.axisHelper.children, maxR * 0.05, maxR * 0.2);
     }
 
@@ -396,7 +396,7 @@ class App3D extends EventTarget {
 
         connections.forEach(cnx => {
             const material = new THREE.LineBasicMaterial({ color: cnx.color === 'red' ? 0xff0000 : 0x00ff00 });
-            const verts = new Float32Array(cnx.points.flat().map(p => p * Constants.scale));
+            const verts = new Float32Array(cnx.points.flat().map(p => p));
             const geom = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(verts, 3));
             const line = new THREE.Line(geom, material);
             line.renderOrder = 9999;

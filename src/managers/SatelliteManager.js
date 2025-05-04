@@ -35,7 +35,7 @@ export class SatelliteManager {
         this._lastTimeWarp = undefined;
 
         // Pre-computed factors & bodies
-        this._kmToM = 1 / (Constants.metersToKm * Constants.scale);
+        this._kmToM = 1 / (Constants.metersToKm);
         this._moonPos = new THREE.Vector3();
         this._sunPos = new THREE.Vector3();
 
@@ -154,7 +154,7 @@ export class SatelliteManager {
             earthMass: Constants.earthMass,
             moonMass: Constants.moonMass,
             G: Constants.G,
-            scale: Constants.scale,
+            scale: 1,
             timeStep: this.app3d.getDisplaySetting('physicsTimeStep'),
             perturbationScale: this.app3d.getDisplaySetting('perturbationScale'),
             sensitivityScale: this.sensitivityScale,

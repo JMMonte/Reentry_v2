@@ -44,7 +44,7 @@ export class RadialGrid {
         } else if (this.labelsSprites.length > 0 && config.maxDisplayRadius && config.fadeFactors) {
             // Fallback if no soiRadius multiplier is defined in planet config
             console.warn(`RadialGrid [${planet.name}]: Planet config soiRadius multiplier not found, using radialGridConfig.maxDisplayRadius for fading.`);
-            const scaledMaxAltitude = config.maxDisplayRadius * Constants.metersToKm * Constants.scale;
+            const scaledMaxAltitude = config.maxDisplayRadius * Constants.metersToKm;
             const maxRadiusScaled = scaledPlanetRadius + scaledMaxAltitude;
             const fadeStart = maxRadiusScaled * config.fadeFactors.start;
             const fadeEnd = maxRadiusScaled * config.fadeFactors.end;
@@ -58,7 +58,7 @@ export class RadialGrid {
     createGrid() {
         const { circles = [], radialLines, markerStep, labelMarkerStep, maxDisplayRadius } = this.config;
         const scaledPlanetRadius = this.planet.radius;
-        const scaleFactor = Constants.metersToKm * Constants.scale;
+        const scaleFactor = Constants.metersToKm;
 
         // --- Materials (Define base opacities - Adjusted) ---
         const majorOpacity = 0.35;  // Keep major lines as they are
@@ -82,8 +82,8 @@ export class RadialGrid {
             color: 0xaaaaaa,
             transparent: true,
             // opacity: TBD,
-            dashSize: 500 * Constants.scale,
-            gapSize: 300 * Constants.scale
+            dashSize: 500,
+            gapSize: 300
         };
 
         const markerMaterial = new THREE.LineBasicMaterial({

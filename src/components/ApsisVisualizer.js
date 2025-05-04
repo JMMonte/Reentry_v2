@@ -50,8 +50,8 @@ export class ApsisVisualizer {
         lan = THREE.MathUtils.degToRad(apsisData.longitudeOfAscendingNode);
         aop = THREE.MathUtils.degToRad(apsisData.argumentOfPeriapsis);
         // Radial distances from debug are in km; convert to world units
-        rPeriWorld = apsisData.periapsisRadial * Constants.scale;
-        rApoWorld = apsisData.apoapsisRadial != null ? apsisData.apoapsisRadial * Constants.scale : null;
+        rPeriWorld = apsisData.periapsisRadial;
+        rApoWorld = apsisData.apoapsisRadial != null ? apsisData.apoapsisRadial : null;
         periapsisAltitude = apsisData.periapsisAltitude;
         apoapsisAltitude = apsisData.apoapsisAltitude;
 

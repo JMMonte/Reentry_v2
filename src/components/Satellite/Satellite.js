@@ -57,7 +57,7 @@ export class Satellite {
         this._smoothedKm = this._scaledKm.clone();  // for viz smoothing
         this._tmpPos = new THREE.Vector3();     // helper
         this._alpha = 0.7;                     // smoothing factor
-        this._k = Constants.metersToKm * Constants.scale;
+        this._k = Constants.metersToKm;
 
         /* ── throttling ── */
         this._lastSimEvt = 0;

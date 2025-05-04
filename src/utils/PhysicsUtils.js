@@ -80,7 +80,7 @@ export class PhysicsUtils {
 
     static convertLatLonToCartesian(
         lat, lon,
-        radius = Constants.earthRadius * Constants.metersToKm * Constants.scale
+        radius = Constants.earthRadius * Constants.metersToKm
     ) {
         const φ = THREE.MathUtils.degToRad(lat);
         const λ = THREE.MathUtils.degToRad(lon);
@@ -299,9 +299,9 @@ export class PhysicsUtils {
 
             pts.push(
                 new THREE.Vector3(
-                    x * Constants.metersToKm * Constants.scale,
-                    y * Constants.metersToKm * Constants.scale,
-                    z * Constants.metersToKm * Constants.scale
+                    x * Constants.metersToKm,
+                    y * Constants.metersToKm,
+                    z * Constants.metersToKm
                 )
             );
         }
@@ -448,7 +448,7 @@ export class PhysicsUtils {
             .applyAxisAngle(new THREE.Vector3(0, 0, 1), ω)
             .applyAxisAngle(new THREE.Vector3(1, 0, 0), i)
             .applyAxisAngle(new THREE.Vector3(0, 0, 1), Ω)
-            .multiplyScalar(Constants.metersToKm * Constants.scale);
+            .multiplyScalar(Constants.metersToKm);
 
         return pos;
     }
@@ -504,7 +504,7 @@ export class PhysicsUtils {
                 k1v.clone().addScaledVector(k2v, 2).addScaledVector(k3v, 2).add(k4v).multiplyScalar(1 / 6)
             );
 
-            pts.push(pos.clone().multiplyScalar(Constants.metersToKm * Constants.scale));
+            pts.push(pos.clone().multiplyScalar(Constants.metersToKm));
         }
         return pts;
     }

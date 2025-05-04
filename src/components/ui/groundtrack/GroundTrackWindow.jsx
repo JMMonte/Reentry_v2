@@ -166,7 +166,7 @@ export function GroundTrackWindow({
     // CSV download: convert raw ECI positions to lat/lon per selected planet
     const downloadCsv = () => {
         const rows = [['satelliteId', 'time', 'lat', 'lon']];
-        const k = Constants.metersToKm * Constants.scale;
+        const k = Constants.metersToKm;
         for (const [id, pts] of Object.entries(tracks)) {
             pts.forEach(pt => {
                 const { time, position } = pt;

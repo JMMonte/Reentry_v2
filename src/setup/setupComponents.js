@@ -31,8 +31,7 @@ export function setupCamera() {
     );
 
     cam.up.set(0, 0, 1);                              // global Z-up
-    cam.position.set(1000, 20000, 7000)
-        .multiplyScalar(Constants.scale);      // north-pole vantage
+    cam.position.set(1000, 20000, 7000);      // north-pole vantage
     cam.lookAt(0, 0, 0);
     cam.logarithmicDepthBuffer = true;
 
@@ -93,8 +92,8 @@ export function setupRenderer(canvas) {
 export function setupControls(camera, renderer) {
     const controls = new OrbitControls(camera, renderer.domElement);
 
-    controls.minDistance = 100 * Constants.metersToKm * Constants.scale * 2;
-    controls.maxDistance = 500_000_000 * Constants.scale;
+    controls.minDistance = 100_000 * 2;
+    controls.maxDistance = 500_000_000;
 
     return controls;
 }

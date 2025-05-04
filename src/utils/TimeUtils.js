@@ -110,7 +110,7 @@ export class TimeUtils {
             0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180)
         );
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
-        const distance = this.AU * Constants.metersToKm * Constants.scale;
+        const distance = this.AU * Constants.metersToKm;
         // compute using true longitude directly to point sun correctly
         const rad = trueLongitude * Math.PI / 180;
         const x = distance * Math.cos(rad);

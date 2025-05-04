@@ -48,7 +48,7 @@ self.onmessage = async function (e) {
         );
         // Convert ECI meter positions to scaled KM positions for Three.js
         // and store as a transferable Float32Array [x1,y1,z1, x2,y2,z2,...]
-        const scaleFactor = Constants.metersToKm * Constants.scale;
+        const scaleFactor = Constants.metersToKm;
         const coords = new Float32Array(rawPtsWithTime.length * 3);
         for (let i = 0; i < rawPtsWithTime.length; i++) {
             const posMeters = rawPtsWithTime[i].position; // [x, y, z] in meters

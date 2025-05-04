@@ -64,7 +64,7 @@ export class ManeuverNode {
                         }
                     }
                 }
-                const boundary = (Constants.earthRadius + 100000) * Constants.metersToKm * Constants.scale;
+                const boundary = (Constants.earthRadius + 100000) * Constants.metersToKm;
                 // clear previous markers
                 this._atmMarkers.forEach(m => { this._atmMarkerGroup.remove(m); m.geometry.dispose(); m.material.dispose(); });
                 this._atmMarkers = [];
@@ -149,7 +149,7 @@ export class ManeuverNode {
     update() {
         // Compute current integration state through all burns up to this node
         const simTime = this.app3d.timeUtils.getSimulatedTime();
-        const factor = 1 / (Constants.metersToKm * Constants.scale);
+        const factor = 1 / Constants.metersToKm;
         // Gravity bodies in MKS
         const earthBody = { position: { x: 0, y: 0, z: 0 }, mass: Constants.earthMass };
         const moonBody = (() => {
@@ -214,7 +214,7 @@ export class ManeuverNode {
             nd.deltaV.copy(dvWorld);
         }
         // Update node position in Three.js units
-        const scaleK = Constants.metersToKm * Constants.scale;
+        const scaleK = Constants.metersToKm;
         this.group.position.set(posArr[0] * scaleK, posArr[1] * scaleK, posArr[2] * scaleK);
         
         // Predict post-burn orbit via shared worker

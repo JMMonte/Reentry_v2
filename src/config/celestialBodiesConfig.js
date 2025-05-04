@@ -16,9 +16,9 @@ import {
 } from './geojsonData.js';
 
 // Reusable constants
-const earthRadius = 6378136.6 * Constants.scale * Constants.metersToKm;
+const earthRadius = 6378136.6 * Constants.metersToKm;
 const earthMass = 5.9722 * 10 ** 24; // kg
-const moonRadius = 1737400 * Constants.scale * Constants.metersToKm;
+const moonRadius = 1737400 * Constants.metersToKm;
 const moonMass = 7.34767309 * 10 ** 22; // kg
 const earthGravitationalParameter = Constants.G * earthMass; // m^3/s^2
 

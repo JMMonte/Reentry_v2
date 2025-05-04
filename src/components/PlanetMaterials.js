@@ -46,7 +46,6 @@ function createAtmosphereMaterial(earthRadius, {
     const atmoRadius = earthRadius + atmoHeight;
     // Scale light intensity with world scale
     const baseLightIntensity = 4.0;
-    const scaledLightIntensity = baseLightIntensity * (1 / Constants.scale);
     return new THREE.ShaderMaterial({
         vertexShader: atmosphereVertexShader,
         fragmentShader: atmosphereFragmentShader,
@@ -57,14 +56,14 @@ function createAtmosphereMaterial(earthRadius, {
         blending: THREE.NormalBlending,
         uniforms: {
             lightPosition: { value: new THREE.Vector3(1, 0, 0) },
-            lightIntensity: { value: scaledLightIntensity },
+            lightIntensity: { value: baseLightIntensity },
             ambientIntensity: { value: 0.0 },
             surfaceRadius: { value: earthRadius },
             atmoRadius: { value: atmoRadius },
             densityScale: { value: densityScale },
             atmoColorNear: { value: colorNear },
             atmoColorFar: { value: colorFar },
-            worldScale: { value: Constants.scale },
+            worldScale: { value: 1.0 },
         }
     });
 }

@@ -9,12 +9,12 @@ import { Constants } from './Constants.js';
  * @param {THREE.Vector3} velInertial   - Velocity in inertial frame (m/s)
  * @param {Object} options 
  * @param {string} options.referenceFrame - 'equatorial' or 'ecliptic'
- * @param {number} options.scale         - Additional scale factor (default Constants.scale)
+ * @param {number} options.scale         - Additional scale factor (default 1.0)
  * @returns {{ position: THREE.Vector3, velocity: THREE.Vector3 }} world coords in Three.js units
  */
 export function inertialToWorld(body, posInertial, velInertial, options = {}) {
     const referenceFrame = options.referenceFrame || 'equatorial';
-    const scale = options.scale != null ? options.scale : Constants.scale;
+    const scale = options.scale != null ? options.scale : 1.0;
 
     // 1) scale from meters to kilometers and apply global scale
     const position = posInertial.clone().multiplyScalar(Constants.metersToKm * scale);

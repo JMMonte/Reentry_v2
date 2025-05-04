@@ -30,7 +30,7 @@ export default function GroundTrackCanvas({
         const ctx = canvas.getContext('2d');
         const w = width;
         const h = height;
-        const k = Constants.metersToKm * Constants.scale;
+        const k = Constants.metersToKm;
         // Get current simulation time once per frame (fallback to real time)
         const currentEpochMillis = planet && planet.timeManager
             ? planet.timeManager.getSimulatedTime().getTime()

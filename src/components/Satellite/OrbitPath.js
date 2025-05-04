@@ -39,7 +39,7 @@ export class OrbitPath {
 
         /* scratch vars */
         this._originKm = new THREE.Vector3();
-        this._k = Constants.metersToKm * Constants.scale;
+        this._k = Constants.metersToKm;
 
         /* once-only loader overlay */
         OrbitPath._ensureLoader();

@@ -53,7 +53,7 @@ export class SimulationStateManager {
             return null;
         }
         // Convert from meters to simulation units (km * scale)
-        const toSimUnits = (v) => v.multiplyScalar(Constants.metersToKm * Constants.scale);
+        const toSimUnits = (v) => v.multiplyScalar(Constants.metersToKm);
         if (safeParams.position) safeParams.position = toSimUnits(safeParams.position);
         if (safeParams.velocity) safeParams.velocity = toSimUnits(safeParams.velocity);
         return this.satellites.addSatellite(safeParams);

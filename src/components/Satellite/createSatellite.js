@@ -57,7 +57,7 @@ function launchFromLatLon(app, {
     const earthMesh = app.earth.getMesh();
     // compute world radius (km × scale)
     const R_m = Constants.earthRadius + altitude * Constants.kmToMeters;
-    const worldR = R_m * Constants.metersToKm * Constants.scale;
+    const worldR = R_m * Constants.metersToKm;
     // local Cartesian before tilt/rotation
     const posLocal = PhysicsUtils.convertLatLonToCartesian(
         latitude, longitude, worldR
@@ -85,7 +85,7 @@ function launchFromLatLon(app, {
     const worldQuat = earthMesh.getWorldQuaternion(new THREE.Quaternion());
     const velWorld = velECEFfull.clone()
         .applyQuaternion(worldQuat)
-        .multiplyScalar(Constants.metersToKm * Constants.scale);
+        .multiplyScalar(Constants.metersToKm);
     return createSatellite(app, { position: posLocal, velocity: velWorld, mass, size, name });
 }
 
@@ -132,14 +132,14 @@ export function createSatelliteFromOrbitalElements(app, {
 
     // Ecliptic: world XY-plane is ecliptic, so use ECI directly
     if (referenceFrame === 'ecliptic') {
-        const pos = positionECI.clone().multiplyScalar(Constants.metersToKm * Constants.scale);
-        const vel = velocityECI.clone().multiplyScalar(Constants.metersToKm * Constants.scale);
+        const pos = positionECI.clone().multiplyScalar(Constants.metersToKm);
+        const vel = velocityECI.clone().multiplyScalar(Constants.metersToKm);
         return createSatellite(app, { position: pos, velocity: vel, mass, size, name });
     }
     // Equatorial: tilt frame by -ε (remove axial tilt) so orbit is in planet equatorial plane
     if (referenceFrame === 'equatorial') {
-        const pos = positionECI.clone().applyQuaternion(PhysicsUtils.invTiltQuaternion).multiplyScalar(Constants.metersToKm * Constants.scale);
-        const vel = velocityECI.clone().applyQuaternion(PhysicsUtils.invTiltQuaternion).multiplyScalar(Constants.metersToKm * Constants.scale);
+        const pos = positionECI.clone().applyQuaternion(PhysicsUtils.invTiltQuaternion).multiplyScalar(Constants.metersToKm);
+        const vel = velocityECI.clone().applyQuaternion(PhysicsUtils.invTiltQuaternion).multiplyScalar(Constants.metersToKm);
         return createSatellite(app, { position: pos, velocity: vel, mass, size, name });
     }
 
@@ -153,8 +153,8 @@ export async function getVisibleLocationsFromOrbitalElements(
     const { semiMajorAxis } = orbitParams;
     /* use the world-space satellite produced above */
     const sat = createSatelliteFromOrbitalElements(app, { ...orbitParams, mass: 1, size: 0.1, name: 'tmp' });
-    const startPos = sat.position.clone().multiplyScalar(Constants.kmToMeters / Constants.scale);
-    const startVel = sat.velocity.clone().multiplyScalar(Constants.kmToMeters / Constants.scale);
+    const startPos = sat.position.clone().multiplyScalar(Constants.kmToMeters);
+    const startVel = sat.velocity.clone().multiplyScalar(Constants.kmToMeters);
 
     const mu = Constants.earthGravitationalParameter;
     const baseT = 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis * Constants.kmToMeters, 3) / mu);
