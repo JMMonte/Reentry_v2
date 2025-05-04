@@ -22,6 +22,17 @@ const moonRadius = 1737400 * Constants.metersToKm;
 const moonMass = 7.34767309 * 10 ** 22; // kg
 const earthGravitationalParameter = Constants.G * earthMass; // m^3/s^2
 
+// Utility function to generate LODs based on radius
+function generateLodLevelsForRadius(radius) {
+    // Mesh resolutions for sphere geometry
+    const meshResolutions = [16, 32, 64, 128];
+    // Distance multipliers for LOD switching (tweak as needed)
+    const distanceMultipliers = [150, 75, 30, 10];
+    return meshResolutions.map((meshRes, i) => ({
+        meshRes,
+        distance: radius * distanceMultipliers[i]
+    }));
+}
 
 export const celestialBodiesConfig = {
     earth: {
@@ -33,7 +44,6 @@ export const celestialBodiesConfig = {
         tilt: 23.439281, // degrees
         rotationPeriod: 86400, // seconds
         rotationOffset: 4.89496121, // GMST at J2000 epoch
-        meshRes: 64,
         oblateness: 0.0033528106647474805,
         atmosphereThickness: 60, // in kilometers
         cloudThickness: 2, // in kilometers
@@ -61,12 +71,7 @@ export const celestialBodiesConfig = {
         observatoriesData: geojsonDataObservatories,
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: false }, // helper set to false for prod
-        lodLevels: [
-            { meshRes: 16, distance: 100000 },
-            { meshRes: 32, distance: 50000 },
-            { meshRes: 64, distance: 20000 },
-            { meshRes: 128, distance: 7000 },
-        ],
+        lodLevels: generateLodLevelsForRadius(earthRadius),
         dotPixelSizeThreshold: 1,
         soiRadius: 145,
         materials: {
@@ -114,7 +119,6 @@ export const celestialBodiesConfig = {
         // Correct radius calculation: Convert meters to km, then apply desired scene scale factor (0.1)
         radius: moonRadius, // Scene units, consistent with Earth
         rotationPeriod: 29.53058867 * Constants.secondsInDay, // synodic period
-        meshRes: 128,
         tilt: 0, // Tilt relative to its orbit, handled by orbital elements
         addSurface: true,
         surfaceOptions: {
@@ -130,11 +134,7 @@ export const celestialBodiesConfig = {
         missionsData: geojsonDataMissions,
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: 1000.5, helper: false }, // helper set to false for prod
-        lodLevels: [
-            { meshRes: 16, distance: 10000 },
-            { meshRes: 64, distance: 8000 },
-            { meshRes: 128, distance: 2000 },
-        ],
+        lodLevels: generateLodLevelsForRadius(moonRadius),
         dotPixelSizeThreshold: 1,
         orbitalPeriod: 27.321661, // sidereal days
         soiRadius: 10.3,
