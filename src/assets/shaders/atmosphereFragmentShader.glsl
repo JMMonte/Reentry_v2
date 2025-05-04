@@ -13,6 +13,7 @@ uniform float atmoRadius;       // Radius of the atmosphere
 uniform float densityScale;    // Global scale for atmospheric density
 uniform vec3 atmoColorNear;    // Color near surface
 uniform vec3 atmoColorFar;     // Color at outer atmosphere
+uniform float worldScale;
 
 // Varying variables passed from vertex shader
 varying float fov;              // Field of view
@@ -20,7 +21,7 @@ varying vec4 vWorldPosition;    // World space position
 varying vec3 viewRay;           // View space ray direction
 
 // Mathematical constants
-const float MAX = 10000.0;
+const float MAX = 100000.0;
 
 // Ray-sphere intersection function
 // Returns the near and far intersection distances
@@ -65,13 +66,13 @@ float calculateHorizonGradient(vec3 position, vec3 rayDir) {
     if (discriminant < 0.0) return 1.0;
     
     float horizonDist = (-b - sqrt(discriminant)) / (2.0 * a);
-    float gradientWidth = (atmoRadius - surfaceRadius) * 0.2;
+    float gradientWidth = (atmoRadius - surfaceRadius) * 1.5;
     return smoothstep(0.0, gradientWidth, horizonDist);
 }
 
 // Optimized atmospheric density function
 float density(vec3 p, float ph) {
-    float actualScaleHeight = 8500.0;
+    float actualScaleHeight =85000.0 * worldScale;
     float scale = (atmoRadius - surfaceRadius) / actualScaleHeight;
     float altitude = length(p) - surfaceRadius;
     float h = altitude / (actualScaleHeight * scale);
@@ -180,7 +181,7 @@ vec4 in_scatter(vec3 o, vec3 dir, vec2 e, vec3 l, float l_intensity) {
     // Calculate opacity with horizon enhancement
     float altitude = length(p) - surfaceRadius;
     float viewAngle = abs(dot(normalize(p), dir));
-    float baseOpacity = smoothstep(0.0, 1.0, viewAngle) * (1.0 - smoothstep(0.0, atmoRadius - surfaceRadius, altitude));
+    float baseOpacity = (1.0 - smoothstep(0.0, 1.0, viewAngle)) * (1.0 - smoothstep(0.0, atmoRadius - surfaceRadius, altitude));
     float horizonOpacity = mix(0.284, 0.945, baseOpacity);
     horizonOpacity *= mix(1.3, 1.0, horizonGrad);
     
@@ -238,5 +239,11 @@ void main() {
     float finalAlpha = mix(0.284, 0.898, gl_FragColor.a);
     finalAlpha *= mix(1.2, 1.0, finalHorizonGrad); // Stronger opacity near ground
     gl_FragColor.a = clamp(finalAlpha, 0.0, 1.0);
+
+    // --- Hybrid ambient multiple scattering approximation ---
+    float multiAmbient = 0.3;
+    float sunSideFactor = max(dot(dir, l), 0.0);
+    gl_FragColor.rgb += gl_FragColor.rgb * multiAmbient * (1.0 - finalHorizonGrad) * sunSideFactor;
+
     #include <logdepthbuf_fragment>
 }

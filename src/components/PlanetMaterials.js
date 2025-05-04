@@ -3,6 +3,7 @@ import atmosphereFragmentShader from '../assets/shaders/atmosphereFragmentShader
 import atmosphereVertexShader from '../assets/shaders/atmosphereVertexShader.glsl';
 import soiVertexShader from '../assets/shaders/soiVertexShader.glsl';
 import soiFragmentShader from '../assets/shaders/soiFragmentShader.glsl';
+import { Constants } from '../utils/Constants.js';
 
 // Inlined from EarthMaterials.js
 function createEarthMaterial(textureManager, anisotropy) {
@@ -37,12 +38,15 @@ function createCloudMaterial(textureManager, anisotropy) {
     });
 }
 function createAtmosphereMaterial(earthRadius, {
-    atmoHeight = 3,
-    densityScale = 1.0,
-    colorNear = new THREE.Color(1.0, 0.8, 0.6),
-    colorFar = new THREE.Color(1.0, 1.0, 1.0)
+    atmoHeight = 5,
+    densityScale = 0.05,
+    colorNear = new THREE.Color(1.0, 0.8, 1.0),
+    colorFar = new THREE.Color(0.2, 0.5, 1.0)
 } = {}) {
     const atmoRadius = earthRadius + atmoHeight;
+    // Scale light intensity with world scale
+    const baseLightIntensity = 4.0;
+    const scaledLightIntensity = baseLightIntensity * (1 / Constants.scale);
     return new THREE.ShaderMaterial({
         vertexShader: atmosphereVertexShader,
         fragmentShader: atmosphereFragmentShader,
@@ -53,13 +57,14 @@ function createAtmosphereMaterial(earthRadius, {
         blending: THREE.NormalBlending,
         uniforms: {
             lightPosition: { value: new THREE.Vector3(1, 0, 0) },
-            lightIntensity: { value: 4.0 },
+            lightIntensity: { value: scaledLightIntensity },
             ambientIntensity: { value: 0.0 },
             surfaceRadius: { value: earthRadius },
             atmoRadius: { value: atmoRadius },
             densityScale: { value: densityScale },
             atmoColorNear: { value: colorNear },
-            atmoColorFar: { value: colorFar }
+            atmoColorFar: { value: colorFar },
+            worldScale: { value: Constants.scale },
         }
     });
 }

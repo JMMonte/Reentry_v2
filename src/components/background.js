@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import starData from '../config/BSC.json';
 
-const RADIUS = 9.4607e14; // ~1000 light-years in sim units (1 unit = 10km)
+const RADIUS = 9.4607e14; // ~1000 light-years in sim units (1 unit = 1km)
 const STAR_SCALE = 0.7; // Base multiplier for star point sizes
 
 // Function to convert RA and DEC to Cartesian coordinates

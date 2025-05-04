@@ -172,7 +172,7 @@ export class Planet {
         this.surfaceMaterial = this.materials.getSurfaceMaterial();
         this.cloudMaterial = this.cloudThickness > 0 ? this.materials.getCloudMaterial() : null;
         this.atmosphereMaterial = this.atmosphereThickness > 0
-            ? this.materials.getAtmosphereMaterial(this.radius)
+            ? this.materials.atmosphereCreator(this.radius, { atmoHeight: this.atmosphereThickness })
             : null;
         this.glowMaterial = this.materials.getGlowMaterial(this.radius, { atmoHeight: this.atmosphereThickness });
     }
@@ -201,24 +201,52 @@ export class Planet {
             this.rotationGroup.add(this.planetMesh);
         }
 
-        /* --- atmosphere shell --- */
+        /* --- atmosphere shell with LOD --- */
         if (this.atmosphereMaterial) {
-            this.atmosphereMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(this.radius + this.atmosphereThickness, this.atmosphereRes, this.atmosphereRes),
-                this.atmosphereMaterial
-            );
-            this.atmosphereMesh.renderOrder = -1;
-            this.rotationGroup.add(this.atmosphereMesh);
+            if (this.lodLevels?.length) {
+                this.atmosphereLOD = new THREE.LOD();
+                for (const { meshRes, distance } of this.lodLevels) {
+                    const mesh = new THREE.Mesh(
+                        new THREE.SphereGeometry(this.radius + this.atmosphereThickness, meshRes, meshRes),
+                        this.atmosphereMaterial
+                    );
+                    mesh.renderOrder = -1;
+                    this.atmosphereLOD.addLevel(mesh, distance);
+                }
+                this.rotationGroup.add(this.atmosphereLOD);
+                this.atmosphereMesh = this.atmosphereLOD;
+            } else {
+                this.atmosphereMesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(this.radius + this.atmosphereThickness, this.atmosphereRes, this.atmosphereRes),
+                    this.atmosphereMaterial
+                );
+                this.atmosphereMesh.renderOrder = -1;
+                this.rotationGroup.add(this.atmosphereMesh);
+            }
         }
 
-        /* --- cloud shell --- */
+        /* --- cloud shell with LOD --- */
         if (this.cloudMaterial) {
-            this.cloudMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(this.radius + this.cloudThickness, this.cloudRes, this.cloudRes),
-                this.cloudMaterial
-            );
-            this.cloudMesh.renderOrder = 1;
-            this.rotationGroup.add(this.cloudMesh);
+            if (this.lodLevels?.length) {
+                this.cloudLOD = new THREE.LOD();
+                for (const { meshRes, distance } of this.lodLevels) {
+                    const mesh = new THREE.Mesh(
+                        new THREE.SphereGeometry(this.radius + this.cloudThickness, meshRes, meshRes),
+                        this.cloudMaterial
+                    );
+                    mesh.renderOrder = 1;
+                    this.cloudLOD.addLevel(mesh, distance);
+                }
+                this.rotationGroup.add(this.cloudLOD);
+                this.cloudMesh = this.cloudLOD;
+            } else {
+                this.cloudMesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(this.radius + this.cloudThickness, this.cloudRes, this.cloudRes),
+                    this.cloudMaterial
+                );
+                this.cloudMesh.renderOrder = 1;
+                this.rotationGroup.add(this.cloudMesh);
+            }
         }
 
         /* --- glow shell --- */
@@ -245,9 +273,9 @@ export class Planet {
     }) {
         const {
             addLatitudeLines = false,
-            latitudeStep = 10,
+            latitudeStep = 1,
             addLongitudeLines = false,
-            longitudeStep = 10,
+            longitudeStep = 1,
             addCountryBorders = false,
             addStates = false,
             addCities = false,

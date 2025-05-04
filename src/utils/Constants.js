@@ -1,5 +1,5 @@
 export class Constants {
-    static scale = 0.1; // Scale factor for the simulation
+    static scale = 1; // Scale factor for the simulation (1 unit = 1 km)
     static massScale = 1e-3; // Scale factor for mass
     static threeJsCannon = 1e3; // Each unit in Three.js is km, each unit in Cannon.js is meters
     static metersToKm = 1e-3; // Conversion factor from meters to kilometers

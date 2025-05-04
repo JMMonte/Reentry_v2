@@ -36,7 +36,7 @@ export class Sun {
         this.sun = new THREE.Mesh(geometry, material);
         this.scene.add(this.sun);
 
-        this.sunLight = new THREE.PointLight(0xffffff, 40000000.0, 0);
+        this.sunLight = new THREE.PointLight(0xffffff, 400000000.0, 0);
         this.sunLight.decay = 1;
         this.sunLight.position.copy(this.sun.position);
         this.sunLight.castShadow = false;

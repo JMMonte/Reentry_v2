@@ -8,6 +8,8 @@ varying vec4 vWorldPosition;
 varying float fov;
 varying vec3 viewRay;
 
+uniform float worldScale;
+
 void main() {
     vWorldPosition = modelMatrix * vec4(position, 1.0);
 

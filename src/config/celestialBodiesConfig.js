@@ -34,8 +34,8 @@ export const celestialBodiesConfig = {
         rotationPeriod: 86400, // seconds
         rotationOffset: 4.89496121, // GMST at J2000 epoch
         meshRes: 64,
-        atmosphereThickness: 10, // in 10000s of meters
-        cloudThickness: 0.1, // in 10000s of meters
+        atmosphereThickness: 60, // in 10000s of meters
+        cloudThickness: 2, // in 10000s of meters
         addSurface: true,
         surfaceOptions: {
             addLatitudeLines: true, latitudeStep: 10,
@@ -61,10 +61,10 @@ export const celestialBodiesConfig = {
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: false }, // helper set to false for prod
         lodLevels: [
-            { meshRes: 16, distance: 10000 },
-            { meshRes: 32, distance: 5000 },
-            { meshRes: 64, distance: 2000 },
-            { meshRes: 128, distance: 1000 },
+            { meshRes: 16, distance: 500000 },
+            { meshRes: 32, distance: 200000 },
+            { meshRes: 64, distance: 100000 },
+            { meshRes: 128, distance: 50000 },
         ],
         dotPixelSizeThreshold: 1,
         soiRadius: 145,

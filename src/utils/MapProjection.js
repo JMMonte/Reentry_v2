@@ -5,11 +5,11 @@ import { Constants } from './Constants.js';
 const tempVec = new THREE.Vector3();
 
 /**
- * Project a world-space position (scaled Equatorial ECI units, 1 unit = 10 km)
+ * Project a world-space position (scaled Equatorial ECI units, 1 unit = 1 km)
  * onto a planet's surface and return geodetic coordinates.
  * Uses a spherical Earth model and applies Earth rotation via GMST.
  * @param {THREE.Vector3} eciWorldPos - Scaled Equatorial ECI position (units) relative to planet center.
- * @param {Planet} planet - Planet instance (radius in same units as scaled ECI*10).
+ * @param {Planet} planet - Planet instance (radius in same units as scaled ECI*1).
  * @param {number} epochMillis - Time for projection (ms since UTC epoch).
  * @returns {{latitude: number, longitude: number, altitude: number}} Geodetic coords (deg, deg, km).
  */
@@ -17,8 +17,8 @@ export function projectToGeodetic(eciWorldPos, planet, epochMillis) {
     if (!planet || epochMillis == null) {
         return { latitude: 0, longitude: 0, altitude: 0 };
     }
-    // 1. Convert simulation units (1 unit = 10 km) to kilometers
-    const posKm = tempVec.copy(eciWorldPos).multiplyScalar(10);
+    // 1. Convert simulation units (1 unit = 1 km) to kilometers
+    const posKm = tempVec.copy(eciWorldPos).multiplyScalar(1);
     // 2. Ecliptic ECI → Equatorial ECI
     const equatorialECI = PhysicsUtils.eciEclipticToEquatorial(posKm);
     // 3. Equatorial ECI → ECEF (in km) via GMST rotation
