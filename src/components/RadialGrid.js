@@ -27,28 +27,32 @@ export class RadialGrid {
             return;
         }
 
-        const soiRadiusMultiplier = planet.config?.soiRadius;
         const scaledPlanetRadius = planet.radius;
 
         this.createGrid();
 
-        // Use the SOI Radius MULTIPLIER from the planet's main config for fading
-        if (this.labelsSprites.length > 0 && soiRadiusMultiplier) {
-            const soiBoundaryScaled = scaledPlanetRadius * soiRadiusMultiplier; // Multiplier * Scaled Radius
-            // Start fading slightly inside calculated SOI boundary
-            const fadeStart = soiBoundaryScaled * 0.9;
-            // End fading further out for a more gradual effect
-            const fadeEnd = soiBoundaryScaled * 1.5; // Changed from 1.1 to 1.5
-            this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
-
-        } else if (this.labelsSprites.length > 0 && config.maxDisplayRadius && config.fadeFactors) {
-            // Fallback if no soiRadius multiplier is defined in planet config
-            console.warn(`RadialGrid [${planet.name}]: Planet config soiRadius multiplier not found, using radialGridConfig.maxDisplayRadius for fading.`);
-            const scaledMaxAltitude = config.maxDisplayRadius * Constants.metersToKm;
-            const maxRadiusScaled = scaledPlanetRadius + scaledMaxAltitude;
-            const fadeStart = maxRadiusScaled * config.fadeFactors.start;
-            const fadeEnd = maxRadiusScaled * config.fadeFactors.end;
-            this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
+        // Determine fade start and end for label and grid fading
+        if (this.labelsSprites.length > 0) {
+            if (config.fadeStart != null && config.fadeEnd != null) {
+                // Use absolute fade distances from config (meters -> scene units)
+                const fadeStart = config.fadeStart;
+                const fadeEnd = config.fadeEnd;
+                this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
+            } else if (planet.soiRadius) {
+                // Use planet's sphere-of-influence radius for fading
+                const fadeStart = planet.soiRadius * 0.9;
+                const fadeEnd = planet.soiRadius * 1.5;
+                this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
+            } else if (config.maxDisplayRadius && config.fadeFactors) {
+                // Fallback using radialGridConfig.maxDisplayRadius and fadeFactors
+                const maxAltitude = config.maxDisplayRadius;
+                const maxRadius = scaledPlanetRadius + maxAltitude;
+                const fadeStart = maxRadius * config.fadeFactors.start;
+                const fadeEnd = maxRadius * config.fadeFactors.end;
+                this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
+            } else {
+                this.labelFader = null;
+            }
         } else {
             this.labelFader = null;
         }
@@ -58,7 +62,6 @@ export class RadialGrid {
     createGrid() {
         const { circles = [], radialLines, markerStep, labelMarkerStep, maxDisplayRadius } = this.config;
         const scaledPlanetRadius = this.planet.radius;
-        const scaleFactor = Constants.metersToKm;
 
         // --- Materials (Define base opacities - Adjusted) ---
         const majorOpacity = 0.35;  // Keep major lines as they are
@@ -101,11 +104,11 @@ export class RadialGrid {
         // --- Scale config values ---
         const scaledCircles = circles.map(c => ({
             ...c,
-            scaledRadius: scaledPlanetRadius + (c.radius * scaleFactor)
+            scaledRadius: scaledPlanetRadius + c.radius
         }));
-        const scaledMarkerStep = markerStep * scaleFactor;
-        const scaledLabelMarkerStep = labelMarkerStep * scaleFactor;
-        const scaledMaxAltitude = maxDisplayRadius * scaleFactor;
+        const scaledMarkerStep = markerStep;
+        const scaledLabelMarkerStep = labelMarkerStep;
+        const scaledMaxAltitude = maxDisplayRadius;
         const maxRadiusScaled = scaledPlanetRadius + scaledMaxAltitude;
 
         // --- Circles from Config ---
@@ -152,7 +155,7 @@ export class RadialGrid {
                     markerLine.userData.baseOpacity = markerOpacity; // Set explicitly here
                     this.group.add(markerLine); // Add to group here
                     if (scaledLabelMarkerStep > 0 && (scaledAlt % scaledLabelMarkerStep < scaledMarkerStep * 0.1)) {
-                        const originalAltitudeMeters = scaledAlt / scaleFactor;
+                        const originalAltitudeMeters = scaledAlt;
                         const labelText = `${(originalAltitudeMeters / Constants.kmToMeters).toFixed(0)}k km`;
                         this.createLabel(labelText, scaledRadiusFromCenter);
                     }

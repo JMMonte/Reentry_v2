@@ -92,18 +92,18 @@ export const celestialBodiesConfig = {
             })
         },
         radialGridConfig: {
-            maxDisplayRadius: 1.5e9,
+            maxDisplayRadius: 1.5e6,
             circles: [
-                { radius: 200 * Constants.kmToMeters, label: "LEO Min", style: "major" },
-                { radius: 2000 * Constants.kmToMeters, label: "LEO Max", style: "major" },
-                { radius: 35786 * Constants.kmToMeters, label: "MEO Max", style: "major" },
-                { radius: 42164 * Constants.kmToMeters, label: "GEO", style: "major" },
-                { radius: 384400000, label: 'Lunar Orbit', style: "dashed" },
-                { radius: 0.929e9, label: 'SOI', style: "dashed-major", dashScale: 2 },
-                { radius: 1.5e9, label: 'Hill Sphere', style: "dashed-major", dashScale: 3 }
+                { radius: 200, label: "LEO Min", style: "major" },
+                { radius: 2000, label: "LEO Max", style: "major" },
+                { radius: 35786, label: "MEO Max", style: "major" },
+                { radius: 42164, label: "GEO", style: "major" },
+                { radius: 384400, label: 'Lunar Orbit', style: "dashed" },
+                { radius: 929000, label: 'SOI', style: "dashed-major", dashScale: 2 },
+                { radius: 1500000, label: 'Hill Sphere', style: "dashed-major", dashScale: 3 }
             ],
-            markerStep: 100000 * Constants.kmToMeters,
-            labelMarkerStep: 100000 * Constants.kmToMeters,
+            markerStep: 100000,
+            labelMarkerStep: 100000,
             radialLines: { count: 22 },
         }
     },
@@ -161,12 +161,12 @@ export const celestialBodiesConfig = {
             createGlowMaterial: () => null
         },
         radialGridConfig: {
-            maxDisplayRadius: 14500000 * 2,
+            maxDisplayRadius: 14500 * 2,
             circles: [
-                { radius: 100000, label: "LLO", style: "major" },      // Major style for LLO
-                { radius: 500000, label: "500km", style: "minor" },     // Minor style
-                { radius: 1000000, label: "1000km", style: "minor" },    // Minor style
-                { radius: 14500000, label: 'SOI', style: "dashed-major", dashScale: 2 },
+                { radius: 100, label: "LLO", style: "major" },      // Major style for LLO
+                { radius: 500, label: "500km", style: "minor" },     // Minor style
+                { radius: 1000, label: "1000km", style: "minor" },    // Minor style
+                { radius: 14500, label: 'SOI', style: "dashed-major", dashScale: 2 },
             ],
             radialLines: { count: 22 },
         }
