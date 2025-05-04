@@ -46,11 +46,11 @@ export const celestialBodiesConfig = {
             addAirports: true, addSpaceports: true,
             addGroundStations: true, addObservatories: true,
             markerSize: 0.7,
-            circleSegments: 32,
-            circleTextureSize: 64,
+            circleSegments: 8,
+            circleTextureSize: 32,
             fadeStartPixelSize: 700,
             fadeEndPixelSize: 600,
-            heightOffset: 0.1
+            heightOffset: 2
         },
         primaryGeojsonData: geojsonDataSovereignty,
         stateGeojsonData: geojsonDataStates,
@@ -62,10 +62,10 @@ export const celestialBodiesConfig = {
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: false }, // helper set to false for prod
         lodLevels: [
-            { meshRes: 16, distance: 500000 },
-            { meshRes: 32, distance: 200000 },
-            { meshRes: 64, distance: 100000 },
-            { meshRes: 128, distance: 50000 },
+            { meshRes: 16, distance: 200000 },
+            { meshRes: 32, distance: 100000 },
+            { meshRes: 64, distance: 50000 },
+            { meshRes: 128, distance: 20000 },
         ],
         dotPixelSizeThreshold: 1,
         soiRadius: 145,
@@ -77,7 +77,7 @@ export const celestialBodiesConfig = {
                     normalMap: tm.getTexture('earthNormalTexture'),
                     normalScale: new THREE.Vector2(1, 1),
                     specular: new THREE.Color('grey'),
-                    shininess: 10
+                    shininess: 150
                 });
                 if (mat.map) mat.map.anisotropy = anisotropy;
                 if (mat.specularMap) mat.specularMap.anisotropy = anisotropy;

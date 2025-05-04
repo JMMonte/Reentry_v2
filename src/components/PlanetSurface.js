@@ -11,7 +11,7 @@ export class PlanetSurface {
      * @param {object}         countryGeo — GeoJSON with national borders
      * @param {object}         stateGeo   — GeoJSON with state / province borders
      * @param {object}         opts       — configuration options:
-     *   @param {number} [opts.heightOffset=0.01]       — offset above the surface
+     *   @param {number} [opts.heightOffset=10]       — offset above the surface
      *   @param {number} [opts.circleTextureSize=32]   — size of the point texture
      *   @param {number} [opts.circleSegments=16]      — segments for circle geometry
      *   @param {number} [opts.markerSize=1]           — radius of the marker circle
@@ -25,11 +25,11 @@ export class PlanetSurface {
         stateGeo,
         opts = {}
     ) {
-        
+        // Attach primitives directly to the planet mesh so its scale (oblateness) is applied
         this.root = parentMesh;
         // Destructure options with defaults
         const {
-            heightOffset = 0.01,
+            heightOffset = 10,
             circleTextureSize = 64,
             circleSegments = 16,
             markerSize = 1,
@@ -39,12 +39,11 @@ export class PlanetSurface {
         } = opts;
         this.polarScale = polarScale;
         // Assign properties
+        this.planetRadius = planetRadius;
         this.heightOffset = heightOffset;
         this.circleTextureSize = circleTextureSize;
         this.circleSegments = circleSegments;
         this.markerSize = markerSize;
-        this.planetRadius = planetRadius;
-        this.radius = planetRadius + heightOffset;
         this.fadeStartPixelSize = fadeStartPixelSize;
         this.fadeEndPixelSize = fadeEndPixelSize;
         this.countryGeo = countryGeo;
@@ -172,13 +171,11 @@ export class PlanetSurface {
      * @param {keyof this.points} category  'cities' | 'airports' | …
      */
     addInstancedPoints(geojson, material, category) {
-        // Use pre-created circle geometry for POI markers
         const circleGeom = this.circleGeom;
         geojson?.features.forEach(feat => {
             const [lon, lat] = feat.geometry.coordinates;
+            // Compute position on oblate spheroid via mesh scale + offset
             const pos = this.#spherical(lon, lat);
-
-            // Create a circle mesh marker for points of interest
             const circleMaterial = new THREE.MeshBasicMaterial({
                 map: material.map,
                 color: material.color.getHex(),
@@ -188,13 +185,14 @@ export class PlanetSurface {
             });
             const mesh = new THREE.Mesh(circleGeom, circleMaterial);
             mesh.position.copy(pos);
-            // Orient the marker flush with surface (normal along radial direction)
-            const normal = pos.clone().normalize();
-            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+            // Compute local normal (sphere normal) and transform to world for orientation
+            const sphereNorm = mesh.position.clone().normalize();
+            const normalMatrix = new THREE.Matrix3().getNormalMatrix(this.root.matrixWorld);
+            const worldNorm = sphereNorm.applyMatrix3(normalMatrix).normalize();
+            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), worldNorm);
             mesh.renderOrder = 3;
             mesh.userData = { feature: feat, category };
             mesh.visible = true;
-
             this.root.add(mesh);
             this.points[category].push(mesh);
         });
@@ -238,10 +236,9 @@ export class PlanetSurface {
     #spherical(lon, lat) {
         const phi = THREE.MathUtils.degToRad(90 - lat);
         const theta = THREE.MathUtils.degToRad(lon + 90);
-        // Compute spherical position, then flatten along local Y-axis
-        const pos = new THREE.Vector3().setFromSphericalCoords(this.radius, phi, theta);
-        pos.y *= this.polarScale;
-        return pos;
+        // Compute point on unit sphere, then scale by planetRadius + offset
+        const radius = this.planetRadius + this.heightOffset;
+        return new THREE.Vector3().setFromSphericalCoords(radius, phi, theta);
     }
 
     #createCircleTexture(size) {
