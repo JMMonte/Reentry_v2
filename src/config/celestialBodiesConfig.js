@@ -62,10 +62,10 @@ export const celestialBodiesConfig = {
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: false }, // helper set to false for prod
         lodLevels: [
-            { meshRes: 16, distance: 200000 },
-            { meshRes: 32, distance: 100000 },
-            { meshRes: 64, distance: 50000 },
-            { meshRes: 128, distance: 20000 },
+            { meshRes: 16, distance: 100000 },
+            { meshRes: 32, distance: 50000 },
+            { meshRes: 64, distance: 20000 },
+            { meshRes: 128, distance: 7000 },
         ],
         dotPixelSizeThreshold: 1,
         soiRadius: 145,
@@ -132,8 +132,8 @@ export const celestialBodiesConfig = {
         lightOptions: { color: 0x6699ff, intensity: 1000.5, helper: false }, // helper set to false for prod
         lodLevels: [
             { meshRes: 16, distance: 10000 },
-            { meshRes: 64, distance: 2000 },
-            { meshRes: 128, distance: 500 },
+            { meshRes: 64, distance: 8000 },
+            { meshRes: 128, distance: 2000 },
         ],
         dotPixelSizeThreshold: 1,
         orbitalPeriod: 27.321661, // sidereal days
