@@ -27,6 +27,7 @@ export class Constants {
     static AU = 1.495978707e11; // Astronomical unit in meters
     // Sun constants
     static sunMass = 1.9885e30; // Sun mass in kg
+    static sunGravitationalParameter = Constants.G * Constants.sunMass; // Sun gravitational parameter m^3/s^2
     // Moon constants
     static moonRadius = 1737400; // Moon radius in meters
     static moonMass = 7.342e22; // Moon mass in kg

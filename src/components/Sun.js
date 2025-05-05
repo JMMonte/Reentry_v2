@@ -26,18 +26,18 @@ export class Sun {
         const material = new THREE.MeshPhongMaterial({
             color: 0xFFFFFF,  // Sun's color
             emissive: 0xFFFFFF,  // Glowing color
-            emissiveIntensity: 0.1,
+            emissiveIntensity: 1.0,
             shininess: 100,
             transparent: false,
-            blending: THREE.AdditiveBlending,
+            blending: THREE.NormalBlending,
             depthWrite: false  // This allows the lens flare to show through
         });
 
         this.sun = new THREE.Mesh(geometry, material);
         this.scene.add(this.sun);
 
-        this.sunLight = new THREE.PointLight(0xffffff, 400000000.0, 0);
-        this.sunLight.decay = 1;
+        this.sunLight = new THREE.PointLight(0xffffff, 1e6, 0);
+        this.sunLight.decay = 0.7;
         this.sunLight.position.copy(this.sun.position);
         this.sunLight.castShadow = false;
         this.scene.add(this.sunLight);

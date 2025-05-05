@@ -35,6 +35,7 @@ import { setupEventListeners as setupGlobalListeners }
     from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { PhysicsWorld } from './world/PhysicsWorld.js';
+import { OrbitManager } from './managers/OrbitManager.js';
 
 // Domain helpers
 import {
@@ -140,6 +141,18 @@ class App3D extends EventTarget {
 
             // Load planets & sun into physics world
             this.physicsWorld.loadFromPlanets(this.celestialBodies);
+
+            // Link atmospheres to physics bodies (multi-atmosphere)
+            this.atmosphereManager?.linkPhysicsBodies();
+
+            // Build and display planetary orbits
+            this.orbitManager = new OrbitManager({
+                physicsWorld: this.physicsWorld,
+                scene: this.scene,
+                app: this,
+                config: { steps: 360, lineWidth: 1 }
+            });
+            this.orbitManager.build();
 
             this._initAxisHelper();
             this._initPOIPicking();
@@ -335,6 +348,7 @@ class App3D extends EventTarget {
         // Update Radial Grids after planets have their final positions
         Planet.instances.forEach(p => {
             p.radialGrid?.updatePosition();
+            p.radialGrid?.updateFading(this.camera);
         });
 
         // Update Planet Shader Uniforms after final positions are set
@@ -359,6 +373,70 @@ class App3D extends EventTarget {
         // UI-scale transforms
         this.axisLabelFader?.update(this.camera);
         this._resizePOIs();
+
+        // Update Atmosphere Raymarching Uniforms (NEW)
+        this._updateAtmosphereUniforms();
+
+        // Update Sun Lens Flare based on camera distance
+        if (this.sun) {
+            this.sun.updateLensFlare(this.camera);
+        }
+    }
+
+    // Helper to update atmosphere raymarching uniforms (NEW)
+    _updateAtmosphereUniforms() {
+        const atmospherePass = this.sceneManager?.composers?.atmospherePass;
+        if (!atmospherePass || !this.atmosphereManager) return;
+
+        // Update all array uniforms from AtmosphereManager
+        const arrays = this.atmosphereManager.buildUniformArrays(this.camera);
+
+        // Get sun position
+        const sunBody = this.physicsWorld?.bodies.find(b => b.name.toLowerCase() === 'sun');
+        const sunPos = sunBody?.position;
+        const EPS = 1e-6;
+        // Use 1 AU as reference distance (in km)
+        const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU * Constants.metersToKm : 149597870.7;
+        // Use a single base solar constant (e.g., 1361 W/m^2, but scale for scene brightness)
+        const BASE_SOLAR_CONSTANT = 10.6; //Adjusted from m^2 to km^2
+        // Scale sun intensity by inverse square law, normalized to 1 AU
+        if (sunPos) {
+            for (let i = 0; i < this.atmosphereManager.atmospheres.length; ++i) {
+                const planetPos = arrays.uPlanetPosition[i];
+                const dist = planetPos.distanceTo(sunPos);
+                // Physically correct sunlight at this distance
+                arrays.uSunIntensity[i] = BASE_SOLAR_CONSTANT * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
+            }
+        }
+
+        for (const key in arrays) {
+            if (atmospherePass.uniforms[key]) {
+                if (Array.isArray(arrays[key]) || ArrayBuffer.isView(arrays[key])) {
+                    for (let i = 0; i < arrays[key].length; ++i) {
+                        if (atmospherePass.uniforms[key].value[i]?.copy && arrays[key][i]?.copy) {
+                            atmospherePass.uniforms[key].value[i].copy(arrays[key][i]);
+                        } else if (typeof arrays[key][i] !== 'undefined') {
+                            atmospherePass.uniforms[key].value[i] = arrays[key][i];
+                        }
+                    }
+                } else {
+                    atmospherePass.uniforms[key].value = arrays[key];
+                }
+            }
+        }
+
+        // Update sun position
+        if (sunPos) {
+            atmospherePass.uniforms.uSunPosition.value.copy(sunPos);
+        }
+
+        // Update inverse matrices and resolution
+        if (this.camera) {
+            this.camera.updateMatrixWorld();
+            atmospherePass.uniforms.uInverseProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+            atmospherePass.uniforms.uInverseViewMatrix.value.copy(this.camera.matrixWorld);
+            atmospherePass.uniforms.uResolution.value.set(this.canvas.clientWidth, this.canvas.clientHeight);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -545,6 +623,9 @@ class App3D extends EventTarget {
         this.sceneManager.composers.bloom?.setSize(window.innerWidth, window.innerHeight);
         this.sceneManager.composers.final?.setSize(window.innerWidth, window.innerHeight);
         this.labelRenderer?.setSize(window.innerWidth, window.innerHeight);
+
+        // Update orbit lines resolution
+        this.orbitManager?.onResize();
 
         this._resizePOIs();
     }

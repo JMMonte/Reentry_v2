@@ -93,7 +93,7 @@ export function setupControls(camera, renderer) {
     const controls = new OrbitControls(camera, renderer.domElement);
 
     controls.minDistance = 1;
-    controls.maxDistance = 500_000_000;
+    controls.maxDistance = 500_000_000_000;
 
     return controls;
 }

@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 import {
     earthTexture, earthSpecTexture, earthNormalTexture,
-    cloudTexture, moonTexture, moonBump
+    cloudTexture, moonTexture, moonBump,
+    mercuryTexture, venusTexture, venusAtmosphereTexture,
+    marsTexture, jupiterTexture, saturnTexture, saturnRingTexture,
+    uranusTexture, neptuneTexture
 } from './textures.js';
 import geojsonDataSovereignty from './ne_50m_admin_0_sovereignty.json';
 import geojsonDataStates from './ne_110m_admin_1_states_provinces.json';
@@ -35,6 +38,15 @@ function generateLodLevelsForRadius(radius) {
 }
 
 export const celestialBodiesConfig = {
+    barycenter: {
+        name: 'barycenter',
+        // No parent (root of the system)
+    },
+    emb: {
+        name: 'emb',
+        parent: 'barycenter',
+        // Optionally, add mass, radius, etc. if needed
+    },
     earth: {
         name: 'earth',
         symbol: '♁',
@@ -74,8 +86,21 @@ export const celestialBodiesConfig = {
         lodLevels: generateLodLevelsForRadius(earthRadius),
         dotPixelSizeThreshold: 1,
         soiRadius: 145,
+        // --- Atmosphere parameters for volumetric raymarching ---
+        atmosphere: {
+            thickness: 60, // km
+            densityScaleHeight: 8.0, // km
+            rayleighScatteringCoeff: [0.012, 0.028, 0.18], // RGB, tuned for blue sky
+            mieScatteringCoeff: 0.004, // scalar
+            mieAnisotropy: 0.75, // g
+            numLightSteps: 4,
+            sunIntensity: 6.0,
+            // Oblate spheroid parameters
+            equatorialRadius: earthRadius, // km
+            polarRadius: earthRadius * (1 - 0.0033528106647474805), // km, using correct Earth's oblateness
+        },
         materials: {
-            createSurfaceMaterial: (tm, anisotropy) => {
+            createSurfaceMaterial: (tm) => {
                 const mat = new THREE.MeshPhongMaterial({
                     map: tm.getTexture('earthTexture'),
                     specularMap: tm.getTexture('earthSpecTexture'),
@@ -84,16 +109,16 @@ export const celestialBodiesConfig = {
                     specular: new THREE.Color('grey'),
                     shininess: 150
                 });
-                if (mat.map) mat.map.anisotropy = anisotropy;
-                if (mat.specularMap) mat.specularMap.anisotropy = anisotropy;
-                if (mat.normalMap) mat.normalMap.anisotropy = anisotropy;
+                // Anisotropy is set globally by TextureManager based on settings
                 return mat;
             },
             createCloudMaterial: (tm) => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('cloudTexture'),
+                alphaMap: tm.getTexture('cloudTexture'),
+                color: 0xffffff,
                 transparent: true,
-                opacity: 0.8,
-                blending: THREE.AdditiveBlending
+                blending: THREE.NormalBlending,
+                depthWrite: false,
+                depthTest: true
             })
         },
         radialGridConfig: {
@@ -110,10 +135,12 @@ export const celestialBodiesConfig = {
             markerStep: 100000,
             labelMarkerStep: 100000,
             radialLines: { count: 22 },
-        }
+        },
+        parent: 'emb'
     },
     moon: {
         name: 'moon',
+        parent: 'emb',
         symbol: '☾',
         mass: moonMass, // kg
         // Correct radius calculation: Convert meters to km, then apply desired scene scale factor (0.1)
@@ -136,7 +163,6 @@ export const celestialBodiesConfig = {
         lightOptions: { color: 0x6699ff, intensity: 1000.5, helper: false }, // helper set to false for prod
         lodLevels: generateLodLevelsForRadius(moonRadius),
         dotPixelSizeThreshold: 1,
-        orbitalPeriod: 27.321661, // sidereal days
         soiRadius: 10.3,
         orbitElements: { // Base elements, argumentOfPeriapsis might be updated dynamically
             semiMajorAxis: 384400000,
@@ -146,15 +172,23 @@ export const celestialBodiesConfig = {
             argumentOfPeriapsis: 318.15 * (Math.PI / 180), // Argument of periapsis in radians
             mu: earthGravitationalParameter, // Gravitational parameter in m^3/s^2
         },
+        // atmosphere: {
+        //     thickness: 0, // No atmosphere
+        //     densityScaleHeight: 0,
+        //     rayleighScatteringCoeff: [0,0,0],
+        //     mieScatteringCoeff: 0,
+        //     mieAnisotropy: 0,
+        //     numLightSteps: 0,
+        //     sunIntensity: 0
+        // },
         materials: {
-            createSurfaceMaterial: (tm, anisotropy) => {
+            createSurfaceMaterial: (tm) => {
                 const mat = new THREE.MeshPhongMaterial({
                     map: tm.getTexture('moonTexture'),
                     bumpMap: tm.getTexture('moonBump'),
                     bumpScale: 3.9
                 });
-                if (mat.map) mat.map.anisotropy = anisotropy;
-                if (mat.bumpMap) mat.bumpMap.anisotropy = anisotropy;
+                // Anisotropy is set globally by TextureManager based on settings
                 return mat;
             },
             createCloudMaterial: () => null,
@@ -173,8 +207,322 @@ export const celestialBodiesConfig = {
     },
     sun: {
         name: 'sun',
+        parent: 'barycenter',
         mass: 1.989 * 10 ** 30,
         radius: 695700000,
+    },
+    mercury: {
+        name: 'mercury',
+        symbol: '☿',
+        mass: 3.3011e23, // kg
+        radius: 2439.7, // km
+        tilt: 0.034, // degrees
+        rotationPeriod: 5067000, // seconds (58.6 Earth days)
+        oblateness: 0.0000,
+        lodLevels: generateLodLevelsForRadius(2439.7),
+        dotPixelSizeThreshold: 1,
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
+                map: tm.getTexture('mercuryTexture'),
+                shininess: 5
+            })
+        },
+        atmosphere: { thickness: 0 }, // Negligible atmosphere
+        // Sphere-of-influence multiplier (planet radius * soiRadius = SOI in km)
+        soiRadius: 46,
+        // Radial grid to show SOI around Mercury
+        radialGridConfig: {
+            maxDisplayRadius: 112000,
+            markerStep: 8000,
+            labelMarkerStep: 40000,
+            circles: [
+                { radius: 5000, label: '5,000 km', style: 'minor' },
+                { radius: 20000, label: '20,000 km', style: 'minor' },
+                { radius: 50000, label: '50,000 km', style: 'minor' },
+                { radius: 112000, label: 'SOI', style: 'dashed-major', dashScale: 2 },
+                { radius: 1500, label: 'Magnetosphere', style: 'dashed', dashScale: 1.5 }
+            ],
+            radialLines: { count: 22 }
+        },
+        parent: 'barycenter'
+    },
+    venus: {
+        name: 'venus',
+        symbol: '♀',
+        mass: 4.8675e24, // kg
+        radius: 6051.8, // km
+        tilt: 177.36, // degrees (retrograde rotation)
+        rotationPeriod: -20997000, // seconds (-243 Earth days)
+        oblateness: 0.0000,
+        cloudThickness: 10, // km
+        lodLevels: generateLodLevelsForRadius(6051.8),
+        dotPixelSizeThreshold: 1,
+        atmosphereThickness: 90, // km (dense atmosphere)
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
+                map: tm.getTexture('venusTexture'),
+                shininess: 10
+            }),
+            // Use venus atmosphere texture for clouds/haze
+            createCloudMaterial: (tm) => new THREE.MeshLambertMaterial({
+                map: tm.getTexture('venusAtmosphereTexture'),
+                transparent: false,
+                opacity: 1.0, // Adjust opacity
+                blending: THREE.NormalBlending
+            })
+        },
+        atmosphere: {
+            thickness: 190, // km
+            densityScaleHeight: 15.9, // km (approx)
+            rayleighScatteringCoeff: [0.01, 0.008, 0.005],
+            mieScatteringCoeff: 0.015,
+            mieAnisotropy: 0.7,
+            numLightSteps: 4,
+            sunIntensity: 12.0, // Base intensity (dynamic scaling handles distance)
+            equatorialRadius: 6051.8,
+            polarRadius: 6051.8,
+        },
+        // Sphere-of-influence multiplier for Venus
+        soiRadius: 101,
+        // Radial grid to show SOI around Venus
+        radialGridConfig: {
+            maxDisplayRadius: 613000,
+            markerStep: 50000,
+            labelMarkerStep: 100000,
+            circles: [
+                { radius: 10000, label: '10,000 km', style: 'minor' },
+                { radius: 50000, label: '50,000 km', style: 'minor' },
+                { radius: 200000, label: '200,000 km', style: 'minor' },
+                { radius: 613000, label: 'SOI', style: 'dashed-major', dashScale: 2 }
+            ],
+            radialLines: { count: 22 }
+        },
+        parent: 'barycenter'
+    },
+    mars: {
+        name: 'mars',
+        symbol: '♂',
+        mass: 6.4171e23, // kg
+        radius: 3389.5, // km
+        tilt: 25.19, // degrees
+        rotationPeriod: 88643, // seconds (1.026 Earth days)
+        oblateness: 0.00589,
+        lodLevels: generateLodLevelsForRadius(3389.5),
+        dotPixelSizeThreshold: 1,
+        atmosphereThickness: 11, // km (thin atmosphere)
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
+                map: tm.getTexture('marsTexture'),
+                shininess: 5
+            })
+        },
+        atmosphere: {
+            thickness: 11, // km
+            densityScaleHeight: 11.1, // km
+            rayleighScatteringCoeff: [0.005, 0.002, 0.001],
+            mieScatteringCoeff: 0.001,
+            mieAnisotropy: 0.8,
+            numLightSteps: 4,
+            sunIntensity: 3.0, // Base intensity (dynamic scaling handles distance)
+            equatorialRadius: 3389.5,
+            polarRadius: 3389.5 * (1 - 0.00589),
+        },
+        // Sphere-of-influence multiplier for Mars
+        soiRadius: 169,
+        // Radial grid to show SOI around Mars
+        radialGridConfig: {
+            maxDisplayRadius: 573000,
+            markerStep: 50000,
+            labelMarkerStep: 100000,
+            circles: [
+                { radius: 10000, label: '10,000 km', style: 'minor' },
+                { radius: 50000, label: '50,000 km', style: 'minor' },
+                { radius: 200000, label: '200,000 km', style: 'minor' },
+                { radius: 573000, label: 'SOI', style: 'dashed-major', dashScale: 2 }
+            ],
+            radialLines: { count: 22 }
+        },
+        parent: 'barycenter'
+    },
+    jupiter: {
+        name: 'jupiter',
+        symbol: '♃',
+        mass: 1.8982e27, // kg
+        radius: 69911, // km (mean volumetric)
+        tilt: 3.13, // degrees
+        rotationPeriod: 35730, // seconds (0.41 Earth days)
+        oblateness: 0.06487,
+        lodLevels: generateLodLevelsForRadius(69911),
+        dotPixelSizeThreshold: 1,
+        atmosphereThickness: 1000, // km (deep atmosphere)
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
+                map: tm.getTexture('jupiterTexture')
+            })
+        },
+        atmosphere: {
+            thickness: 1000, // km
+            densityScaleHeight: 20, // Lower for more visible edge
+            rayleighScatteringCoeff: [0.01, 0.02, 0.08], // much higher, blueish
+            mieScatteringCoeff: 0.005,
+            mieAnisotropy: 0.5,
+            numLightSteps: 4,
+            sunIntensity: 8.0, // much higher for debug
+            equatorialRadius: 71492, // km
+            polarRadius: 66854, // km
+        },
+        // Sphere-of-influence multiplier for Jupiter
+        soiRadius: 690,
+        // Radial grid to show SOI around Jupiter
+        radialGridConfig: {
+            maxDisplayRadius: 48230000,
+            markerStep: 2000000,
+            labelMarkerStep: 10000000,
+            circles: [
+                { radius: 104867, label: '1.5 Rj (Inner Belt)', style: 'dashed', dashScale: 1.5 },
+                { radius: 209734, label: '3 Rj (Outer Belt)', style: 'dashed', dashScale: 2 },
+                { radius: 10000000, label: '10,000,000 km', style: 'minor' },
+                { radius: 30000000, label: '30,000,000 km', style: 'minor' },
+                { radius: 48230000, label: 'SOI', style: 'dashed-major', dashScale: 2 }
+            ],
+            radialLines: { count: 22 }
+        },
+        parent: 'barycenter'
+    },
+    saturn: {
+        name: 'saturn',
+        symbol: '♄',
+        mass: 5.6834e26, // kg
+        radius: 58232, // km (mean volumetric)
+        tilt: 26.73, // degrees
+        rotationPeriod: 38362, // seconds (0.44 Earth days)
+        oblateness: 0.09796,
+        lodLevels: generateLodLevelsForRadius(58232),
+        dotPixelSizeThreshold: 1,
+        atmosphereThickness: 1000, // km
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
+                map: tm.getTexture('saturnTexture')
+            })
+        },
+        atmosphere: {
+            thickness: 1000, // km
+            densityScaleHeight: 10, // Lower for denser, more visible edge
+            rayleighScatteringCoeff: [0.04, 0.08, 0.32], // much higher, blueish
+            mieScatteringCoeff: 0.01,
+            mieAnisotropy: 0.6,
+            numLightSteps: 4,
+            sunIntensity: 8.0, // much higher for debug
+            equatorialRadius: 60268, // km
+            polarRadius: 54364, // km
+        },
+        // Sphere-of-influence multiplier for Saturn
+        soiRadius: 946,
+        // Radial grid to show SOI around Saturn
+        radialGridConfig: {
+            maxDisplayRadius: 55090000,
+            markerStep: 2000000,
+            labelMarkerStep: 10000000,
+            circles: [
+                { radius: 60000, label: 'Inner Belt', style: 'dashed', dashScale: 1.5 },
+                { radius: 120000, label: 'Outer Belt', style: 'dashed', dashScale: 2 },
+                { radius: 10000000, label: '10,000,000 km', style: 'minor' },
+                { radius: 30000000, label: '30,000,000 km', style: 'minor' },
+                { radius: 55090000, label: 'SOI', style: 'dashed-major', dashScale: 2 }
+            ],
+            radialLines: { count: 22 }
+        },
+        parent: 'barycenter'
+    },
+    uranus: {
+        name: 'uranus',
+        symbol: '♅',
+        mass: 8.6810e25, // kg
+        radius: 25362, // km (mean volumetric)
+        tilt: 97.77, // degrees (extreme tilt)
+        rotationPeriod: -62064, // seconds (-0.72 Earth days, retrograde)
+        oblateness: 0.02293,
+        lodLevels: generateLodLevelsForRadius(25362),
+        dotPixelSizeThreshold: 1,
+        atmosphereThickness: 500, // km
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
+                map: tm.getTexture('uranusTexture')
+            })
+        },
+        atmosphere: {
+            thickness: 500, // km
+            densityScaleHeight: 8, // Lower for denser
+            rayleighScatteringCoeff: [0.02, 0.04, 0.16], // much higher
+            mieScatteringCoeff: 0.008,
+            mieAnisotropy: 0.7,
+            numLightSteps: 4,
+            sunIntensity: 0.5, // Base intensity
+            equatorialRadius: 25559, // km
+            polarRadius: 24973, // km
+        },
+        // Sphere-of-influence multiplier for Uranus
+        soiRadius: 2039,
+        // Radial grid to show SOI around Uranus
+        radialGridConfig: {
+            maxDisplayRadius: 51720000,
+            markerStep: 2000000,
+            labelMarkerStep: 10000000,
+            circles: [
+                { radius: 40000, label: 'Inner Belt', style: 'dashed', dashScale: 1.5 },
+                { radius: 60000, label: 'Outer Belt', style: 'dashed', dashScale: 2 },
+                { radius: 10000000, label: '10,000,000 km', style: 'minor' },
+                { radius: 30000000, label: '30,000,000 km', style: 'minor' },
+                { radius: 51720000, label: 'SOI', style: 'dashed-major', dashScale: 2 }
+            ],
+            radialLines: { count: 22 }
+        },
+        parent: 'barycenter'
+    },
+    neptune: {
+        name: 'neptune',
+        symbol: '♆',
+        mass: 1.02413e26, // kg
+        radius: 24622, // km (mean volumetric)
+        tilt: 28.32, // degrees
+        rotationPeriod: 57996, // seconds (0.67 Earth days)
+        oblateness: 0.01708,
+        lodLevels: generateLodLevelsForRadius(24622),
+        dotPixelSizeThreshold: 1,
+        atmosphereThickness: 500, // km
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
+                map: tm.getTexture('neptuneTexture')
+            })
+        },
+        atmosphere: {
+            thickness: 500, // km
+            densityScaleHeight: 7, // Lower for denser
+            rayleighScatteringCoeff: [0.03, 0.06, 0.24], // much higher
+            mieScatteringCoeff: 0.009,
+            mieAnisotropy: 0.7,
+            numLightSteps: 12,
+            sunIntensity: 0.5, // Base intensity
+            equatorialRadius: 24764, // km
+            polarRadius: 24341, // km
+        },
+        // Sphere-of-influence multiplier for Neptune
+        soiRadius: 3508,
+        // Radial grid to show SOI around Neptune
+        radialGridConfig: {
+            maxDisplayRadius: 86360000,
+            markerStep: 4000000,
+            labelMarkerStep: 20000000,
+            circles: [
+                { radius: 25000, label: 'Inner Belt', style: 'dashed', dashScale: 1.5 },
+                { radius: 55000, label: 'Outer Belt', style: 'dashed', dashScale: 2 },
+                { radius: 10000000, label: '10,000,000 km', style: 'minor' },
+                { radius: 50000000, label: '50,000,000 km', style: 'minor' },
+                { radius: 86360000, label: 'SOI', style: 'dashed-major', dashScale: 2 }
+            ],
+            radialLines: { count: 22 }
+        },
+        parent: 'barycenter'
     }
 };
 
@@ -186,6 +534,15 @@ export const textureDefinitions = [
     { key: 'cloudTexture', src: cloudTexture },
     { key: 'moonTexture', src: moonTexture },
     { key: 'moonBump', src: moonBump },
+    { key: 'mercuryTexture', src: mercuryTexture },
+    { key: 'venusTexture', src: venusTexture },
+    { key: 'venusAtmosphereTexture', src: venusAtmosphereTexture },
+    { key: 'marsTexture', src: marsTexture },
+    { key: 'jupiterTexture', src: jupiterTexture },
+    { key: 'saturnTexture', src: saturnTexture },
+    { key: 'saturnRingTexture', src: saturnRingTexture },
+    { key: 'uranusTexture', src: uranusTexture },
+    { key: 'neptuneTexture', src: neptuneTexture },
 ];
 
 // Add other scene-wide configs if needed

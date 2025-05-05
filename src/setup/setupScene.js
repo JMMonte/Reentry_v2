@@ -16,6 +16,10 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
+// Import new raymarching shaders (assuming Vite/Rollup raw import)
+import atmosphereVertexShader from '../shaders/atmosphereRaymarch.vert?raw';
+import atmosphereFragmentShader from '../shaders/atmosphereRaymarch.frag?raw';
+
 // Domain utilities ─────────────────────────────────────────────────────────────
 import { Constants } from '../utils/Constants.js';
 import { SatelliteVectors } from '../utils/SatelliteVectors.js';
@@ -28,6 +32,9 @@ import {
     ambientLightConfig,
     bloomConfig
 } from '../config/celestialBodiesConfig.js';
+
+// Import AtmosphereManager and the new constant
+import { AtmosphereManager, MAX_ATMOS } from '../managers/AtmosphereManager.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 2. STATIC CONFIGURATION - Moved to celestialBodiesConfig.js
@@ -80,11 +87,76 @@ const getBodyConfig = (key, timeUtils) => {
 };
 
 const setupPostProcessing = (app) => {
-    const { scene, camera, renderer, sceneManager } = app;
+    const { scene, camera, renderer, sceneManager, physicsWorld } = app;
     const composer = new EffectComposer(renderer);
 
+    // 1. Render the main scene
     composer.addPass(new RenderPass(scene, camera));
 
+    // --- Multi-atmosphere support ---
+    app.atmosphereManager = new AtmosphereManager(physicsWorld);
+    // app.atmosphereManager.linkPhysicsBodies(); // Moved to App3D.init
+    // Build initial uniform arrays
+    const arrays = app.atmosphereManager.buildUniformArrays(camera);
+    // Initialize all array uniforms as arrays of correct type/length
+    const uniforms = {
+        tDiffuse: { value: null },
+        uNumAtmospheres: { value: arrays.uNumAtmospheres },
+        uPlanetPosition: { value: Array(MAX_ATMOS).fill().map(() => new THREE.Vector3()) },
+        uPlanetRadius: { value: new Float32Array(MAX_ATMOS) },
+        uAtmosphereHeight: { value: new Float32Array(MAX_ATMOS) },
+        uDensityScaleHeight: { value: new Float32Array(MAX_ATMOS) },
+        uRayleighScatteringCoeff: { value: Array(MAX_ATMOS).fill().map(() => new THREE.Vector3()) },
+        uMieScatteringCoeff: { value: new Float32Array(MAX_ATMOS) },
+        uMieAnisotropy: { value: new Float32Array(MAX_ATMOS) },
+        uNumLightSteps: { value: new Int32Array(MAX_ATMOS) },
+        uSunIntensity: { value: new Float32Array(MAX_ATMOS) },
+        uRelativeCameraPos: { value: Array(MAX_ATMOS).fill().map(() => new THREE.Vector3()) },
+        uEquatorialRadius: { value: new Float32Array(MAX_ATMOS) },
+        uPolarRadius: { value: new Float32Array(MAX_ATMOS) },
+        uPlanetFrame: { value: Array(MAX_ATMOS).fill().map(() => new THREE.Matrix3()) },
+        uSunPosition: { value: new THREE.Vector3(0, 0, 0) },
+        uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+        uInverseProjectionMatrix: { value: new THREE.Matrix4() },
+        uInverseViewMatrix: { value: new THREE.Matrix4() },
+        uCameraDistance: { value: new Float32Array(MAX_ATMOS) },
+        // Screen-space culling
+        uPlanetScreenPos: { value: Array(MAX_ATMOS).fill().map(() => new THREE.Vector2()) },
+        uPlanetScreenRadius: { value: new Float32Array(MAX_ATMOS) },
+        // Elliptical culling
+        uEllipseCenter: { value: Array(MAX_ATMOS).fill().map(() => new THREE.Vector2()) },
+        uEllipseAxisA: { value: new Float32Array(MAX_ATMOS) },
+        uEllipseAxisB: { value: new Float32Array(MAX_ATMOS) },
+        uEllipseAngle: { value: new Float32Array(MAX_ATMOS) },
+    };
+    // Copy initial values from arrays
+    for (const key in arrays) {
+        if (uniforms[key]) {
+            if (Array.isArray(arrays[key]) || ArrayBuffer.isView(arrays[key])) {
+                for (let i = 0; i < arrays[key].length; ++i) {
+                    if (uniforms[key].value[i]?.copy && arrays[key][i]?.copy) {
+                        uniforms[key].value[i].copy(arrays[key][i]);
+                    } else if (typeof arrays[key][i] !== 'undefined') {
+                        uniforms[key].value[i] = arrays[key][i];
+                    }
+                }
+            } else {
+                uniforms[key].value = arrays[key];
+            }
+        }
+    }
+
+    // 2. Atmosphere Raymarching Pass (multi-atmosphere)
+    const atmosphereShader = {
+        uniforms,
+        vertexShader: atmosphereVertexShader,
+        fragmentShader: atmosphereFragmentShader
+    };
+    const atmospherePass = new ShaderPass(atmosphereShader);
+    composer.addPass(atmospherePass);
+    sceneManager.composers.atmospherePass = atmospherePass; // Store reference
+
+    // 3. FXAA Pass
     const fxaaPass = new ShaderPass(FXAAShader);
     const pixelRatio = renderer.getPixelRatio();
     fxaaPass.material.uniforms.resolution.value.set(
@@ -130,10 +202,22 @@ export async function initScene(app) {
     app.earth = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('earth', timeUtils));
     app.sun = new Sun(scene, timeUtils, getBodyConfig('sun', timeUtils)); // Pass sun config
     app.moon = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('moon', timeUtils));
+    app.emb = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('emb', timeUtils));
+    app.mercury = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('mercury', timeUtils));
+    app.venus = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('venus', timeUtils));
+    app.mars = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('mars', timeUtils));
+    app.jupiter = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('jupiter', timeUtils));
+    app.saturn = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('saturn', timeUtils));
+    app.uranus = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('uranus', timeUtils));
+    app.neptune = new Planet(scene, renderer, timeUtils, textureManager, getBodyConfig('neptune', timeUtils));
 
     // 3. Helpers
-    // gather all celestial bodies (earth, moon, sun)
-    app.celestialBodies = [app.earth, app.moon, app.sun];
+    // gather all celestial bodies
+    app.celestialBodies = [
+        app.earth, app.moon, app.sun, app.emb,
+        app.mercury, app.venus, app.mars,
+        app.jupiter, app.saturn, app.uranus, app.neptune
+    ];
     // create vectors only for planetary bodies (skip Sun)
     app.planetVectors = app.celestialBodies
         .filter(b => typeof b.getMesh === 'function' && b.rotationGroup)

@@ -20,23 +20,25 @@ function createEarthMaterial(textureManager, anisotropy) {
         depthWrite: true
     });
 }
+
+// Modify this internal default cloud material function
 function createCloudMaterial(textureManager, anisotropy) {
     const cloudTexture = textureManager.getTexture('cloudTexture');
+    if (!cloudTexture) return null;
+
     cloudTexture.anisotropy = anisotropy;
-    cloudTexture.transparent = true;
-    return new THREE.MeshPhongMaterial({
-        alphaMap: cloudTexture,
+
+    return new THREE.MeshLambertMaterial({ // Keep Lambert
+        // map: cloudTexture, // REMOVED from map
+        alphaMap: cloudTexture, // USE texture as alphaMap
+        color: 0xffffff, // Base color for clouds (white)
         transparent: true,
-        opacity: 1.0,
-        side: THREE.FrontSide,
-        blending: THREE.CustomBlending,
-        blendEquation: THREE.AddEquation,
-        blendSrc: THREE.SrcAlphaFactor,
-        blendDst: THREE.OneMinusSrcAlphaFactor,
+        blending: THREE.NormalBlending,
         depthWrite: false,
         depthTest: true
     });
 }
+
 function createAtmosphereMaterial(earthRadius, {
     atmoHeight = 5,
     densityScale = 0.05,
@@ -132,6 +134,9 @@ export class PlanetMaterials {
         const mat = this.cloudCreator(this.textureManager, this.maxAnisotropy);
         if (!mat) return null;
         if (mat.map) mat.map.anisotropy = this.maxAnisotropy;
+        // prevent clouds from occluding the planet surface
+        mat.depthWrite = false;
+        mat.depthTest = true;
         return mat;
     }
 

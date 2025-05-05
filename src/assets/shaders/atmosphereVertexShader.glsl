@@ -12,6 +12,7 @@ uniform vec3 planetPosition;   // World position of planet center
 // Varyings
 varying vec3 vLocalPos;         // Vertex position in local frame
 varying vec3 vRelativeEyeLocal; // Camera position relative to planet, in local frame
+varying vec3 vViewDirLocal;     // View direction (Eye->Vertex) in local frame
 
 varying vec4 vWorldPosition;
 varying float fov;
@@ -29,6 +30,11 @@ void main() {
 
     // 3. Transform relative world vector into planet's local frame
     vRelativeEyeLocal = planetFrame * relativeEyeWorld;
+
+    // 4. View direction (from eye to vertex) in local frame
+    vec3 vertexWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+    vec3 viewDirWorld = normalize(vertexWorld - cameraPosition);
+    vViewDirLocal = planetFrame * viewDirWorld;
 
     // Standard projection
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);

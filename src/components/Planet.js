@@ -30,6 +30,8 @@ export class Planet {
             symbol, lodLevels = [],
             dotPixelSizeThreshold = 4, dotColor = 0xffffff,
             soiRadius = 0,
+            addRings = false,
+            rings: ringConfig = null,
             radialGridConfig = null
         } = config;
 
@@ -106,12 +108,31 @@ export class Planet {
         /* ---------- optional light ---------- */
         if (addLight) this.#addLight(lightOptions);
 
+        /* ----- rings ----- */
+        if (addRings && ringConfig) {
+            this.#initRings(ringConfig);
+        }
+
+        // Special case: if this is the EMB, add a visible marker
+        if (name && name.toLowerCase() === 'emb') {
+            this.marker = new THREE.Mesh(
+                new THREE.SphereGeometry(1000, 16, 16), // Small sphere
+                new THREE.MeshBasicMaterial({ color: 0xff00ff })
+            );
+            this.unrotatedGroup = new THREE.Group();
+            this.unrotatedGroup.add(this.marker);
+            this.scene.add(this.unrotatedGroup);
+        }
+
         this.update(); // initial orientation & orbit
     }
 
     /* ===== private helpers ===== */
 
     #initGroups() {
+        this.unrotatedGroup = new THREE.Group();
+        this.scene.add(this.unrotatedGroup);
+
         this.orbitGroup = new THREE.Group();
         this.tiltGroup = new THREE.Group();
         this.rotationGroup = new THREE.Group();
@@ -122,22 +143,14 @@ export class Planet {
 
         this.orbitGroup.rotation.set(-Math.PI / 2, 0, Math.PI); // Z-north
         this.tiltGroup.rotation.x = THREE.MathUtils.degToRad(this.tilt);
-
-        if (this.orbitElements) this.#drawOrbitLine();
     }
 
     #initMaterials() {
         this.surfaceMaterial = this.materials.getSurfaceMaterial();
         this.cloudMaterial = this.cloudThickness > 0 ? this.materials.getCloudMaterial() : null;
 
-        this.atmosphereMaterial = this.atmosphereThickness > 0
-            ? this.materials.atmosphereCreator(this.radius, { atmoHeight: this.atmosphereThickness })
-            : null;
-
         this.glowMaterial = this.materials.getGlowMaterial(this.radius, { atmoHeight: this.atmosphereThickness });
 
-        if (this.atmosphereMaterial?.uniforms)
-            this.atmosphereMaterial.uniforms.planetFrame = { value: new THREE.Matrix3() };
         if (this.glowMaterial?.uniforms)
             this.glowMaterial.uniforms.planetFrame = { value: new THREE.Matrix3() };
     }
@@ -146,21 +159,14 @@ export class Planet {
         const equR = this.radius;
         const polR = this.radius * (1 - this.oblateness);
 
-        const equAtmo = equR + this.atmosphereThickness;
-        const polAtmo = polR + this.atmosphereThickness;
+        // Define yScale helper first
+        const yScale = (p, e) => p / e;
 
         const equCloud = equR + this.cloudThickness;
         const polCloud = polR + this.cloudThickness;
 
-        const equGlow = equAtmo;
-        const polGlow = polAtmo;
-
-        const yScale = (p, e) => p / e;
-
         const coreY = yScale(polR, equR);
-        const atmoY = yScale(polAtmo, equAtmo);
         const cloudY = yScale(polCloud, equCloud);
-        const glowY = yScale(polGlow, equGlow);
 
         /* ----- core ----- */
         if (this.lodLevels?.length) {
@@ -182,28 +188,6 @@ export class Planet {
             );
             this.planetMesh.scale.set(1, coreY, 1);
             this.rotationGroup.add(this.planetMesh);
-        }
-
-        /* ----- atmosphere ----- */
-        if (this.atmosphereMaterial) {
-            const make = (res) =>
-                new THREE.Mesh(new THREE.SphereGeometry(equAtmo, res, res), this.atmosphereMaterial);
-            if (this.lodLevels?.length) {
-                this.atmosphereLOD = new THREE.LOD();
-                for (const { meshRes, distance } of this.lodLevels) {
-                    const m = make(meshRes);
-                    m.scale.set(1, atmoY, 1);
-                    m.renderOrder = -1;
-                    this.atmosphereLOD.addLevel(m, distance);
-                }
-                this.rotationGroup.add(this.atmosphereLOD);
-                this.atmosphereMesh = this.atmosphereLOD;
-            } else {
-                this.atmosphereMesh = make(this.atmosphereRes);
-                this.atmosphereMesh.scale.set(1, atmoY, 1);
-                this.atmosphereMesh.renderOrder = -1;
-                this.rotationGroup.add(this.atmosphereMesh);
-            }
         }
 
         /* ----- clouds ----- */
@@ -228,26 +212,9 @@ export class Planet {
             }
         }
 
-        /* ----- glow ----- */
-        if (this.glowMaterial) {
-            const { renderOrder } = this.materials.getGlowParameters();
-            this.glowMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(equGlow, this.meshRes, this.meshRes),
-                this.glowMaterial
-            );
-            this.glowMesh.scale.set(1, glowY, 1);
-            this.glowMesh.renderOrder = renderOrder;
-            this.rotationGroup.add(this.glowMesh);
-        }
-
-        /* flattening ratios for shader */
-        if (this.atmosphereMaterial) {
-            this.atmosphereMaterial.uniforms.polarScale.value = coreY;
-            this.atmosphereMaterial.uniforms.atmoYScale.value = atmoY;
-        }
-        if (this.glowMaterial) {
-            this.glowMaterial.uniforms.polarScale.value = coreY;
-            this.glowMaterial.uniforms.atmoYScale.value = glowY;
+        /* ----- rings ----- */
+        if (this.addRings && this.ringConfig) {
+            this.#initRings(this.ringConfig);
         }
     }
 
@@ -302,23 +269,6 @@ export class Planet {
         if (helper) this.scene.add(new THREE.PointLightHelper(light, helperSize));
     }
 
-    #drawOrbitLine() {
-        const pts = [];
-        const N = 360;
-        const period = (this.orbitalPeriod || 27.321661) * Constants.secondsInDay;
-        for (let i = 0; i <= N; ++i) {
-            pts.push(
-                PhysicsUtils.getPositionAtTime(this.orbitElements, (i / N) * period)
-            );
-        }
-        this.orbitLine = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints(pts),
-            new THREE.LineBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.5 })
-        );
-        this.orbitLine.frustumCulled = false;
-        this.scene.add(this.orbitLine);
-    }
-
     #initDistantMesh() {
         const geo = new THREE.SphereGeometry(1, 8, 8);
         const mat = new THREE.MeshBasicMaterial({ color: this.dotColor, transparent: true, opacity: 0.7 });
@@ -337,9 +287,73 @@ export class Planet {
         this.tiltGroup.add(this.soiMesh);
     }
 
+    #initRings({ innerRadius, outerRadius, textureKey, resolution = 128 }) {
+        const ringTexture = this.textureManager.getTexture(textureKey);
+        if (!ringTexture) {
+            console.warn(`Ring texture '${textureKey}' not found for planet ${this.name}`);
+            return;
+        }
+
+        // Geometry: A flat ring
+        const geometry = new THREE.RingGeometry(
+            innerRadius,
+            outerRadius,
+            resolution,
+            1, // thetaSegments
+            0, // thetaStart
+            Math.PI * 2
+        );
+
+        // Adjust UVs: Map texture radially
+        // u = (radius - innerRadius) / (outerRadius - innerRadius)
+        // v = angle / (2*PI)
+        const pos = geometry.attributes.position;
+        const uvs = geometry.attributes.uv;
+        const ringSpan = outerRadius - innerRadius;
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            const radius = Math.sqrt(x * x + y * y);
+            const angle = Math.atan2(y, x);
+
+            uvs.setX(i, (radius - innerRadius) / ringSpan);
+            uvs.setY(i, (angle / (Math.PI * 2)) + 0.5); // Map angle to V (0 to 1)
+        }
+
+        // Material
+        const material = new THREE.MeshPhongMaterial({
+            map: ringTexture,
+            alphaMap: ringTexture, // Use same texture for alpha
+            alphaTest: 0.01,     // Discard pixels with alpha below this threshold
+            side: THREE.DoubleSide,
+            transparent: false, // Make opaque by default
+            depthWrite: true,
+            shininess: 15,      // Slightly increased shininess
+            specular: 0x333333, // Slightly brighter specular highlights
+            emissive: 0x222222, // Add a faint emissive glow
+            emissiveIntensity: 0.5 // Intensity of the glow
+        });
+
+        this.ringMesh = new THREE.Mesh(geometry, material);
+        // Rings lie in the XY plane locally and rotate with tilt, not spin
+        this.ringMesh.rotation.x = Math.PI / 2; // Rotate plane to be horizontal
+        this.tiltGroup.add(this.ringMesh);
+    }
+
     /* ===== per-frame ===== */
     update() {
-        this.#updateRotation(); // Only handle rotation and internal visual state here
+        this.#updateRotation();
+        // Update EMB marker position if this is EMB
+        if (this.name && this.name.toLowerCase() === 'emb' && this.marker && window.Astronomy) {
+            const jd = this.timeManager.getJulianDate();
+            const embState = window.Astronomy.BaryState(window.Astronomy.Body.EMB, jd);
+            const kmPerAU = 149597870.7;
+            this.marker.position.set(
+                embState.x * kmPerAU,
+                embState.y * kmPerAU,
+                embState.z * kmPerAU
+            );
+        }
         // Shader uniforms are now updated externally by App3D after final position sync
 
         if (Planet.camera && this.distantMesh) {
@@ -354,8 +368,8 @@ export class Planet {
             if (pix < this.dotPixelSizeThreshold) {
                 this.distantMesh.visible = true;
                 this.planetMesh.visible = false;
-                this.atmosphereMesh && (this.atmosphereMesh.visible = false);
-                this.cloudMesh && (this.cloudMesh.visible = false);
+                // TEMPORARILY DISABLED Cloud Layer Visibility Update
+                // this.cloudMesh && (this.cloudMesh.visible = false);
                 this.glowMesh && (this.glowMesh.visible = false);
 
                 const ang = (this.dotPixelSizeThreshold / scrH) * fovY;
@@ -363,12 +377,17 @@ export class Planet {
             } else {
                 this.distantMesh.visible = false;
                 this.planetMesh.visible = true;
-                this.atmosphereMesh && (this.atmosphereMesh.visible = true);
-                this.cloudMesh && (this.cloudMesh.visible = true);
+                // TEMPORARILY DISABLED Cloud Layer Visibility Update
+                // this.cloudMesh && (this.cloudMesh.visible = true);
                 this.glowMesh && (this.glowMesh.visible = true);
                 this.planetLOD && this.planetLOD.update(Planet.camera);
             }
         }
+
+        // Update surface/grid fading
+        this.surface && Planet.camera && this.surface.updateFade(Planet.camera);
+
+        /* LOD -> dot switch etc. */
     }
 
     #updateRotation() {
@@ -380,31 +399,23 @@ export class Planet {
 
     /** Update shader uniforms based on current world state. Call AFTER final position sync. */
     updateShaderUniforms() {
-        if (this.atmosphereMaterial?.uniforms?.planetFrame || this.glowMaterial?.uniforms?.planetFrame) {
+        if (this.glowMaterial?.uniforms?.planetFrame) {
             const worldOrientation = new THREE.Quaternion();
             const groupToUse = this.rotationGroup;
             groupToUse.getWorldQuaternion(worldOrientation);
             const invRotationMatrix = new THREE.Matrix4().makeRotationFromQuaternion(worldOrientation).invert();
             const planetFrameMatrix = new THREE.Matrix3().setFromMatrix4(invRotationMatrix);
 
-            if (this.atmosphereMaterial?.uniforms?.planetFrame) {
-                this.atmosphereMaterial.uniforms.planetFrame.value.copy(planetFrameMatrix);
-            }
             if (this.glowMaterial?.uniforms?.planetFrame) {
                 this.glowMaterial.uniforms.planetFrame.value.copy(planetFrameMatrix);
             }
         }
 
-        if (this.atmosphereMaterial?.uniforms?.planetPosition) {
-            const worldPos = new THREE.Vector3();
-            const meshToUse = this.planetLOD || this.planetMesh;
-            meshToUse.getWorldPosition(worldPos);
-            this.atmosphereMaterial.uniforms.planetPosition.value.copy(worldPos);
-        }
+        // Update planetPosition world uniform
         if (this.glowMaterial?.uniforms?.planetPosition) {
             const worldPos = new THREE.Vector3();
-            const meshToUse = this.planetLOD || this.planetMesh;
-            meshToUse.getWorldPosition(worldPos);
+            const planetMeshToUse = this.planetLOD || this.planetMesh;
+            planetMeshToUse.getWorldPosition(worldPos);
             this.glowMaterial.uniforms.planetPosition.value.copy(worldPos);
         }
 
@@ -418,7 +429,6 @@ export class Planet {
             if (sunBody) sunPos = sunBody.position;
         }
         if (sunPos) {
-            this.atmosphereMaterial?.uniforms?.lightPosition.value.copy(sunPos);
             this.glowMaterial?.uniforms?.lightPosition.value.copy(sunPos);
         }
     }
@@ -427,6 +437,9 @@ export class Planet {
     getMesh() { return this.planetMesh; }
     getTiltGroup() { return this.tiltGroup; }
     getOrbitGroup() { return this.orbitGroup; }
+    getUnrotatedGroup() {
+        return this.unrotatedGroup;
+    }
 
     getSurfaceTexture() {
         const mat = (o) => o instanceof THREE.LOD ? o.levels[0]?.object?.material : o.material;
@@ -444,6 +457,7 @@ export class Planet {
     setMissionsVisible(v) { this.surface?.setMissionsVisible(v); }
     setSOIVisible(v) { this.soiMesh && (this.soiMesh.visible = v); }
     setRadialGridVisible(v) { this.radialGrid?.setVisible(v); }
+    setRingsVisible(v) { this.ringMesh && (this.ringMesh.visible = v); }
 
     convertEciToGround(posEci) {
         const gmst = PhysicsUtils.calculateGMST(Date.now());
@@ -476,6 +490,8 @@ export class Planet {
         this.orbitLine?.geometry?.dispose();
         this.orbitLine?.material?.dispose();
         this.surface?.dispose?.();
+        this.ringMesh?.geometry?.dispose();
+        this.ringMesh?.material?.dispose();
         this.radialGrid?.dispose?.();
 
         const i = Planet.instances.indexOf(this);
