@@ -22,8 +22,8 @@ uniform float uPlanetScreenRadius[MAX_ATMOS];
 
 // Raymarching parameters
 uniform int uNumLightSteps[MAX_ATMOS];   // Steps for light scattering (per planet)
-const int MIN_VIEW_STEPS = 4;
-const int MAX_VIEW_STEPS = 32; // Define max steps here
+const int MIN_VIEW_STEPS = 2;
+const int MAX_VIEW_STEPS = 8; // Lowered for performance on large planets
 const float VIEW_STEPS_SCALE_FACTOR = 0.05; 
 
 // Atmosphere properties (per planet)

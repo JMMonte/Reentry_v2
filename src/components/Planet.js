@@ -5,6 +5,8 @@ import { Constants } from '../utils/Constants.js';
 import { PlanetSurface } from './PlanetSurface.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
 import { RadialGrid } from './RadialGrid.js';
+import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { celestialBodiesConfig } from '../config/celestialBodiesConfig.js';
 
 export class Planet {
     /* ---------- static ---------- */
@@ -390,6 +392,14 @@ export class Planet {
         /* LOD -> dot switch etc. */
     }
 
+    updateAxisHelperPosition() {
+        if (this._axisHelper && this._axisHelper.visible) {
+            const worldPos = new THREE.Vector3();
+            this.getOrbitGroup().getWorldPosition(worldPos);
+            this._axisHelper.position.copy(worldPos);
+        }
+    }
+
     #updateRotation() {
         const JD = this.timeManager.getJulianDate();
         const secs = (JD - 2451545.0) * Constants.secondsInDay;
@@ -496,5 +506,47 @@ export class Planet {
 
         const i = Planet.instances.indexOf(this);
         if (i !== -1) Planet.instances.splice(i, 1);
+    }
+
+    setAxisVisible(visible) {
+        if (visible) {
+            if (!this._axisHelper) {
+                // Use Mercury's radius if this.radius is falsy (for barycenters)
+                const mercuryRadius = celestialBodiesConfig.mercury.radius;
+                const size = (this.radius && this.radius > 0) ? this.radius * 2 : mercuryRadius * 2;
+                this._axisHelper = new THREE.AxesHelper(size);
+                this._axisHelper.name = `${this.name}_AxisHelper`;
+                // Add labeled axis
+                const color = { X: '#ff0000', Y: '#00ff00', Z: '#0000ff' };
+                this._axisLabels = [];
+                const mkLabel = axis => {
+                    const div = document.createElement('div');
+                    div.className = 'axis-label';
+                    div.textContent = axis;
+                    div.style.color = color[axis];
+                    div.style.fontSize = '14px';
+                    return new CSS2DObject(div);
+                };
+                ['X', 'Y', 'Z'].forEach(axis => {
+                    const lbl = mkLabel(axis);
+                    lbl.position.set(axis === 'X' ? size : 0,
+                                     axis === 'Y' ? size : 0,
+                                     axis === 'Z' ? size : 0);
+                    this._axisHelper.add(lbl);
+                    this._axisLabels.push(lbl);
+                });
+            }
+            if (!this._axisHelper.parent) {
+                this.scene.add(this._axisHelper);
+            }
+            this._axisHelper.visible = true;
+            if (this._axisLabels) {
+                this._axisLabels.forEach(lbl => lbl.visible = true);
+            }
+        } else {
+            if (this._axisHelper && this._axisHelper.parent) {
+                this.scene.remove(this._axisHelper);
+            }
+        }
     }
 }

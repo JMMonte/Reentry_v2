@@ -260,5 +260,25 @@ export async function initScene(app) {
     // 5. Post-processing
     setupPostProcessing(app);
 
+    // After all planets are created and added to app.celestialBodies
+    // Add a helper to update day/night material camera position each frame
+    app.updateDayNightMaterials = () => {
+        const sunPos = new THREE.Vector3();
+        app.sun.sun.getWorldPosition(sunPos);
+        for (const planet of app.celestialBodies) {
+            if (planet.surfaceMaterial && planet.surfaceMaterial.uniforms) {
+                if (planet.surfaceMaterial.uniforms.uCameraPosition) {
+                    planet.surfaceMaterial.uniforms.uCameraPosition.value.copy(app.camera.position);
+                }
+                if (planet.surfaceMaterial.uniforms.sunDirection) {
+                    const planetPos = new THREE.Vector3();
+                    planet.getMesh().getWorldPosition(planetPos);
+                    const sunDir = new THREE.Vector3().subVectors(sunPos, planetPos).normalize();
+                    planet.surfaceMaterial.uniforms.sunDirection.value.copy(sunDir);
+                }
+            }
+        }
+    };
+
     return scene;  // gives callers a fluent handle
 }

@@ -4,7 +4,7 @@ import {
     earthTexture, earthSpecTexture, earthNormalTexture,
     cloudTexture, moonTexture, moonBump,
     mercuryTexture, venusTexture, venusAtmosphereTexture,
-    marsTexture, jupiterTexture, saturnTexture, saturnRingTexture,
+    marsTexture, marsBump, jupiterTexture, saturnTexture, saturnRingTexture,
     uranusTexture, neptuneTexture
 } from './textures.js';
 import geojsonDataSovereignty from './ne_50m_admin_0_sovereignty.json';
@@ -49,6 +49,7 @@ export const celestialBodiesConfig = {
     },
     earth: {
         name: 'earth',
+        parent: 'emb',
         symbol: '♁',
         mass: earthMass, // kg
         // Correct radius calculation: Convert meters to km, then apply desired scene scale factor (0.0001)
@@ -89,9 +90,9 @@ export const celestialBodiesConfig = {
         // --- Atmosphere parameters for volumetric raymarching ---
         atmosphere: {
             thickness: 60, // km
-            densityScaleHeight: 8.0, // km
-            rayleighScatteringCoeff: [0.012, 0.028, 0.18], // RGB, tuned for blue sky
-            mieScatteringCoeff: 0.004, // scalar
+            densityScaleHeight: 20.0,
+            rayleighScatteringCoeff: [0.0015, 0.004, 0.012],
+            mieScatteringCoeff: 0.00015,
             mieAnisotropy: 0.75, // g
             numLightSteps: 4,
             sunIntensity: 6.0,
@@ -101,16 +102,15 @@ export const celestialBodiesConfig = {
         },
         materials: {
             createSurfaceMaterial: (tm) => {
-                const mat = new THREE.MeshPhongMaterial({
+                return new THREE.MeshPhongMaterial({
                     map: tm.getTexture('earthTexture'),
-                    specularMap: tm.getTexture('earthSpecTexture'),
                     normalMap: tm.getTexture('earthNormalTexture'),
+                    specularMap: tm.getTexture('earthSpecTexture'),
+                    emissive: 0x000000,
+                    shininess: 150,
+                    specular: 0x888888,
                     normalScale: new THREE.Vector2(1, 1),
-                    specular: new THREE.Color('grey'),
-                    shininess: 150
                 });
-                // Anisotropy is set globally by TextureManager based on settings
-                return mat;
             },
             createCloudMaterial: (tm) => new THREE.MeshLambertMaterial({
                 alphaMap: tm.getTexture('cloudTexture'),
@@ -135,8 +135,7 @@ export const celestialBodiesConfig = {
             markerStep: 100000,
             labelMarkerStep: 100000,
             radialLines: { count: 22 },
-        },
-        parent: 'emb'
+        }
     },
     moon: {
         name: 'moon',
@@ -172,6 +171,7 @@ export const celestialBodiesConfig = {
             argumentOfPeriapsis: 318.15 * (Math.PI / 180), // Argument of periapsis in radians
             mu: earthGravitationalParameter, // Gravitational parameter in m^3/s^2
         },
+        orbitType: 'relative',
         // atmosphere: {
         //     thickness: 0, // No atmosphere
         //     densityScaleHeight: 0,
@@ -313,7 +313,9 @@ export const celestialBodiesConfig = {
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('marsTexture'),
-                shininess: 5
+                shininess: 5,
+                bumpMap: tm.getTexture('marsBump'),
+                bumpScale: 2.0
             })
         },
         atmosphere: {
@@ -361,13 +363,13 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            thickness: 1000, // km
-            densityScaleHeight: 20, // Lower for more visible edge
-            rayleighScatteringCoeff: [0.01, 0.02, 0.08], // much higher, blueish
-            mieScatteringCoeff: 0.005,
+            thickness: 300, // km
+            densityScaleHeight: 40, // km
+            rayleighScatteringCoeff: [0.002, 0.004, 0.012],
+            mieScatteringCoeff: 0.001,
             mieAnisotropy: 0.5,
-            numLightSteps: 4,
-            sunIntensity: 8.0, // much higher for debug
+            numLightSteps: 2,
+            sunIntensity: 3.0,
             equatorialRadius: 71492, // km
             polarRadius: 66854, // km
         },
@@ -400,19 +402,26 @@ export const celestialBodiesConfig = {
         lodLevels: generateLodLevelsForRadius(58232),
         dotPixelSizeThreshold: 1,
         atmosphereThickness: 1000, // km
+        addRings: true,
+        rings: {
+            innerRadius: 70000, // km (just outside Saturn's equator)
+            outerRadius: 140000, // km (typical for Saturn's main rings)
+            textureKey: 'saturnRingTexture',
+            resolution: 256
+        },
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
                 map: tm.getTexture('saturnTexture')
             })
         },
         atmosphere: {
-            thickness: 1000, // km
-            densityScaleHeight: 10, // Lower for denser, more visible edge
-            rayleighScatteringCoeff: [0.04, 0.08, 0.32], // much higher, blueish
-            mieScatteringCoeff: 0.01,
+            thickness: 250, // km
+            densityScaleHeight: 35, // km
+            rayleighScatteringCoeff: [0.001, 0.003, 0.009],
+            mieScatteringCoeff: 0.0008,
             mieAnisotropy: 0.6,
-            numLightSteps: 4,
-            sunIntensity: 8.0, // much higher for debug
+            numLightSteps: 2,
+            sunIntensity: 2.5,
             equatorialRadius: 60268, // km
             polarRadius: 54364, // km
         },
@@ -538,6 +547,7 @@ export const textureDefinitions = [
     { key: 'venusTexture', src: venusTexture },
     { key: 'venusAtmosphereTexture', src: venusAtmosphereTexture },
     { key: 'marsTexture', src: marsTexture },
+    { key: 'marsBump', src: marsBump },
     { key: 'jupiterTexture', src: jupiterTexture },
     { key: 'saturnTexture', src: saturnTexture },
     { key: 'saturnRingTexture', src: saturnRingTexture },

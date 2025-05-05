@@ -70,6 +70,32 @@ export class SimulationLoop {
         // Then sync camera to follow updated body position
         this.cameraControls.updateCameraPosition();
 
+        // Update day/night material camera position uniform
+        if (this.app.updateDayNightMaterials) {
+            this.app.updateDayNightMaterials();
+        }
+
+        // Update atmosphere raymarching pass uniforms every frame
+        if (this.app.atmosphereManager && this.sceneManager.composers.atmospherePass) {
+            const arrays = this.app.atmosphereManager.buildUniformArrays(this.sceneManager.camera);
+            const pass = this.sceneManager.composers.atmospherePass;
+            for (const key in arrays) {
+                if (pass.uniforms[key]) {
+                    if (Array.isArray(arrays[key]) || ArrayBuffer.isView(arrays[key])) {
+                        for (let i = 0; i < arrays[key].length; ++i) {
+                            if (pass.uniforms[key].value[i]?.copy && arrays[key][i]?.copy) {
+                                pass.uniforms[key].value[i].copy(arrays[key][i]);
+                            } else if (typeof arrays[key][i] !== 'undefined') {
+                                pass.uniforms[key].value[i] = arrays[key][i];
+                            }
+                        }
+                    } else {
+                        pass.uniforms[key].value = arrays[key];
+                    }
+                }
+            }
+        }
+
         // Update planet vector label fading
         if (this.app?.planetVectors) {
             this.app.planetVectors.forEach(pv => pv.updateFading(this.sceneManager.camera));
@@ -107,7 +133,20 @@ export class SimulationLoop {
 
         // Render scene
         if (this.sceneManager.composers.final) {
+            // --- Hide Saturn's rings before main render ---
+            if (this.app.saturn && this.app.saturn.ringMesh) {
+                this.app.saturn.ringMesh.visible = false;
+            }
             this.sceneManager.composers.final.render();
+            // --- Render Saturn's rings on top after post-process ---
+            if (this.app.saturn && this.app.saturn.ringMesh) {
+                this.app.saturn.ringMesh.visible = true;
+                const renderer = this.sceneManager.renderer;
+                renderer.autoClear = false;
+                renderer.clearDepth();
+                renderer.render(this.app.saturn.ringMesh, this.sceneManager.camera);
+                renderer.autoClear = true;
+            }
         } else {
             this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }

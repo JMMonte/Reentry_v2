@@ -49,8 +49,8 @@ export class OrbitManager {
             const parent = this.app.celestialBodies.find(
                 b => b.name && b.name.toLowerCase() === parentKey
             );
-            if (parent && typeof parent.getUnrotatedGroup === 'function') {
-                return parent.getUnrotatedGroup();
+            if (parent && typeof parent.getOrbitGroup === 'function') {
+                return parent.getOrbitGroup();
             }
         }
         // Default: add to scene (barycentric orbits)
@@ -124,6 +124,8 @@ export class OrbitManager {
                 if (key === 'earth' || key === 'moon') {
                     console.log(`[OrbitManager] Added orbit line for ${key} to`, parentGroup.name || parentGroup.constructor.name, 'with', points.length / 3, 'points');
                 }
+
+                // Remove any rotation for relative orbits; render as-is from ephemeris data
             } catch (error) {
                 console.error(`[OrbitManager] Failed to build orbit for ${key}:`, error);
             }

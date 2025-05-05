@@ -6,7 +6,7 @@ import * as THREE from 'three';
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);                   // use Z-up globally
 
 // External helpers
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+// import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import Stats from 'stats.js';
 
 // Core utilities & constants
@@ -46,7 +46,6 @@ import {
 }
     from './components/Satellite/createSatellite.js';
 import { Planet } from './components/Planet.js';
-import { LabelFader } from './utils/LabelFader.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 2. SMALL UTILITIES
@@ -154,7 +153,6 @@ class App3D extends EventTarget {
             });
             this.orbitManager.build();
 
-            this._initAxisHelper();
             this._initPOIPicking();
             this._setupControls();
 
@@ -223,38 +221,6 @@ class App3D extends EventTarget {
     _setupControls() {
         this._controls = setupControls(this._camera, this._renderer);
         this.cameraControls = new CameraControls(this._camera, this._controls);
-    }
-
-    _initAxisHelper() {
-        const len = 1000;
-        const color = { X: '#ff0000', Y: '#00ff00', Z: '#0000ff' };
-
-        this.axisHelper = new THREE.AxesHelper(len);
-        this.axisHelper.visible =
-            this.displaySettingsManager.getSetting('showAxis');
-
-        // attach labels
-        const mkLabel = axis => {
-            const div = document.createElement('div');
-            div.className = 'axis-label';
-            div.textContent = axis;
-            div.style.color = color[axis];
-            div.style.fontSize = '14px';
-            return new CSS2DObject(div);
-        };
-        ['X', 'Y', 'Z'].forEach(axis => {
-            const lbl = mkLabel(axis);
-            lbl.position.set(axis === 'X' ? len : 0,
-                axis === 'Y' ? len : 0,
-                axis === 'Z' ? len : 0);
-            this.axisHelper.add(lbl);
-        });
-
-        this.scene.add(this.axisHelper);
-
-        // fade logic
-        const maxR = (Constants.earthRadius + Constants.earthHillSphere) * KM;
-        this.axisLabelFader = new LabelFader(this.axisHelper.children, maxR * 0.05, maxR * 0.2);
     }
 
     _initPOIPicking() {
@@ -345,6 +311,9 @@ class App3D extends EventTarget {
             }
         });
 
+        // Update axis helper positions after planet positions are synced
+        Planet.instances.forEach(p => p.updateAxisHelperPosition && p.updateAxisHelperPosition());
+
         // Update Radial Grids after planets have their final positions
         Planet.instances.forEach(p => {
             p.radialGrid?.updatePosition();
@@ -371,7 +340,6 @@ class App3D extends EventTarget {
         if (this._connectionsEnabled) this._syncConnectionsWorker();
 
         // UI-scale transforms
-        this.axisLabelFader?.update(this.camera);
         this._resizePOIs();
 
         // Update Atmosphere Raymarching Uniforms (NEW)
@@ -460,6 +428,10 @@ class App3D extends EventTarget {
                 break;
             case 'useRemoteCompute':
                 this.physicsWorld.setUseRemote(value);
+                break;
+            case 'showAxis':
+                // Toggle axes for all planets
+                Planet.instances.forEach(p => p.setAxisVisible(value));
                 break;
         }
     }
