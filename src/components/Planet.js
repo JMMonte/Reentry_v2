@@ -150,11 +150,6 @@ export class Planet {
     #initMaterials() {
         this.surfaceMaterial = this.materials.getSurfaceMaterial();
         this.cloudMaterial = this.cloudThickness > 0 ? this.materials.getCloudMaterial() : null;
-
-        this.glowMaterial = this.materials.getGlowMaterial(this.radius, { atmoHeight: this.atmosphereThickness });
-
-        if (this.glowMaterial?.uniforms)
-            this.glowMaterial.uniforms.planetFrame = { value: new THREE.Matrix3() };
     }
 
     #initMeshes() {
@@ -372,7 +367,6 @@ export class Planet {
                 this.planetMesh.visible = false;
                 // TEMPORARILY DISABLED Cloud Layer Visibility Update
                 // this.cloudMesh && (this.cloudMesh.visible = false);
-                this.glowMesh && (this.glowMesh.visible = false);
 
                 const ang = (this.dotPixelSizeThreshold / scrH) * fovY;
                 this.distantMesh.scale.setScalar(Math.tan(ang / 2) * dist);
@@ -381,7 +375,6 @@ export class Planet {
                 this.planetMesh.visible = true;
                 // TEMPORARILY DISABLED Cloud Layer Visibility Update
                 // this.cloudMesh && (this.cloudMesh.visible = true);
-                this.glowMesh && (this.glowMesh.visible = true);
                 this.planetLOD && this.planetLOD.update(Planet.camera);
             }
         }
@@ -390,6 +383,23 @@ export class Planet {
         this.surface && Planet.camera && this.surface.updateFade(Planet.camera);
 
         /* LOD -> dot switch etc. */
+        // Update Saturn ring shader uniforms (depth, camera, resolution)
+        if (this._isSaturnRingShader && this.ringMesh && this.ringMesh.material) {
+            const mat = this.ringMesh.material;
+            if (mat.uniforms) {
+                const app = window.app3d;
+                if (app && app.sceneDepthTexture && mat.uniforms.depthTexture) {
+                    mat.uniforms.depthTexture.value = app.sceneDepthTexture;
+                }
+                if (app && app.camera && mat.uniforms.cameraNear && mat.uniforms.cameraFar) {
+                    mat.uniforms.cameraNear.value = app.camera.near;
+                    mat.uniforms.cameraFar.value = app.camera.far;
+                }
+                if (mat.uniforms.resolution && mat.uniforms.resolution.value?.set) {
+                    mat.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+                }
+            }
+        }
     }
 
     updateAxisHelperPosition() {
@@ -409,38 +419,12 @@ export class Planet {
 
     /** Update shader uniforms based on current world state. Call AFTER final position sync. */
     updateShaderUniforms() {
-        if (this.glowMaterial?.uniforms?.planetFrame) {
-            const worldOrientation = new THREE.Quaternion();
-            const groupToUse = this.rotationGroup;
-            groupToUse.getWorldQuaternion(worldOrientation);
-            const invRotationMatrix = new THREE.Matrix4().makeRotationFromQuaternion(worldOrientation).invert();
-            const planetFrameMatrix = new THREE.Matrix3().setFromMatrix4(invRotationMatrix);
-
-            if (this.glowMaterial?.uniforms?.planetFrame) {
-                this.glowMaterial.uniforms.planetFrame.value.copy(planetFrameMatrix);
-            }
-        }
-
-        // Update planetPosition world uniform
-        if (this.glowMaterial?.uniforms?.planetPosition) {
-            const worldPos = new THREE.Vector3();
-            const planetMeshToUse = this.planetLOD || this.planetMesh;
-            planetMeshToUse.getWorldPosition(worldPos);
-            this.glowMaterial.uniforms.planetPosition.value.copy(worldPos);
-        }
-
+        // Removed obsolete glowMaterial logic
         this.#updateLightDirection();
     }
 
     #updateLightDirection() {
-        let sunPos = null;
-        if (window.app3d?.physicsWorld) {
-            const sunBody = window.app3d.physicsWorld.bodies.find(b => b.name.toLowerCase() === 'sun');
-            if (sunBody) sunPos = sunBody.position;
-        }
-        if (sunPos) {
-            this.glowMaterial?.uniforms?.lightPosition.value.copy(sunPos);
-        }
+        // Removed obsolete glowMaterial logic and unused sunPos variable
     }
 
     /* ===== public ===== */

@@ -133,20 +133,7 @@ export class SimulationLoop {
 
         // Render scene
         if (this.sceneManager.composers.final) {
-            // --- Hide Saturn's rings before main render ---
-            if (this.app.saturn && this.app.saturn.ringMesh) {
-                this.app.saturn.ringMesh.visible = false;
-            }
             this.sceneManager.composers.final.render();
-            // --- Render Saturn's rings on top after post-process ---
-            if (this.app.saturn && this.app.saturn.ringMesh) {
-                this.app.saturn.ringMesh.visible = true;
-                const renderer = this.sceneManager.renderer;
-                renderer.autoClear = false;
-                renderer.clearDepth();
-                renderer.render(this.app.saturn.ringMesh, this.sceneManager.camera);
-                renderer.autoClear = true;
-            }
         } else {
             this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }

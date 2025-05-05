@@ -1,8 +1,6 @@
 import * as THREE from 'three';
-import atmosphereFragmentShader from '../assets/shaders/atmosphereFragmentShader.glsl';
-import atmosphereVertexShader from '../assets/shaders/atmosphereVertexShader.glsl';
-import soiVertexShader from '../assets/shaders/soiVertexShader.glsl';
-import soiFragmentShader from '../assets/shaders/soiFragmentShader.glsl';
+import soiVertexShader from '../shaders/soiVertexShader.glsl';
+import soiFragmentShader from '../shaders/soiFragmentShader.glsl';
 import { Constants } from '../utils/Constants.js';
 
 // Inlined from EarthMaterials.js
@@ -51,8 +49,6 @@ function createAtmosphereMaterial(earthRadius, {
     // Scale light intensity with world scale
     const baseLightIntensity = 4.0;
     return new THREE.ShaderMaterial({
-        vertexShader: atmosphereVertexShader,
-        fragmentShader: atmosphereFragmentShader,
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
