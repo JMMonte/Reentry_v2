@@ -9,6 +9,7 @@ export class Sun {
         this.config = config; // Store config
         this.symbol = '☉';
         this.name = config.name || 'sun';
+        this.nameLower = this.name.toLowerCase();
         this.radius = config.radius * Constants.metersToKm;
         // Store initial flare specs for later scaling
         this.initialFlareSpecs = [

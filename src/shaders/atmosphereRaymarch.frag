@@ -40,11 +40,10 @@ uniform mat3 uPlanetFrame[MAX_ATMOS];
 // Add uniform for camera distance
 uniform float uCameraDistance[MAX_ATMOS];
 
-// Elliptical culling uniforms
-uniform vec2 uEllipseCenter[MAX_ATMOS];
-uniform float uEllipseAxisA[MAX_ATMOS];
-uniform float uEllipseAxisB[MAX_ATMOS];
-uniform float uEllipseAngle[MAX_ATMOS];
+// Depth occlusion uniforms
+uniform sampler2D tDepth;
+uniform float uCameraNear;
+uniform float uCameraFar;
 
 // Varyings from vertex shader
 varying vec2 vUv; // Screen UV coordinates
@@ -162,7 +161,8 @@ vec4 calculateAtmosphereColor(
     vec3 rayleighCoeff,
     float mieCoeff,
     float mieAnisotropy,
-    float cameraDist
+    float cameraDist,
+    float sceneLinear
 ) {
     vec3 sceneColor = texture2D(tDiffuse, uv).rgb;
     // Transform ray origin and direction into planet's local frame
@@ -190,6 +190,12 @@ vec4 calculateAtmosphereColor(
     // If ray hits the planet, clamp the end point
     if(plIsect.x > rayStart && plIsect.x < rayEnd)
         rayEnd = plIsect.x;
+
+    // --- Depth Occlusion using precomputed sceneLinear ---
+    if (sceneLinear <= rayStart) {
+        return vec4(0.0);
+    }
+    rayEnd = min(rayEnd, sceneLinear);
 
     // If the ray segment is effectively zero length, return transparent black
     float rayLength = max(0.0, rayEnd - rayStart);
@@ -289,31 +295,28 @@ vec4 calculateAtmosphereColor(
     }
 
     // Combine final color with scene color using accumulated transmittance
-    // This part seems missing, let's add additive blending for now
-    // vec3 finalColor = sceneColor * accumulatedTransmittance + accumulatedColor;
-    vec3 finalColor = accumulatedColor; // Just return atmosphere color for now
-
-    return vec4(finalColor, 1.0);
+    vec3 finalColor = sceneColor * accumulatedTransmittance + accumulatedColor;
+    return vec4(accumulatedColor, (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z) / 3.0);
 }
 
 void main() {
+    // Sample scene depth and reconstruct linear depth (meters)
+    float sceneDepthVal = texture2D(tDepth, vUv).r;
+    float z_n = sceneDepthVal * 2.0 - 1.0;
+    float sceneLinear = (2.0 * uCameraNear * uCameraFar) / (uCameraFar + uCameraNear - z_n * (uCameraFar - uCameraNear));
+    sceneLinear = sceneLinear / 1000.0; // Convert meters to kilometers for unit consistency
     vec3 sceneColor = texture2D(tDiffuse, vUv).rgb;
-    vec3 accum = vec3(0.0); // Start with black, additively blend atmospheres
+    vec3 totalInscatter = vec3(0.0);
+    vec3 totalTransmittance = vec3(1.0);
 
     for(int i = 0; i < MAX_ATMOS; ++i) {
-        if(i >= uNumAtmospheres)
-            break;
+        if(i >= uNumAtmospheres) break;
 
-        // --- Elliptical culling (TEMPORARILY DISABLED FOR DEBUGGING) ---
-        // Transform vUv into ellipse's local frame
-        vec2 relUv = vUv - uEllipseCenter[i];
-        float ca = cos(-uEllipseAngle[i]);
-        float sa = sin(-uEllipseAngle[i]);
-        // Rotate by -angle
-        vec2 uvRot;
-        uvRot.x = relUv.x * ca - relUv.y * sa;
-        uvRot.y = relUv.x * sa + relUv.y * ca;
-        // --- end elliptical culling ---
+        // Screen-space culling: skip pixels outside atmosphere extents
+        vec2 diff = vUv - uPlanetScreenPos[i];
+        if(dot(diff, diff) > (uPlanetScreenRadius[i] * uPlanetScreenRadius[i])) {
+            continue;
+        }
 
         // Swap a and b so a is equatorial (X/Z), b is polar (Y)
         float aPl = uEquatorialRadius[i]; // Equatorial (X/Z)
@@ -322,12 +325,34 @@ void main() {
         float bAtm = bPl + uAtmosphereHeight[i];
         mat3 frame = uPlanetFrame[i];
 
-        // Pass a as equatorial, b as polar to all functions
-        vec4 atmCol = calculateAtmosphereColor(vUv, uPlanetPosition[i], aPl, bPl, aAtm, bAtm, frame, uSunPosition, uSunIntensity[i], uRelativeCameraPos[i], uNumLightSteps[i], uDensityScaleHeight[i], uRayleighScatteringCoeff[i], uMieScatteringCoeff[i], uMieAnisotropy[i], uCameraDistance[i] // Pass distance here
+        // Pass parameters including sceneLinear for depth occlusion
+        vec4 atmCol = calculateAtmosphereColor(
+            vUv,
+            uPlanetPosition[i],
+            aPl,
+            bPl,
+            aAtm,
+            bAtm,
+            frame,
+            uSunPosition,
+            uSunIntensity[i],
+            uRelativeCameraPos[i],
+            uNumLightSteps[i],
+            uDensityScaleHeight[i],
+            uRayleighScatteringCoeff[i],
+            uMieScatteringCoeff[i],
+            uMieAnisotropy[i],
+            uCameraDistance[i],
+            sceneLinear
         );
-        accum = accum + atmCol.rgb; // Additive blending
+        totalInscatter += atmCol.rgb * totalTransmittance;
+        totalTransmittance *= atmCol.a;
     }
 
-    // Add the original scene color back in
-    gl_FragColor = vec4(sceneColor + accum, 1.0);
+    float minTrans = min(min(totalTransmittance.r, totalTransmittance.g), totalTransmittance.b);
+    if (minTrans < 1e-4) {
+        gl_FragColor = vec4(sceneColor, 1.0);
+    } else {
+        gl_FragColor = vec4(sceneColor * totalTransmittance + totalInscatter, 1.0);
+    }
 }

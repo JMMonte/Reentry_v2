@@ -7,7 +7,7 @@ import { Constants } from '../utils/Constants.js';
 function createEarthMaterial(textureManager, anisotropy) {
     const earthTextureMap = textureManager.getTexture('earthTexture');
     earthTextureMap.anisotropy = anisotropy;
-    return new THREE.MeshPhongMaterial({
+    const matParams = {
         map: earthTextureMap,
         specularMap: textureManager.getTexture('earthSpecTexture'),
         specular: 0xffffff,
@@ -15,10 +15,14 @@ function createEarthMaterial(textureManager, anisotropy) {
         normalMap: textureManager.getTexture('earthNormalTexture'),
         normalScale: new THREE.Vector2(5.0, 5.0),
         normalMapType: THREE.TangentSpaceNormalMap,
-        bumpMap: textureManager.getTexture('earthBumpMap'),
-        bumpScale: 0.1,
         depthWrite: true
-    });
+    };
+    const bump = textureManager.getTexture('earthBumpMap');
+    if (bump) {
+        matParams.bumpMap = bump;
+        matParams.bumpScale = 0.1;
+    }
+    return new THREE.MeshPhongMaterial(matParams);
 }
 
 // Modify this internal default cloud material function

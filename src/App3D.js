@@ -279,6 +279,8 @@ class App3D extends EventTarget {
      * Called each frame from the SimulationLoop.
      */
     updateScene() {
+        // Step 4: update physics world before syncing visuals
+        this.physicsWorld.update();
         // Sync PhysicsWorld satellite positions to visualizers
         const kmToM = 1 / Constants.metersToKm;
         this.physicsWorld.satellites.forEach((psat, id) => {
@@ -290,40 +292,26 @@ class App3D extends EventTarget {
             }
         });
 
-        // Update planets (which includes their grids)
-        Planet.instances.forEach(p => {
+        // Build a lookup map of physics bodies by lower-case name
+        const bodiesByKey = new Map();
+        this.physicsWorld.bodies.forEach(b => bodiesByKey.set(b.name.toLowerCase(), b));
+        // Update planets, axis helpers, radial grids, and shader uniforms in one pass
+        const cam = this.camera;
+        for (const p of Planet.instances) {
             p.update();
-        });
-        // Sync physics world positions to Three.js planets and Sun (after built-in updates)
-        this.physicsWorld.bodies.forEach(body => {
-            if (body.name.toLowerCase() === 'sun' && this.sun) {
-                // Set Sun mesh and light position from PhysicsWorld
-                this.sun.sun.position.copy(body.position);
-                this.sun.sunLight.position.copy(body.position);
+            // Sync transform from physics via map lookup
+            const body = bodiesByKey.get(p.name.toLowerCase());
+            if (body && body.position) {
+                p.getOrbitGroup().position.set(body.position.x, body.position.y, body.position.z);
             }
-            const planet = Planet.instances.find(p => p.name === body.name);
-            if (planet && body.position) {
-                planet.getOrbitGroup().position.set(
-                    body.position.x,
-                    body.position.y,
-                    body.position.z
-                );
-            }
-        });
-
-        // Update axis helper positions after planet positions are synced
-        Planet.instances.forEach(p => p.updateAxisHelperPosition && p.updateAxisHelperPosition());
-
-        // Update Radial Grids after planets have their final positions
-        Planet.instances.forEach(p => {
+            // Axis helper
+            p.updateAxisHelperPosition?.();
+            // Radial grid
             p.radialGrid?.updatePosition();
-            p.radialGrid?.updateFading(this.camera);
-        });
-
-        // Update Planet Shader Uniforms after final positions are set
-        Planet.instances.forEach(p => {
+            p.radialGrid?.updateFading(cam);
+            // Shader uniforms
             p.updateShaderUniforms();
-        });
+        }
 
         // planet & satellite vectors
         if (this.displaySettingsManager.getSetting('showVectors')) {
@@ -342,68 +330,59 @@ class App3D extends EventTarget {
         // UI-scale transforms
         this._resizePOIs();
 
-        // Update Atmosphere Raymarching Uniforms (NEW)
-        this._updateAtmosphereUniforms();
+        // NEW: Update atmosphere mesh uniforms
+        this._updateAtmosphereMeshUniforms();
 
         // Update Sun Lens Flare based on camera distance
         if (this.sun) {
             this.sun.updateLensFlare(this.camera);
         }
+
+        // Display settings must run *after* everything exists
+        this.displaySettingsManager.applyAll();
     }
 
-    // Helper to update atmosphere raymarching uniforms (NEW)
-    _updateAtmosphereUniforms() {
-        const atmospherePass = this.sceneManager?.composers?.atmospherePass;
-        if (!atmospherePass || !this.atmosphereManager) return;
+    // NEW: Update uniforms for mesh-based atmospheres
+    _updateAtmosphereMeshUniforms() {
+        if (!this.atmosphereMeshes || !this.camera || !this.sun) return;
 
-        // Update all array uniforms from AtmosphereManager
-        const arrays = this.atmosphereManager.buildUniformArrays(this.camera);
+        const camPos = this.camera.position;
+        // Access the Sun mesh directly (assuming it's stored in this.sun.sun)
+        const sunPos = this.sun.sun.getWorldPosition(new THREE.Vector3()); 
 
-        // Get sun position
-        const sunBody = this.physicsWorld?.bodies.find(b => b.name.toLowerCase() === 'sun');
-        const sunPos = sunBody?.position;
-        const EPS = 1e-6;
-        // Use 1 AU as reference distance (in km)
-        const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU * Constants.metersToKm : 149597870.7;
-        // Use a single base solar constant (e.g., 1361 W/m^2, but scale for scene brightness)
-        const BASE_SOLAR_CONSTANT = 10.6; //Adjusted from m^2 to km^2
-        // Scale sun intensity by inverse square law, normalized to 1 AU
-        if (sunPos) {
-            for (let i = 0; i < this.atmosphereManager.atmospheres.length; ++i) {
-                const planetPos = arrays.uPlanetPosition[i];
-                const dist = planetPos.distanceTo(sunPos);
-                // Physically correct sunlight at this distance
-                arrays.uSunIntensity[i] = BASE_SOLAR_CONSTANT * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
+        for (const atm of this.atmosphereMeshes) {
+            const planet = this[atm.name]; // Get the planet instance
+            if (!planet || !planet.getMesh) continue;
+
+            const mat = atm.material;
+            const planetMesh = planet.getMesh();
+
+            // Update camera and sun positions (world space)
+            mat.uniforms.uCameraPosition.value.copy(camPos);
+            mat.uniforms.uSunPosition.value.copy(sunPos);
+
+            // Update planet position (world space)
+            planetMesh.getWorldPosition(mat.uniforms.uPlanetPosition.value);
+
+            // Update planet frame (world-to-local rotation)
+            const tiltGroupForFrame = planet.getTiltGroup ? planet.getTiltGroup() : planetMesh;
+            if (tiltGroupForFrame && tiltGroupForFrame.getWorldQuaternion) {
+                const q = tiltGroupForFrame.getWorldQuaternion(new THREE.Quaternion());
+                const m = new THREE.Matrix4().makeRotationFromQuaternion(q).invert();
+                mat.uniforms.uPlanetFrame.value.setFromMatrix4(m);
+            } else {
+                mat.uniforms.uPlanetFrame.value.identity();
             }
-        }
 
-        for (const key in arrays) {
-            if (atmospherePass.uniforms[key]) {
-                if (Array.isArray(arrays[key]) || ArrayBuffer.isView(arrays[key])) {
-                    for (let i = 0; i < arrays[key].length; ++i) {
-                        if (atmospherePass.uniforms[key].value[i]?.copy && arrays[key][i]?.copy) {
-                            atmospherePass.uniforms[key].value[i].copy(arrays[key][i]);
-                        } else if (typeof arrays[key][i] !== 'undefined') {
-                            atmospherePass.uniforms[key].value[i] = arrays[key][i];
-                        }
-                    }
-                } else {
-                    atmospherePass.uniforms[key].value = arrays[key];
-                }
-            }
-        }
+            // Optional: Update sun intensity based on distance (can reuse old logic)
+            const dist = mat.uniforms.uPlanetPosition.value.distanceTo(sunPos);
+            const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU * Constants.metersToKm : 149597870.7;
+            const BASE_SOLAR_CONSTANT = 10.6; // Adjusted base intensity
+            const EPS = 1e-6;
+            mat.uniforms.uSunIntensity.value = BASE_SOLAR_CONSTANT * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
 
-        // Update sun position
-        if (sunPos) {
-            atmospherePass.uniforms.uSunPosition.value.copy(sunPos);
-        }
-
-        // Update inverse matrices and resolution
-        if (this.camera) {
-            this.camera.updateMatrixWorld();
-            atmospherePass.uniforms.uInverseProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
-            atmospherePass.uniforms.uInverseViewMatrix.value.copy(this.camera.matrixWorld);
-            atmospherePass.uniforms.uResolution.value.set(this.canvas.clientWidth, this.canvas.clientHeight);
+            // Mark uniforms as needing update (important if not using automatic updates)
+            // mat.uniformsNeedUpdate = true; // Often not needed if value objects are modified directly
         }
     }
 

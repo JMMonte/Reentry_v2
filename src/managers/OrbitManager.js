@@ -33,6 +33,8 @@ export class OrbitManager {
             window.innerWidth,
             window.innerHeight
         );
+        // Cache for parent orbit groups keyed by lowercase body name
+        this._parentGroupCache = null;
     }
 
     /**
@@ -44,14 +46,14 @@ export class OrbitManager {
     _getParentGroup(bodyKey) {
         const config = celestialBodiesConfig[bodyKey];
         const parentKey = config && config.parent;
-        if (parentKey && this.app.celestialBodies) {
-            // Find the parent planet instance by name (case-insensitive)
-            const parent = this.app.celestialBodies.find(
-                b => b.name && b.name.toLowerCase() === parentKey
-            );
-            if (parent && typeof parent.getOrbitGroup === 'function') {
-                return parent.getOrbitGroup();
+        if (parentKey) {
+            // Build cache if needed
+            if (!this._parentGroupCache) {
+                this._parentGroupCache = new Map();
+                this.app.celestialBodies.forEach(b => this._parentGroupCache.set(b.nameLower, b.getOrbitGroup()));
             }
+            const parent = this._parentGroupCache.get(parentKey);
+            if (parent) return parent;
         }
         // Default: add to scene (barycentric orbits)
         return this.scene;

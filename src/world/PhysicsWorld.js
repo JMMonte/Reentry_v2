@@ -42,14 +42,17 @@ export class PhysicsWorld {
      */
     loadFromPlanets(instances) {
         this.bodies = instances.map(inst => {
-            const key = inst.name.toLowerCase();
-            const cfg = celestialBodiesConfig[key];
-            if (!cfg) throw new Error(`No config found for body '${key}'`);
+            // Use precomputed lowercase name
+            const keyLower = inst.nameLower;
+            const cfg = celestialBodiesConfig[keyLower];
+            if (!cfg) throw new Error(`No config found for body '${keyLower}'`);
             // compute sphere-of-influence radius in scene units
             const soi = (cfg.soiRadius || 0) * (cfg.radius || 1);
             // Attach the Planet instance for later use in AtmosphereManager
             return {
                 name: inst.name,
+                // Cache lowercase name for string lookups
+                nameLower: keyLower,
                 orbitElements: cfg.orbitElements || null,
                 orbitRadius: cfg.orbitRadius || 0,
                 mass: cfg.mass || 0,
@@ -134,14 +137,14 @@ export class PhysicsWorld {
         let earthPos = null, moonPos = null;
         let earthMass = 0, moonMass = 0;
         this.bodies.forEach(body => {
-            if (body.name.toLowerCase() === 'earth') {
+            if (body.nameLower === 'earth') {
                 const key = 'Earth';
                 const equState = AE.BaryState(AE.Body[key], julianDate);
                 const eclCoords = AE.Ecliptic(equState).vec;
                 earthPos = new THREE.Vector3(eclCoords.x * kmPerAU, eclCoords.y * kmPerAU, eclCoords.z * kmPerAU);
                 earthMass = body.mass;
             }
-            if (body.name.toLowerCase() === 'moon') {
+            if (body.nameLower === 'moon') {
                 const key = 'Moon';
                 const equState = AE.BaryState(AE.Body[key], julianDate);
                 const eclCoords = AE.Ecliptic(equState).vec;
@@ -150,7 +153,7 @@ export class PhysicsWorld {
             }
         });
         this.bodies.forEach(body => {
-            const keyLower = body.name.toLowerCase();
+            const keyLower = body.nameLower;
             if (keyLower === 'barycenter') {
                 body.position.set(0, 0, 0);
                 return;

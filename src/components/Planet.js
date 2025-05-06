@@ -43,6 +43,7 @@ export class Planet {
         this.textureManager = textureManager;
 
         this.name = name;
+        this.nameLower = this.name.toLowerCase();
         this.symbol = symbol || name.charAt(0);
 
         this.radius = radius;
@@ -116,7 +117,7 @@ export class Planet {
         }
 
         // Special case: if this is the EMB, add a visible marker
-        if (name && name.toLowerCase() === 'emb') {
+        if (this.nameLower === 'emb') {
             this.marker = new THREE.Mesh(
                 new THREE.SphereGeometry(1000, 16, 16), // Small sphere
                 new THREE.MeshBasicMaterial({ color: 0xff00ff })
@@ -341,7 +342,7 @@ export class Planet {
     update() {
         this.#updateRotation();
         // Update EMB marker position if this is EMB
-        if (this.name && this.name.toLowerCase() === 'emb' && this.marker && window.Astronomy) {
+        if (this.nameLower === 'emb' && this.marker && window.Astronomy) {
             const jd = this.timeManager.getJulianDate();
             const embState = window.Astronomy.BaryState(window.Astronomy.Body.EMB, jd);
             const kmPerAU = 149597870.7;

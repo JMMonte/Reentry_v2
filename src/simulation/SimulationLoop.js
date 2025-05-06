@@ -50,22 +50,35 @@ export class SimulationLoop {
         this.stop();
     }
 
+    /**
+     * Throttled update for preview nodes: calls update() no more than 10Hz, and ensures predictedOrbit is visible.
+     * @param {Object} node
+     * @param {number} timestamp
+     */
+    _updatePreviewNode(node, timestamp) {
+        if ((node._lastPredTime ?? 0) < timestamp - 100) {
+            node.update();
+            node._lastPredTime = timestamp;
+        }
+        if (node.predictedOrbit) {
+            if (node.predictedOrbit.setVisible) {
+                node.predictedOrbit.setVisible(true);
+            } else if (node.predictedOrbit.orbitLine) {
+                node.predictedOrbit.orbitLine.visible = true;
+            }
+        }
+    }
+
     /** The main animation frame callback. */
     _animate() {
+
         if (!this._running) return;
         this._frameId = requestAnimationFrame(() => this._animate());
         this.stats?.begin();
 
         const timestamp = performance.now();
         this.timeUtils.update(timestamp);
-        // Update physics world (planets & satellites dynamics)
-        this.app.physicsWorld.update();
-
-        // SatelliteManager physics worker is deprecated: using PhysicsWorld dynamics
-        // this.satellites.updateAll(currentTime, delta, warpedDelta);
-
-        // Log before calling app.updateScene
-        // console.log(`SimLoop: Calling app.updateScene at ${currentTime.toISOString()}`);
+        // Step 4: physics update moved to updateScene
         this.app.updateScene();
         // Then sync camera to follow updated body position
         this.cameraControls.updateCameraPosition();
@@ -75,54 +88,18 @@ export class SimulationLoop {
             this.app.updateDayNightMaterials();
         }
 
-        // Update atmosphere raymarching pass uniforms every frame
-        if (this.app.atmosphereManager && this.sceneManager.composers.atmospherePass) {
-            const arrays = this.app.atmosphereManager.buildUniformArrays(this.sceneManager.camera);
-            const pass = this.sceneManager.composers.atmospherePass;
-            for (const key in arrays) {
-                if (pass.uniforms[key]) {
-                    if (Array.isArray(arrays[key]) || ArrayBuffer.isView(arrays[key])) {
-                        for (let i = 0; i < arrays[key].length; ++i) {
-                            if (pass.uniforms[key].value[i]?.copy && arrays[key][i]?.copy) {
-                                pass.uniforms[key].value[i].copy(arrays[key][i]);
-                            } else if (typeof arrays[key][i] !== 'undefined') {
-                                pass.uniforms[key].value[i] = arrays[key][i];
-                            }
-                        }
-                    } else {
-                        pass.uniforms[key].value = arrays[key];
-                    }
-                }
-            }
-        }
-
         // Update planet vector label fading
         if (this.app?.planetVectors) {
             this.app.planetVectors.forEach(pv => pv.updateFading(this.sceneManager.camera));
         }
 
-        // Preview node update (throttled to 10Hz)
-        if (this.app.previewNode) {
-            const now = performance.now();
-            if (now - this._lastPreviewUpdateTime > 100) {
-                this.app.previewNode.update();
-                this._lastPreviewUpdateTime = now;
-            }
-            this.app.previewNode.predictedOrbit.setVisible(true);
-        }
-
-        // Bulk preview nodes update (for array of previewNodes)
-        if (Array.isArray(this.app.previewNodes) && this.app.previewNodes.length) {
-            const now2 = performance.now();
-            this.app.previewNodes.forEach(node => {
-                // throttle each preview update to 10Hz
-                if ((node._lastPredTime ?? 0) < now2 - 100) {
-                    node.update();
-                    node._lastPredTime = now2;
-                }
-                // ensure preview orbit remains visible
-                if (node.predictedOrbit) node.predictedOrbit.orbitLine.visible = true;
-            });
+        // Unified preview node(s) update (throttled to 10Hz)
+        const previewNodes = [];
+        if (this.app.previewNode) previewNodes.push(this.app.previewNode);
+        if (Array.isArray(this.app.previewNodes)) previewNodes.push(...this.app.previewNodes);
+        const now = performance.now();
+        for (const node of previewNodes) {
+            this._updatePreviewNode(node, now);
         }
 
         // Throttle radial grid fading (10Hz)
@@ -134,15 +111,25 @@ export class SimulationLoop {
         // Render scene
         if (this.sceneManager.composers.final) {
             this.sceneManager.composers.final.render();
+            // Update depth texture for atmosphere pass after render
+            const atmospherePass = this.sceneManager.composers.atmospherePass;
+            const finalComposer = this.sceneManager.composers.final;
+            if (atmospherePass && finalComposer.readBuffer && finalComposer.readBuffer.depthTexture) {
+                atmospherePass.uniforms.tDepth.value = finalComposer.readBuffer.depthTexture;
+            }
         } else {
             this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }
 
-        // Render CSS2D labels every frame for smooth updates
+        // Render CSS2D labels (throttled to 30Hz)
         if (this.sceneManager.labelRenderer) {
-            this.sceneManager.labelRenderer.render(this.sceneManager.scene, this.sceneManager.camera);
+            if (timestamp - this._lastLabelTime > 33) {
+                this.sceneManager.labelRenderer.render(this.sceneManager.scene, this.sceneManager.camera);
+                this._lastLabelTime = timestamp;
+            }
         }
 
         this.stats?.end();
+
     }
 } 
