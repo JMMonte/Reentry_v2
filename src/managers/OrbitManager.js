@@ -55,7 +55,7 @@ export class OrbitManager {
             const parent = this._parentGroupCache.get(parentKey);
             if (parent) return parent;
         }
-        // Default: add to scene (barycentric orbits)
+        // Default: add to main scene (barycentric orbits)
         return this.scene;
     }
 
@@ -64,25 +64,21 @@ export class OrbitManager {
      * adding them to their respective parent objects.
      */
     build() {
-        this.orbitLineMap.clear(); // Clear previous lines if rebuild
-        // Only planets (skip sun)
-        const planetKeys = Object.keys(celestialBodiesConfig).filter(
-            key => key !== 'sun' // We now calculate period dynamically
-        );
+        this.orbitLineMap.clear();
+        const planetKeys = Object.keys(celestialBodiesConfig)
+            .filter(key => !['sun','barycenter'].includes(key));
         
         for (const key of planetKeys) {
             try {
                 const positions = this.physicsWorld.generateOrbitPath(
-                    key,
-                    this.config.steps
+                    key, this.config.steps
                 );
-                if (!positions || positions.length === 0) {
-                    console.warn(`[OrbitManager] Not enough points to draw a line for ${key}.`);
-                    continue; // Skip this planet
-                }
-                
-                const points = [];
+                if (!positions?.length) continue;
+
+                // Collect raw orbit points
+                let points = [];
                 positions.forEach(v => points.push(v.x, v.y, v.z));
+                // No rotation or alignment needed! Use points as-is.
 
                 // Debug: log orbit point ranges for earth and moon
                 if (key === 'earth' || key === 'moon') {
@@ -103,36 +99,31 @@ export class OrbitManager {
                 const geometry = new LineGeometry();
                 geometry.setPositions(points);
 
-                const color = (key === 'earth' || key === 'moon') ? 0xff00ff : (this.config.colors[key] || 0xffffff);
                 const material = new LineMaterial({
-                    color,
-                    linewidth: (key === 'earth' || key === 'moon') ? 10 : this.config.lineWidth,
+                    color: this.config.colors[key] || 0xffffff,
+                    linewidth: this.config.lineWidth,
                     dashed: false,
-                    resolution: this.resolution,
-                    // sizeAttenuation: true, // Set true if linewidth is in screen pixels
-                    // vertexColors: false,
-                    // worldUnits: false // Set true if linewidth is in world units (requires sizeAttenuation=false)
+                    resolution: this.resolution
                 });
 
                 const line = new Line2(geometry, material);
                 line.computeLineDistances();
-                line.name = `${key}OrbitLine`; // Add a name for debugging
-                this.orbitLineMap.set(key, line); // Store in map
+                line.name = `${key}OrbitLine`;
 
-                // Determine and add to the correct parent
+                // Add orbit line to its parent group (main scene or planet)
                 const parentGroup = this._getParentGroup(key);
                 parentGroup.add(line);
+                this.orbitLineMap.set(key, line);
 
                 if (key === 'earth' || key === 'moon') {
                     console.log(`[OrbitManager] Added orbit line for ${key} to`, parentGroup.name || parentGroup.constructor.name, 'with', points.length / 3, 'points');
                 }
 
                 // Remove any rotation for relative orbits; render as-is from ephemeris data
-            } catch (error) {
-                console.error(`[OrbitManager] Failed to build orbit for ${key}:`, error);
+            } catch (e) {
+                console.error(`OrbitManager build failed for ${key}:`, e);
             }
         }
-        
     }
 
     /**
@@ -143,12 +134,25 @@ export class OrbitManager {
             window.innerWidth,
             window.innerHeight
         );
-        this.orbitLineMap.forEach(line => {
-            line.material.resolution.set(
-                window.innerWidth,
-                window.innerHeight
-            );
-            line.material.needsUpdate = true;
+        this.orbitLineMap.forEach(lineOrGroup => {
+            // If this is a container group (for relative orbits), update its child Line2
+            if (lineOrGroup.type === 'Group') {
+                const line = lineOrGroup.children.find(child => child.isLine2);
+                if (line && line.material && line.material.resolution) {
+                    line.material.resolution.set(
+                        window.innerWidth,
+                        window.innerHeight
+                    );
+                    line.material.needsUpdate = true;
+                }
+            } else if (lineOrGroup.material && lineOrGroup.material.resolution) {
+                // Otherwise, update the Line2 directly
+                lineOrGroup.material.resolution.set(
+                    window.innerWidth,
+                    window.innerHeight
+                );
+                lineOrGroup.material.needsUpdate = true;
+            }
         });
     }
 

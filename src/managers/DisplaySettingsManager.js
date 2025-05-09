@@ -1,7 +1,7 @@
 /**
  * Manages display settings and their application to the App3D scene and satellites.
  */
-import { Planet } from '../components/Planet.js';
+import { Planet } from '../components/planet/Planet.js';
 export class DisplaySettingsManager {
     /**
      * @param {App3D} app3d - Reference to the main App3D instance
@@ -127,7 +127,8 @@ export class DisplaySettingsManager {
                     if (typeof p.setCountryBordersVisible === 'function') p.setCountryBordersVisible(value);
                 });
                 break;
-            case 'showStates':
+            case 'showTopographicIsolines':
+                // Toggle topographic isolines (state-style geo features) on all planets
                 Planet.instances.forEach(p => {
                     if (typeof p.setStatesVisible === 'function') p.setStatesVisible(value);
                 });
@@ -137,15 +138,6 @@ export class DisplaySettingsManager {
                 Planet.instances.forEach(p => {
                     if (typeof p.setSOIVisible === 'function') p.setSOIVisible(value);
                 });
-                break;
-            case 'showMoonOrbit':
-                if (app3d.moon?.setOrbitVisible) app3d.moon.setOrbitVisible(value);
-                break;
-            case 'showMoonTraces':
-                if (app3d.moon?.setTraceVisible) app3d.moon.setTraceVisible(value);
-                break;
-            case 'showMoonSurfaceLines':
-                if (app3d.moon?.setSurfaceDetailsVisible) app3d.moon.setSurfaceDetailsVisible(value);
                 break;
             case 'enableFXAA':
                 // Enable or disable the FXAA pass
@@ -177,9 +169,8 @@ export class DisplaySettingsManager {
                 break;
             }
             case 'showAxis': {
-                if (app3d.axisHelper) {
-                    app3d.axisHelper.visible = value;
-                }
+                // Toggle axis helpers on all planets
+                Planet.instances.forEach(p => p.setAxisVisible(value));
                 break;
             }
             // Add more settings as needed

@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 
 // 3-D assets ───────────────────────────────────────────────────────────────────
-import { Planet } from '../components/Planet.js';
+import { Planet } from '../components/planet/Planet.js';
 import { Sun } from '../components/Sun.js';
 import { BackgroundStars } from '../components/background.js';
 
@@ -19,7 +19,7 @@ import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 // Domain utilities ─────────────────────────────────────────────────────────────
 import { Constants } from '../utils/Constants.js';
 import { SatelliteVectors } from '../utils/SatelliteVectors.js';
-import { PlanetVectors } from '../utils/PlanetVectors.js';
+import { PlanetVectors } from '../components/planet/PlanetVectors.js';
 
 // Config ───────────────────────────────────────────────────────────────────────
 import {
@@ -28,17 +28,6 @@ import {
     ambientLightConfig,
     bloomConfig
 } from '../config/celestialBodiesConfig.js';
-
-// Import AtmosphereManager (used in initScene)
-import { AtmosphereManager } from '../managers/AtmosphereManager.js';
-
-// Import new mesh shaders
-import atmosphereMeshVertexShader from '../shaders/atmosphereMesh.vert?raw';
-import atmosphereMeshFragmentShader from '../shaders/atmosphereMesh.frag?raw';
-
-// Placeholder shaders REMOVED
-// const atmosphereMeshVertexShader = /* glsl */` ... `;
-// const atmosphereMeshFragmentShader = /* glsl */` ... `;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 2. STATIC CONFIGURATION - Moved to celestialBodiesConfig.js
@@ -95,28 +84,8 @@ const setupPostProcessing = (app) => {
     // Use default EffectComposer targets
     const composer = new EffectComposer(renderer);
 
-    // Note: No need for separate depth textures IF the atmosphere is rendered
-    // as a mesh within the main scene pass. We might still need depth for
-    // other effects, but let's remove the setup specific to the old pass.
-    // const size = renderer.getSize(new THREE.Vector2());
-    // const depthTexture1 = new THREE.DepthTexture(size.width, size.height);
-    // depthTexture1.type = THREE.UnsignedShortType;
-    // const depthTexture2 = new THREE.DepthTexture(size.width, size.height);
-    // depthTexture2.type = THREE.UnsignedShortType;
-    // composer.renderTarget1.depthTexture = depthTexture1;
-    // composer.renderTarget2.depthTexture = depthTexture2;
-
-    // 1. Render the main scene (which will now include atmosphere meshes)
+    // 1. Render the main scene
     composer.addPass(new RenderPass(scene, camera));
-
-    // --- Atmosphere Pass REMOVED --- 
-    // We will render atmospheres as meshes in the main scene pass.
-    // app.atmosphereManager = new AtmosphereManager(physicsWorld);
-    // const uniforms = { ... }; // Old uniforms removed
-    // const atmosphereShader = { ... }; // Old shader pass removed
-    // const atmospherePass = new ShaderPass(atmosphereShader);
-    // composer.addPass(atmospherePass);
-    // sceneManager.composers.atmospherePass = atmospherePass; // Remove reference
 
     // 2. FXAA Pass (kept)
     const fxaaPass = new ShaderPass(FXAAShader);
@@ -148,7 +117,7 @@ const setupPostProcessing = (app) => {
  * Handles: textures ➜ primitives ➜ planets ➜ post-processing.
  */
 export async function initScene(app) {
-    const { scene, renderer, camera, timeUtils, textureManager, physicsWorld } = app;
+    const { scene, renderer, camera, timeUtils, textureManager } = app;
     // Provide camera to Planet class for dynamic LOD updates
     Planet.setCamera(camera);
 
@@ -159,9 +128,6 @@ export async function initScene(app) {
     await loadTextures(textureManager);
     addAmbientLight(scene);
     new BackgroundStars(scene, camera);
-
-    // Create AtmosphereManager instance HERE, before planets and atmosphere meshes
-    app.atmosphereManager = new AtmosphereManager(physicsWorld);
 
     // 2. Planetary bodies
     const bodyDefs = [
@@ -226,90 +192,7 @@ export async function initScene(app) {
     // 4. Display tuning
     if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
 
-    // 5. Create Atmosphere Meshes (NEW)
-    app.atmosphereMeshes = [];
-    if (app.atmosphereManager && app.atmosphereManager.atmospheres) {
-        // DEBUG: Log the full list of atmospheres we're about to loop through
-        console.log("[setupScene] Atmospheres to process:", app.atmosphereManager.atmospheres);
-
-        for (const atmData of app.atmosphereManager.atmospheres) {
-            // DEBUG: Log which planet this iteration is for
-            console.log(`[setupScene] Processing atmosphere data for: ${atmData?.name}`);
-
-            const planet = app[atmData.name]; // Get the corresponding planet object
-            // CHECK 1
-            if (!planet || !planet.getMesh) {
-                console.warn(`[setupScene] Skipping atmosphere for ${atmData.name}: Planet object or getMesh method not found.`);
-                continue;
-            }
-
-            const cfg = atmData.config;
-            const atm = atmData.atmosphere;
-            const radius = (cfg.radius || 0) + (atm.thickness || 0);
-            // DEBUG: Log the calculated radius
-            console.log(`[setupScene] Creating atmosphere mesh for ${atmData.name} with radius: ${radius}`);
-
-            const geometry = new THREE.SphereGeometry(radius, 64, 64);
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    // Data from AtmosphereManager config
-                    uPlanetPosition: { value: new THREE.Vector3() }, // Updated per frame
-                    uPlanetRadius: { value: cfg.radius || 0 },
-                    uPolarRadius: { value: (cfg.radius || 0) * (1.0 - (cfg.oblateness || 0.0)) },
-                    uAtmosphereHeight: { value: atm.thickness || 0 },
-                    uDensityScaleHeight: { value: atm.densityScaleHeight || 0 },
-                    uRayleighScatteringCoeff: { value: new THREE.Vector3().fromArray(atm.rayleighScatteringCoeff || [0, 0, 0]) },
-                    uMieScatteringCoeff: { value: atm.mieScatteringCoeff || 0 },
-                    uMieAnisotropy: { value: atm.mieAnisotropy || 0 },
-                    uNumLightSteps: { value: atm.numLightSteps || 4 },
-                    uSunIntensity: { value: atm.sunIntensity || 1.0 }, // Base intensity, maybe scaled later
-                    uPlanetFrame: { value: new THREE.Matrix3() }, // Updated per frame
-                    // Updated per frame
-                    uSunPosition: { value: new THREE.Vector3() },
-                    uCameraPosition: { value: new THREE.Vector3() },
-                },
-                vertexShader: atmosphereMeshVertexShader,
-                fragmentShader: atmosphereMeshFragmentShader,
-                side: THREE.BackSide,
-                transparent: true,
-                depthWrite: false,
-                depthTest: true,
-                blending: THREE.NormalBlending
-            });
-
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.name = `atmosphere_${atmData.name}`;
-            // PRODUCTION: Correct render order, culling, and blending for atmosphere
-            mesh.renderOrder = 2;
-            mesh.frustumCulled = true;
-            material.depthTest = false;
-            material.depthWrite = false;
-            material.transparent = true;
-            material.blending = THREE.NormalBlending;
-
-            // CHECK 2: Log the rotationGroup before checking it
-            console.log(`[setupScene] Checking rotationGroup for ${atmData.name}:`, planet.rotationGroup);
-            if (planet.rotationGroup) { // Ensure rotationGroup exists
-                console.log(`[setupScene] Adding atmosphere mesh to ${atmData.name}.rotationGroup...`);
-                planet.rotationGroup.add(mesh);
-                const addedMesh = planet.rotationGroup.children.find(c => c.name === mesh.name);
-                console.log(`[setupScene] Mesh ${mesh.name} added to rotationGroup?`, !!addedMesh);
-            } else {
-                // Ensure this warning logs if rotationGroup is missing
-                console.warn(`[setupScene] Planet ${atmData.name} missing rotationGroup, cannot add atmosphere mesh.`);
-            }
-
-            app.atmosphereMeshes.push({
-                name: atmData.name,
-                mesh: mesh,
-                material: material
-            });
-        }
-    } else {
-        console.warn("[setupScene] AtmosphereManager or its atmospheres array not found.");
-    }
-
-    // 6. Post-processing (Now setup AFTER atmosphere meshes are added to planets)
+    // 6. Post-processing
     setupPostProcessing(app);
 
     // After all planets are created and added to app.celestialBodies

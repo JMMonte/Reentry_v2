@@ -15,7 +15,6 @@ import {
   Telescope,
   Radio,
   Map,
-  Moon,
   Link,
   CheckSquare,
   Loader2,
@@ -51,10 +50,7 @@ export const defaultSettings = {
     description: 'Show mission landing sites (e.g. lunar landing sites).'
   },
   showCountryBorders: { value: false, name: 'Country Borders', icon: Map },
-  showStates: { value: false, name: 'States', icon: Map },
-  showMoonOrbit: { value: true, name: 'Moon Orbit', icon: Moon },
-  showMoonTraces: { value: false, name: 'Moon Traces', icon: LineChart },
-  showMoonSurfaceLines: { value: false, name: 'Moon Surface Lines', icon: Mountain },
+  showTopographicIsolines: { value: false, name: 'Topographic Isolines', icon: Mountain },
   showSatVectors: { value: false, name: 'Satellite Vectors', icon: Circle },
   showOrbits: { value: true, name: 'Satellite Orbits', icon: Circle },
   showSatConnections: { value: false, name: 'Satellite Connections', icon: Link,
@@ -93,16 +89,34 @@ export const defaultSettings = {
 // Group settings by category
 const categories = [
   {
-    name: 'Rendering',
-    keys: ['showGrid', 'showVectors', 'showAxis', 'enableFXAA', 'pixelRatio', 'showSOI'],
+    name: 'Solar System',
+    keys: [
+      'showGrid',
+      'showVectors',
+      'showAxis',
+      'enableFXAA',
+      'pixelRatio',
+      'showSOI'
+    ],
   },
   {
-    name: 'Map Features',
-    keys: ['showSurfaceLines', 'showCountryBorders', 'showStates'],
+    name: 'Surface Features',
+    keys: [
+      'showSurfaceLines',
+      'showCountryBorders',
+      'showTopographicIsolines'
+    ],
   },
   {
     name: 'Points of Interest',
-    keys: ['showCities', 'showAirports', 'showSpaceports', 'showGroundStations', 'showObservatories', 'showMissions'],
+    keys: [
+      'showCities',
+      'showAirports',
+      'showSpaceports',
+      'showGroundStations',
+      'showObservatories',
+      'showMissions'
+    ],
   },
   {
     name: 'Satellites',
@@ -110,12 +124,22 @@ const categories = [
   },
   {
     name: 'Simulation',
-    keys: ['useRemoteCompute', 'orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod', 'physicsTimeStep', 'perturbationScale', 'sensitivityScale', 'nonKeplerianFallbackDays', 'hyperbolicPointsMultiplier'],
+    keys: [
+      'useRemoteCompute',
+      'orbitUpdateInterval',
+      'orbitPredictionInterval',
+      'orbitPointsPerPeriod',
+      'physicsTimeStep',
+      'perturbationScale',
+      'sensitivityScale',
+      'nonKeplerianFallbackDays',
+      'hyperbolicPointsMultiplier'
+    ],
   },
   {
     name: 'Lighting',
     keys: ['ambientLight'],
-  },
+  }
 ];
 
 function Accordion({ sections, children, openIndexes, setOpenIndexes }) {

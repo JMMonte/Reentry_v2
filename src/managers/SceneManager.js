@@ -109,4 +109,114 @@ export class SceneManager {
         // Grid helper (REMOVED)
         // this.radialGrid = null;
     }
+
+    /** Per-frame update: physics, visuals, UI, and display settings. */
+    updateFrame() {
+        this._syncBodiesAndPhysics();
+        this._updateVectors();
+        this._updateSatelliteLinks();
+        this._resizePOIs();
+        this._updateLensFlare();
+        this._applyDisplaySettings();
+    }
+
+    _syncBodiesAndPhysics() {
+        const { physicsWorld, sun, satellites, camera } = this.app;
+        physicsWorld.update();
+        if (sun && physicsWorld?.bodies) {
+            const sunBody = physicsWorld.bodies.find(b => b.nameLower === 'sun');
+            if (sunBody?.position) sun.setPosition(sunBody.position);
+        }
+        const kmToM = 1 / this.app.Constants.metersToKm;
+        physicsWorld.satellites.forEach((psat, id) => {
+            const satVis = satellites.getSatellites()[id];
+            if (satVis && psat.position && psat.velocity) {
+                const posM = psat.position.clone().multiplyScalar(kmToM);
+                const velM = psat.velocity.clone().multiplyScalar(kmToM);
+                satVis.updatePosition(posM, velM, psat.debug);
+            }
+        });
+        const bodiesByKey = new Map(physicsWorld.bodies.map(b => [b.name.toLowerCase(), b]));
+        const alpha = 1;
+        const cam = camera;
+        for (const p of this.app.Planet.instances) {
+            const body = bodiesByKey.get(p.name.toLowerCase());
+            if (body?.position) {
+                let x, y, z;
+                if (body.prevPosition) {
+                    x = body.prevPosition.x + (body.position.x - body.prevPosition.x) * alpha;
+                    y = body.prevPosition.y + (body.position.y - body.prevPosition.y) * alpha;
+                    z = body.prevPosition.z + (body.position.z - body.prevPosition.z) * alpha;
+                } else {
+                    ({ x, y, z } = body.position);
+                }
+                const cfg = this.app.celestialBodiesConfig[p.nameLower];
+                if (cfg.parent && cfg.parent !== 'barycenter') {
+                    const parent = bodiesByKey.get(cfg.parent);
+                    if (parent?.position) {
+                        x -= parent.position.x;
+                        y -= parent.position.y;
+                        z -= parent.position.z;
+                    }
+                }
+                p.getOrbitGroup().position.set(x, y, z);
+            }
+            p.updateAxisHelperPosition?.();
+            p.radialGrid?.updatePosition();
+            p.radialGrid?.updateFading(cam);
+            p.getOrbitGroup().updateMatrixWorld(true);
+            p.update();
+        }
+        for (const p of this.app.Planet.instances) {
+            p.atmosphereComponent?.update();
+        }
+    }
+
+    _updateVectors() {
+        const { displaySettingsManager, planetVectors, satelliteVectors, camera } = this.app;
+        if (displaySettingsManager.getSetting('showVectors')) {
+            planetVectors?.forEach(v => {
+                v.updateVectors?.();
+                v.updateFading?.(camera);
+            });
+        }
+        if (displaySettingsManager.getSetting('showSatVectors')) {
+            satelliteVectors?.updateSatelliteVectors?.();
+        }
+    }
+
+    _updateSatelliteLinks() {
+        if (this.app._connectionsEnabled) this.app._syncConnectionsWorker();
+    }
+
+    _resizePOIs() {
+        if (!this.app.pickablePoints?.length) return;
+        const { camera } = this.app;
+        const pixelSize = 8;
+        const vFOV = this.app.THREE.MathUtils.degToRad(camera.fov);
+        const halfH = window.innerHeight;
+        const tmp = new this.app.THREE.Vector3();
+        const scaleFor = dist => (2 * Math.tan(vFOV / 2) * dist) * (pixelSize / halfH);
+        this.app.pickablePoints.forEach(mesh => {
+            if (!mesh.visible) return;
+            mesh.getWorldPosition(tmp);
+            const s = scaleFor(tmp.distanceTo(camera.position));
+            mesh.scale.set(s, s, 1);
+        });
+        if (this.app._poiIndicator) {
+            this.app._poiIndicator.getWorldPosition(tmp);
+            const s = scaleFor(tmp.distanceTo(camera.position)) * 1.2;
+            this.app._poiIndicator.scale.set(s, s, 1);
+        }
+    }
+
+    _updateLensFlare() {
+        if (this.app.sun) {
+            this.app.sun.updateLensFlare(this.app.camera);
+        }
+    }
+
+    _applyDisplaySettings() {
+        this.app.displaySettingsManager.applyAll();
+    }
 }

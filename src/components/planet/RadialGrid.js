@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants.js';
-import { LabelFader } from '../utils/LabelFader.js'; // Corrected path
+import { Constants } from '../../utils/Constants.js';
+import { LabelFader } from '../../utils/LabelFader.js';
 
 export class RadialGrid {
     /**
@@ -19,7 +19,8 @@ export class RadialGrid {
         // No counter-rotation needed when attached to scene
         // this.group.rotation.set(Math.PI / 2, 0, -Math.PI);
 
-        this.scene.add(this.group); // Add directly to the main scene
+        // Add to the planet's parent group (should be rebaseGroup)
+        this.scene.add(this.group); // scene is rebaseGroup for planets
         this.labelsSprites = [];
 
         if (!config) {
@@ -296,22 +297,8 @@ export class RadialGrid {
     /** Update the grid's world position to match the planet's orbital position */
     updatePosition() {
         if (this.planet && this.group && this.planet.getOrbitGroup()) { // Check orbit group exists
-            const planetWorldPosition = new THREE.Vector3();
-            // Get the world position of the orbit group (center of planet in orbit)
-            this.planet.getOrbitGroup().getWorldPosition(planetWorldPosition);
-
-            // Check for NaN values BEFORE applying
-            if (!isNaN(planetWorldPosition.x) && !isNaN(planetWorldPosition.y) && !isNaN(planetWorldPosition.z)) {
-                this.group.position.copy(planetWorldPosition);
-
-            } else {
-                // Log an error if NaN is detected from getWorldPosition
-                // Avoid flooding: log only once per grid instance
-                if (!this._nanLogged) {
-                    this._nanLogged = true; // Prevent further logging for this grid
-                }
-                // Do NOT copy the NaN position to the grid
-            }
+            // Use camera-relative position (already rebased)
+            this.group.position.copy(this.planet.getOrbitGroup().position);
         }
     }
 }

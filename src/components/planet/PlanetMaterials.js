@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import soiVertexShader from '../shaders/soiVertexShader.glsl';
-import soiFragmentShader from '../shaders/soiFragmentShader.glsl';
-import { Constants } from '../utils/Constants.js';
+import soiVertexShader from '../../shaders/soiVertexShader.glsl';
+import soiFragmentShader from '../../shaders/soiFragmentShader.glsl';
+import { Constants } from '../../utils/Constants.js';
 
 // Inlined from EarthMaterials.js
 function createEarthMaterial(textureManager, anisotropy) {
@@ -34,9 +34,11 @@ function createCloudMaterial(textureManager, anisotropy) {
 
     return new THREE.MeshLambertMaterial({ // Keep Lambert
         // map: cloudTexture, // REMOVED from map
+        side: THREE.DoubleSide,
         alphaMap: cloudTexture, // USE texture as alphaMap
         color: 0xffffff, // Base color for clouds (white)
         transparent: true,
+        renderOrder: 0,
         blending: THREE.NormalBlending,
         depthWrite: false,
         depthTest: true
@@ -202,6 +204,13 @@ function updateDayNightMaterialCamera(mat, camera) {
 export { createDayNightMaterial, updateDayNightMaterialCamera };
 
 export class PlanetMaterials {
+    // Centralized render order constants
+    static SURFACE_RENDER_ORDER = 0;
+    static CLOUDS_RENDER_ORDER = 1;
+    static ATMOSPHERE_RENDER_ORDER = 2;
+    static SOI_RENDER_ORDER = -1;
+    static GLOW_RENDER_ORDER = 3;
+
     constructor(textureManager, rendererCapabilities, materialsConfig = {}) {
         this.textureManager = textureManager;
         this.maxAnisotropy = rendererCapabilities.getMaxAnisotropy();
@@ -256,5 +265,80 @@ export class PlanetMaterials {
     getSOIMaterial(options = {}) {
         const opts = { ...this.soiOptions, ...options };
         return this.soiCreator(opts);
+    }
+
+    /**
+     * Create a THREE.Mesh for the planet's atmosphere, with correct oblateness and shader material.
+     * @param {object} config - The planet config (must include .radius, .oblateness, .atmosphere)
+     * @param {object} options - Extra options (e.g. shaders, sun ref, app ref)
+     * @returns {THREE.Mesh|null}
+     */
+    createAtmosphereMesh(config, options = {}) {
+        if (!config.atmosphere || !config.radius) return null;
+        const atm = config.atmosphere;
+        const equR = config.radius;
+        const polR = equR * (1.0 - (config.oblateness || 0.0));
+        const coreY = polR / equR;
+        // Create geometry at outer atmosphere boundary for proper backface halo
+        const radius = equR + (atm.thickness || 0);
+        const geometry = new THREE.SphereGeometry(radius, 64, 64);
+        // Use provided shaders if present, else fallback to default
+        const vertexShader = options.vertexShader;
+        const fragmentShader = options.fragmentShader;
+        const uniforms = {
+            uPlanetRadius: { value: equR },
+            uPolarRadius: { value: polR },
+            uAtmosphereHeight: { value: atm.thickness || 0 },
+            uDensityScaleHeight: { value: atm.densityScaleHeight || 0 },
+            uRayleighScatteringCoeff: { value: new THREE.Vector3().fromArray(atm.rayleighScatteringCoeff || [0, 0, 0]) },
+            uMieScatteringCoeff: { value: atm.mieScatteringCoeff || 0 },
+            uMieAnisotropy: { value: atm.mieAnisotropy || 0 },
+            uNumLightSteps: { value: atm.numLightSteps || 4 },
+            uSunIntensity: { value: atm.sunIntensity || 1.0 },
+            uPlanetFrame: { value: new THREE.Matrix3() },
+            uSunPosition: { value: new THREE.Vector3() },
+            uCameraPosition: { value: new THREE.Vector3() },
+            uPlanetPositionWorld: { value: new THREE.Vector3() },
+            uHazeIntensity: { value: atm.hazeIntensity !== undefined ? atm.hazeIntensity : 1.0 },
+        };
+        const material = new THREE.ShaderMaterial({
+            uniforms,
+            vertexShader,
+            fragmentShader,
+            side: THREE.BackSide,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+            blending: THREE.AdditiveBlending
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = `atmosphere_${config.name}`;
+        mesh.scale.set(1, coreY, 1);
+        mesh.renderOrder = PlanetMaterials.ATMOSPHERE_RENDER_ORDER;
+        mesh.frustumCulled = true;
+        return mesh;
+    }
+
+    /**
+     * Returns a MeshPhongMaterial for planetary rings.
+     * @param {THREE.Texture} colorTexture - The color texture for the ring.
+     * @param {THREE.Texture} alphaTexture - The alpha texture for the ring (can be same as colorTexture).
+     * @param {object} options - Additional material options (shininess, specular, emissive, emissiveIntensity, emissivity, etc.).
+     *   - emissivity: number (default 0.2) - controls the ring's diffusion-like glow
+     */
+    getRingMaterial(colorTexture, alphaTexture, options = {}) {
+        const emissivity = options.emissivity ?? 0.2;
+        return new THREE.MeshPhongMaterial({
+            map: colorTexture || null,
+            alphaMap: alphaTexture || null,
+            alphaTest: 0.01,
+            side: THREE.DoubleSide,
+            transparent: true,
+            depthWrite: true,
+            shininess: options.shininess ?? 15,
+            specular: options.specular ?? 0x333333,
+            emissive: options.emissive ?? 0x222222,
+            emissiveIntensity: options.emissiveIntensity ?? emissivity
+        });
     }
 } 

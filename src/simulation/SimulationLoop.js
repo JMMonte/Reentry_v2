@@ -78,9 +78,9 @@ export class SimulationLoop {
 
         const timestamp = performance.now();
         this.timeUtils.update(timestamp);
-        // Step 4: physics update moved to updateScene
-        this.app.updateScene();
-        // Then sync camera to follow updated body position
+        // First update scene (physics, visuals, and rebasing)
+        this.sceneManager.updateFrame();
+        // Then update camera to follow the new positions
         this.cameraControls.updateCameraPosition();
 
         // Update day/night material camera position uniform
@@ -111,12 +111,6 @@ export class SimulationLoop {
         // Render scene
         if (this.sceneManager.composers.final) {
             this.sceneManager.composers.final.render();
-            // Update depth texture for atmosphere pass after render
-            const atmospherePass = this.sceneManager.composers.atmospherePass;
-            const finalComposer = this.sceneManager.composers.final;
-            if (atmospherePass && finalComposer.readBuffer && finalComposer.readBuffer.depthTexture) {
-                atmospherePass.uniforms.tDepth.value = finalComposer.readBuffer.depthTexture;
-            }
         } else {
             this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }

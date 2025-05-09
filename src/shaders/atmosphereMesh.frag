@@ -3,7 +3,6 @@
 #define MAX_ATMOS 1 // Mesh shader handles one atmosphere
 
 // Uniforms (Per-atmosphere basis)
-uniform vec3 uPlanetPosition; // World position of planet center (km)
 uniform float uPlanetRadius;    // Planet equatorial radius (km)
 uniform float uPolarRadius;     // Planet polar radius (km)
 uniform float uAtmosphereHeight; // Atmosphere height above surface (km)
@@ -22,14 +21,15 @@ uniform float uDensityScaleHeight; // Scale height for density falloff
 uniform vec3 uRayleighScatteringCoeff; // RGB scattering coefficients
 uniform float uMieScatteringCoeff;    // Mie scattering coefficient (monochromatic)
 uniform float uMieAnisotropy;         // Mie phase function anisotropy (g)
+// Global haze intensity multiplier (1.0 = normal)
+uniform float uHazeIntensity;
 
 // Transformation
 uniform mat3 uPlanetFrame;      // World-to-Local rotation matrix for planet tilt
 
 // Varyings from vertex shader
-varying vec3 vWorldPosition; // Fragment position in world space
+varying vec3 vWorldPositionFromPlanetCenter; // World position minus planet center
 varying vec3 vNormal;        // Fragment normal in world space
-varying vec3 vViewDirection; // World space vector from fragment TO camera (CameraPos - WorldPos)
 
 const float PI = 3.141592653589793;
 
@@ -111,71 +111,83 @@ vec3 calculateOpticalDepthEllipsoid(
 // --- Main Raymarching Logic (adapted for mesh) --- 
 
 void main() {
-    // Transform camera and sun positions to planet local space
-    vec3 eyeLocal = uPlanetFrame * (uCameraPosition - uPlanetPosition);
-    vec3 sunLocal = uPlanetFrame * (uSunPosition - uPlanetPosition);
-    vec3 fragLocal = uPlanetFrame * (vWorldPosition - uPlanetPosition);
+    // We now receive camera & sun already relative to planet center;
+    vec3 eyeLocal = uPlanetFrame * uCameraPosition;
+    vec3 sunLocal = uPlanetFrame * uSunPosition;
+    vec3 fragLocal = uPlanetFrame * vWorldPositionFromPlanetCenter;
     vec3 dirLocal = normalize(fragLocal - eyeLocal);
 
-    float planetRadius = uPlanetRadius;
-    float atmosphereRadius = uPlanetRadius + uAtmosphereHeight;
-
-    // Ray-sphere intersection with atmosphere shell (centered at origin in local space)
-    vec3 oc = eyeLocal;
-    float b = dot(oc, dirLocal);
-    float c = dot(oc, oc) - atmosphereRadius * atmosphereRadius;
-    float h = b * b - c;
-    if (h < 0.0) discard; // Ray misses atmosphere
-
-    float t0 = -b - sqrt(h);
-    float t1 = -b + sqrt(h);
-    float tStart = max(t0, 0.0);
-    float tEnd = t1;
-
-    // Ray-sphere intersection with planet
-    float cPlanet = dot(oc, oc) - planetRadius * planetRadius;
-    float hPlanet = b * b - cPlanet;
-    if (hPlanet > 0.0) {
-        float tPlanet = -b - sqrt(hPlanet);
-        if (tPlanet > tStart && tPlanet < tEnd) {
-            tEnd = tPlanet; // Stop at planet surface
-        }
+    // Offset ray origin slightly if inside or very close to the surface
+    float camDist = length(eyeLocal);
+    if (camDist < uPlanetRadius) {
+        eyeLocal = eyeLocal * (uPlanetRadius / max(camDist, 1e-6));
     }
 
-    float stepSize = (tEnd - tStart) / float(uNumLightSteps);
-    vec3 sum = vec3(0.0);
-    float opticalDepth = 0.0;
-    float scaleHeight = uDensityScaleHeight;
+    // Define equatorial and polar radii for planet AND atmosphere shell
+    float planetEquatorialRadius = uPlanetRadius;
+    float planetPolarRadius = uPolarRadius; // Already a uniform
 
-    for (int i = 0; i < uNumLightSteps; ++i) {
+    float atmEquatorialRadius = uPlanetRadius + uAtmosphereHeight;
+    // Calculate polar radius for atmosphere: polar planet radius + thickness
+    float atmPolarRadius = uPolarRadius + uAtmosphereHeight;
+
+    // Ray-ellipsoid intersection with ATMOSPHERE SHELL (in planet local space)
+    vec2 atmIntersection = intersectEllipsoid(eyeLocal, dirLocal, atmEquatorialRadius, atmPolarRadius);
+
+    // if (atmIntersection.y < 0.0) discard; // Ray misses atmosphere entirely - Keeping commented for now
+    if (atmIntersection.y < 0.0) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0); // Output transparent black if ray misses
+        return;
+    }
+
+    float tStart = max(0.0, atmIntersection.x); // Start at near intersection with atmosphere
+    float tEnd = atmIntersection.y;            // End at far intersection with atmosphere
+
+    // Ray-ellipsoid intersection with PLANET BODY
+    vec2 planetIntersection = intersectEllipsoid(eyeLocal, dirLocal, planetEquatorialRadius, planetPolarRadius);
+
+    if (planetIntersection.x > 0.0 && planetIntersection.x < tEnd) {
+        // If ray hits planet before exiting atmosphere, shorten the ray
+        tEnd = planetIntersection.x;
+    }
+
+    vec3 accumulatedColor = vec3(0.0);
+    vec3 accumulatedTransmittance = vec3(1.0);
+    float scaleHeight = uDensityScaleHeight;
+    int numSteps = uNumLightSteps;
+    float stepSize = (tEnd - tStart) / float(numSteps);
+    for (int i = 0; i < MAX_VIEW_STEPS; ++i) {
+        if (i >= numSteps) break;
         float t = tStart + (float(i) + 0.5) * stepSize;
         vec3 samplePos = eyeLocal + dirLocal * t;
-        float height = length(samplePos) - planetRadius;
+        float height = ellipsoidAltitude(samplePos, planetEquatorialRadius, planetPolarRadius);
+        if (height < 0.0) continue;
         float density = getDensity(height, scaleHeight);
-
-        // Rayleigh phase
-        float sunDot = dot(normalize(sunLocal - samplePos), dirLocal);
-        float rayleighPhase = 3.0 / (16.0 * PI) * (1.0 + sunDot * sunDot);
-        vec3 rayleighScatter = uRayleighScatteringCoeff * rayleighPhase * density * uSunIntensity;
-
-        // Mie phase
-        float miePhase = phaseMie(sunDot, uMieAnisotropy);
-        vec3 mieScatter = vec3(uMieScatteringCoeff * miePhase * density * uSunIntensity);
-
-        // Combine scattering
-        vec3 scatter = rayleighScatter + mieScatter;
-
-        // Night side fading: soft fade, always keep some haze on day side
-        float sunIllum = dot(normalize(sunLocal - samplePos), normalize(samplePos));
-        float hazeFade = smoothstep(-0.2, 0.2, sunIllum); // Soft transition
-        scatter *= mix(0.2, 1.0, hazeFade); // Always at least 0.2 haze on day side
-
-        // Accumulate with Beer-Lambert extinction
-        float extinction = exp(-opticalDepth);
-        sum += scatter * extinction * stepSize;
-        opticalDepth += density * stepSize * 0.05; // 0.05: extinction fudge factor
+        vec3 extinctionCoeff = (uRayleighScatteringCoeff + uMieScatteringCoeff) * density;
+        vec3 stepTransmittance = exp(-extinctionCoeff * stepSize);
+        vec3 lightDir = normalize(sunLocal - samplePos);
+        vec3 opticalDepthToSun = calculateOpticalDepthEllipsoid(
+            samplePos, lightDir, numSteps, // use same numSteps for light
+            atmEquatorialRadius, atmPolarRadius,
+            planetEquatorialRadius, planetPolarRadius,
+            scaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
+        );
+        vec3 transToSun = exp(-opticalDepthToSun);
+        float cosTheta = dot(dirLocal, lightDir);
+        float rayleighPhase = phaseRayleigh(cosTheta);
+        float miePhase = phaseMie(cosTheta, uMieAnisotropy);
+        vec3 rayleighScattering = uRayleighScatteringCoeff * rayleighPhase;
+        vec3 mieScattering = vec3(uMieScatteringCoeff * miePhase);
+        vec3 totalScattering = (rayleighScattering + mieScattering) * density;
+        vec3 inScattered = totalScattering * uSunIntensity * transToSun;
+        accumulatedColor += inScattered * accumulatedTransmittance * stepSize;
+        accumulatedTransmittance *= stepTransmittance;
+        if (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z < 3e-5) {
+            break;
+        }
     }
-
-    float intensity = length(sum);
-    gl_FragColor = vec4(sum, intensity); // Physically-based color and alpha
+    float meanTrans = (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z) / 3.0;
+    // Apply haze intensity multiplier to scattered color
+    accumulatedColor *= uHazeIntensity;
+    gl_FragColor = vec4(accumulatedColor, meanTrans);
 } 

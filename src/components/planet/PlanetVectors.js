@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import helveticaRegular from '../assets/fonts/helvetiker_regular.typeface.json';
-import { LabelFader } from './LabelFader.js';
+import helveticaRegular from '../../assets/fonts/helvetiker_regular.typeface.json';
+import { LabelFader } from '../../utils/LabelFader.js';
 
 export class PlanetVectors {
     constructor(body, scene, timeUtils, options = {}) {
         this.body = body;
-        this.scene = scene;
+        this.scene = scene; // should be rebaseGroup
         this.timeUtils = timeUtils;
-        this.scale = this.body.radius * 2;
+        this.options = options;
+        this.scale = options.scale || 1;
         this.fontLoader = new FontLoader();
         this.font = null;
 

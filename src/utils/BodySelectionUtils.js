@@ -1,6 +1,6 @@
 // Utility functions for handling body selection across the application
 
-import { Planet } from '../components/Planet.js';
+import { Planet } from '../components/planet/Planet.js';
 
 /**
  * Format a value into the standard body selection format

@@ -1,12 +1,37 @@
 /* Planet.js */
 import * as THREE from 'three';
-import { PhysicsUtils } from '../utils/PhysicsUtils.js';
-import { Constants } from '../utils/Constants.js';
+import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
+import { Constants } from '../../utils/Constants.js';
 import { PlanetSurface } from './PlanetSurface.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
 import { RadialGrid } from './RadialGrid.js';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { celestialBodiesConfig } from '../config/celestialBodiesConfig.js';
+import { celestialBodiesConfig } from '../../config/celestialBodiesConfig.js';
+import atmosphereMeshVertexShader from '../../shaders/atmosphereMesh.vert?raw';
+import atmosphereMeshFragmentShader from '../../shaders/atmosphereMesh.frag?raw';
+import { RotationComponent } from './RotationComponent.js';
+import { AtmosphereComponent } from './AtmosphereComponent.js';
+import { CloudComponent } from './CloudComponent.js';
+import { RingComponent } from './RingComponent.js';
+import { DistantMeshComponent } from './DistantMeshComponent.js';
+import { SoiComponent } from './SoiComponent.js';
+
+// ---- General Render Order Constants ----
+export const RENDER_ORDER = {
+    SOI: -1,
+    SURFACE: 0,
+    CLOUDS: 1,
+    ATMOSPHERE: 2,
+    POI: 3,
+    RINGS: 4,
+    GLOW: 5
+};
+//
+// Render order system:
+//  - General constants above are used for all planet sub-meshes.
+//  - If a planet needs a specific override, set it in celestialBodiesConfig.js under materials.renderOrderOverrides.
+//  - Planet.js will check for and apply these overrides when constructing meshes.
+//
 
 export class Planet {
     /* ---------- static ---------- */
@@ -21,7 +46,7 @@ export class Planet {
             rotationPeriod = 86_400, orbitalPeriod = 365.25,
             tilt = 0, rotationOffset = 0,
             meshRes = 128, atmosphereRes = 128, cloudRes = 128,
-            atmosphereThickness = 0, cloudThickness = 0,
+            cloudThickness = 0,
             orbitElements = null,
             addSurface = false, surfaceOptions = {},
             primaryGeojsonData, stateGeojsonData,
@@ -57,7 +82,7 @@ export class Planet {
         this.meshRes = meshRes;
         this.atmosphereRes = atmosphereRes;
         this.cloudRes = cloudRes;
-        this.atmosphereThickness = atmosphereThickness;
+        this.atmosphereThickness = (config.atmosphere && typeof config.atmosphere.thickness === 'number') ? config.atmosphere.thickness : 0;
         this.cloudThickness = cloudThickness;
         this.orbitElements = orbitElements;
 
@@ -67,6 +92,11 @@ export class Planet {
         this.soiRadius = radius * soiRadius;
 
         Planet.instances.push(this);
+        // Component system
+        this.components = [];
+        // Rotation handling
+        this.rotationComponent = new RotationComponent(this);
+        this.components.push(this.rotationComponent);
 
         /* ---------- materials ---------- */
         this.materials = new PlanetMaterials(
@@ -75,17 +105,61 @@ export class Planet {
             materialOverrides
         );
 
+        /* ---------- Render order overrides ---------- */
+        this.renderOrderOverrides = (config.materials && config.materials.renderOrderOverrides) || {};
+
         /* ---------- build ---------- */
         this.#initGroups();
         this.#initMaterials();
         this.#initMeshes();
-        this.#initDistantMesh();
-        if (this.soiRadius > 0) this.#initSoiMesh();
+        
+        if (config.atmosphere) {
+            // Compute thickness and densityScaleHeight from fractions if present
+            const atm = { ...config.atmosphere };
+            if ('thicknessFraction' in atm) {
+                atm.thickness = atm.thicknessFraction * this.radius;
+            }
+            // Store computed thickness on the planet so AtmosphereComponent uses it
+            this.atmosphereThickness = atm.thickness;
+            if ('densityScaleHeightFraction' in atm) {
+                atm.densityScaleHeight = atm.densityScaleHeightFraction * this.radius;
+            }
+            // Normalize scattering coefficients to reference Earth radius
+            const earthRef = celestialBodiesConfig.earth.radius;
+            if (Array.isArray(atm.rayleighScatteringCoeff)) {
+                atm.rayleighScatteringCoeff = atm.rayleighScatteringCoeff.map(v => v * (earthRef / this.radius));
+            }
+            if (typeof atm.mieScatteringCoeff === 'number') {
+                atm.mieScatteringCoeff *= (earthRef / this.radius);
+            }
+            // Build a config copy with computed values
+            const configWithComputedAtmo = { ...config, atmosphere: atm };
+            this.atmosphereComponent = new AtmosphereComponent(
+                this,
+                configWithComputedAtmo,
+                {
+                    vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
+                    fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
+                }
+            );
+            this.components.push(this.atmosphereComponent);
+            // Assign atmosphere mesh and apply render order if available
+            this.atmosphereMesh = this.atmosphereComponent.mesh;
+            if (this.atmosphereMesh) {
+                this.atmosphereMesh.renderOrder = this.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
+            }
+        }
+        this.distantComponent = new DistantMeshComponent(this);
+        this.components.push(this.distantComponent);
+        if (this.soiRadius > 0) {
+            this.soiComponent = new SoiComponent(this);
+            this.components.push(this.soiComponent);
+        }
 
         /* ---------- optional surface ---------- */
         if (addSurface) {
             const polarScale = 1 - this.oblateness;
-            const surfaceOpts = { ...surfaceOptions, polarScale };
+            const surfaceOpts = { ...surfaceOptions, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
             this.planetMesh.userData.planetName = this.name;
             this.surface = new PlanetSurface(
                 this.planetMesh,
@@ -113,7 +187,8 @@ export class Planet {
 
         /* ----- rings ----- */
         if (addRings && ringConfig) {
-            this.#initRings(ringConfig);
+            this.ringComponent = new RingComponent(this, ringConfig);
+            this.components.push(this.ringComponent);
         }
 
         // Special case: if this is the EMB, add a visible marker
@@ -125,6 +200,15 @@ export class Planet {
             this.unrotatedGroup = new THREE.Group();
             this.unrotatedGroup.add(this.marker);
             this.scene.add(this.unrotatedGroup);
+        } else {
+            this.unrotatedGroup = new THREE.Group();
+            this.scene.add(this.unrotatedGroup);
+        }
+
+        // Cloud layer component
+        if (this.cloudMaterial) {
+            this.cloudComponent = new CloudComponent(this);
+            this.components.push(this.cloudComponent);
         }
 
         this.update(); // initial orientation & orbit
@@ -153,66 +237,55 @@ export class Planet {
         this.cloudMaterial = this.cloudThickness > 0 ? this.materials.getCloudMaterial() : null;
     }
 
+    #createLodMesh(baseRadius, material, yScaleFactor, lodLevels, defaultMeshRes, renderOrderKey = 'SURFACE') {
+        let meshObject;
+        const geometryFn = (r, res) => new THREE.SphereGeometry(r, res, res);
+        const renderOrder = this.renderOrderOverrides[renderOrderKey] ?? RENDER_ORDER[renderOrderKey];
+        if (lodLevels?.length) {
+            const lod = new THREE.LOD();
+            for (const { meshRes, distance } of lodLevels) {
+                const m = new THREE.Mesh(geometryFn(baseRadius, meshRes), material);
+                m.scale.set(1, yScaleFactor, 1);
+                m.renderOrder = renderOrder;
+                lod.addLevel(m, distance);
+            }
+            meshObject = lod;
+        } else {
+            meshObject = new THREE.Mesh(geometryFn(baseRadius, defaultMeshRes), material);
+            meshObject.scale.set(1, yScaleFactor, 1);
+            meshObject.renderOrder = renderOrder;
+        }
+        this.rotationGroup.add(meshObject);
+        return meshObject;
+    }
+
     #initMeshes() {
         const equR = this.radius;
         const polR = this.radius * (1 - this.oblateness);
-
-        // Define yScale helper first
-        const yScale = (p, e) => p / e;
-
+        const yScale = (p, e) => (e === 0 ? 1 : p / e); // Avoid division by zero
         const equCloud = equR + this.cloudThickness;
         const polCloud = polR + this.cloudThickness;
-
         const coreY = yScale(polR, equR);
         const cloudY = yScale(polCloud, equCloud);
-
         /* ----- core ----- */
-        if (this.lodLevels?.length) {
-            this.planetLOD = new THREE.LOD();
-            for (const { meshRes, distance } of this.lodLevels) {
-                const m = new THREE.Mesh(
-                    new THREE.SphereGeometry(equR, meshRes, meshRes),
-                    this.surfaceMaterial
-                );
-                m.scale.set(1, coreY, 1);
-                this.planetLOD.addLevel(m, distance);
-            }
-            this.rotationGroup.add(this.planetLOD);
-            this.planetMesh = this.planetLOD;
-        } else {
-            this.planetMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(equR, this.meshRes, this.meshRes),
-                this.surfaceMaterial
-            );
-            this.planetMesh.scale.set(1, coreY, 1);
-            this.rotationGroup.add(this.planetMesh);
-        }
-
+        this.planetMesh = this.#createLodMesh(
+            equR,
+            this.surfaceMaterial,
+            coreY,
+            this.lodLevels,
+            this.meshRes,
+            'SURFACE'
+        );
         /* ----- clouds ----- */
         if (this.cloudMaterial) {
-            const make = (res) =>
-                new THREE.Mesh(new THREE.SphereGeometry(equCloud, res, res), this.cloudMaterial);
-            if (this.lodLevels?.length) {
-                this.cloudLOD = new THREE.LOD();
-                for (const { meshRes, distance } of this.lodLevels) {
-                    const m = make(meshRes);
-                    m.scale.set(1, cloudY, 1);
-                    m.renderOrder = 1;
-                    this.cloudLOD.addLevel(m, distance);
-                }
-                this.rotationGroup.add(this.cloudLOD);
-                this.cloudMesh = this.cloudLOD;
-            } else {
-                this.cloudMesh = make(this.cloudRes);
-                this.cloudMesh.scale.set(1, cloudY, 1);
-                this.cloudMesh.renderOrder = 1;
-                this.rotationGroup.add(this.cloudMesh);
-            }
-        }
-
-        /* ----- rings ----- */
-        if (this.addRings && this.ringConfig) {
-            this.#initRings(this.ringConfig);
+            this.cloudMesh = this.#createLodMesh(
+                equCloud,
+                this.cloudMaterial,
+                cloudY,
+                this.lodLevels, // Assuming clouds use the same LOD levels config
+                this.cloudRes,
+                'CLOUDS'
+            );
         }
     }
 
@@ -267,80 +340,10 @@ export class Planet {
         if (helper) this.scene.add(new THREE.PointLightHelper(light, helperSize));
     }
 
-    #initDistantMesh() {
-        const geo = new THREE.SphereGeometry(1, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({ color: this.dotColor, transparent: true, opacity: 0.7 });
-        this.distantMesh = new THREE.Mesh(geo, mat);
-        this.distantMesh.visible = false;
-        this.orbitGroup.add(this.distantMesh);
-    }
-
-    #initSoiMesh() {
-        if (!this.materials.getSOIMaterial) return;
-        const geo = new THREE.SphereGeometry(this.soiRadius, 64, 32);
-        const mat = this.materials.getSOIMaterial();
-        if (!mat) return;
-        this.soiMesh = new THREE.Mesh(geo, mat);
-        this.soiMesh.renderOrder = -1;
-        this.tiltGroup.add(this.soiMesh);
-    }
-
-    #initRings({ innerRadius, outerRadius, textureKey, resolution = 128 }) {
-        const ringTexture = this.textureManager.getTexture(textureKey);
-        if (!ringTexture) {
-            console.warn(`Ring texture '${textureKey}' not found for planet ${this.name}`);
-            return;
-        }
-
-        // Geometry: A flat ring
-        const geometry = new THREE.RingGeometry(
-            innerRadius,
-            outerRadius,
-            resolution,
-            1, // thetaSegments
-            0, // thetaStart
-            Math.PI * 2
-        );
-
-        // Adjust UVs: Map texture radially
-        // u = (radius - innerRadius) / (outerRadius - innerRadius)
-        // v = angle / (2*PI)
-        const pos = geometry.attributes.position;
-        const uvs = geometry.attributes.uv;
-        const ringSpan = outerRadius - innerRadius;
-        for (let i = 0; i < pos.count; i++) {
-            const x = pos.getX(i);
-            const y = pos.getY(i);
-            const radius = Math.sqrt(x * x + y * y);
-            const angle = Math.atan2(y, x);
-
-            uvs.setX(i, (radius - innerRadius) / ringSpan);
-            uvs.setY(i, (angle / (Math.PI * 2)) + 0.5); // Map angle to V (0 to 1)
-        }
-
-        // Material
-        const material = new THREE.MeshPhongMaterial({
-            map: ringTexture,
-            alphaMap: ringTexture, // Use same texture for alpha
-            alphaTest: 0.01,     // Discard pixels with alpha below this threshold
-            side: THREE.DoubleSide,
-            transparent: false, // Make opaque by default
-            depthWrite: true,
-            shininess: 15,      // Slightly increased shininess
-            specular: 0x333333, // Slightly brighter specular highlights
-            emissive: 0x222222, // Add a faint emissive glow
-            emissiveIntensity: 0.5 // Intensity of the glow
-        });
-
-        this.ringMesh = new THREE.Mesh(geometry, material);
-        // Rings lie in the XY plane locally and rotate with tilt, not spin
-        this.ringMesh.rotation.x = Math.PI / 2; // Rotate plane to be horizontal
-        this.tiltGroup.add(this.ringMesh);
-    }
-
     /* ===== per-frame ===== */
     update() {
-        this.#updateRotation();
+        // Update all registered components
+        this.components.forEach(c => c.update());
         // Update EMB marker position if this is EMB
         if (this.nameLower === 'emb' && this.marker && window.Astronomy) {
             const jd = this.timeManager.getJulianDate();
@@ -354,53 +357,8 @@ export class Planet {
         }
         // Shader uniforms are now updated externally by App3D after final position sync
 
-        if (Planet.camera && this.distantMesh) {
-            const planetPos = new THREE.Vector3();
-            this.planetMesh.getWorldPosition(planetPos);
-            const camPos = Planet.camera.position;
-            const dist = planetPos.distanceTo(camPos);
-            const fovY = THREE.MathUtils.degToRad(Planet.camera.fov);
-            const scrH = window.innerHeight;
-            const pix = (2 * Math.atan(this.radius / dist) / fovY) * scrH;
-
-            if (pix < this.dotPixelSizeThreshold) {
-                this.distantMesh.visible = true;
-                this.planetMesh.visible = false;
-                // TEMPORARILY DISABLED Cloud Layer Visibility Update
-                // this.cloudMesh && (this.cloudMesh.visible = false);
-
-                const ang = (this.dotPixelSizeThreshold / scrH) * fovY;
-                this.distantMesh.scale.setScalar(Math.tan(ang / 2) * dist);
-            } else {
-                this.distantMesh.visible = false;
-                this.planetMesh.visible = true;
-                // TEMPORARILY DISABLED Cloud Layer Visibility Update
-                // this.cloudMesh && (this.cloudMesh.visible = true);
-                this.planetLOD && this.planetLOD.update(Planet.camera);
-            }
-        }
-
         // Update surface/grid fading
         this.surface && Planet.camera && this.surface.updateFade(Planet.camera);
-
-        /* LOD -> dot switch etc. */
-        // Update Saturn ring shader uniforms (depth, camera, resolution)
-        if (this._isSaturnRingShader && this.ringMesh && this.ringMesh.material) {
-            const mat = this.ringMesh.material;
-            if (mat.uniforms) {
-                const app = window.app3d;
-                if (app && app.sceneDepthTexture && mat.uniforms.depthTexture) {
-                    mat.uniforms.depthTexture.value = app.sceneDepthTexture;
-                }
-                if (app && app.camera && mat.uniforms.cameraNear && mat.uniforms.cameraFar) {
-                    mat.uniforms.cameraNear.value = app.camera.near;
-                    mat.uniforms.cameraFar.value = app.camera.far;
-                }
-                if (mat.uniforms.resolution && mat.uniforms.resolution.value?.set) {
-                    mat.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
-                }
-            }
-        }
     }
 
     updateAxisHelperPosition() {
@@ -409,23 +367,6 @@ export class Planet {
             this.getOrbitGroup().getWorldPosition(worldPos);
             this._axisHelper.position.copy(worldPos);
         }
-    }
-
-    #updateRotation() {
-        const JD = this.timeManager.getJulianDate();
-        const secs = (JD - 2451545.0) * Constants.secondsInDay;
-        this.rotationGroup.rotation.y =
-            (2 * Math.PI * (secs / this.rotationPeriod % 1)) + this.rotationOffset;
-    }
-
-    /** Update shader uniforms based on current world state. Call AFTER final position sync. */
-    updateShaderUniforms() {
-        // Removed obsolete glowMaterial logic
-        this.#updateLightDirection();
-    }
-
-    #updateLightDirection() {
-        // Removed obsolete glowMaterial logic and unused sunPos variable
     }
 
     /* ===== public ===== */
@@ -450,9 +391,9 @@ export class Planet {
     setGroundStationsVisible(v) { this.surface?.setGroundStationsVisible(v); }
     setObservatoriesVisible(v) { this.surface?.setObservatoriesVisible(v); }
     setMissionsVisible(v) { this.surface?.setMissionsVisible(v); }
-    setSOIVisible(v) { this.soiMesh && (this.soiMesh.visible = v); }
+    setSOIVisible(v) { this.soiComponent && (this.soiComponent.mesh.visible = v); }
     setRadialGridVisible(v) { this.radialGrid?.setVisible(v); }
-    setRingsVisible(v) { this.ringMesh && (this.ringMesh.visible = v); }
+    setRingsVisible(v) { if (this.ringComponent?.mesh) this.ringComponent.mesh.visible = v; }
 
     convertEciToGround(posEci) {
         const gmst = PhysicsUtils.calculateGMST(Date.now());
@@ -485,8 +426,6 @@ export class Planet {
         this.orbitLine?.geometry?.dispose();
         this.orbitLine?.material?.dispose();
         this.surface?.dispose?.();
-        this.ringMesh?.geometry?.dispose();
-        this.ringMesh?.material?.dispose();
         this.radialGrid?.dispose?.();
 
         const i = Planet.instances.indexOf(this);
@@ -515,8 +454,8 @@ export class Planet {
                 ['X', 'Y', 'Z'].forEach(axis => {
                     const lbl = mkLabel(axis);
                     lbl.position.set(axis === 'X' ? size : 0,
-                                     axis === 'Y' ? size : 0,
-                                     axis === 'Z' ? size : 0);
+                        axis === 'Y' ? size : 0,
+                        axis === 'Z' ? size : 0);
                     this._axisHelper.add(lbl);
                     this._axisLabels.push(lbl);
                 });

@@ -48,7 +48,7 @@ export class PhysicsWorld {
             if (!cfg) throw new Error(`No config found for body '${keyLower}'`);
             // compute sphere-of-influence radius in scene units
             const soi = (cfg.soiRadius || 0) * (cfg.radius || 1);
-            // Attach the Planet instance for later use in AtmosphereManager
+
             return {
                 name: inst.name,
                 // Cache lowercase name for string lookups

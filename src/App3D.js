@@ -36,6 +36,7 @@ import { setupEventListeners as setupGlobalListeners }
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { PhysicsWorld } from './world/PhysicsWorld.js';
 import { OrbitManager } from './managers/OrbitManager.js';
+import { celestialBodiesConfig } from './config/celestialBodiesConfig.js';
 
 // Domain helpers
 import {
@@ -45,7 +46,7 @@ import {
     getVisibleLocationsFromOrbitalElements as computeVisibleLocations
 }
     from './components/Satellite/createSatellite.js';
-import { Planet } from './components/Planet.js';
+import { Planet } from './components/planet/Planet.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 2. SMALL UTILITIES
@@ -109,6 +110,12 @@ class App3D extends EventTarget {
 
         // Global listeners (bodySelected, displaySettings, …)
         setupGlobalListeners(this);
+
+        // Attach core modules for SceneManager access
+        this.Constants = Constants;
+        this.Planet = Planet;
+        this.THREE = THREE;
+        this.celestialBodiesConfig = celestialBodiesConfig;
     }
 
     // ───── Properties (read-only public) ──────────────────────────────────────
@@ -138,11 +145,22 @@ class App3D extends EventTarget {
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
 
+            // Re-parent each planet's orbitGroup under its configured parent for proper nesting (e.g., Earth/Moon under EMB)
+            for (const child of Planet.instances) {
+                const cfg = celestialBodiesConfig[child.nameLower];
+                if (cfg.parent && cfg.parent !== 'barycenter') {
+                    const parent = Planet.instances.find(p => p.nameLower === cfg.parent);
+                    if (parent) {
+                        const childOrbit = child.getOrbitGroup();
+                        parent.getOrbitGroup().add(childOrbit);
+                        // Clear child orbitGroup's own rotation so it inherits parent's orientation only
+                        childOrbit.rotation.set(0, 0, 0);
+                    }
+                }
+            }
+
             // Load planets & sun into physics world
             this.physicsWorld.loadFromPlanets(this.celestialBodies);
-
-            // Link atmospheres to physics bodies (multi-atmosphere)
-            this.atmosphereManager?.linkPhysicsBodies();
 
             // Build and display planetary orbits
             this.orbitManager = new OrbitManager({
@@ -270,120 +288,6 @@ class App3D extends EventTarget {
     }
     _removeWindowResizeListener() {
         window.removeEventListener('resize', this._eventHandlers.resize);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 6. RUNTIME UPDATES
-    // ──────────────────────────────────────────────────────────────────────────
-    /**
-     * Called each frame from the SimulationLoop.
-     */
-    updateScene() {
-        // Step 4: update physics world before syncing visuals
-        this.physicsWorld.update();
-        // Sync PhysicsWorld satellite positions to visualizers
-        const kmToM = 1 / Constants.metersToKm;
-        this.physicsWorld.satellites.forEach((psat, id) => {
-            const satVis = this.satellites.getSatellites()[id];
-            if (satVis && psat.position && psat.velocity) {
-                const posM = psat.position.clone().multiplyScalar(kmToM);
-                const velM = psat.velocity.clone().multiplyScalar(kmToM);
-                satVis.updatePosition(posM, velM, psat.debug);
-            }
-        });
-
-        // Build a lookup map of physics bodies by lower-case name
-        const bodiesByKey = new Map();
-        this.physicsWorld.bodies.forEach(b => bodiesByKey.set(b.name.toLowerCase(), b));
-        // Update planets, axis helpers, radial grids, and shader uniforms in one pass
-        const cam = this.camera;
-        for (const p of Planet.instances) {
-            p.update();
-            // Sync transform from physics via map lookup
-            const body = bodiesByKey.get(p.name.toLowerCase());
-            if (body && body.position) {
-                p.getOrbitGroup().position.set(body.position.x, body.position.y, body.position.z);
-            }
-            // Axis helper
-            p.updateAxisHelperPosition?.();
-            // Radial grid
-            p.radialGrid?.updatePosition();
-            p.radialGrid?.updateFading(cam);
-            // Shader uniforms
-            p.updateShaderUniforms();
-        }
-
-        // planet & satellite vectors
-        if (this.displaySettingsManager.getSetting('showVectors')) {
-            this.planetVectors?.forEach(v => {
-                v.updateVectors?.();
-                v.updateFading?.(this.camera);
-            });
-        }
-        if (this.displaySettingsManager.getSetting('showSatVectors')) {
-            this.satelliteVectors?.updateSatelliteVectors?.();
-        }
-
-        // satellite links
-        if (this._connectionsEnabled) this._syncConnectionsWorker();
-
-        // UI-scale transforms
-        this._resizePOIs();
-
-        // NEW: Update atmosphere mesh uniforms
-        this._updateAtmosphereMeshUniforms();
-
-        // Update Sun Lens Flare based on camera distance
-        if (this.sun) {
-            this.sun.updateLensFlare(this.camera);
-        }
-
-        // Display settings must run *after* everything exists
-        this.displaySettingsManager.applyAll();
-    }
-
-    // NEW: Update uniforms for mesh-based atmospheres
-    _updateAtmosphereMeshUniforms() {
-        if (!this.atmosphereMeshes || !this.camera || !this.sun) return;
-
-        const camPos = this.camera.position;
-        // Access the Sun mesh directly (assuming it's stored in this.sun.sun)
-        const sunPos = this.sun.sun.getWorldPosition(new THREE.Vector3()); 
-
-        for (const atm of this.atmosphereMeshes) {
-            const planet = this[atm.name]; // Get the planet instance
-            if (!planet || !planet.getMesh) continue;
-
-            const mat = atm.material;
-            const planetMesh = planet.getMesh();
-
-            // Update camera and sun positions (world space)
-            mat.uniforms.uCameraPosition.value.copy(camPos);
-            mat.uniforms.uSunPosition.value.copy(sunPos);
-
-            // Update planet position (world space)
-            planetMesh.getWorldPosition(mat.uniforms.uPlanetPosition.value);
-
-            // Update planet frame (world-to-local rotation)
-            const tiltGroupForFrame = planet.getTiltGroup ? planet.getTiltGroup() : planetMesh;
-            if (tiltGroupForFrame && tiltGroupForFrame.getWorldQuaternion) {
-                const q = tiltGroupForFrame.getWorldQuaternion(new THREE.Quaternion());
-                const m = new THREE.Matrix4().makeRotationFromQuaternion(q).invert();
-                mat.uniforms.uPlanetFrame.value.setFromMatrix4(m);
-            } else {
-                mat.uniforms.uPlanetFrame.value.identity();
-            }
-
-            // Optional: Update sun intensity based on distance (can reuse old logic)
-            const dist = mat.uniforms.uPlanetPosition.value.distanceTo(sunPos);
-            const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU * Constants.metersToKm : 149597870.7;
-            const BASE_SOLAR_CONSTANT = 10.6; // Adjusted base intensity
-            const EPS = 1e-6;
-            mat.uniforms.uSunIntensity.value = BASE_SOLAR_CONSTANT * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
-
-            // Mark uniforms as needing update (important if not using automatic updates)
-            // mat.uniformsNeedUpdate = true; // Often not needed if value objects are modified directly
-        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────

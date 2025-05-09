@@ -172,6 +172,7 @@ export class PlanetSurface {
      */
     addInstancedPoints(geojson, material, category) {
         const circleGeom = this.circleGeom;
+        const poiRenderOrder = this.poiRenderOrder ?? 3;
         geojson?.features.forEach(feat => {
             const [lon, lat] = feat.geometry.coordinates;
             // Compute position on oblate spheroid via mesh scale + offset
@@ -190,7 +191,7 @@ export class PlanetSurface {
             const normalMatrix = new THREE.Matrix3().getNormalMatrix(this.root.matrixWorld);
             const worldNorm = sphereNorm.applyMatrix3(normalMatrix).normalize();
             mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), worldNorm);
-            mesh.renderOrder = 3;
+            mesh.renderOrder = poiRenderOrder;
             mesh.userData = { feature: feat, category };
             mesh.visible = true;
             this.root.add(mesh);

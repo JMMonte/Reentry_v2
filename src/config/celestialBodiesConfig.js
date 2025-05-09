@@ -44,12 +44,14 @@ export const celestialBodiesConfig = {
     },
     emb: {
         name: 'emb',
-        parent: 'barycenter',
+        parent: 'sun',
+        orbitType: 'relative',
         // Optionally, add mass, radius, etc. if needed
     },
     earth: {
         name: 'earth',
         parent: 'emb',
+        orbitType: 'relative',
         symbol: '♁',
         mass: earthMass, // kg
         // Correct radius calculation: Convert meters to km, then apply desired scene scale factor (0.0001)
@@ -58,7 +60,6 @@ export const celestialBodiesConfig = {
         rotationPeriod: 86400, // seconds
         rotationOffset: 4.89496121, // GMST at J2000 epoch
         oblateness: 0.0033528106647474805,
-        atmosphereThickness: 60, // in kilometers
         cloudThickness: 2, // in kilometers
         addSurface: true,
         surfaceOptions: {
@@ -96,9 +97,8 @@ export const celestialBodiesConfig = {
             mieAnisotropy: 0.75, // g
             numLightSteps: 4,
             sunIntensity: 6.0,
-            // Oblate spheroid parameters
             equatorialRadius: earthRadius, // km
-            polarRadius: earthRadius * (1 - 0.0033528106647474805), // km, using correct Earth's oblateness
+            polarRadius: earthRadius * (1 - 0.0033528106647474805), // km
         },
         materials: {
             createSurfaceMaterial: (tm) => {
@@ -257,7 +257,6 @@ export const celestialBodiesConfig = {
         cloudThickness: 10, // km
         lodLevels: generateLodLevelsForRadius(6051.8),
         dotPixelSizeThreshold: 1,
-        atmosphereThickness: 90, // km (dense atmosphere)
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('venusTexture'),
@@ -272,7 +271,8 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            thickness: 190, // km
+            hazeIntensity: 0.6,
+            thickness: 100, // km
             densityScaleHeight: 15.9, // km (approx)
             rayleighScatteringCoeff: [0.01, 0.008, 0.005],
             mieScatteringCoeff: 0.015,
@@ -309,7 +309,6 @@ export const celestialBodiesConfig = {
         oblateness: 0.00589,
         lodLevels: generateLodLevelsForRadius(3389.5),
         dotPixelSizeThreshold: 1,
-        atmosphereThickness: 11, // km (thin atmosphere)
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('marsTexture'),
@@ -319,6 +318,7 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
+            hazeIntensity: 0.6,
             thickness: 11, // km
             densityScaleHeight: 11.1, // km
             rayleighScatteringCoeff: [0.005, 0.002, 0.001],
@@ -356,19 +356,19 @@ export const celestialBodiesConfig = {
         oblateness: 0.06487,
         lodLevels: generateLodLevelsForRadius(69911),
         dotPixelSizeThreshold: 1,
-        atmosphereThickness: 1000, // km (deep atmosphere)
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
                 map: tm.getTexture('jupiterTexture')
             })
         },
         atmosphere: {
-            thickness: 300, // km
-            densityScaleHeight: 40, // km
-            rayleighScatteringCoeff: [0.002, 0.004, 0.012],
-            mieScatteringCoeff: 0.001,
+            hazeIntensity: 0.6,
+            thickness: 7000, // km (absolute atmosphere height)
+            densityScaleHeightFraction: 0.003, // 0.3% of radius
+            rayleighScatteringCoeff: [0.024, 0.048, 0.144],
+            mieScatteringCoeff: 0.012,
             mieAnisotropy: 0.5,
-            numLightSteps: 2,
+            numLightSteps: 4,
             sunIntensity: 3.0,
             equatorialRadius: 71492, // km
             polarRadius: 66854, // km
@@ -401,12 +401,14 @@ export const celestialBodiesConfig = {
         oblateness: 0.09796,
         lodLevels: generateLodLevelsForRadius(58232),
         dotPixelSizeThreshold: 1,
-        atmosphereThickness: 1000, // km
         addRings: true,
         rings: {
             innerRadius: 70000, // km (just outside Saturn's equator)
             outerRadius: 140000, // km (typical for Saturn's main rings)
             textureKey: 'saturnRingTexture',
+            shininess: 15,
+            emissive: 0xffffff, // bright white emissive
+            emissiveIntensity: 3.0, // strong base emissive
             resolution: 256
         },
         materials: {
@@ -415,12 +417,13 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            thickness: 250, // km
-            densityScaleHeight: 35, // km
-            rayleighScatteringCoeff: [0.001, 0.003, 0.009],
-            mieScatteringCoeff: 0.0008,
-            mieAnisotropy: 0.6,
-            numLightSteps: 2,
+            hazeIntensity: 0.6,
+            thickness: 5800, // km
+            densityScaleHeightFraction: 0.003,
+            rayleighScatteringCoeff: [0.018, 0.036, 0.108],
+            mieScatteringCoeff: 0.009,
+            mieAnisotropy: 0.5,
+            numLightSteps: 4,
             sunIntensity: 2.5,
             equatorialRadius: 60268, // km
             polarRadius: 54364, // km
@@ -453,20 +456,20 @@ export const celestialBodiesConfig = {
         oblateness: 0.02293,
         lodLevels: generateLodLevelsForRadius(25362),
         dotPixelSizeThreshold: 1,
-        atmosphereThickness: 500, // km
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
                 map: tm.getTexture('uranusTexture')
             })
         },
         atmosphere: {
-            thickness: 500, // km
-            densityScaleHeight: 8, // Lower for denser
-            rayleighScatteringCoeff: [0.02, 0.04, 0.16], // much higher
-            mieScatteringCoeff: 0.008,
-            mieAnisotropy: 0.7,
+            hazeIntensity: 0.6,
+            thickness: 2500, // km
+            densityScaleHeightFraction: 0.003,
+            rayleighScatteringCoeff: [0.012, 0.024, 0.072],
+            mieScatteringCoeff: 0.006,
+            mieAnisotropy: 0.5,
             numLightSteps: 4,
-            sunIntensity: 0.5, // Base intensity
+            sunIntensity: 1.5,
             equatorialRadius: 25559, // km
             polarRadius: 24973, // km
         },
@@ -498,20 +501,20 @@ export const celestialBodiesConfig = {
         oblateness: 0.01708,
         lodLevels: generateLodLevelsForRadius(24622),
         dotPixelSizeThreshold: 1,
-        atmosphereThickness: 500, // km
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshLambertMaterial({
                 map: tm.getTexture('neptuneTexture')
             })
         },
         atmosphere: {
-            thickness: 500, // km
-            densityScaleHeight: 7, // Lower for denser
-            rayleighScatteringCoeff: [0.03, 0.06, 0.24], // much higher
-            mieScatteringCoeff: 0.009,
-            mieAnisotropy: 0.7,
-            numLightSteps: 12,
-            sunIntensity: 0.5, // Base intensity
+            hazeIntensity: 0.6,
+            thickness: 2400, // km
+            densityScaleHeightFraction: 0.003,
+            rayleighScatteringCoeff: [0.012, 0.024, 0.072],
+            mieScatteringCoeff: 0.006,
+            mieAnisotropy: 0.5,
+            numLightSteps: 4,
+            sunIntensity: 1.5,
             equatorialRadius: 24764, // km
             polarRadius: 24341, // km
         },

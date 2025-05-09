@@ -7,7 +7,7 @@ export class Vectors {
         this.earth = earth;
         this.scene = scene;
         this.timeUtils = timeUtils;
-        this.scale = this.earth.radius * 2;
+        this.scale = earth.radius * 2;
         this.satellites = [];
         this.fontLoader = new FontLoader();
         this.font = null;

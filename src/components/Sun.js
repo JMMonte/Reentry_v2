@@ -83,4 +83,10 @@ export class Sun {
     get mass() {
         return this.config.mass;
     }
+
+    // Add a method to update the sun's position and sync the light
+    setPosition(position) {
+        this.sun.position.copy(position);
+        this.sunLight.position.copy(position);
+    }
 }
