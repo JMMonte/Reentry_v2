@@ -51,7 +51,6 @@ export class PhysicsWorld {
 
             return {
                 name: inst.name,
-                // Cache lowercase name for string lookups
                 nameLower: keyLower,
                 orbitElements: cfg.orbitElements || null,
                 orbitRadius: cfg.orbitRadius || 0,
@@ -61,8 +60,14 @@ export class PhysicsWorld {
                 body: inst   // Planet instance for transforms
             };
         });
-        // add solar system barycenter as a reference attractor
-        this.bodies.unshift({ name: 'barycenter', position: new THREE.Vector3(), mass: 0, soiRadius: 0 });
+        // Add solar system barycenter (SSB) as a reference point
+        if (!this.bodies.find(b => b.nameLower === 'barycenter')) {
+            this.bodies.unshift({ name: 'barycenter', nameLower: 'barycenter', position: new THREE.Vector3(), mass: 0, soiRadius: 0 });
+        }
+        // Add Earth-Moon barycenter (EMB) as a reference point
+        if (!this.bodies.find(b => b.nameLower === 'emb')) {
+            this.bodies.push({ name: 'emb', nameLower: 'emb', position: new THREE.Vector3(), mass: 0, soiRadius: 0 });
+        }
     }
 
     /**
@@ -133,53 +138,25 @@ export class PhysicsWorld {
      */
     _updateAttractorsAstronomy(julianDate) {
         const kmPerAU = Constants.AU * Constants.metersToKm;
-        // Precompute Earth and Moon positions for EMB
-        let earthPos = null, moonPos = null;
-        let earthMass = 0, moonMass = 0;
-        this.bodies.forEach(body => {
-            if (body.nameLower === 'earth') {
-                const key = 'Earth';
-                const equState = AE.BaryState(AE.Body[key], julianDate);
-                const eclCoords = AE.Ecliptic(equState).vec;
-                earthPos = new THREE.Vector3(eclCoords.x * kmPerAU, eclCoords.y * kmPerAU, eclCoords.z * kmPerAU);
-                earthMass = body.mass;
-            }
-            if (body.nameLower === 'moon') {
-                const key = 'Moon';
-                const equState = AE.BaryState(AE.Body[key], julianDate);
-                const eclCoords = AE.Ecliptic(equState).vec;
-                moonPos = new THREE.Vector3(eclCoords.x * kmPerAU, eclCoords.y * kmPerAU, eclCoords.z * kmPerAU);
-                moonMass = body.mass;
-            }
-        });
+        // Precompute Earth, Moon, and Sun positions for EMB
         this.bodies.forEach(body => {
             const keyLower = body.nameLower;
             if (keyLower === 'barycenter') {
                 body.position.set(0, 0, 0);
                 return;
             }
-            if (keyLower === 'emb') {
-                // Compute EMB as mass-weighted average
-                if (earthPos && moonPos && earthMass && moonMass) {
-                    const totalMass = earthMass + moonMass;
-                    body.position.copy(earthPos.clone().multiplyScalar(earthMass / totalMass).add(moonPos.clone().multiplyScalar(moonMass / totalMass)));
-                } else {
-                    body.position.set(0, 0, 0);
-                }
-                return;
-            }
             if (!isAEBody(getAEBodyName(keyLower))) {
                 // Skip unsupported bodies
                 return;
             }
-            // ... existing code for other bodies ...
             const key = getAEBodyName(keyLower);
-            const equState = AE.BaryState(AE.Body[key], julianDate);
-            const eclCoords = AE.Ecliptic(equState).vec;
-            const x = eclCoords.x * kmPerAU;
-            const y = eclCoords.y * kmPerAU;
-            const z = eclCoords.z * kmPerAU;
-            body.position.set(x, y, z);
+            if (keyLower === 'sun') {
+                body.position.set(0, 0, 0);
+            } else {
+                const equState = AE.BaryState(AE.Body[key], julianDate);
+                const vec = AE.Ecliptic(equState).vec;
+                body.position.set(vec.x * kmPerAU, vec.y * kmPerAU, vec.z * kmPerAU);
+            }
         });
     }
 
@@ -254,58 +231,20 @@ export class PhysicsWorld {
         const key = bodyName.toLowerCase();
         const config = celestialBodiesConfig[key];
         if (!config || key === 'barycenter') return [];
-        const parentKey = config.parent;
         const childAE = getAEBodyName(key);
         if (!isAEBody(childAE)) {
             console.warn(`[PhysicsWorld] Skipping orbit for unsupported body: ${bodyName}`);
             return [];
         }
-        const parentAE = parentKey && parentKey !== 'barycenter' ? getAEBodyName(parentKey) : null;
         const startJD = this.timeUtils.getJulianDate();
         const kmPerAU = Constants.AU * Constants.metersToKm;
-
-        const orbitType = config.orbitType || 'absolute';
-        // If relative orbit, compute child - parent for each time step
-        if (orbitType === 'relative' && parentKey) {
-            // Always compute periodDays generically for all bodies
-            let periodDays = 30;
-            const cs0 = AE.BaryState(AE.Body[childAE], startJD);
-            const ps0 = AE.BaryState(AE.Body[getAEBodyName(parentKey)], startJD);
-            const r0 = { x: cs0.x - ps0.x, y: cs0.y - ps0.y, z: cs0.z - ps0.z };
-            const v0 = { x: (cs0.vx||0) - (ps0.vx||0), y: (cs0.vy||0) - (ps0.vy||0), z: (cs0.vz||0) - (ps0.vz||0) };
-            const r_m = Math.hypot(r0.x, r0.y, r0.z) * Constants.AU;
-            const v_m_s = Math.hypot(v0.x, v0.y, v0.z) * Constants.AU / Constants.secondsInDay;
-            const mu = parentKey === 'earth' ? Constants.earthGravitationalParameter : Constants.sunGravitationalParameter;
-            const epsilon = (v_m_s**2) / 2 - mu / r_m;
-            if (epsilon < 0) {
-                const a = -mu / (2 * epsilon);
-                periodDays = 2 * Math.PI * Math.sqrt(a**3 / mu) / Constants.secondsInDay;
-            }
-            const positions = [];
-            for (let i = 0; i <= numSteps; i++) {
-                const jd = startJD + (i * (periodDays / numSteps));
-                const cstate = AE.BaryState(AE.Body[childAE], jd);
-                const cecl = AE.Ecliptic(cstate).vec;
-                const pstate = AE.BaryState(AE.Body[getAEBodyName(parentKey)], jd);
-                const pecl = AE.Ecliptic(pstate).vec;
-                positions.push(new THREE.Vector3(
-                    (cecl.x - pecl.x) * kmPerAU,
-                    (cecl.y - pecl.y) * kmPerAU,
-                    (cecl.z - pecl.z) * kmPerAU
-                ));
-            }
-            return positions;
-        }
-        // Otherwise, use absolute barycentric path
+        // Always use barycentric orbit for all planets
         let periodDays = 30;
         {
             const cs0 = AE.BaryState(AE.Body[childAE], startJD);
-            const ps0 = parentAE ? AE.BaryState(AE.Body[parentAE], startJD) : { x:0, y:0, z:0, vx:0, vy:0, vz:0 };
-            const r0 = { x: cs0.x - ps0.x, y: cs0.y - ps0.y, z: cs0.z - ps0.z };
-            const v0 = { x: (cs0.vx||0) - (ps0.vx||0), y: (cs0.vy||0) - (ps0.vy||0), z: (cs0.vz||0) - (ps0.vz||0) };
-            const r_m = Math.hypot(r0.x, r0.y, r0.z) * Constants.AU;
-            const v_m_s = Math.hypot(v0.x, v0.y, v0.z) * Constants.AU / Constants.secondsInDay;
-            const mu = parentKey === 'earth' ? Constants.earthGravitationalParameter : Constants.sunGravitationalParameter;
+            const v_m_s = Math.hypot(cs0.vx, cs0.vy, cs0.vz) * Constants.AU / Constants.secondsInDay;
+            const r_m = Math.hypot(cs0.x, cs0.y, cs0.z) * Constants.AU;
+            const mu = Constants.sunGravitationalParameter;
             const epsilon = (v_m_s**2) / 2 - mu / r_m;
             if (epsilon < 0) {
                 const a = -mu / (2 * epsilon);

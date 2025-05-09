@@ -1,6 +1,6 @@
 // src/shaders/atmosphereMesh.frag
 
-#define MAX_ATMOS 1 // Mesh shader handles one atmosphere
+// #define MAX_ATMOS 1 // Mesh shader handles one atmosphere
 
 // Uniforms (Per-atmosphere basis)
 uniform float uPlanetRadius;    // Planet equatorial radius (km)
@@ -12,9 +12,9 @@ uniform vec3 uCameraPosition; // Camera position in world space
 
 // Raymarching parameters
 uniform int uNumLightSteps;   // Steps for light scattering
-const int MIN_VIEW_STEPS = 2;
+// const int MIN_VIEW_STEPS = 2;
 const int MAX_VIEW_STEPS = 16; // Can increase for mesh shader
-const float VIEW_STEPS_SCALE_FACTOR = 0.1; // Adjust if needed
+// const float VIEW_STEPS_SCALE_FACTOR = 0.1; // Adjust if needed
 
 // Atmosphere properties
 uniform float uDensityScaleHeight; // Scale height for density falloff

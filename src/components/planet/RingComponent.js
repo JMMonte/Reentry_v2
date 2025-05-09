@@ -5,7 +5,7 @@ import { Constants } from '../../utils/Constants.js';
 export class RingComponent {
     constructor(planet, ringConfig) {
         this.planet = planet;
-        const { innerRadius, outerRadius, textureKey, resolution = 128 } = ringConfig;
+        const { innerRadius, outerRadius, textureKey, resolution = 128, materialOptions, ...materialProps } = ringConfig;
         const ringPattern = planet.textureManager.getTexture(textureKey);
         if (!ringPattern) {
             console.warn(`Ring pattern texture '${textureKey}' not found for planet ${planet.name}.`);
@@ -39,8 +39,8 @@ export class RingComponent {
             side: THREE.DoubleSide,
             transparent: true,
             depthWrite: true,
-            ...ringConfig,
-            ...(ringConfig.materialOptions || {})
+            ...materialProps,
+            ...(materialOptions || {})
         });
         // Mesh
         this.mesh = new THREE.Mesh(geometry, material);

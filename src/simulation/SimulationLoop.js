@@ -126,4 +126,51 @@ export class SimulationLoop {
         this.stats?.end();
 
     }
+
+    /** Update the satellite list and notify UI. */
+    updateSatelliteList() {
+        const list = Object.fromEntries(
+            Object.entries(this.satellites.getSatellites())
+                .filter(([, s]) => s && s.id != null && s.name)
+                .map(([id, s]) => [id, { id: s.id, name: s.name }])
+        );
+        document.dispatchEvent(new CustomEvent('satelliteListUpdated', { detail: { satellites: list } }));
+        if (this.app._connectionsEnabled) this.app._syncConnectionsWorker();
+    }
+
+    /** Update time warp in timeUtils and physicsWorld. */
+    updateTimeWarp(value) {
+        this.app.timeUtils.setTimeWarp(value);
+        this.app.physicsWorld.setTimeWarp(value);
+    }
+
+    /** Update camera to follow a new body selection. */
+    updateSelectedBody(value) {
+        this.app.cameraControls?.follow(value, this.app);
+    }
+
+    /** Update display setting and propagate to relevant managers. */
+    updateDisplaySetting(key, value) {
+        this.app.displaySettingsManager.updateSetting(key, value);
+        switch (key) {
+            case 'showSatConnections':
+                this.app._toggleSatelliteLinks(value);
+                break;
+            case 'physicsTimeStep':
+                this.satellites.setPhysicsTimeStep(value);
+                break;
+            case 'sensitivityScale':
+                this.satellites.setSensitivityScale(value);
+                break;
+            case 'useAstronomy':
+                this.app.physicsWorld.setUseAstronomy(value);
+                break;
+            case 'useRemoteCompute':
+                this.app.physicsWorld.setUseRemote(value);
+                break;
+            case 'showAxis':
+                this.app.Planet.instances.forEach(p => p.setAxisVisible(value));
+                break;
+        }
+    }
 } 

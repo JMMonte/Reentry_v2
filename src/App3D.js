@@ -145,20 +145,6 @@ class App3D extends EventTarget {
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
 
-            // Re-parent each planet's orbitGroup under its configured parent for proper nesting (e.g., Earth/Moon under EMB)
-            for (const child of Planet.instances) {
-                const cfg = celestialBodiesConfig[child.nameLower];
-                if (cfg.parent && cfg.parent !== 'barycenter') {
-                    const parent = Planet.instances.find(p => p.nameLower === cfg.parent);
-                    if (parent) {
-                        const childOrbit = child.getOrbitGroup();
-                        parent.getOrbitGroup().add(childOrbit);
-                        // Clear child orbitGroup's own rotation so it inherits parent's orientation only
-                        childOrbit.rotation.set(0, 0, 0);
-                    }
-                }
-            }
-
             // Load planets & sun into physics world
             this.physicsWorld.loadFromPlanets(this.celestialBodies);
 
@@ -294,29 +280,7 @@ class App3D extends EventTarget {
     // 7. DISPLAY SETTINGS (delegated to DisplaySettingsManager)
     // ──────────────────────────────────────────────────────────────────────────
     updateDisplaySetting(key, value) {
-        this.displaySettingsManager.updateSetting(key, value);
-
-        switch (key) {
-            case 'showSatConnections':
-                this._toggleSatelliteLinks(value);
-                break;
-            case 'physicsTimeStep':
-                this.satellites.setPhysicsTimeStep(value);
-                break;
-            case 'sensitivityScale':
-                this.satellites.setSensitivityScale(value);
-                break;
-            case 'useAstronomy':
-                this.physicsWorld.setUseAstronomy(value);
-                break;
-            case 'useRemoteCompute':
-                this.physicsWorld.setUseRemote(value);
-                break;
-            case 'showAxis':
-                // Toggle axes for all planets
-                Planet.instances.forEach(p => p.setAxisVisible(value));
-                break;
-        }
+        this.simulationLoop?.updateDisplaySetting(key, value);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -504,8 +468,7 @@ class App3D extends EventTarget {
     // Display-linked getters / setters
     getDisplaySetting(k) { return this.displaySettingsManager.getSetting(k); }
     updateTimeWarp(v) {
-        this.timeUtils.setTimeWarp(v);
-        this.physicsWorld.setTimeWarp(v);
+        this.simulationLoop?.updateTimeWarp(v);
     }
 
     /**
@@ -513,18 +476,12 @@ class App3D extends EventTarget {
      * Called by React/App3DController on selectedBody changes.
      */
     updateSelectedBody(value) {
-        this.cameraControls?.follow(value, this);
+        this.simulationLoop?.updateSelectedBody(value);
     }
 
     /** Notify React UI about updated satellite roster. */
     updateSatelliteList() {
-        const list = Object.fromEntries(
-            Object.entries(this.satellites.getSatellites())
-                .filter(([, s]) => s && s.id != null && s.name)
-                .map(([id, s]) => [id, { id: s.id, name: s.name }])
-        );
-        document.dispatchEvent(new CustomEvent('satelliteListUpdated', { detail: { satellites: list } }));
-        if (this._connectionsEnabled) this._syncConnectionsWorker();
+        this.simulationLoop?.updateSatelliteList();
     }
 }
 

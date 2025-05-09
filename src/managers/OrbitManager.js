@@ -50,7 +50,11 @@ export class OrbitManager {
             // Build cache if needed
             if (!this._parentGroupCache) {
                 this._parentGroupCache = new Map();
-                this.app.celestialBodies.forEach(b => this._parentGroupCache.set(b.nameLower, b.getOrbitGroup()));
+                this.app.celestialBodies.forEach(b => {
+                    if (typeof b.getOrbitGroup === 'function') {
+                        this._parentGroupCache.set(b.nameLower, b.getOrbitGroup());
+                    }
+                });
             }
             const parent = this._parentGroupCache.get(parentKey);
             if (parent) return parent;
@@ -70,9 +74,26 @@ export class OrbitManager {
         
         for (const key of planetKeys) {
             try {
-                const positions = this.physicsWorld.generateOrbitPath(
+                const config = celestialBodiesConfig[key];
+                const parentKey = config && config.parent;
+                let positions = this.physicsWorld.generateOrbitPath(
                     key, this.config.steps
                 );
+                // If the body has a parent, render its orbit relative to the parent's barycentric path
+                if (parentKey) {
+                    const parentPositions = this.physicsWorld.generateOrbitPath(parentKey, this.config.steps);
+                    if (positions.length === parentPositions.length) {
+                        // Compute relative positions
+                        const relPositions = positions.map((pos, i) => pos.clone().sub(parentPositions[i]));
+                        const bodyCurrent = this.physicsWorld.bodies.find(b => b.nameLower === key)?.position;
+                        if (bodyCurrent && relPositions.length > 0) {
+                            const rel0 = relPositions[0];
+                            positions = relPositions.map(rel => bodyCurrent.clone().add(rel.clone().sub(rel0)));
+                        } else {
+                            positions = relPositions;
+                        }
+                    }
+                }
                 if (!positions?.length) continue;
 
                 // Collect raw orbit points
@@ -80,15 +101,7 @@ export class OrbitManager {
                 positions.forEach(v => points.push(v.x, v.y, v.z));
                 // No rotation or alignment needed! Use points as-is.
 
-                // Debug: log orbit point ranges for earth and moon
-                if (key === 'earth' || key === 'moon') {
-                    const xs = positions.map(p => p.x);
-                    const ys = positions.map(p => p.y);
-                    const zs = positions.map(p => p.z);
-                    console.log(`[OrbitManager] ${key} orbit X range:`, Math.min(...xs), Math.max(...xs));
-                    console.log(`[OrbitManager] ${key} orbit Y range:`, Math.min(...ys), Math.max(...ys));
-                    console.log(`[OrbitManager] ${key} orbit Z range:`, Math.min(...zs), Math.max(...zs));
-                }
+
 
                 // Skip line creation if only one point (or fewer)
                 if (points.length <= 3) {

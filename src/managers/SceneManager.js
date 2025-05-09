@@ -125,7 +125,15 @@ export class SceneManager {
         physicsWorld.update();
         if (sun && physicsWorld?.bodies) {
             const sunBody = physicsWorld.bodies.find(b => b.nameLower === 'sun');
-            if (sunBody?.position) sun.setPosition(sunBody.position);
+            if (sunBody?.position) {
+                // Store previous sun position for interpolation
+                if (!sunBody.prevPosition) {
+                    sunBody.prevPosition = sunBody.position.clone();
+                } else {
+                    sunBody.prevPosition.copy(sun.position || sunBody.position);
+                }
+                sun.setPosition(sunBody.position);
+            }
         }
         const kmToM = 1 / this.app.Constants.metersToKm;
         physicsWorld.satellites.forEach((psat, id) => {
@@ -140,7 +148,13 @@ export class SceneManager {
         const alpha = 1;
         const cam = camera;
         for (const p of this.app.Planet.instances) {
-            const body = bodiesByKey.get(p.name.toLowerCase());
+            const bodyKey = p.name.toLowerCase();
+            // Render EMB orbit for Earth (IAU standard)
+            // const orbitKey = (bodyKey === 'earth') ? 'emb' : bodyKey;
+            // if (this.app.orbitManager) {
+            //     this.app.orbitManager.updateOrbitPath(orbitKey);
+            // }
+            const body = bodiesByKey.get(bodyKey);
             if (body?.position) {
                 let x, y, z;
                 if (body.prevPosition) {
@@ -151,7 +165,8 @@ export class SceneManager {
                     ({ x, y, z } = body.position);
                 }
                 const cfg = this.app.celestialBodiesConfig[p.nameLower];
-                if (cfg.parent && cfg.parent !== 'barycenter') {
+                // Only apply parent-relative offset for bodies other than the Moon
+                if (cfg.parent && cfg.parent !== 'barycenter' && bodyKey !== 'moon') {
                     const parent = bodiesByKey.get(cfg.parent);
                     if (parent?.position) {
                         x -= parent.position.x;
@@ -166,6 +181,18 @@ export class SceneManager {
             p.radialGrid?.updateFading(cam);
             p.getOrbitGroup().updateMatrixWorld(true);
             p.update();
+        }
+        // Interpolated sun position for atmosphere update
+        let interpolatedSunPos = null;
+        if (sun && physicsWorld?.bodies) {
+            const sunBody = physicsWorld.bodies.find(b => b.nameLower === 'sun');
+            if (sunBody?.position && sunBody.prevPosition) {
+                interpolatedSunPos = sunBody.prevPosition.clone().lerp(sunBody.position, alpha);
+                sun.sun.getWorldPosition = (target) => {
+                    if (target) target.copy(interpolatedSunPos);
+                    return interpolatedSunPos.clone();
+                };
+            }
         }
         for (const p of this.app.Planet.instances) {
             p.atmosphereComponent?.update();

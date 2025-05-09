@@ -50,7 +50,7 @@ export const celestialBodiesConfig = {
     },
     earth: {
         name: 'earth',
-        parent: 'emb',
+        parent: 'barycenter',
         orbitType: 'relative',
         symbol: '♁',
         mass: earthMass, // kg
