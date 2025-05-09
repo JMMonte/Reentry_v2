@@ -227,10 +227,21 @@ export class PhysicsWorld {
     /**
      * Generate propagated orbit positions around a moving parent based on config.
      */
-    generateOrbitPath(bodyName, numSteps = 360) {
+    generateOrbitPath(bodyName, numSteps = 360, parentName) {
         const key = bodyName.toLowerCase();
         const config = celestialBodiesConfig[key];
         if (!config || key === 'barycenter') return [];
+        // Determine if we should compute positions relative to a parent
+        const parentKeyLower = parentName ? parentName.toLowerCase() : null;
+        let useRelative = parentKeyLower && parentKeyLower !== key && parentKeyLower !== 'barycenter';
+        let parentAEName;
+        if (useRelative) {
+            parentAEName = getAEBodyName(parentKeyLower);
+            if (!isAEBody(parentAEName)) {
+                console.warn(`[PhysicsWorld] Skipping parent-relative orbit for unsupported parent: ${parentName}`);
+                useRelative = false;
+            }
+        }
         const childAE = getAEBodyName(key);
         if (!isAEBody(childAE)) {
             console.warn(`[PhysicsWorld] Skipping orbit for unsupported body: ${bodyName}`);
@@ -238,29 +249,74 @@ export class PhysicsWorld {
         }
         const startJD = this.timeUtils.getJulianDate();
         const kmPerAU = Constants.AU * Constants.metersToKm;
-        // Always use barycentric orbit for all planets
-        let periodDays = 30;
-        {
+        // Determine orbital period in days
+        let periodDays;
+        if (useRelative) {
+            // Try to use two-body elements: child or its sibling under same parent (e.g., moon's lunar month)
+            let elem = config.orbitElements;
+            if (!elem) {
+                for (const [, sibCfg] of Object.entries(celestialBodiesConfig)) {
+                    if (sibCfg.parent && sibCfg.parent.toLowerCase() === parentKeyLower && sibCfg.orbitElements) {
+                        elem = sibCfg.orbitElements;
+                        break;
+                    }
+                }
+            }
+            if (elem && typeof elem.semiMajorAxis === 'number' && typeof elem.mu === 'number') {
+                // Use Kepler's third law for parent-relative two-body orbit
+                const a = elem.semiMajorAxis;
+                const mu = elem.mu;
+                const periodSec = 2 * Math.PI * Math.sqrt(a * a * a / mu);
+                periodDays = periodSec / Constants.secondsInDay;
+            } else {
+                // Fallback to barycentric period if no two-body elements
+                periodDays = 30;
+                const cs0 = AE.BaryState(AE.Body[childAE], startJD);
+                const v_m_s = Math.hypot(cs0.vx, cs0.vy, cs0.vz) * Constants.AU / Constants.secondsInDay;
+                const r_m = Math.hypot(cs0.x, cs0.y, cs0.z) * Constants.AU;
+                const muSun = Constants.sunGravitationalParameter;
+                const epsilon = (v_m_s * v_m_s) / 2 - muSun / r_m;
+                if (epsilon < 0) {
+                    const aB = -muSun / (2 * epsilon);
+                    periodDays = 2 * Math.PI * Math.sqrt(aB * aB * aB / muSun) / Constants.secondsInDay;
+                }
+            }
+        } else {
+            // Barycentric case: approximate orbital period via energy
+            periodDays = 30;
             const cs0 = AE.BaryState(AE.Body[childAE], startJD);
             const v_m_s = Math.hypot(cs0.vx, cs0.vy, cs0.vz) * Constants.AU / Constants.secondsInDay;
             const r_m = Math.hypot(cs0.x, cs0.y, cs0.z) * Constants.AU;
-            const mu = Constants.sunGravitationalParameter;
-            const epsilon = (v_m_s**2) / 2 - mu / r_m;
+            const muSun = Constants.sunGravitationalParameter;
+            const epsilon = (v_m_s * v_m_s) / 2 - muSun / r_m;
             if (epsilon < 0) {
-                const a = -mu / (2 * epsilon);
-                periodDays = 2 * Math.PI * Math.sqrt(a**3 / mu) / Constants.secondsInDay;
+                const aB = -muSun / (2 * epsilon);
+                periodDays = 2 * Math.PI * Math.sqrt(aB * aB * aB / muSun) / Constants.secondsInDay;
             }
         }
         const positions = [];
         for (let i = 0; i <= numSteps; i++) {
             const jd = startJD + (i * (periodDays / numSteps));
+            // Child barycentric position
             const cstate = AE.BaryState(AE.Body[childAE], jd);
             const cecl = AE.Ecliptic(cstate).vec;
-            positions.push(new THREE.Vector3(
+            const childPos = new THREE.Vector3(
                 cecl.x * kmPerAU,
                 cecl.y * kmPerAU,
                 cecl.z * kmPerAU
-            ));
+            );
+            // Subtract parent if requested
+            if (useRelative) {
+                const pstate = AE.BaryState(AE.Body[parentAEName], jd);
+                const pecl = AE.Ecliptic(pstate).vec;
+                const parentPos = new THREE.Vector3(
+                    pecl.x * kmPerAU,
+                    pecl.y * kmPerAU,
+                    pecl.z * kmPerAU
+                );
+                childPos.sub(parentPos);
+            }
+            positions.push(childPos);
         }
         return positions;
     }

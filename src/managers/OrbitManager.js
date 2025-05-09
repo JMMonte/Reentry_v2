@@ -76,32 +76,18 @@ export class OrbitManager {
             try {
                 const config = celestialBodiesConfig[key];
                 const parentKey = config && config.parent;
-                let positions = this.physicsWorld.generateOrbitPath(
-                    key, this.config.steps
+                // Generate orbit path (relative to parent if provided)
+                const positions = this.physicsWorld.generateOrbitPath(
+                    key,
+                    this.config.steps,
+                    parentKey
                 );
-                // If the body has a parent, render its orbit relative to the parent's barycentric path
-                if (parentKey) {
-                    const parentPositions = this.physicsWorld.generateOrbitPath(parentKey, this.config.steps);
-                    if (positions.length === parentPositions.length) {
-                        // Compute relative positions
-                        const relPositions = positions.map((pos, i) => pos.clone().sub(parentPositions[i]));
-                        const bodyCurrent = this.physicsWorld.bodies.find(b => b.nameLower === key)?.position;
-                        if (bodyCurrent && relPositions.length > 0) {
-                            const rel0 = relPositions[0];
-                            positions = relPositions.map(rel => bodyCurrent.clone().add(rel.clone().sub(rel0)));
-                        } else {
-                            positions = relPositions;
-                        }
-                    }
-                }
-                if (!positions?.length) continue;
+                if (!positions.length) continue;
 
                 // Collect raw orbit points
                 let points = [];
                 positions.forEach(v => points.push(v.x, v.y, v.z));
                 // No rotation or alignment needed! Use points as-is.
-
-
 
                 // Skip line creation if only one point (or fewer)
                 if (points.length <= 3) {
@@ -125,11 +111,16 @@ export class OrbitManager {
 
                 // Add orbit line to its parent group (main scene or planet)
                 const parentGroup = this._getParentGroup(key);
-                parentGroup.add(line);
-                this.orbitLineMap.set(key, line);
-
-                if (key === 'earth' || key === 'moon') {
-                    console.log(`[OrbitManager] Added orbit line for ${key} to`, parentGroup.name || parentGroup.constructor.name, 'with', points.length / 3, 'points');
+                if (parentKey) {
+                    // Wrap in a group to cancel the parent's rotation
+                    const compGroup = new THREE.Group();
+                    compGroup.quaternion.copy(parentGroup.quaternion).invert();
+                    compGroup.add(line);
+                    parentGroup.add(compGroup);
+                    this.orbitLineMap.set(key, compGroup);
+                } else {
+                    parentGroup.add(line);
+                    this.orbitLineMap.set(key, line);
                 }
 
                 // Remove any rotation for relative orbits; render as-is from ephemeris data

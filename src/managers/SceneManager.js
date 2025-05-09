@@ -165,8 +165,8 @@ export class SceneManager {
                     ({ x, y, z } = body.position);
                 }
                 const cfg = this.app.celestialBodiesConfig[p.nameLower];
-                // Only apply parent-relative offset for bodies other than the Moon
-                if (cfg.parent && cfg.parent !== 'barycenter' && bodyKey !== 'moon') {
+                // Apply parent-relative offset for bodies with relative orbits
+                if (cfg.parent && cfg.orbitType === 'relative') {
                     const parent = bodiesByKey.get(cfg.parent);
                     if (parent?.position) {
                         x -= parent.position.x;

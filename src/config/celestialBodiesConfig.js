@@ -44,14 +44,14 @@ export const celestialBodiesConfig = {
     },
     emb: {
         name: 'emb',
-        parent: 'sun',
-        orbitType: 'relative',
+        parent: 'barycenter',
+        // orbitType: 'relative',
         // Optionally, add mass, radius, etc. if needed
     },
     earth: {
         name: 'earth',
-        parent: 'barycenter',
-        orbitType: 'relative',
+        parent: 'emb',
+        // orbitType: 'relative',
         symbol: '♁',
         mass: earthMass, // kg
         // Correct radius calculation: Convert meters to km, then apply desired scene scale factor (0.0001)
@@ -171,7 +171,7 @@ export const celestialBodiesConfig = {
             argumentOfPeriapsis: 318.15 * (Math.PI / 180), // Argument of periapsis in radians
             mu: earthGravitationalParameter, // Gravitational parameter in m^3/s^2
         },
-        orbitType: 'relative',
+        // orbitType: 'relative',
         // atmosphere: {
         //     thickness: 0, // No atmosphere
         //     densityScaleHeight: 0,
