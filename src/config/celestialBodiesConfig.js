@@ -85,7 +85,7 @@ export const celestialBodiesConfig = {
         groundStationsData: geojsonDataGroundStations,
         observatoriesData: geojsonDataObservatories,
         addLight: true,
-        lightOptions: { color: 0x6699ff, intensity: 5000.5, helper: false }, // helper set to false for prod
+        lightOptions: { color: 0x6699ff, intensity: earthRadius *10, helper: false }, // scaled to scene radius
         lodLevels: generateLodLevelsForRadius(earthRadius),
         dotPixelSizeThreshold: 1,
         soiRadius: 145,
@@ -160,7 +160,7 @@ export const celestialBodiesConfig = {
         },
         missionsData: geojsonDataMissions,
         addLight: true,
-        lightOptions: { color: 0x6699ff, intensity: 1000.5, helper: false }, // helper set to false for prod
+        lightOptions: { color: 0x6699ff, intensity: moonRadius * 10, helper: false }, // scaled to scene radius
         lodLevels: generateLodLevelsForRadius(moonRadius),
         dotPixelSizeThreshold: 1,
         soiRadius: 10.3,
@@ -245,7 +245,9 @@ export const celestialBodiesConfig = {
             ],
             radialLines: { count: 22 }
         },
-        parent: 'barycenter'
+        parent: 'barycenter',
+        addLight: true,
+        lightOptions: { color: 0xffffff, intensity: 2439.7, helper: false },
     },
     venus: {
         name: 'venus',
@@ -298,7 +300,9 @@ export const celestialBodiesConfig = {
             ],
             radialLines: { count: 22 }
         },
-        parent: 'barycenter'
+        parent: 'barycenter',
+        addLight: true,
+        lightOptions: { color: 0xffffff, intensity: 6051.8, helper: false },
     },
     mars: {
         name: 'mars',
@@ -345,7 +349,9 @@ export const celestialBodiesConfig = {
             ],
             radialLines: { count: 22 }
         },
-        parent: 'barycenter'
+        parent: 'barycenter',
+        addLight: true,
+        lightOptions: { color: 0xffffff, intensity: 3389.5, helper: false },
     },
     jupiter: {
         name: 'jupiter',
@@ -390,7 +396,9 @@ export const celestialBodiesConfig = {
             ],
             radialLines: { count: 22 }
         },
-        parent: 'barycenter'
+        parent: 'barycenter',
+        addLight: true,
+        lightOptions: { color: 0xffffff, intensity: 69911, helper: false },
     },
     // Galilean moons of Jupiter
     io: {
@@ -526,7 +534,9 @@ export const celestialBodiesConfig = {
             ],
             radialLines: { count: 22 }
         },
-        parent: 'barycenter'
+        parent: 'barycenter',
+        addLight: true,
+        lightOptions: { color: 0xffffff, intensity: 58232, helper: false },
     },
     uranus: {
         name: 'uranus',
@@ -571,7 +581,9 @@ export const celestialBodiesConfig = {
             ],
             radialLines: { count: 22 }
         },
-        parent: 'barycenter'
+        parent: 'barycenter',
+        addLight: true,
+        lightOptions: { color: 0xffffff, intensity: 25362, helper: false },
     },
     neptune: {
         name: 'neptune',
@@ -616,7 +628,9 @@ export const celestialBodiesConfig = {
             ],
             radialLines: { count: 22 }
         },
-        parent: 'barycenter'
+        parent: 'barycenter',
+        addLight: true,
+        lightOptions: { color: 0xffffff, intensity: 24622, helper: false },
     }
 };
 
@@ -659,5 +673,9 @@ export const orbitColors = {
     jupiter: 0xff9933,
     saturn: 0xffff66,
     uranus: 0x66ccff,
-    neptune: 0x3366ff
+    neptune: 0x3366ff,
+    io: 0x999999,
+    europa: 0x999999,
+    ganymede: 0x999999,
+    callisto: 0x999999
 }; 
