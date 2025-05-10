@@ -20,6 +20,8 @@ import ioTexture from '../assets/texture/Io.png';
 import europaTexture from '../assets/texture/Europa.png';
 import ganymedeTexture from '../assets/texture/ganymede.jpg';
 import callistoTexture from '../assets/texture/Callisto.png';
+import uranusRingTexture from '../assets/texture/uranusringtrans.png';
+import neptuneRingTexture from '../assets/texture/neptune-rings-new.png';
 
 export {
     earthTexture,
@@ -37,6 +39,8 @@ export {
     jupiterTexture,
     saturnTexture,
     saturnRingTexture,
+    uranusRingTexture,
+    neptuneRingTexture,
     uranusTexture,
     neptuneTexture,
     ioTexture,

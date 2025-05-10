@@ -327,7 +327,7 @@ export class PlanetMaterials {
         const mesh = new THREE.Mesh(geometry, material);
         mesh.name = `atmosphere_${config.name}`;
         mesh.scale.set(1, coreY, 1);
-        mesh.renderOrder = PlanetMaterials.ATMOSPHERE_RENDER_ORDER;
+        // mesh.renderOrder = PlanetMaterials.SURFACE_RENDER_ORDER - 1;
         mesh.frustumCulled = true;
         return mesh;
     }

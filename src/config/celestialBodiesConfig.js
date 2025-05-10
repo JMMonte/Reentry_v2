@@ -5,6 +5,7 @@ import {
     cloudTexture, moonTexture, moonBump,
     mercuryTexture, venusTexture, venusAtmosphereTexture,
     marsTexture, marsNormalTexture, jupiterTexture, saturnTexture, saturnRingTexture,
+    uranusRingTexture, neptuneRingTexture,
     uranusTexture, neptuneTexture,
     ioTexture, europaTexture, ganymedeTexture, callistoTexture
 } from './textures.js';
@@ -176,16 +177,6 @@ export const celestialBodiesConfig = {
             argumentOfPeriapsis: 318.15 * (Math.PI / 180), // Argument of periapsis in radians
             mu: earthGravitationalParameter, // Gravitational parameter in m^3/s^2
         },
-        // orbitType: 'relative',
-        // atmosphere: {
-        //     thickness: 0, // No atmosphere
-        //     densityScaleHeight: 0,
-        //     rayleighScatteringCoeff: [0,0,0],
-        //     mieScatteringCoeff: 0,
-        //     mieAnisotropy: 0,
-        //     numLightSteps: 0,
-        //     sunIntensity: 0
-        // },
         materials: {
             createSurfaceMaterial: (tm) => {
                 const mat = new THREE.MeshPhongMaterial({
@@ -232,7 +223,6 @@ export const celestialBodiesConfig = {
                 shininess: 5
             })
         },
-        atmosphere: { thickness: 0 }, // Negligible atmosphere
         // Sphere-of-influence multiplier (planet radius * soiRadius = SOI in km)
         soiRadius: 46,
         // Radial grid to show SOI around Mercury
@@ -248,6 +238,17 @@ export const celestialBodiesConfig = {
                 { radius: 1500, label: 'Magnetosphere', style: 'dashed', dashScale: 1.5 }
             ],
             radialLines: { count: 22 }
+        },
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
         },
         parent: 'barycenter',
         addLight: true,
@@ -295,6 +296,17 @@ export const celestialBodiesConfig = {
         },
         // Sphere-of-influence multiplier for Venus
         soiRadius: 101,
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         // Radial grid to show SOI around Venus
         radialGridConfig: {
             maxDisplayRadius: 613000,
@@ -346,6 +358,17 @@ export const celestialBodiesConfig = {
         },
         // Sphere-of-influence multiplier for Mars
         soiRadius: 169,
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         // Radial grid to show SOI around Mars
         radialGridConfig: {
             maxDisplayRadius: 573000,
@@ -395,6 +418,17 @@ export const celestialBodiesConfig = {
         },
         // Sphere-of-influence multiplier for Jupiter
         soiRadius: 690,
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         // Radial grid to show SOI around Jupiter
         radialGridConfig: {
             maxDisplayRadius: 48230000,
@@ -428,6 +462,17 @@ export const celestialBodiesConfig = {
             argumentOfPeriapsis: 84.129 * (Math.PI / 180),      // rad
             mu: Constants.G * 1.8982e27             // m^3/s^2 (Jupiter)
         },
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('ioTexture')
@@ -447,6 +492,17 @@ export const celestialBodiesConfig = {
             longitudeOfAscendingNode: 219.106 * (Math.PI / 180),
             argumentOfPeriapsis: 88.97 * (Math.PI / 180),
             mu: Constants.G * 1.8982e27
+        },
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
         },
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
@@ -468,6 +524,17 @@ export const celestialBodiesConfig = {
             argumentOfPeriapsis: 192.417 * (Math.PI / 180),
             mu: Constants.G * 1.8982e27
         },
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('ganymedeTexture')
@@ -488,6 +555,17 @@ export const celestialBodiesConfig = {
             argumentOfPeriapsis: 52.643 * (Math.PI / 180),
             mu: Constants.G * 1.8982e27
         },
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('callistoTexture')
@@ -505,6 +583,16 @@ export const celestialBodiesConfig = {
         lodLevels: generateLodLevelsForRadius(58232),
         dotPixelSizeThreshold: 1,
         addRings: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         rings: {
             innerRadius: 70000, // km (just outside Saturn's equator)
             outerRadius: 140000, // km (typical for Saturn's main rings)
@@ -522,8 +610,8 @@ export const celestialBodiesConfig = {
         atmosphere: {
             hazeIntensity: 2.0,
             thickness: 5800, // km
-            densityScaleHeightFraction: 0.03,
-            rayleighScaleHeight: 60268 * 0.03, // ≈180.8 km
+            densityScaleHeightFraction: 0.003,
+            rayleighScaleHeight: 60268 * 0.003, // ≈180.8 km
             mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.018, 0.036, 0.108],
             mieScatteringCoeff: 0.009,
@@ -533,6 +621,7 @@ export const celestialBodiesConfig = {
             equatorialRadius: 60268, // km
             polarRadius: 54364, // km
         },
+        addSurface: true,
         // Sphere-of-influence multiplier for Saturn
         soiRadius: 946,
         // Radial grid to show SOI around Saturn
@@ -582,9 +671,30 @@ export const celestialBodiesConfig = {
             equatorialRadius: 25559, // km
             polarRadius: 24973, // km
         },
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
+        },
         // Sphere-of-influence multiplier for Uranus
         soiRadius: 2039,
         // Radial grid to show SOI around Uranus
+        addRings: true,
+        rings: {
+            innerRadius: 38000,
+            outerRadius: 51000,
+            textureKey: 'uranusRingTexture',
+            shininess: 5,
+            emissive: 0xffffff,
+            emissiveIntensity: 1.0,
+            resolution: 256
+        },
         radialGridConfig: {
             maxDisplayRadius: 51720000,
             markerStep: 2000000,
@@ -617,6 +727,16 @@ export const celestialBodiesConfig = {
                 map: tm.getTexture('neptuneTexture')
             })
         },
+        addRings: true,
+        rings: {
+            innerRadius: 62000,
+            outerRadius: 65000,
+            textureKey: 'neptuneRingTexture',
+            shininess: 5,
+            emissive: 0xffffff,
+            emissiveIntensity: 1.0,
+            resolution: 256
+        },
         atmosphere: {
             hazeIntensity: 2.0,
             thickness: 2400, // km
@@ -630,6 +750,17 @@ export const celestialBodiesConfig = {
             sunIntensity: 1.5,
             equatorialRadius: 24764, // km
             polarRadius: 24341, // km
+        },
+        addSurface: true,
+        surfaceOptions: {
+            addLatitudeLines: true, latitudeStep: 10,
+            addLongitudeLines: true, longitudeStep: 10,
+            addMissions: true,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            markerSize: 0.7,
+            circleSegments: 32,
+            circleTextureSize: 64,
         },
         // Sphere-of-influence multiplier for Neptune
         soiRadius: 3508,
@@ -669,6 +800,8 @@ export const textureDefinitions = [
     { key: 'jupiterTexture', src: jupiterTexture },
     { key: 'saturnTexture', src: saturnTexture },
     { key: 'saturnRingTexture', src: saturnRingTexture },
+    { key: 'uranusRingTexture', src: uranusRingTexture },
+    { key: 'neptuneRingTexture', src: neptuneRingTexture },
     { key: 'uranusTexture', src: uranusTexture },
     { key: 'neptuneTexture', src: neptuneTexture },
     { key: 'ioTexture', src: ioTexture },

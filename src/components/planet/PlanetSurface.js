@@ -112,29 +112,37 @@ export class PlanetSurface {
         const majorStep = step * 3;
         const rangeStart = isLat ? -90 : -180;
         const rangeEnd = isLat ? 90 : 180;
-
+        const innerStep = 2;
+        const majorPoints = [];
+        const minorPoints = [];
         for (let d = rangeStart; d <= rangeEnd; d += step) {
             const pts = [];
-            const innerStep = 2;
             if (isLat) {
-                for (let lon = -180; lon <= 180; lon += innerStep)
+                for (let lon = -180; lon <= 180; lon += innerStep) {
                     pts.push(this.#spherical(lon, d));
+                }
             } else {
-                for (let lat = -90; lat <= 90; lat += innerStep)
+                for (let lat = -90; lat <= 90; lat += innerStep) {
                     pts.push(this.#spherical(d, lat));
+                }
             }
             pts.push(pts[0]); // close loop
-
-            const mat = (d % majorStep === 0)
-                ? this.materials.latitudeMajor
-                : this.materials.latitudeMinor;
-
-            const line = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints(pts),
-                mat
-            );
-            this.root.add(line);
-            this.surfaceLines.push(line);
+            const target = (d % majorStep === 0) ? majorPoints : minorPoints;
+            for (let i = 0; i < pts.length - 1; i++) {
+                target.push(pts[i], pts[i + 1]);
+            }
+        }
+        if (majorPoints.length > 0) {
+            const majorGeom = new THREE.BufferGeometry().setFromPoints(majorPoints);
+            const majorLine = new THREE.LineSegments(majorGeom, this.materials.latitudeMajor);
+            this.root.add(majorLine);
+            this.surfaceLines.push(majorLine);
+        }
+        if (minorPoints.length > 0) {
+            const minorGeom = new THREE.BufferGeometry().setFromPoints(minorPoints);
+            const minorLine = new THREE.LineSegments(minorGeom, this.materials.latitudeMinor);
+            this.root.add(minorLine);
+            this.surfaceLines.push(minorLine);
         }
     }
 
@@ -239,7 +247,10 @@ export class PlanetSurface {
         const theta = THREE.MathUtils.degToRad(lon + 90);
         // Compute point on unit sphere, then scale by planetRadius + offset
         const radius = this.planetRadius + this.heightOffset;
-        return new THREE.Vector3().setFromSphericalCoords(radius, phi, theta);
+        const v = new THREE.Vector3().setFromSphericalCoords(radius, phi, theta);
+        // Apply polar scaling for oblateness
+        v.y *= this.polarScale;
+        return v;
     }
 
     #createCircleTexture(size) {

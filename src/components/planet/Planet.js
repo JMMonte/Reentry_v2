@@ -23,8 +23,7 @@ export const RENDER_ORDER = {
     CLOUDS: 1,
     ATMOSPHERE: 2,
     POI: 3,
-    RINGS: 4,
-    GLOW: 5
+    RINGS: 4
 };
 //
 // Render order system:
