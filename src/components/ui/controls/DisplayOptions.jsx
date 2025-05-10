@@ -84,6 +84,7 @@ export const defaultSettings = {
     description: 'Multiplier for sample points on hyperbolic trajectories to improve tail resolution.'
   },
   showSOI: { value: false, name: 'SOI Sphere', icon: Circle, description: 'Show the sphere of influence rim glow around planets.' },
+  showPlanetOrbits: { value: true, name: 'Planet Orbits', icon: Circle, description: 'Show planetary orbit paths.' },
 };
 
 // Group settings by category
@@ -96,7 +97,8 @@ const categories = [
       'showAxis',
       'enableFXAA',
       'pixelRatio',
-      'showSOI'
+      'showSOI',
+      'showPlanetOrbits'
     ],
   },
   {

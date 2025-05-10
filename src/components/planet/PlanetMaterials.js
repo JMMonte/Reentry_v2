@@ -320,7 +320,7 @@ export class PlanetMaterials {
             fragmentShader,
             side: THREE.BackSide,
             transparent: true,
-            depthWrite: false,
+            depthWrite: true,
             depthTest: false,
             blending: THREE.AdditiveBlending
         });

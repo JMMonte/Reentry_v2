@@ -139,6 +139,9 @@ export class DisplaySettingsManager {
                     if (typeof p.setSOIVisible === 'function') p.setSOIVisible(value);
                 });
                 break;
+            case 'showPlanetOrbits':
+                if (app3d.orbitManager) app3d.orbitManager.setVisible(value);
+                break;
             case 'enableFXAA':
                 // Enable or disable the FXAA pass
                 if (app3d.sceneManager?.composers?.fxaaPass) {
