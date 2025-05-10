@@ -34,6 +34,69 @@ export class AtmosphereComponent {
         this._camRel = new THREE.Vector3();
         this._worldQuat = new THREE.Quaternion();
         this._invMat = new THREE.Matrix4();
+
+        // Precompute optical-depth lookup table (height vs cosine of sun angle)
+        const atm = config.atmosphere;
+        const lutSize = 64;
+        const data = new Float32Array(lutSize * lutSize * 4);
+        const aAtm = equR + atm.thickness;
+        const bAtm = polR + atm.thickness;
+        const aPl = equR, bPl = polR;
+        const rayScale = atm.rayleighScaleHeight || atm.densityScaleHeight;
+        const mieScale = atm.mieScaleHeight || atm.densityScaleHeight;
+        const steps = atm.numLightSteps;
+        // Helper CPU port of density falloff
+        const getDensity = (h, H) => Math.exp(-h / H);
+        // CPU ray-sphere intersection
+        const intersect = (o, d, a, b) => {
+            const ix2 = 1 / (a * a), iy2 = 1 / (b * b), iz2 = ix2;
+            const A = d.x * d.x * ix2 + d.y * d.y * iy2 + d.z * d.z * iz2;
+            const B = 2 * (o.x * d.x * ix2 + o.y * d.y * iy2 + o.z * d.z * iz2);
+            const C = o.x * o.x * ix2 + o.y * o.y * iy2 + o.z * o.z * iz2 - 1;
+            const disc = B * B - 4 * A * C;
+            if (disc < 0) return null;
+            const sd = Math.sqrt(disc);
+            return [(-B - sd) / (2 * A), (-B + sd) / (2 * A)];
+        };
+        for (let j = 0; j < lutSize; j++) {
+            const hNorm = j / (lutSize - 1);
+            const h = atm.thickness * hNorm;
+            // position at sample
+            const o = { x: 0, y: equR + h, z: 0 };
+            for (let i = 0; i < lutSize; i++) {
+                const mu = i / (lutSize - 1);
+                const theta = Math.acos(mu);
+                // light direction rotated from 'down'
+                const d = { x: Math.sin(theta), y: -Math.cos(theta), z: 0 };
+                // find intersection with atm shell
+                const isect = intersect(o, d, aAtm, bAtm);
+                if (!isect) { data.set([0, 0, 0, 1], (j * lutSize + i) * 4); continue; }
+                let [t0, t1] = isect;
+                t0 = Math.max(0, t0);
+                const step = (t1 - t0) / steps;
+                let odR = 0, odM = 0;
+                for (let k = 0; k < steps; k++) {
+                    const t = t0 + (k + 0.5) * step;
+                    const px = o.x + d.x * t, py = o.y + d.y * t, pz = o.z + d.z * t;
+                    // check ground
+                    const pgI = intersect(o, d, aPl, bPl);
+                    if (pgI && pgI[0] > 0 && pgI[0] < t1) { odR = odM = 0; break; }
+                    const height = Math.sqrt(px * px + py * py + pz * pz) - equR;
+                    if (height < 0) continue;
+                    odR += getDensity(height, rayScale) * step;
+                    odM += getDensity(height, mieScale) * step;
+                }
+                const idx = (j * lutSize + i) * 4;
+                data[idx] = odR;
+                data[idx + 1] = odM;
+                data[idx + 2] = 0;
+                data[idx + 3] = 1;
+            }
+        }
+        const lutTex = new THREE.DataTexture(data, lutSize, lutSize, THREE.RGBAFormat, THREE.FloatType);
+        lutTex.needsUpdate = true;
+        // Attach LUT to material
+        outer.material.uniforms.uOpticalDepthLUT = { value: lutTex };
     }
 
     update() {

@@ -93,6 +93,7 @@ export const celestialBodiesConfig = {
         atmosphere: {
             thickness: 60, // km
             densityScaleHeight: 20.0,
+            hazeIntensity: 3.0,
             // separate scale heights for Rayleigh (≈8 km) and Mie (≈1.2 km)
             rayleighScaleHeight: 8.0,
             mieScaleHeight: 1.2,
@@ -279,7 +280,7 @@ export const celestialBodiesConfig = {
         atmosphere: {
             // Increase limb fudge for a brighter bottom limb on Venus
             limbFudgeFactor: 1.0,
-            hazeIntensity: 0.6,
+            hazeIntensity: 3.0,
             thickness: 100, // km
             densityScaleHeight: 15.9, // km (approx)
             rayleighScaleHeight: 15.9, // km
@@ -378,16 +379,17 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            hazeIntensity: 0.6,
-            thickness: 7000, // km (absolute atmosphere height)
-            densityScaleHeightFraction: 0.003, // 0.3% of radius
-            rayleighScaleHeight: 21.0, // 7000 * 0.003
+            // Warm, hazy rim similar to Venus
+            hazeIntensity: 2.6,
+            thickness: 7000, // km
+            densityScaleHeightFraction: 0.003,
+            rayleighScaleHeight: 71492 * 0.003,  // ≈214.5 km
             mieScaleHeight: 1.2,
-            rayleighScatteringCoeff: [0.024, 0.048, 0.144],
-            mieScatteringCoeff: 0.012,
-            mieAnisotropy: 0.5,
+            rayleighScatteringCoeff: [0.01, 0.008, 0.005],
+            mieScatteringCoeff: 0.015,
+            mieAnisotropy: 0.7,
             numLightSteps: 4,
-            sunIntensity: 3.0,
+            sunIntensity: 3.0, // Base intensity (dynamic scaling handles distance)
             equatorialRadius: 71492, // km
             polarRadius: 66854, // km
         },
@@ -518,10 +520,10 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            hazeIntensity: 0.6,
+            hazeIntensity: 2.0,
             thickness: 5800, // km
-            densityScaleHeightFraction: 0.003,
-            rayleighScaleHeight: 17.4, // 5800 * 0.003
+            densityScaleHeightFraction: 0.03,
+            rayleighScaleHeight: 60268 * 0.03, // ≈180.8 km
             mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.018, 0.036, 0.108],
             mieScatteringCoeff: 0.009,
@@ -567,10 +569,10 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            hazeIntensity: 0.6,
+            hazeIntensity: 2.0,
             thickness: 2500, // km
             densityScaleHeightFraction: 0.003,
-            rayleighScaleHeight: 7.5, // 2500 * 0.003
+            rayleighScaleHeight: 25559 * 0.003, // ≈76.7 km
             mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.012, 0.024, 0.072],
             mieScatteringCoeff: 0.006,
@@ -616,10 +618,10 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            hazeIntensity: 0.6,
+            hazeIntensity: 2.0,
             thickness: 2400, // km
             densityScaleHeightFraction: 0.003,
-            rayleighScaleHeight: 7.2, // 2400 * 0.003
+            rayleighScaleHeight: 24764 * 0.003, // ≈74.3 km
             mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.012, 0.024, 0.072],
             mieScatteringCoeff: 0.006,

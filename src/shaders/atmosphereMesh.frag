@@ -12,6 +12,7 @@ uniform vec3 uCameraPosition; // Camera position in world space
 
 // Raymarching parameters
 uniform int uNumLightSteps;   // Steps for light and view sampling
+uniform float uSampleDistributionPower; // >1 biases more samples toward the limb
 
 // Atmosphere properties
 uniform float uDensityScaleHeight; // Scale height for density falloff
@@ -182,47 +183,41 @@ void main() {
         }
     }
 
-    // view-ray integration using uNumLightSteps
+    // view-ray integration using uNumLightSteps with non-linear distribution
     int viewSteps = uNumLightSteps;
     float viewStepSize = (tEnd - tStart) / float(viewSteps);
     for (int i = 0; i < viewSteps; ++i) {
-        float t = tStart + (float(i) + 0.5) * viewStepSize;
+        float fi = (float(i) + 0.5) / float(viewSteps);
+        float t = tStart + pow(fi, uSampleDistributionPower) * (tEnd - tStart);
         vec3 samplePos = eyeLocal + dirLocal * t;
         float height = ellipsoidAltitude(samplePos, planetEquatorialRadius, planetPolarRadius);
         if (height < 0.0) continue;
-        // separate atmospheric densities
         float densityR = getDensity(height, rayleighScale);
         float densityM = getDensity(height, mieScale);
-
-        // extinction for view transmittance
         vec3 rayExt = uRayleighScatteringCoeff * densityR;
         vec3 mieExt = vec3(uMieScatteringCoeff * densityM);
         vec3 extinctionCoeff = rayExt + mieExt;
         vec3 stepTransmittance = exp(-extinctionCoeff * viewStepSize);
         vec3 lightDir = normalize(sunLocal - samplePos);
-
-        // skip in-scatter if this sample is shadowed by planet
+        // skip in-scatter if shadowed
         vec2 sunPlanetIsect = intersectEllipsoid(samplePos, lightDir, planetEquatorialRadius, planetPolarRadius);
         if (sunPlanetIsect.x > 0.0 && sunPlanetIsect.x < sunPlanetIsect.y) {
             accumulatedTransmittance *= stepTransmittance;
             continue;
         }
-        // compute optical depth to sun
         vec3 opticalDepthToSun = calculateOpticalDepthEllipsoid(
             samplePos, lightDir, uNumLightSteps,
             atmEquatorialRadius, atmPolarRadius,
             planetEquatorialRadius, planetPolarRadius,
             uDensityScaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
         );
-        // transmittance toward sun
         vec3 transToSun = exp(-opticalDepthToSun);
         float cosTheta = dot(dirLocal, lightDir);
-        float rayleighPhase = phaseRayleigh(cosTheta);
-        float miePhase = phaseMie(cosTheta, uMieAnisotropy);
-        // separate scattering contributions
-        vec3 rayleighScattering = uRayleighScatteringCoeff * densityR * rayleighPhase;
-        vec3 mieScattering      = vec3(uMieScatteringCoeff * densityM * miePhase);
-        vec3 totalScattering     = rayleighScattering + mieScattering;
+        float pr = phaseRayleigh(cosTheta);
+        float pm = phaseMie(cosTheta, uMieAnisotropy);
+        vec3 rayScat = uRayleighScatteringCoeff * densityR * pr;
+        vec3 mieScat = vec3(uMieScatteringCoeff * densityM * pm);
+        vec3 totalScattering = rayScat + mieScat;
         vec3 inScattered = totalScattering * uSunIntensity * transToSun;
         accumulatedColor += inScattered * accumulatedTransmittance * viewStepSize;
         accumulatedTransmittance *= stepTransmittance;

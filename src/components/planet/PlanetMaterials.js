@@ -306,6 +306,8 @@ export class PlanetMaterials {
             uMieAnisotropy:        { value: atm.mieAnisotropy || 0 },
             uNumLightSteps:        { value: atm.numLightSteps || 4 },
             uSunIntensity:         { value: atm.sunIntensity || 1.0 },
+            // power exponent for non-linear sample distribution (pow(fi, power))
+            uSampleDistributionPower: { value: atm.sampleDistributionPower !== undefined ? atm.sampleDistributionPower : 2.0 },
             uPlanetFrame:          { value: new THREE.Matrix3() },
             uSunPosition:          { value: new THREE.Vector3() },
             uCameraPosition:       { value: new THREE.Vector3() },
