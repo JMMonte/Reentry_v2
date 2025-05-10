@@ -25,6 +25,37 @@ function createVec(x = 0, y = 0, z = 0) { return { x, y, z }; }
 // Helper to compute distance between two plain vectors
 function vecDistance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z); }
 
+// Add Attractor class to encapsulate body update logic
+class Attractor {
+    constructor({ name, nameLower, orbitElements = null, orbitRadius = 0, mass = 0, soiRadius = 0, body = null }) {
+        this.name = name;
+        this.nameLower = nameLower;
+        this.orbitElements = orbitElements;
+        this.orbitRadius = orbitRadius;
+        this.mass = mass;
+        this.soiRadius = soiRadius;
+        this.body = body;
+        this.position = createVec();
+        this._aeName = getAEBodyName(nameLower);
+    }
+
+    updatePositionAstronomy(julianDate) {
+        const kmPerAU = Constants.AU * Constants.metersToKm;
+        if (this.nameLower === 'barycenter' || this.nameLower === 'sun' || !isAEBody(this._aeName)) {
+            // Static origin for barycenter and sun, or unsupported bodies
+            this.position.x = 0;
+            this.position.y = 0;
+            this.position.z = 0;
+        } else {
+            const equState = AE.BaryState(AE.Body[this._aeName], julianDate);
+            const vec = AE.Ecliptic(equState).vec;
+            this.position.x = vec.x * kmPerAU;
+            this.position.y = vec.y * kmPerAU;
+            this.position.z = vec.z * kmPerAU;
+        }
+    }
+}
+
 export class PhysicsWorld {
     /**
      * @param {Object} options
@@ -46,32 +77,49 @@ export class PhysicsWorld {
      * @param {Array<{name:string}>} instances - array of Planet/Sun instances from App3D
      */
     loadFromPlanets(instances) {
+        // Create Attractor instances for each provided planet/sun
         this.bodies = instances.map(inst => {
-            // Use precomputed lowercase name
             const keyLower = inst.nameLower;
             const cfg = celestialBodiesConfig[keyLower];
             if (!cfg) throw new Error(`No config found for body '${keyLower}'`);
-            // compute sphere-of-influence radius in scene units
             const soi = (cfg.soiRadius || 0) * (cfg.radius || 1);
-
-            return {
+            return new Attractor({
                 name: inst.name,
                 nameLower: keyLower,
                 orbitElements: cfg.orbitElements || null,
                 orbitRadius: cfg.orbitRadius || 0,
                 mass: cfg.mass || 0,
                 soiRadius: soi,
-                position: createVec(),
-                body: inst   // Planet instance for transforms
-            };
+                body: inst
+            });
         });
-        // Add solar system barycenter (SSB) as a reference point
+        // Ensure barycenter exists at start
         if (!this.bodies.find(b => b.nameLower === 'barycenter')) {
-            this.bodies.unshift({ name: 'barycenter', nameLower: 'barycenter', position: createVec(), mass: 0, soiRadius: 0 });
+            const cfg = celestialBodiesConfig['barycenter'] || {};
+            const soi = (cfg.soiRadius || 0) * (cfg.radius || 1);
+            this.bodies.unshift(new Attractor({
+                name: cfg.name || 'barycenter',
+                nameLower: 'barycenter',
+                orbitElements: cfg.orbitElements || null,
+                orbitRadius: cfg.orbitRadius || 0,
+                mass: cfg.mass || 0,
+                soiRadius: soi,
+                body: null
+            }));
         }
-        // Add Earth-Moon barycenter (EMB) as a reference point
+        // Ensure EMB exists at end
         if (!this.bodies.find(b => b.nameLower === 'emb')) {
-            this.bodies.push({ name: 'emb', nameLower: 'emb', position: createVec(), mass: 0, soiRadius: 0 });
+            const cfg = celestialBodiesConfig['emb'] || {};
+            const soi = (cfg.soiRadius || 0) * (cfg.radius || 1);
+            this.bodies.push(new Attractor({
+                name: cfg.name || 'emb',
+                nameLower: 'emb',
+                orbitElements: cfg.orbitElements || null,
+                orbitRadius: cfg.orbitRadius || 0,
+                mass: cfg.mass || 0,
+                soiRadius: soi,
+                body: null
+            }));
         }
     }
 
@@ -142,30 +190,8 @@ export class PhysicsWorld {
      * Internal: update all attractor positions using barycentric ephemeris in kilometers
      */
     _updateAttractorsAstronomy(julianDate) {
-        const kmPerAU = Constants.AU * Constants.metersToKm;
         this.bodies.forEach(body => {
-            const keyLower = body.nameLower;
-            if (keyLower === 'barycenter') {
-                body.position.x = 0;
-                body.position.y = 0;
-                body.position.z = 0;
-                return;
-            }
-            if (!isAEBody(getAEBodyName(keyLower))) {
-                return;
-            }
-            const key = getAEBodyName(keyLower);
-            if (keyLower === 'sun') {
-                body.position.x = 0;
-                body.position.y = 0;
-                body.position.z = 0;
-            } else {
-                const equState = AE.BaryState(AE.Body[key], julianDate);
-                const vec = AE.Ecliptic(equState).vec;
-                body.position.x = vec.x * kmPerAU;
-                body.position.y = vec.y * kmPerAU;
-                body.position.z = vec.z * kmPerAU;
-            }
+            body.updatePositionAstronomy(julianDate);
         });
     }
 
