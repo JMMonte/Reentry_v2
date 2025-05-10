@@ -106,6 +106,12 @@ export class Planet {
 
         /* ---------- Render order overrides ---------- */
         this.renderOrderOverrides = (config.materials && config.materials.renderOrderOverrides) || {};
+        // Dynamic per-planet render order grouping to interleave surface and atmosphere on draw
+        const planetIndex = Planet.instances.length - 1;
+        const blockSize = 10;
+        this.renderOrderOverrides.SURFACE = planetIndex * blockSize + RENDER_ORDER.SURFACE;
+        this.renderOrderOverrides.CLOUDS = planetIndex * blockSize + RENDER_ORDER.CLOUDS;
+        this.renderOrderOverrides.ATMOSPHERE = planetIndex * blockSize + RENDER_ORDER.ATMOSPHERE;
 
         /* ---------- build ---------- */
         this.#initGroups();

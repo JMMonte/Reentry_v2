@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 import {
     earthTexture, earthSpecTexture, earthNormalTexture,
-    cloudTexture, moonTexture, moonBump,
-    mercuryTexture, venusTexture, venusAtmosphereTexture,
+    cloudTexture, moonTexture, moonNormalTexture,
+    mercuryTexture, mercuryNormalTexture, venusTexture, venusAtmosphereTexture,
     marsTexture, marsNormalTexture, jupiterTexture, saturnTexture, saturnRingTexture,
     uranusRingTexture, neptuneRingTexture,
     uranusTexture, neptuneTexture,
@@ -181,8 +181,8 @@ export const celestialBodiesConfig = {
             createSurfaceMaterial: (tm) => {
                 const mat = new THREE.MeshPhongMaterial({
                     map: tm.getTexture('moonTexture'),
-                    bumpMap: tm.getTexture('moonBump'),
-                    bumpScale: 3.9
+                    normalMap: tm.getTexture('moonNormalTexture'),
+                    normalScale: new THREE.Vector2(0.2, 0.2)
                 });
                 // Anisotropy is set globally by TextureManager based on settings
                 return mat;
@@ -220,7 +220,9 @@ export const celestialBodiesConfig = {
         materials: {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('mercuryTexture'),
-                shininess: 5
+                shininess: 5,
+                normalMap: tm.getTexture('mercuryNormalTexture'),
+                normalScale: new THREE.Vector2(0.5, 0.5)
             })
         },
         // Sphere-of-influence multiplier (planet radius * soiRadius = SOI in km)
@@ -455,6 +457,9 @@ export const celestialBodiesConfig = {
         parent: 'jupiter',
         mass: 8.931938e22, // kg
         radius: 1821.6,   // km
+        oblateness: 0.0000,
+        lodLevels: generateLodLevelsForRadius(1821.6),
+        dotPixelSizeThreshold: 1,
         orbitElements: {
             semiMajorAxis: 421800000,               // m
             eccentricity: 0.0041,
@@ -479,6 +484,8 @@ export const celestialBodiesConfig = {
                 map: tm.getTexture('ioTexture')
             })
         },
+        // Sphere-of-influence multiplier for Io
+        soiRadius: 4.3,
     },
     europa: {
         name: 'europa',
@@ -486,6 +493,9 @@ export const celestialBodiesConfig = {
         parent: 'jupiter',
         mass: 4.799844e22, // kg
         radius: 1560.8,   // km
+        oblateness: 0.0000,
+        lodLevels: generateLodLevelsForRadius(1560.8),
+        dotPixelSizeThreshold: 1,
         orbitElements: {
             semiMajorAxis: 671034000,               // m
             eccentricity: 0.009,                    
@@ -510,6 +520,8 @@ export const celestialBodiesConfig = {
                 map: tm.getTexture('europaTexture')
             })
         },
+        // Sphere-of-influence multiplier for Europa
+        soiRadius: 6.2,
     },
     ganymede: {
         name: 'ganymede',
@@ -517,6 +529,9 @@ export const celestialBodiesConfig = {
         parent: 'jupiter',
         mass: 1.4819e23,  // kg
         radius: 2634.1,   // km
+        oblateness: 0.0000,
+        lodLevels: generateLodLevelsForRadius(2634.1),
+        dotPixelSizeThreshold: 1,
         orbitElements: {
             semiMajorAxis: 1070412000,              // m
             eccentricity: 0.0013,
@@ -541,6 +556,8 @@ export const celestialBodiesConfig = {
                 map: tm.getTexture('ganymedeTexture')
             })
         },
+        // Sphere-of-influence multiplier for Ganymede
+        soiRadius: 9.2,
     },
     callisto: {
         name: 'callisto',
@@ -548,6 +565,9 @@ export const celestialBodiesConfig = {
         parent: 'jupiter',
         mass: 1.0759e23,  // kg
         radius: 2410.3,   // km
+        oblateness: 0.0000,
+        lodLevels: generateLodLevelsForRadius(2410.3),
+        dotPixelSizeThreshold: 1,
         orbitElements: {
             semiMajorAxis: 1882709000,              // m
             eccentricity: 0.0074,
@@ -572,6 +592,8 @@ export const celestialBodiesConfig = {
                 map: tm.getTexture('callistoTexture')
             })
         },
+        // Sphere-of-influence multiplier for Callisto
+        soiRadius: 15.6,
     },
     saturn: {
         name: 'saturn',
@@ -795,8 +817,9 @@ export const textureDefinitions = [
     { key: 'earthNormalTexture', src: earthNormalTexture },
     { key: 'cloudTexture', src: cloudTexture },
     { key: 'moonTexture', src: moonTexture },
-    { key: 'moonBump', src: moonBump },
+    { key: 'moonNormalTexture', src: moonNormalTexture },
     { key: 'mercuryTexture', src: mercuryTexture },
+    { key: 'mercuryNormalTexture', src: mercuryNormalTexture },
     { key: 'venusTexture', src: venusTexture },
     { key: 'venusAtmosphereTexture', src: venusAtmosphereTexture },
     { key: 'marsTexture', src: marsTexture },

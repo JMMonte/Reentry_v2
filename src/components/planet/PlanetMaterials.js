@@ -58,7 +58,7 @@ function createAtmosphereMaterial(earthRadius, {
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
-        depthTest: true,
+        depthTest: false,
         blending: THREE.AdditiveBlending,
         uniforms: {
             lightPosition: { value: new THREE.Vector3(1, 0, 0) },
