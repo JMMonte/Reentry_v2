@@ -565,7 +565,6 @@ export const bloomConfig = { strength: 0.3, radius: 0.999, threshold: 0.99 };
 // Orbit colors for each celestial body orbit
 export const orbitColors = {
     emb: 0x888888,
-    barycenter: 0x888888,
     earth: 0x3366cc,
     moon: 0xcccccc,
     mercury: 0x999999,

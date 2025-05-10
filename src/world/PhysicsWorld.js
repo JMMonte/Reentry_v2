@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { adaptiveIntegrate } from '../utils/OrbitIntegrator.js';
 import { Constants } from '../utils/Constants.js';
 import { celestialBodiesConfig } from '../config/celestialBodiesConfig.js';
@@ -19,6 +18,12 @@ function getAEBodyName(key) {
 function isAEBody(key) {
     return Boolean(AE.Body[key]);
 }
+
+// Helper to create plain vector objects without three.js
+function createVec(x = 0, y = 0, z = 0) { return { x, y, z }; }
+
+// Helper to compute distance between two plain vectors
+function vecDistance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z); }
 
 export class PhysicsWorld {
     /**
@@ -56,17 +61,17 @@ export class PhysicsWorld {
                 orbitRadius: cfg.orbitRadius || 0,
                 mass: cfg.mass || 0,
                 soiRadius: soi,
-                position: new THREE.Vector3(),
+                position: createVec(),
                 body: inst   // Planet instance for transforms
             };
         });
         // Add solar system barycenter (SSB) as a reference point
         if (!this.bodies.find(b => b.nameLower === 'barycenter')) {
-            this.bodies.unshift({ name: 'barycenter', nameLower: 'barycenter', position: new THREE.Vector3(), mass: 0, soiRadius: 0 });
+            this.bodies.unshift({ name: 'barycenter', nameLower: 'barycenter', position: createVec(), mass: 0, soiRadius: 0 });
         }
         // Add Earth-Moon barycenter (EMB) as a reference point
         if (!this.bodies.find(b => b.nameLower === 'emb')) {
-            this.bodies.push({ name: 'emb', nameLower: 'emb', position: new THREE.Vector3(), mass: 0, soiRadius: 0 });
+            this.bodies.push({ name: 'emb', nameLower: 'emb', position: createVec(), mass: 0, soiRadius: 0 });
         }
     }
 
@@ -81,8 +86,8 @@ export class PhysicsWorld {
     addSatellite({ id, position, velocity, mass = 100, size = 1 }) {
         const sat = {
             id,
-            position: position.clone(),
-            velocity: velocity.clone(),
+            position: { x: position.x, y: position.y, z: position.z },
+            velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
             mass,
             size,
             ballisticCoefficient: mass / (2.2 * Math.PI * size * size),
@@ -127,7 +132,7 @@ export class PhysicsWorld {
                 orbitRadius: cfg.orbitRadius || 0,
                 mass,
                 soiRadius: soi,
-                position: new THREE.Vector3(),
+                position: createVec(),
                 config: cfg
             };
         });
@@ -138,24 +143,28 @@ export class PhysicsWorld {
      */
     _updateAttractorsAstronomy(julianDate) {
         const kmPerAU = Constants.AU * Constants.metersToKm;
-        // Precompute Earth, Moon, and Sun positions for EMB
         this.bodies.forEach(body => {
             const keyLower = body.nameLower;
             if (keyLower === 'barycenter') {
-                body.position.set(0, 0, 0);
+                body.position.x = 0;
+                body.position.y = 0;
+                body.position.z = 0;
                 return;
             }
             if (!isAEBody(getAEBodyName(keyLower))) {
-                // Skip unsupported bodies
                 return;
             }
             const key = getAEBodyName(keyLower);
             if (keyLower === 'sun') {
-                body.position.set(0, 0, 0);
+                body.position.x = 0;
+                body.position.y = 0;
+                body.position.z = 0;
             } else {
                 const equState = AE.BaryState(AE.Body[key], julianDate);
                 const vec = AE.Ecliptic(equState).vec;
-                body.position.set(vec.x * kmPerAU, vec.y * kmPerAU, vec.z * kmPerAU);
+                body.position.x = vec.x * kmPerAU;
+                body.position.y = vec.y * kmPerAU;
+                body.position.z = vec.z * kmPerAU;
             }
         });
     }
@@ -188,16 +197,12 @@ export class PhysicsWorld {
                 this.perturbationScale
             );
             // Convert results back from meters to kilometers
-            sat.position.set(
-                result.pos[0] * Constants.metersToKm,
-                result.pos[1] * Constants.metersToKm,
-                result.pos[2] * Constants.metersToKm
-            );
-            sat.velocity.set(
-                result.vel[0] * Constants.metersToKm,
-                result.vel[1] * Constants.metersToKm,
-                result.vel[2] * Constants.metersToKm
-            );
+            sat.position.x = result.pos[0] * Constants.metersToKm;
+            sat.position.y = result.pos[1] * Constants.metersToKm;
+            sat.position.z = result.pos[2] * Constants.metersToKm;
+            sat.velocity.x = result.vel[0] * Constants.metersToKm;
+            sat.velocity.y = result.vel[1] * Constants.metersToKm;
+            sat.velocity.z = result.vel[2] * Constants.metersToKm;
 
             // detect SOI boundary crossing
             const newPrimary = this._determinePrimaryBody(sat.position);
@@ -211,7 +216,7 @@ export class PhysicsWorld {
     _determinePrimaryBody(pos) {
         let primary = null;
         this.bodies.forEach(body => {
-            const d = pos.distanceTo(body.position);
+            const d = vecDistance(pos, body.position);
             if (d <= body.soiRadius) {
                 primary = body.name;
             }
@@ -300,21 +305,15 @@ export class PhysicsWorld {
             // Child barycentric position
             const cstate = AE.BaryState(AE.Body[childAE], jd);
             const cecl = AE.Ecliptic(cstate).vec;
-            const childPos = new THREE.Vector3(
-                cecl.x * kmPerAU,
-                cecl.y * kmPerAU,
-                cecl.z * kmPerAU
-            );
+            const childPos = { x: cecl.x * kmPerAU, y: cecl.y * kmPerAU, z: cecl.z * kmPerAU };
             // Subtract parent if requested
             if (useRelative) {
                 const pstate = AE.BaryState(AE.Body[parentAEName], jd);
                 const pecl = AE.Ecliptic(pstate).vec;
-                const parentPos = new THREE.Vector3(
-                    pecl.x * kmPerAU,
-                    pecl.y * kmPerAU,
-                    pecl.z * kmPerAU
-                );
-                childPos.sub(parentPos);
+                const parentPos = { x: pecl.x * kmPerAU, y: pecl.y * kmPerAU, z: pecl.z * kmPerAU };
+                childPos.x -= parentPos.x;
+                childPos.y -= parentPos.y;
+                childPos.z -= parentPos.z;
             }
             positions.push(childPos);
         }

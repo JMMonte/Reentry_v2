@@ -98,25 +98,8 @@ export class OrbitManager {
                 const geometry = new LineGeometry();
                 geometry.setPositions(points);
 
-                // Compute per-vertex colors to fade further-away-in-time segments
-                const colors = [];
-                const pointCount = positions.length;
-                // Base color from config override or orbitColors
-                const baseColorInt = this.config.colors[key] ?? orbitColors[key] ?? 0xffffff;
-                const tmpColor = new THREE.Color(baseColorInt);
-                for (let i = 0; i < pointCount; i++) {
-                    const t = i / (pointCount - 1);
-                    // Fade: alpha from 1 (now) to 0 (furthest)
-                    colors.push(tmpColor.r, tmpColor.g, tmpColor.b, 1 - t);
-                }
-                // Assign per-vertex colors (with alpha) for fading effect
-                geometry.setColors(colors, 4);
-
                 const material = new LineMaterial({
-                    // Use per-vertex colors (RGBA) for fade
-                    vertexColors: true,
-                    transparent: true,
-                    color: 0xffffff,
+                    color: this.config.colors[key] ?? orbitColors[key] ?? 0xffffff,
                     linewidth: this.config.lineWidth,
                     dashed: false,
                     resolution: this.resolution

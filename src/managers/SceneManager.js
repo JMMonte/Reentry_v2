@@ -128,19 +128,42 @@ export class SceneManager {
             if (sunBody?.position) {
                 // Store previous sun position for interpolation
                 if (!sunBody.prevPosition) {
-                    sunBody.prevPosition = sunBody.position.clone();
+                    // Initialize prevPosition as a THREE.Vector3 copy of plain position
+                    sunBody.prevPosition = new THREE.Vector3(
+                        sunBody.position.x,
+                        sunBody.position.y,
+                        sunBody.position.z
+                    );
                 } else {
-                    sunBody.prevPosition.copy(sun.position || sunBody.position);
+                    // Update prevPosition from current sun mesh position or physics position
+                    const src = sun.position || sunBody.position;
+                    sunBody.prevPosition.set(src.x, src.y, src.z);
                 }
-                sun.setPosition(sunBody.position);
+                // Update actual sun mesh position using physics position
+                sun.setPosition(
+                    new THREE.Vector3(
+                        sunBody.position.x,
+                        sunBody.position.y,
+                        sunBody.position.z
+                    )
+                );
             }
         }
         const kmToM = 1 / this.app.Constants.metersToKm;
         physicsWorld.satellites.forEach((psat, id) => {
             const satVis = satellites.getSatellites()[id];
             if (satVis && psat.position && psat.velocity) {
-                const posM = psat.position.clone().multiplyScalar(kmToM);
-                const velM = psat.velocity.clone().multiplyScalar(kmToM);
+                // Convert plain position/velocity to THREE.Vector3 before scaling
+                const posM = new THREE.Vector3(
+                    psat.position.x,
+                    psat.position.y,
+                    psat.position.z
+                ).multiplyScalar(kmToM);
+                const velM = new THREE.Vector3(
+                    psat.velocity.x,
+                    psat.velocity.y,
+                    psat.velocity.z
+                ).multiplyScalar(kmToM);
                 satVis.updatePosition(posM, velM, psat.debug);
             }
         });
