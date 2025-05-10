@@ -93,6 +93,9 @@ export const celestialBodiesConfig = {
         atmosphere: {
             thickness: 60, // km
             densityScaleHeight: 20.0,
+            // separate scale heights for Rayleigh (≈8 km) and Mie (≈1.2 km)
+            rayleighScaleHeight: 8.0,
+            mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.0015, 0.004, 0.012],
             mieScatteringCoeff: 0.00015,
             mieAnisotropy: 0.75, // g
@@ -279,6 +282,8 @@ export const celestialBodiesConfig = {
             hazeIntensity: 0.6,
             thickness: 100, // km
             densityScaleHeight: 15.9, // km (approx)
+            rayleighScaleHeight: 15.9, // km
+            mieScaleHeight: 1.2,       // km
             rayleighScatteringCoeff: [0.01, 0.008, 0.005],
             mieScatteringCoeff: 0.015,
             mieAnisotropy: 0.7,
@@ -328,6 +333,8 @@ export const celestialBodiesConfig = {
             hazeIntensity: 0.6,
             thickness: 11, // km
             densityScaleHeight: 11.1, // km
+            rayleighScaleHeight: 11.1,
+            mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.005, 0.002, 0.001],
             mieScatteringCoeff: 0.001,
             mieAnisotropy: 0.8,
@@ -374,6 +381,8 @@ export const celestialBodiesConfig = {
             hazeIntensity: 0.6,
             thickness: 7000, // km (absolute atmosphere height)
             densityScaleHeightFraction: 0.003, // 0.3% of radius
+            rayleighScaleHeight: 21.0, // 7000 * 0.003
+            mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.024, 0.048, 0.144],
             mieScatteringCoeff: 0.012,
             mieAnisotropy: 0.5,
@@ -512,6 +521,8 @@ export const celestialBodiesConfig = {
             hazeIntensity: 0.6,
             thickness: 5800, // km
             densityScaleHeightFraction: 0.003,
+            rayleighScaleHeight: 17.4, // 5800 * 0.003
+            mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.018, 0.036, 0.108],
             mieScatteringCoeff: 0.009,
             mieAnisotropy: 0.5,
@@ -559,6 +570,8 @@ export const celestialBodiesConfig = {
             hazeIntensity: 0.6,
             thickness: 2500, // km
             densityScaleHeightFraction: 0.003,
+            rayleighScaleHeight: 7.5, // 2500 * 0.003
+            mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.012, 0.024, 0.072],
             mieScatteringCoeff: 0.006,
             mieAnisotropy: 0.5,
@@ -606,6 +619,8 @@ export const celestialBodiesConfig = {
             hazeIntensity: 0.6,
             thickness: 2400, // km
             densityScaleHeightFraction: 0.003,
+            rayleighScaleHeight: 7.2, // 2400 * 0.003
+            mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.012, 0.024, 0.072],
             mieScatteringCoeff: 0.006,
             mieAnisotropy: 0.5,

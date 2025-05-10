@@ -15,6 +15,8 @@ uniform int uNumLightSteps;   // Steps for light and view sampling
 
 // Atmosphere properties
 uniform float uDensityScaleHeight; // Scale height for density falloff
+uniform float uRayleighScaleHeight; // Rayleigh scale height (km)
+uniform float uMieScaleHeight;      // Mie scale height (km)
 uniform vec3 uRayleighScatteringCoeff; // RGB scattering coefficients
 uniform float uMieScatteringCoeff;    // Mie scattering coefficient (monochromatic)
 uniform float uMieAnisotropy;         // Mie phase function anisotropy (g)
@@ -145,7 +147,41 @@ void main() {
 
     vec3 accumulatedColor = vec3(0.0);
     vec3 accumulatedTransmittance = vec3(1.0);
-    float scaleHeight = uDensityScaleHeight;
+    // use separate scale heights
+    float rayleighScale = uRayleighScaleHeight;
+    float mieScale      = uMieScaleHeight;
+
+    // initial boundary in-scatter at tStart to avoid black rim
+    {
+        vec3 boundaryPos = eyeLocal + dirLocal * tStart;
+        float height0 = ellipsoidAltitude(boundaryPos, planetEquatorialRadius, planetPolarRadius);
+        if (height0 > 0.0) {
+            // densities at boundary
+            float densityR0 = getDensity(height0, rayleighScale);
+            float densityM0 = getDensity(height0, mieScale);
+            vec3 lightDir0 = normalize(sunLocal - boundaryPos);
+            // skip boundary if shadowed by planet
+            vec2 oc0 = intersectEllipsoid(boundaryPos, lightDir0, planetEquatorialRadius, planetPolarRadius);
+            if (!(oc0.x > 0.0 && oc0.x < oc0.y)) {
+                float cos0 = dot(dirLocal, lightDir0);
+                float pr0 = phaseRayleigh(cos0);
+                float pm0 = phaseMie(cos0, uMieAnisotropy);
+                vec3 scat0 = uRayleighScatteringCoeff * densityR0 * pr0
+                           + vec3(uMieScatteringCoeff * densityM0 * pm0);
+                // optical depth to sun from boundary
+                vec3 od0 = calculateOpticalDepthEllipsoid(
+                    boundaryPos, lightDir0, uNumLightSteps,
+                    atmEquatorialRadius, atmPolarRadius,
+                    planetEquatorialRadius, planetPolarRadius,
+                    uDensityScaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
+                );
+                vec3 trans0 = exp(-od0);
+                // accumulate initial sample
+                accumulatedColor += scat0 * uSunIntensity * trans0 * accumulatedTransmittance * ((tEnd - tStart) / float(uNumLightSteps));
+            }
+        }
+    }
+
     // view-ray integration using uNumLightSteps
     int viewSteps = uNumLightSteps;
     float viewStepSize = (tEnd - tStart) / float(viewSteps);
@@ -154,10 +190,13 @@ void main() {
         vec3 samplePos = eyeLocal + dirLocal * t;
         float height = ellipsoidAltitude(samplePos, planetEquatorialRadius, planetPolarRadius);
         if (height < 0.0) continue;
-        float density = getDensity(height, scaleHeight);
+        // separate atmospheric densities
+        float densityR = getDensity(height, rayleighScale);
+        float densityM = getDensity(height, mieScale);
+
         // extinction for view transmittance
-        vec3 rayExt = uRayleighScatteringCoeff * density;
-        vec3 mieExt = vec3(uMieScatteringCoeff * density);
+        vec3 rayExt = uRayleighScatteringCoeff * densityR;
+        vec3 mieExt = vec3(uMieScatteringCoeff * densityM);
         vec3 extinctionCoeff = rayExt + mieExt;
         vec3 stepTransmittance = exp(-extinctionCoeff * viewStepSize);
         vec3 lightDir = normalize(sunLocal - samplePos);
@@ -173,16 +212,17 @@ void main() {
             samplePos, lightDir, uNumLightSteps,
             atmEquatorialRadius, atmPolarRadius,
             planetEquatorialRadius, planetPolarRadius,
-            scaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
+            uDensityScaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
         );
         // transmittance toward sun
         vec3 transToSun = exp(-opticalDepthToSun);
         float cosTheta = dot(dirLocal, lightDir);
         float rayleighPhase = phaseRayleigh(cosTheta);
         float miePhase = phaseMie(cosTheta, uMieAnisotropy);
-        vec3 rayleighScattering = uRayleighScatteringCoeff * rayleighPhase;
-        vec3 mieScattering = vec3(uMieScatteringCoeff * miePhase);
-        vec3 totalScattering = (rayleighScattering + mieScattering) * density;
+        // separate scattering contributions
+        vec3 rayleighScattering = uRayleighScatteringCoeff * densityR * rayleighPhase;
+        vec3 mieScattering      = vec3(uMieScatteringCoeff * densityM * miePhase);
+        vec3 totalScattering     = rayleighScattering + mieScattering;
         vec3 inScattered = totalScattering * uSunIntensity * transToSun;
         accumulatedColor += inScattered * accumulatedTransmittance * viewStepSize;
         accumulatedTransmittance *= stepTransmittance;

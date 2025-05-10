@@ -298,6 +298,9 @@ export class PlanetMaterials {
             // Expose fudgeFactor for dynamic updates
             uLimbFudgeFactor:      { value: fudgeFactor },
             uDensityScaleHeight:   { value: atm.densityScaleHeight || 0 },
+            // Separate scale heights for Rayleigh and Mie scattering
+            uRayleighScaleHeight:  { value: atm.rayleighScaleHeight !== undefined ? atm.rayleighScaleHeight : (atm.densityScaleHeight || 8.0) },
+            uMieScaleHeight:       { value: atm.mieScaleHeight !== undefined      ? atm.mieScaleHeight      : (atm.densityScaleHeight || 1.2) },
             uRayleighScatteringCoeff: { value: new THREE.Vector3().fromArray(atm.rayleighScatteringCoeff || [0, 0, 0]) },
             uMieScatteringCoeff:   { value: atm.mieScatteringCoeff || 0 },
             uMieAnisotropy:        { value: atm.mieAnisotropy || 0 },
