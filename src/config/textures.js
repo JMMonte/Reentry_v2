@@ -10,7 +10,7 @@ import mercuryTexture from '../assets/texture/8k_mercury.jpg';
 import venusTexture from '../assets/texture/8k_venus_surface.jpg';
 import venusAtmosphereTexture from '../assets/texture/4k_venus_atmosphere.jpg';
 import marsTexture from '../assets/texture/8k_mars.jpg';
-import marsBump from '../assets/texture/marsbump8k.png';
+import marsNormalTexture from '../assets/texture/MarsNormal.png';
 import jupiterTexture from '../assets/texture/8k_jupiter.jpg';
 import saturnTexture from '../assets/texture/8k_saturn.jpg';
 import saturnRingTexture from '../assets/texture/8k_saturn_ring_alpha.png';
@@ -33,7 +33,7 @@ export {
     venusTexture,
     venusAtmosphereTexture,
     marsTexture,
-    marsBump,
+    marsNormalTexture,
     jupiterTexture,
     saturnTexture,
     saturnRingTexture,

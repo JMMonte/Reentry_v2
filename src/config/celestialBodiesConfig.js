@@ -4,7 +4,7 @@ import {
     earthTexture, earthSpecTexture, earthNormalTexture,
     cloudTexture, moonTexture, moonBump,
     mercuryTexture, venusTexture, venusAtmosphereTexture,
-    marsTexture, marsBump, jupiterTexture, saturnTexture, saturnRingTexture,
+    marsTexture, marsNormalTexture, jupiterTexture, saturnTexture, saturnRingTexture,
     uranusTexture, neptuneTexture,
     ioTexture, europaTexture, ganymedeTexture, callistoTexture
 } from './textures.js';
@@ -85,7 +85,7 @@ export const celestialBodiesConfig = {
         groundStationsData: geojsonDataGroundStations,
         observatoriesData: geojsonDataObservatories,
         addLight: true,
-        lightOptions: { color: 0x6699ff, intensity: earthRadius *10, helper: false }, // scaled to scene radius
+        lightOptions: { color: 0x6699ff, intensity: earthRadius * 10, helper: false }, // scaled to scene radius
         lodLevels: generateLodLevelsForRadius(earthRadius),
         dotPixelSizeThreshold: 1,
         soiRadius: 145,
@@ -160,7 +160,7 @@ export const celestialBodiesConfig = {
         },
         missionsData: geojsonDataMissions,
         addLight: true,
-        lightOptions: { color: 0x6699ff, intensity: moonRadius * 10, helper: false }, // scaled to scene radius
+        lightOptions: { color: 0xffffff, intensity: moonRadius * 10, helper: false }, // scaled to scene radius
         lodLevels: generateLodLevelsForRadius(moonRadius),
         dotPixelSizeThreshold: 1,
         soiRadius: 10.3,
@@ -274,6 +274,8 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
+            // Increase limb fudge for a brighter bottom limb on Venus
+            limbFudgeFactor: 1.0,
             hazeIntensity: 0.6,
             thickness: 100, // km
             densityScaleHeight: 15.9, // km (approx)
@@ -318,8 +320,8 @@ export const celestialBodiesConfig = {
             createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('marsTexture'),
                 shininess: 5,
-                bumpMap: tm.getTexture('marsBump'),
-                bumpScale: 2.0
+                normalMap: tm.getTexture('marsNormalTexture'),
+                normalScale: new THREE.Vector2(0.5, 0.5)
             })
         },
         atmosphere: {
@@ -646,7 +648,7 @@ export const textureDefinitions = [
     { key: 'venusTexture', src: venusTexture },
     { key: 'venusAtmosphereTexture', src: venusAtmosphereTexture },
     { key: 'marsTexture', src: marsTexture },
-    { key: 'marsBump', src: marsBump },
+    { key: 'marsNormalTexture', src: marsNormalTexture },
     { key: 'jupiterTexture', src: jupiterTexture },
     { key: 'saturnTexture', src: saturnTexture },
     { key: 'saturnRingTexture', src: saturnRingTexture },

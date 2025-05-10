@@ -59,7 +59,7 @@ function createAtmosphereMaterial(earthRadius, {
         transparent: true,
         depthWrite: false,
         depthTest: true,
-        blending: THREE.NormalBlending,
+        blending: THREE.AdditiveBlending,
         uniforms: {
             lightPosition: { value: new THREE.Vector3(1, 0, 0) },
             lightIntensity: { value: baseLightIntensity },
@@ -280,7 +280,12 @@ export class PlanetMaterials {
         const polR = equR * (1.0 - (config.oblateness || 0.0));
         const coreY = polR / equR;
         // Create geometry at outer atmosphere boundary for proper backface halo
-        const radius = equR + (atm.thickness || 0);
+        const thickness = atm.thickness || 0;
+        // Add a slight fudge to the limb to avoid black gaps
+        const fudgeFactor = atm.limbFudgeFactor !== undefined ? atm.limbFudgeFactor : 0.2;
+        const extra = thickness * fudgeFactor;
+        // Geometry radius includes fudge
+        const radius = equR + thickness + extra;
         const geometry = new THREE.SphereGeometry(radius, 64, 64);
         // Use provided shaders if present, else fallback to default
         const vertexShader = options.vertexShader;
@@ -288,18 +293,21 @@ export class PlanetMaterials {
         const uniforms = {
             uPlanetRadius: { value: equR },
             uPolarRadius: { value: polR },
-            uAtmosphereHeight: { value: atm.thickness || 0 },
-            uDensityScaleHeight: { value: atm.densityScaleHeight || 0 },
+            // Uniform atmosphere height includes same fudge
+            uAtmosphereHeight:     { value: thickness * (1.0 + fudgeFactor) },
+            // Expose fudgeFactor for dynamic updates
+            uLimbFudgeFactor:      { value: fudgeFactor },
+            uDensityScaleHeight:   { value: atm.densityScaleHeight || 0 },
             uRayleighScatteringCoeff: { value: new THREE.Vector3().fromArray(atm.rayleighScatteringCoeff || [0, 0, 0]) },
-            uMieScatteringCoeff: { value: atm.mieScatteringCoeff || 0 },
-            uMieAnisotropy: { value: atm.mieAnisotropy || 0 },
-            uNumLightSteps: { value: atm.numLightSteps || 4 },
-            uSunIntensity: { value: atm.sunIntensity || 1.0 },
-            uPlanetFrame: { value: new THREE.Matrix3() },
-            uSunPosition: { value: new THREE.Vector3() },
-            uCameraPosition: { value: new THREE.Vector3() },
-            uPlanetPositionWorld: { value: new THREE.Vector3() },
-            uHazeIntensity: { value: atm.hazeIntensity !== undefined ? atm.hazeIntensity : 1.0 },
+            uMieScatteringCoeff:   { value: atm.mieScatteringCoeff || 0 },
+            uMieAnisotropy:        { value: atm.mieAnisotropy || 0 },
+            uNumLightSteps:        { value: atm.numLightSteps || 4 },
+            uSunIntensity:         { value: atm.sunIntensity || 1.0 },
+            uPlanetFrame:          { value: new THREE.Matrix3() },
+            uSunPosition:          { value: new THREE.Vector3() },
+            uCameraPosition:       { value: new THREE.Vector3() },
+            uPlanetPositionWorld:  { value: new THREE.Vector3() },
+            uHazeIntensity:        { value: atm.hazeIntensity !== undefined ? atm.hazeIntensity : 1.0 },
         };
         const material = new THREE.ShaderMaterial({
             uniforms,

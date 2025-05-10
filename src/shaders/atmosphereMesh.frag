@@ -11,10 +11,7 @@ uniform float uSunIntensity;
 uniform vec3 uCameraPosition; // Camera position in world space
 
 // Raymarching parameters
-uniform int uNumLightSteps;   // Steps for light scattering
-// const int MIN_VIEW_STEPS = 2;
-const int MAX_VIEW_STEPS = 16; // Can increase for mesh shader
-// const float VIEW_STEPS_SCALE_FACTOR = 0.1; // Adjust if needed
+uniform int uNumLightSteps;   // Steps for light and view sampling
 
 // Atmosphere properties
 uniform float uDensityScaleHeight; // Scale height for density falloff
@@ -84,26 +81,21 @@ vec3 calculateOpticalDepthEllipsoid(
     float scaleHeight, vec3 rayleighCoeff, float mieCoeff
 ) {
     vec2 atmIsect = intersectEllipsoid(rayOrigin, rayDir, aAtm, bAtm);
-    if(atmIsect.y < 0.0)
-        return vec3(0.0);
+    if(atmIsect.y < 0.0) return vec3(0.0);
     float rayStart = max(0.0, atmIsect.x);
-    float rayEnd = atmIsect.y;
-    vec2 plIsect = intersectEllipsoid(rayOrigin, rayDir, aPl, bPl);
-    if(plIsect.x > 0.0 && plIsect.x < rayEnd)
-        return vec3(1000.0); // Hit planet
+    float rayEnd   = atmIsect.y;
     float stepSize = (rayEnd - rayStart) / float(numStepsLight);
     vec3 opticalDepth = vec3(0.0);
-    for(int j = 0; j < MAX_VIEW_STEPS; ++j) { // Use MAX_VIEW_STEPS as limit
-        if(j >= numStepsLight)
-            break;
+    for(int j = 0; j < numStepsLight; ++j) {
         float t = rayStart + (float(j) + 0.5) * stepSize;
         vec3 samplePos = rayOrigin + rayDir * t;
         float height = ellipsoidAltitude(samplePos, aPl, bPl);
-        if(height < 0.0)
-            continue;
+        if(height < 0.0) continue;
         float density = getDensity(height, scaleHeight);
-        vec3 extinctionCoeff = (rayleighCoeff + mieCoeff) * density;
-        opticalDepth += extinctionCoeff * stepSize;
+        // separate Rayleigh and Mie extinction
+        vec3 rayExt = rayleighCoeff * density;
+        vec3 mieExt = vec3(mieCoeff * density);
+        opticalDepth += (rayExt + mieExt) * stepSize;
     }
     return opticalDepth;
 }
@@ -154,24 +146,36 @@ void main() {
     vec3 accumulatedColor = vec3(0.0);
     vec3 accumulatedTransmittance = vec3(1.0);
     float scaleHeight = uDensityScaleHeight;
-    int numSteps = uNumLightSteps;
-    float stepSize = (tEnd - tStart) / float(numSteps);
-    for (int i = 0; i < MAX_VIEW_STEPS; ++i) {
-        if (i >= numSteps) break;
-        float t = tStart + (float(i) + 0.5) * stepSize;
+    // view-ray integration using uNumLightSteps
+    int viewSteps = uNumLightSteps;
+    float viewStepSize = (tEnd - tStart) / float(viewSteps);
+    for (int i = 0; i < viewSteps; ++i) {
+        float t = tStart + (float(i) + 0.5) * viewStepSize;
         vec3 samplePos = eyeLocal + dirLocal * t;
         float height = ellipsoidAltitude(samplePos, planetEquatorialRadius, planetPolarRadius);
         if (height < 0.0) continue;
         float density = getDensity(height, scaleHeight);
-        vec3 extinctionCoeff = (uRayleighScatteringCoeff + uMieScatteringCoeff) * density;
-        vec3 stepTransmittance = exp(-extinctionCoeff * stepSize);
+        // extinction for view transmittance
+        vec3 rayExt = uRayleighScatteringCoeff * density;
+        vec3 mieExt = vec3(uMieScatteringCoeff * density);
+        vec3 extinctionCoeff = rayExt + mieExt;
+        vec3 stepTransmittance = exp(-extinctionCoeff * viewStepSize);
         vec3 lightDir = normalize(sunLocal - samplePos);
+
+        // skip in-scatter if this sample is shadowed by planet
+        vec2 sunPlanetIsect = intersectEllipsoid(samplePos, lightDir, planetEquatorialRadius, planetPolarRadius);
+        if (sunPlanetIsect.x > 0.0 && sunPlanetIsect.x < sunPlanetIsect.y) {
+            accumulatedTransmittance *= stepTransmittance;
+            continue;
+        }
+        // compute optical depth to sun
         vec3 opticalDepthToSun = calculateOpticalDepthEllipsoid(
-            samplePos, lightDir, numSteps, // use same numSteps for light
+            samplePos, lightDir, uNumLightSteps,
             atmEquatorialRadius, atmPolarRadius,
             planetEquatorialRadius, planetPolarRadius,
             scaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
         );
+        // transmittance toward sun
         vec3 transToSun = exp(-opticalDepthToSun);
         float cosTheta = dot(dirLocal, lightDir);
         float rayleighPhase = phaseRayleigh(cosTheta);
@@ -180,7 +184,7 @@ void main() {
         vec3 mieScattering = vec3(uMieScatteringCoeff * miePhase);
         vec3 totalScattering = (rayleighScattering + mieScattering) * density;
         vec3 inScattered = totalScattering * uSunIntensity * transToSun;
-        accumulatedColor += inScattered * accumulatedTransmittance * stepSize;
+        accumulatedColor += inScattered * accumulatedTransmittance * viewStepSize;
         accumulatedTransmittance *= stepTransmittance;
         if (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z < 3e-5) {
             break;

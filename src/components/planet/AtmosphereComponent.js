@@ -18,6 +18,10 @@ export class AtmosphereComponent {
         const polR = planet.radius * (1 - planet.oblateness);
         const equAtm = equR + planet.atmosphereThickness;
         const polAtm = polR + planet.atmosphereThickness;
+
+        // Store initial atmosphere equatorial radius for dynamic scaling
+        this._baseEquAtm = equAtm;
+
         const yScale = equAtm === 0 ? 1 : polAtm / equAtm;
         outer.scale.set(1, yScale, 1);
         // Render order for the atmosphere mesh
@@ -73,9 +77,25 @@ export class AtmosphereComponent {
             // Planet center & radius
             mat.uniforms.uPlanetPositionWorld.value.copy(this._planetPos);
             if (mat.uniforms.uPlanetRadius) mat.uniforms.uPlanetRadius.value = this.planet.radius;
-            if (mat.uniforms.uAtmosphereHeight) mat.uniforms.uAtmosphereHeight.value = this.planet.atmosphereThickness;
+            if (mat.uniforms.uAtmosphereHeight) {
+                const thickness = this.planet.atmosphereThickness;
+                // preserve the same fudge factor set in the material
+                const fudge = mat.uniforms.uLimbFudgeFactor ? mat.uniforms.uLimbFudgeFactor.value : 0;
+                mat.uniforms.uAtmosphereHeight.value = thickness * (1.0 + fudge);
+            }
 
         }
+
+        // Update mesh scale if atmosphere thickness changed
+        const equR = this.planet.radius;
+        const polR = equR * (1 - this.planet.oblateness);
+        const newAtmHeight = this.planet.atmosphereThickness;
+        const newEquAtm = equR + newAtmHeight;
+        const newPolAtm = polR + newAtmHeight;
+        const baseEquAtm = this._baseEquAtm;
+        const scaleXZ = baseEquAtm === 0 ? 1 : newEquAtm / baseEquAtm;
+        const scaleY = baseEquAtm === 0 ? 1 : newPolAtm / baseEquAtm;
+        this.mesh.scale.set(scaleXZ, scaleY, scaleXZ);
     }
 
     dispose() {
