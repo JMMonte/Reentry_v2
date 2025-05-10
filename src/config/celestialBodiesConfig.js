@@ -402,19 +402,20 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            // Warm, hazy rim similar to Venus
-            hazeIntensity: 2.6,
-            thickness: 7000, // km
-            densityScaleHeightFraction: 0.003,
-            rayleighScaleHeight: 71492 * 0.003,  // ≈214.5 km
+            // Haze parameters copied from Venus for strong rim effect
+            limbFudgeFactor: 1.0,
+            hazeIntensity: 3.0,
+            thickness: 100, // km
+            densityScaleHeight: 15.9, // km
+            rayleighScaleHeight: 15.9,
             mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.01, 0.008, 0.005],
             mieScatteringCoeff: 0.015,
             mieAnisotropy: 0.7,
             numLightSteps: 4,
-            sunIntensity: 3.0, // Base intensity (dynamic scaling handles distance)
-            equatorialRadius: 71492, // km
-            polarRadius: 66854, // km
+            sunIntensity: 12.0,
+            equatorialRadius: 71492,
+            polarRadius: 66854,
         },
         // Sphere-of-influence multiplier for Jupiter
         soiRadius: 690,
@@ -608,16 +609,17 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            hazeIntensity: 2.0,
-            thickness: 5800, // km
-            densityScaleHeightFraction: 0.003,
-            rayleighScaleHeight: 60268 * 0.003, // ≈180.8 km
+            limbFudgeFactor: 1.0,
+            hazeIntensity: 3.0,
+            thickness: 100, // km
+            densityScaleHeight: 15.9, // km
+            rayleighScaleHeight: 15.9,
             mieScaleHeight: 1.2,
-            rayleighScatteringCoeff: [0.018, 0.036, 0.108],
-            mieScatteringCoeff: 0.009,
-            mieAnisotropy: 0.5,
+            rayleighScatteringCoeff: [0.01, 0.008, 0.005],
+            mieScatteringCoeff: 0.015,
+            mieAnisotropy: 0.7,
             numLightSteps: 4,
-            sunIntensity: 2.5,
+            sunIntensity: 12.0,
             equatorialRadius: 60268, // km
             polarRadius: 54364, // km
         },
@@ -658,16 +660,17 @@ export const celestialBodiesConfig = {
             })
         },
         atmosphere: {
-            hazeIntensity: 2.0,
-            thickness: 2500, // km
-            densityScaleHeightFraction: 0.003,
-            rayleighScaleHeight: 25559 * 0.003, // ≈76.7 km
+            limbFudgeFactor: 1.0,
+            hazeIntensity: 3.0,
+            thickness: 100, // km
+            densityScaleHeight: 15.9, // km
+            rayleighScaleHeight: 15.9,
             mieScaleHeight: 1.2,
-            rayleighScatteringCoeff: [0.012, 0.024, 0.072],
-            mieScatteringCoeff: 0.006,
-            mieAnisotropy: 0.5,
+            rayleighScatteringCoeff: [0.01, 0.008, 0.005],
+            mieScatteringCoeff: 0.015,
+            mieAnisotropy: 0.7,
             numLightSteps: 4,
-            sunIntensity: 1.5,
+            sunIntensity: 12.0,
             equatorialRadius: 25559, // km
             polarRadius: 24973, // km
         },
@@ -738,16 +741,17 @@ export const celestialBodiesConfig = {
             resolution: 256
         },
         atmosphere: {
-            hazeIntensity: 2.0,
-            thickness: 2400, // km
-            densityScaleHeightFraction: 0.003,
-            rayleighScaleHeight: 24764 * 0.003, // ≈74.3 km
+            limbFudgeFactor: 1.0,
+            hazeIntensity: 3.0,
+            thickness: 100, // km
+            densityScaleHeight: 15.9, // km
+            rayleighScaleHeight: 15.9,
             mieScaleHeight: 1.2,
-            rayleighScatteringCoeff: [0.012, 0.024, 0.072],
-            mieScatteringCoeff: 0.006,
-            mieAnisotropy: 0.5,
+            rayleighScatteringCoeff: [0.01, 0.008, 0.005],
+            mieScatteringCoeff: 0.015,
+            mieAnisotropy: 0.7,
             numLightSteps: 4,
-            sunIntensity: 1.5,
+            sunIntensity: 12.0,
             equatorialRadius: 24764, // km
             polarRadius: 24341, // km
         },
