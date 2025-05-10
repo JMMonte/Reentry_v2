@@ -560,4 +560,19 @@ export const textureDefinitions = [
 
 // Add other scene-wide configs if needed
 export const ambientLightConfig = { color: 0xffffff, intensity: 0.1 };
-export const bloomConfig = { strength: 0.3, radius: 0.999, threshold: 0.99 }; 
+export const bloomConfig = { strength: 0.3, radius: 0.999, threshold: 0.99 };
+
+// Orbit colors for each celestial body orbit
+export const orbitColors = {
+    emb: 0x888888,
+    barycenter: 0x888888,
+    earth: 0x3366cc,
+    moon: 0xcccccc,
+    mercury: 0x999999,
+    venus: 0xffcc66,
+    mars: 0xff3300,
+    jupiter: 0xff9933,
+    saturn: 0xffff66,
+    uranus: 0x66ccff,
+    neptune: 0x3366ff
+}; 
