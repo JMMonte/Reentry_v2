@@ -41,12 +41,28 @@ class Attractor {
 
     updatePositionAstronomy(julianDate) {
         const kmPerAU = Constants.AU * Constants.metersToKm;
-        if (this.nameLower === 'barycenter' || this.nameLower === 'sun' || !isAEBody(this._aeName)) {
-            // Static origin for barycenter and sun, or unsupported bodies
+        // Special-case: Galilean moons (jovicentric) using Astronomy Engine's JupiterMoons
+        const galilean = ['io', 'europa', 'ganymede', 'callisto'];
+        if (galilean.includes(this.nameLower)) {
+            // Jupiter barycentric position in AU
+            const jupAE = getAEBodyName('jupiter');
+            const jupState = AE.BaryState(AE.Body[jupAE], julianDate);
+            const jupEcl = AE.Ecliptic(jupState).vec;
+            // Jovicentric moon position in AU
+            const jm = AE.JupiterMoons(julianDate);
+            const sv = jm[this.nameLower];
+            const moonEcl = AE.Ecliptic(sv).vec;
+            // Sum to get barycentric moon position in km
+            this.position.x = (jupEcl.x + moonEcl.x) * kmPerAU;
+            this.position.y = (jupEcl.y + moonEcl.y) * kmPerAU;
+            this.position.z = (jupEcl.z + moonEcl.z) * kmPerAU;
+        } else if (this.nameLower === 'barycenter' || this.nameLower === 'sun' || !isAEBody(this._aeName)) {
+            // Static origin for barycenter, sun, or unsupported bodies
             this.position.x = 0;
             this.position.y = 0;
             this.position.z = 0;
         } else {
+            // Standard barycentric ephemeris
             const equState = AE.BaryState(AE.Body[this._aeName], julianDate);
             const vec = AE.Ecliptic(equState).vec;
             this.position.x = vec.x * kmPerAU;
@@ -273,8 +289,11 @@ export class PhysicsWorld {
                 useRelative = false;
             }
         }
+        // Prepare body name for Astronomy Engine calls
         const childAE = getAEBodyName(key);
-        if (!isAEBody(childAE)) {
+        // Detect Galilean moons and compute via JupiterMoons
+        const isJupiterMoon = ['io','europa','ganymede','callisto'].includes(key);
+        if (!isJupiterMoon && !isAEBody(childAE)) {
             console.warn(`[PhysicsWorld] Skipping orbit for unsupported body: ${bodyName}`);
             return [];
         }
@@ -328,7 +347,15 @@ export class PhysicsWorld {
         const positions = [];
         for (let i = 0; i <= numSteps; i++) {
             const jd = startJD + (i * (periodDays / numSteps));
-            // Child barycentric position
+            if (isJupiterMoon) {
+                // Jovicentric state vectors for Galilean moons
+                const jmInfo = AE.JupiterMoons(jd);
+                const sv = jmInfo[key];
+                const ecl = AE.Ecliptic(sv).vec;
+                positions.push({ x: ecl.x * kmPerAU, y: ecl.y * kmPerAU, z: ecl.z * kmPerAU });
+                continue;
+            }
+            // Child barycentric position for planets
             const cstate = AE.BaryState(AE.Body[childAE], jd);
             const cecl = AE.Ecliptic(cstate).vec;
             const childPos = { x: cecl.x * kmPerAU, y: cecl.y * kmPerAU, z: cecl.z * kmPerAU };
@@ -336,10 +363,9 @@ export class PhysicsWorld {
             if (useRelative) {
                 const pstate = AE.BaryState(AE.Body[parentAEName], jd);
                 const pecl = AE.Ecliptic(pstate).vec;
-                const parentPos = { x: pecl.x * kmPerAU, y: pecl.y * kmPerAU, z: pecl.z * kmPerAU };
-                childPos.x -= parentPos.x;
-                childPos.y -= parentPos.y;
-                childPos.z -= parentPos.z;
+                childPos.x -= pecl.x * kmPerAU;
+                childPos.y -= pecl.y * kmPerAU;
+                childPos.z -= pecl.z * kmPerAU;
             }
             positions.push(childPos);
         }

@@ -5,7 +5,8 @@ import {
     cloudTexture, moonTexture, moonBump,
     mercuryTexture, venusTexture, venusAtmosphereTexture,
     marsTexture, marsBump, jupiterTexture, saturnTexture, saturnRingTexture,
-    uranusTexture, neptuneTexture
+    uranusTexture, neptuneTexture,
+    ioTexture, europaTexture, ganymedeTexture, callistoTexture
 } from './textures.js';
 import geojsonDataSovereignty from './ne_50m_admin_0_sovereignty.json';
 import geojsonDataStates from './ne_110m_admin_1_states_provinces.json';
@@ -391,6 +392,87 @@ export const celestialBodiesConfig = {
         },
         parent: 'barycenter'
     },
+    // Galilean moons of Jupiter
+    io: {
+        name: 'io',
+        symbol: '♃1',
+        parent: 'jupiter',
+        mass: 8.931938e22, // kg
+        radius: 1821.6,   // km
+        orbitElements: {
+            semiMajorAxis: 421800000,               // m
+            eccentricity: 0.0041,
+            inclination: 0.036 * (Math.PI / 180),   // rad
+            longitudeOfAscendingNode: 43.977 * (Math.PI / 180), // rad
+            argumentOfPeriapsis: 84.129 * (Math.PI / 180),      // rad
+            mu: Constants.G * 1.8982e27             // m^3/s^2 (Jupiter)
+        },
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
+                map: tm.getTexture('ioTexture')
+            })
+        },
+    },
+    europa: {
+        name: 'europa',
+        symbol: '♃2',
+        parent: 'jupiter',
+        mass: 4.799844e22, // kg
+        radius: 1560.8,   // km
+        orbitElements: {
+            semiMajorAxis: 671034000,               // m
+            eccentricity: 0.009,                    
+            inclination: 0.466 * (Math.PI / 180),   // rad
+            longitudeOfAscendingNode: 219.106 * (Math.PI / 180),
+            argumentOfPeriapsis: 88.97 * (Math.PI / 180),
+            mu: Constants.G * 1.8982e27
+        },
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
+                map: tm.getTexture('europaTexture')
+            })
+        },
+    },
+    ganymede: {
+        name: 'ganymede',
+        symbol: '♃3',
+        parent: 'jupiter',
+        mass: 1.4819e23,  // kg
+        radius: 2634.1,   // km
+        orbitElements: {
+            semiMajorAxis: 1070412000,              // m
+            eccentricity: 0.0013,
+            inclination: 0.177 * (Math.PI / 180),   // rad
+            longitudeOfAscendingNode: 63.552 * (Math.PI / 180),
+            argumentOfPeriapsis: 192.417 * (Math.PI / 180),
+            mu: Constants.G * 1.8982e27
+        },
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
+                map: tm.getTexture('ganymedeTexture')
+            })
+        },
+    },
+    callisto: {
+        name: 'callisto',
+        symbol: '♃4',
+        parent: 'jupiter',
+        mass: 1.0759e23,  // kg
+        radius: 2410.3,   // km
+        orbitElements: {
+            semiMajorAxis: 1882709000,              // m
+            eccentricity: 0.0074,
+            inclination: 0.192 * (Math.PI / 180),   // rad
+            longitudeOfAscendingNode: 298.848 * (Math.PI / 180),
+            argumentOfPeriapsis: 52.643 * (Math.PI / 180),
+            mu: Constants.G * 1.8982e27
+        },
+        materials: {
+            createSurfaceMaterial: (tm) => new THREE.MeshPhongMaterial({
+                map: tm.getTexture('callistoTexture')
+            })
+        },
+    },
     saturn: {
         name: 'saturn',
         symbol: '♄',
@@ -556,6 +638,10 @@ export const textureDefinitions = [
     { key: 'saturnRingTexture', src: saturnRingTexture },
     { key: 'uranusTexture', src: uranusTexture },
     { key: 'neptuneTexture', src: neptuneTexture },
+    { key: 'ioTexture', src: ioTexture },
+    { key: 'europaTexture', src: europaTexture },
+    { key: 'ganymedeTexture', src: ganymedeTexture },
+    { key: 'callistoTexture', src: callistoTexture },
 ];
 
 // Add other scene-wide configs if needed

@@ -16,6 +16,10 @@ import saturnTexture from '../assets/texture/8k_saturn.jpg';
 import saturnRingTexture from '../assets/texture/8k_saturn_ring_alpha.png';
 import uranusTexture from '../assets/texture/2k_uranus.jpg';
 import neptuneTexture from '../assets/texture/2k_neptune.jpg';
+import ioTexture from '../assets/texture/Io.png';
+import europaTexture from '../assets/texture/Europa.png';
+import ganymedeTexture from '../assets/texture/ganymede.jpg';
+import callistoTexture from '../assets/texture/Callisto.png';
 
 export {
     earthTexture,
@@ -34,5 +38,9 @@ export {
     saturnTexture,
     saturnRingTexture,
     uranusTexture,
-    neptuneTexture
+    neptuneTexture,
+    ioTexture,
+    europaTexture,
+    ganymedeTexture,
+    callistoTexture
 };

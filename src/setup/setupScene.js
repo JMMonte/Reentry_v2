@@ -139,6 +139,10 @@ export async function initScene(app) {
         { key: 'venus', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
         { key: 'mars', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
         { key: 'jupiter', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
+        { key: 'io', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
+        { key: 'europa', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
+        { key: 'ganymede', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
+        { key: 'callisto', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
         { key: 'saturn', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
         { key: 'uranus', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
         { key: 'neptune', ctor: Planet, args: [scene, renderer, timeUtils, textureManager] },
@@ -152,7 +156,8 @@ export async function initScene(app) {
     app.celestialBodies = [
         app.earth, app.moon, app.sun, app.emb,
         app.mercury, app.venus, app.mars,
-        app.jupiter, app.saturn, app.uranus, app.neptune
+        app.jupiter, app.io, app.europa, app.ganymede, app.callisto,
+        app.saturn, app.uranus, app.neptune
     ];
     // create vectors only for planetary bodies (skip Sun)
     app.planetVectors = app.celestialBodies
