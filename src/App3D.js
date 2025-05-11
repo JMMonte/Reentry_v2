@@ -20,6 +20,7 @@ import { DisplaySettingsManager } from './managers/DisplaySettingsManager.js';
 import { SceneManager } from './managers/SceneManager.js';
 import { SimulationStateManager } from './managers/SimulationStateManager.js';
 import { SimulationLoop } from './simulation/SimulationLoop.js';
+import { SocketManager } from './managers/SocketManager.js';
 
 // Controls
 import { CameraControls } from './controls/CameraControls.js';
@@ -37,6 +38,7 @@ import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 import { PhysicsWorld } from './world/PhysicsWorld.js';
 import { OrbitManager } from './managers/OrbitManager.js';
 import { celestialBodiesConfig } from './config/celestialBodiesConfig.js';
+import { setupSocketListeners } from './setup/setupListeners.js';
 
 // Domain helpers
 import {
@@ -94,6 +96,7 @@ class App3D extends EventTarget {
         this._satellites = new SatelliteManager(this);
         this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
+        this.socketManager = new SocketManager(this);
 
         // — Misc util — --------------------------------------------------------
         this._timeUtils = new TimeUtils({ simulatedTime: new Date().toISOString() });
@@ -169,6 +172,10 @@ class App3D extends EventTarget {
             this._injectStatsPanel();
             this._wireResizeListener();
 
+            // Initialize socket manager and wire message listeners
+            this.socketManager.init();
+            setupSocketListeners(this, this.socketManager.socket);
+
             // Simulation heartbeat
             this.simulationLoop = new SimulationLoop({
                 app: this,
@@ -179,9 +186,6 @@ class App3D extends EventTarget {
                 stats: this.stats
             });
             this.simulationLoop.start();
-
-            // Display settings must run *after* everything exists
-            this.displaySettingsManager.applyAll();
 
             this._isInitialized = true;
             this._dispatchSceneReady();

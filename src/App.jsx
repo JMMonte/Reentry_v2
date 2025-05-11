@@ -1,5 +1,4 @@
 import React, { useState, useEffect, createContext, useRef } from 'react';
-import { getSocket } from './socket';
 import { ThemeProvider } from './components/ui/theme-provider';
 import { Layout } from './components/ui/Layout';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
@@ -349,7 +348,7 @@ ${shareUrl}`);
   const chatModalProps = {
     isOpen: isChatVisible,
     onClose: () => setIsChatVisible(false),
-    socket: getSocket()
+    socket: controller?.app3d?.socketManager?.socket
   };
   const displayOptionsProps = {
     settings: displaySettings,

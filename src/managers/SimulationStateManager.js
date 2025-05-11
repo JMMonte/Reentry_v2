@@ -170,8 +170,8 @@ export class SimulationStateManager {
                 this.app.displaySettingsManager.updateSetting(key, value);
             });
             if (this.app.displaySettingsManager.getSetting('showSatConnections')) {
-                this.app._handleShowSatConnectionsChange(true);
-                this.app._updateConnectionsWorkerSatellites();
+                // Enable satellite connections via display setting to trigger proper toggles
+                this.app.updateDisplaySetting('showSatConnections', true);
             }
         }
     }

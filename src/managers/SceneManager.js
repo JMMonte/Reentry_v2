@@ -31,6 +31,9 @@ export class SceneManager {
 
         // EffectComposer instances
         this.composers = {};
+
+        this._lastOrbitUpdateJD = null;
+        this._orbitUpdateThreshold = 0.01; // days
     }
 
     /** Initialise scene, physics, post-processing and helpers. */
@@ -114,15 +117,24 @@ export class SceneManager {
     updateFrame() {
         this._syncBodiesAndPhysics();
         this._updateVectors();
-        this._updateSatelliteLinks();
         this._resizePOIs();
         this._updateLensFlare();
-        this._applyDisplaySettings();
     }
 
     _syncBodiesAndPhysics() {
-        const { physicsWorld, sun, satellites, camera } = this.app;
+        const { physicsWorld, sun, satellites, camera, orbitManager } = this.app;
         physicsWorld.update();
+        // Only update orbits if time has changed enough
+        const currentJD = physicsWorld.timeUtils.getJulianDate();
+        if (
+            !this._lastOrbitUpdateJD ||
+            Math.abs(currentJD - this._lastOrbitUpdateJD) > this._orbitUpdateThreshold
+        ) {
+            if (orbitManager && typeof orbitManager.update === 'function') {
+                orbitManager.update();
+            }
+            this._lastOrbitUpdateJD = currentJD;
+        }
         if (sun && physicsWorld?.bodies) {
             const sunBody = physicsWorld.bodies.find(b => b.nameLower === 'sun');
             if (sunBody?.position) {
@@ -167,6 +179,8 @@ export class SceneManager {
                 satVis.updatePosition(posM, velM, psat.debug);
             }
         });
+        // Only update radial grids when grid setting is enabled
+        const showGrid = this.app.displaySettingsManager.getSetting('showGrid');
         const bodiesByKey = new Map(physicsWorld.bodies.map(b => [b.name.toLowerCase(), b]));
         const alpha = 1;
         const cam = camera;
@@ -200,8 +214,10 @@ export class SceneManager {
                 p.getOrbitGroup().position.set(x, y, z);
             }
             p.updateAxisHelperPosition?.();
-            p.radialGrid?.updatePosition();
-            p.radialGrid?.updateFading(cam);
+            if (showGrid) {
+                p.radialGrid?.updatePosition();
+                p.radialGrid?.updateFading(cam);
+            }
             p.getOrbitGroup().updateMatrixWorld(true);
             p.update();
         }
@@ -224,19 +240,17 @@ export class SceneManager {
 
     _updateVectors() {
         const { displaySettingsManager, planetVectors, satelliteVectors, camera } = this.app;
-        if (displaySettingsManager.getSetting('showVectors')) {
-            planetVectors?.forEach(v => {
+        const showVectors = displaySettingsManager.getSetting('showVectors');
+        if (showVectors && planetVectors) {
+            planetVectors.forEach(v => {
                 v.updateVectors?.();
                 v.updateFading?.(camera);
             });
         }
-        if (displaySettingsManager.getSetting('showSatVectors')) {
-            satelliteVectors?.updateSatelliteVectors?.();
+        const showSatVectors = displaySettingsManager.getSetting('showSatVectors');
+        if (showSatVectors && satelliteVectors) {
+            satelliteVectors.updateSatelliteVectors?.();
         }
-    }
-
-    _updateSatelliteLinks() {
-        if (this.app._connectionsEnabled) this.app._syncConnectionsWorker();
     }
 
     _resizePOIs() {
@@ -264,9 +278,5 @@ export class SceneManager {
         if (this.app.sun) {
             this.app.sun.updateLensFlare(this.app.camera);
         }
-    }
-
-    _applyDisplaySettings() {
-        this.app.displaySettingsManager.applyAll();
     }
 }

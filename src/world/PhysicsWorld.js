@@ -226,11 +226,11 @@ export class PhysicsWorld {
         this.satellites.forEach(sat => {
             // Integrate one step: convert km->m for position and velocity
             const posM = [sat.position.x * Constants.kmToMeters,
-                          sat.position.y * Constants.kmToMeters,
-                          sat.position.z * Constants.kmToMeters];
+            sat.position.y * Constants.kmToMeters,
+            sat.position.z * Constants.kmToMeters];
             const velM = [sat.velocity.x * Constants.kmToMeters,
-                          sat.velocity.y * Constants.kmToMeters,
-                          sat.velocity.z * Constants.kmToMeters];
+            sat.velocity.y * Constants.kmToMeters,
+            sat.velocity.z * Constants.kmToMeters];
             const result = adaptiveIntegrate(
                 posM,
                 velM,
@@ -292,7 +292,7 @@ export class PhysicsWorld {
         // Prepare body name for Astronomy Engine calls
         const childAE = getAEBodyName(key);
         // Detect Galilean moons and compute via JupiterMoons
-        const isJupiterMoon = ['io','europa','ganymede','callisto'].includes(key);
+        const isJupiterMoon = ['io', 'europa', 'ganymede', 'callisto'].includes(key);
         if (!isJupiterMoon && !isAEBody(childAE)) {
             console.warn(`[PhysicsWorld] Skipping orbit for unsupported body: ${bodyName}`);
             return [];
@@ -357,18 +357,87 @@ export class PhysicsWorld {
             }
             // Child barycentric position for planets
             const cstate = AE.BaryState(AE.Body[childAE], jd);
-            const cecl = AE.Ecliptic(cstate).vec;
-            const childPos = { x: cecl.x * kmPerAU, y: cecl.y * kmPerAU, z: cecl.z * kmPerAU };
+            const cecl = AE.Ecliptic(cstate);
+            const childPos = { x: cecl.vec.x * kmPerAU, y: cecl.vec.y * kmPerAU, z: cecl.vec.z * kmPerAU };
             // Subtract parent if requested
             if (useRelative) {
                 const pstate = AE.BaryState(AE.Body[parentAEName], jd);
-                const pecl = AE.Ecliptic(pstate).vec;
-                childPos.x -= pecl.x * kmPerAU;
-                childPos.y -= pecl.y * kmPerAU;
-                childPos.z -= pecl.z * kmPerAU;
+                const pecl = AE.Ecliptic(pstate);
+                childPos.x -= pecl.vec.x * kmPerAU;
+                childPos.y -= pecl.vec.y * kmPerAU;
+                childPos.z -= pecl.vec.z * kmPerAU;
             }
             positions.push(childPos);
         }
         return positions;
+    }
+
+    /**
+     * Get the current state vector (position, velocity) for a body in the ecliptic frame, km/km/s, relative to parent if given.
+     * Both position and velocity are derived from AE.Ecliptic (position directly, velocity by finite differencing AE.Ecliptic positions).
+     * For relative orbits, subtract parent AE.Ecliptic position/velocity from child, both in AU and AU/day, then convert to km/km/s.
+     * @param {string} bodyName - Name of the body (e.g. 'earth')
+     * @param {string} [parentName] - Name of the parent body (e.g. 'sun')
+     * @returns {{ position: {x, y, z}, velocity: {x, y, z} }}
+     */
+    getBodyStateVectorEcliptic(bodyName, parentName) {
+        const key = bodyName.toLowerCase();
+        const parentKey = parentName ? parentName.toLowerCase() : null;
+        const childAE = getAEBodyName(key);
+        const parentAE = parentKey ? getAEBodyName(parentKey) : null;
+        if (!isAEBody(childAE)) return null;
+        const jd = this.timeUtils.getJulianDate();
+        const dt = 1e-4; // days (~8.6 seconds)
+        // --- Get child AE.Ecliptic positions at jd and jd+dt ---
+        const cecl1 = AE.Ecliptic(AE.BaryState(AE.Body[childAE], jd));
+        const cecl2 = AE.Ecliptic(AE.BaryState(AE.Body[childAE], jd + dt));
+        // Position in AU
+        const posEcl1 = { x: cecl1.vec.x, y: cecl1.vec.y, z: cecl1.vec.z };
+        const posEcl2 = { x: cecl2.vec.x, y: cecl2.vec.y, z: cecl2.vec.z };
+        // Velocity in AU/day (finite difference)
+        const velEclAU = {
+            x: (posEcl2.x - posEcl1.x) / dt,
+            y: (posEcl2.y - posEcl1.y) / dt,
+            z: (posEcl2.z - posEcl1.z) / dt
+        };
+        let posAU = { ...posEcl1 };
+        let velAU = { ...velEclAU };
+        // --- If parent, subtract parent AE.Ecliptic state (in AU/AU/day) ---
+        if (parentAE && isAEBody(parentAE)) {
+            const pecl1 = AE.Ecliptic(AE.BaryState(AE.Body[parentAE], jd));
+            const pecl2 = AE.Ecliptic(AE.BaryState(AE.Body[parentAE], jd + dt));
+            const pposEcl1 = { x: pecl1.vec.x, y: pecl1.vec.y, z: pecl1.vec.z };
+            const pposEcl2 = { x: pecl2.vec.x, y: pecl2.vec.y, z: pecl2.vec.z };
+            const pvelEclAU = {
+                x: (pposEcl2.x - pposEcl1.x) / dt,
+                y: (pposEcl2.y - pposEcl1.y) / dt,
+                z: (pposEcl2.z - pposEcl1.z) / dt
+            };
+            // Subtract parent from child (in AU/AU/day)
+            posAU = {
+                x: posEcl1.x - pposEcl1.x,
+                y: posEcl1.y - pposEcl1.y,
+                z: posEcl1.z - pposEcl1.z
+            };
+            velAU = {
+                x: velEclAU.x - pvelEclAU.x,
+                y: velEclAU.y - pvelEclAU.y,
+                z: velEclAU.z - pvelEclAU.z
+            };
+        }
+        // --- Convert to km and km/s ---
+        const kmPerAU = Constants.AU * Constants.metersToKm;
+        const secPerDay = Constants.secondsInDay;
+        const pos = {
+            x: posAU.x * kmPerAU,
+            y: posAU.y * kmPerAU,
+            z: posAU.z * kmPerAU
+        };
+        const vel = {
+            x: velAU.x * kmPerAU / secPerDay,
+            y: velAU.y * kmPerAU / secPerDay,
+            z: velAU.z * kmPerAU / secPerDay
+        };
+        return { position: pos, velocity: vel };
     }
 } 

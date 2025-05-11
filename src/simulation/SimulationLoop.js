@@ -13,8 +13,6 @@ export class SimulationLoop {
      */
     constructor({ app, satellites, sceneManager, cameraControls, timeUtils, stats }) {
         this.app = app;
-        // Timestamp for throttling preview node updates
-        this._lastPreviewUpdateTime = 0;
         this.satellites = satellites;
         this.sceneManager = sceneManager;
         this.cameraControls = cameraControls;
@@ -23,8 +21,6 @@ export class SimulationLoop {
         this._running = false;
         this._lastTime = performance.now();
         this._frameId = null;
-        // Timestamps for throttling UI updates
-        this._lastFadingTime = 0;
         this._lastLabelTime = 0;
     }
 
@@ -88,24 +84,13 @@ export class SimulationLoop {
             this.app.updateDayNightMaterials();
         }
 
-        // Update planet vector label fading
-        if (this.app?.planetVectors) {
-            this.app.planetVectors.forEach(pv => pv.updateFading(this.sceneManager.camera));
-        }
-
         // Unified preview node(s) update (throttled to 10Hz)
         const previewNodes = [];
         if (this.app.previewNode) previewNodes.push(this.app.previewNode);
         if (Array.isArray(this.app.previewNodes)) previewNodes.push(...this.app.previewNodes);
-        const now = performance.now();
+        const now = timestamp;
         for (const node of previewNodes) {
             this._updatePreviewNode(node, now);
-        }
-
-        // Throttle radial grid fading (10Hz)
-        if (this.sceneManager.radialGrid && timestamp - this._lastFadingTime > 100) {
-            this.sceneManager.radialGrid.updateFading(this.sceneManager.camera);
-            this._lastFadingTime = timestamp;
         }
 
         // Render scene

@@ -97,9 +97,9 @@ function createSoiMaterial(options = {}) {
     return new THREE.ShaderMaterial({
         vertexShader: soiVertexShader,
         fragmentShader: soiFragmentShader,
-        side: THREE.FrontSide,     // draw only the outer faces so the rim glows as an edge
+        side: THREE.FrontSide,
         transparent: true,
-        depthTest: true,          // <-- Enable depth testing
+        depthTest: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         uniforms: {
@@ -109,108 +109,7 @@ function createSoiMaterial(options = {}) {
     });
 }
 
-// Reusable planet day/night blending shader
-function createDayNightMaterial({
-    dayMap,
-    nightMap = null,
-    sunDirection = new THREE.Vector3(1, 0, 0),
-    planetCenter = new THREE.Vector3(0, 0, 0),
-    uCameraPosition = new THREE.Vector3(0, 0, 10),
-    specularMap = null,
-    normalMap = null,
-    shininess = 40.0,
-    specular = 0xffffff,
-    normalScale = new THREE.Vector2(1, 1),
-} = {}) {
-    // If nightMap is not provided, use a 1x1 black texture
-    if (!nightMap) {
-        const black = new Uint8Array([0, 0, 0, 255]);
-        nightMap = new THREE.DataTexture(black, 1, 1, THREE.RGBAFormat);
-        nightMap.needsUpdate = true;
-    }
-    return new THREE.ShaderMaterial({
-        uniforms: {
-            dayMap: { value: dayMap },
-            nightMap: { value: nightMap },
-            sunDirection: { value: sunDirection.clone().normalize() },
-            planetCenter: { value: planetCenter },
-            uCameraPosition: { value: uCameraPosition.clone() },
-            specularMap: { value: specularMap },
-            normalMap: { value: normalMap },
-            shininess: { value: shininess },
-            specular: { value: new THREE.Color(specular) },
-            normalScale: { value: normalScale },
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            varying vec3 vNormalW;
-            varying vec3 vWorldPos;
-            void main() {
-                vUv = uv;
-                vNormalW = normalize(mat3(modelMatrix) * normal);
-                vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform sampler2D dayMap;
-            uniform sampler2D nightMap;
-            uniform vec3 sunDirection;
-            uniform vec3 planetCenter;
-            uniform vec3 uCameraPosition;
-            uniform float shininess;
-            uniform vec3 specular;
-            varying vec2 vUv;
-            varying vec3 vNormalW;
-            varying vec3 vWorldPos;
-            void main() {
-                vec3 normal = normalize(vNormalW);
-                vec3 toSun = normalize(sunDirection);
-                vec3 toCamera = normalize(uCameraPosition - vWorldPos);
-                float ndotl = max(dot(normal, toSun), 0.0);
-                // Diffuse day color
-                vec3 dayColor = texture2D(dayMap, vUv).rgb * ndotl;
-                // Specular (Blinn-Phong)
-                vec3 halfDir = normalize(toSun + toCamera);
-                float spec = pow(max(dot(normal, halfDir), 0.0), shininess);
-                vec3 specularColor = specular * spec * ndotl;
-                // Night color (no sun)
-                vec4 nightTex = texture2D(nightMap, vUv);
-                vec3 nightColor = nightTex.rgb;
-                float blend = clamp(0.5 + 0.5 * dot(normal, toSun), 0.0, 1.0);
-                vec3 color = mix(nightColor, dayColor + specularColor, blend);
-                if (blend < 0.01) {
-                    gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0); // night side: green
-                    return;
-                } else if (blend > 0.99) {
-                    gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0); // day side: blue
-                    return;
-                }
-                gl_FragColor = vec4(color, 1.0);
-            }
-        `,
-        lights: false,
-        transparent: false,
-    });
-}
-
-// Helper to update camera position uniform each frame
-function updateDayNightMaterialCamera(mat, camera) {
-    if (mat && mat.uniforms && mat.uniforms.uCameraPosition) {
-        mat.uniforms.uCameraPosition.value.copy(camera.position);
-    }
-}
-
-export { createDayNightMaterial, updateDayNightMaterialCamera };
-
 export class PlanetMaterials {
-    // Centralized render order constants
-    static SURFACE_RENDER_ORDER = 0;
-    static CLOUDS_RENDER_ORDER = 1;
-    static ATMOSPHERE_RENDER_ORDER = 2;
-    static SOI_RENDER_ORDER = -1;
-    static GLOW_RENDER_ORDER = 3;
-
     constructor(textureManager, rendererCapabilities, materialsConfig = {}) {
         this.textureManager = textureManager;
         this.maxAnisotropy = rendererCapabilities.getMaxAnisotropy();
