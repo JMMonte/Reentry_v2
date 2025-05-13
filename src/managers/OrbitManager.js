@@ -1,19 +1,14 @@
 import * as THREE from 'three';
-import { LineGeometry } from 'three-stdlib';
-import { LineMaterial } from 'three-stdlib';
-import { Line2 } from 'three-stdlib';
-import { celestialBodiesConfig, orbitColors } from '../config/celestialBodiesConfig.js';
-import { stateToKeplerian, getPositionAtTrueAnomaly } from '../utils/KeplerianUtils.js';
+import { celestialBodiesConfig } from '../config/celestialBodiesConfig.js.bak';
 
 /**
- * OrbitManager handles sampling planetary orbits from PhysicsWorld
+ * OrbitManager handles sampling planetary orbits from Backend stream
  * and rendering them as fat lines using Three.js Line2,
  * attaching them to the correct parent object (scene root or parent planet).
  */
 export class OrbitManager {
     /**
      * @param {Object} options
-     * @param {PhysicsWorld} options.physicsWorld
      * @param {THREE.Scene} options.scene
      * @param {App3D} options.app - Reference to the main App3D instance
      * @param {Object} [options.config]
@@ -21,8 +16,7 @@ export class OrbitManager {
      * @param {Object<string,number>} [options.config.colors]
      * @param {number} [options.config.lineWidth=1]
      */
-    constructor({ physicsWorld, scene, app, config = {} }) {
-        this.physicsWorld = physicsWorld;
+    constructor({ scene, app, config = {} }) {
         this.scene = scene;
         this.app = app; // Store app reference
         this.config = Object.assign(
@@ -69,124 +63,7 @@ export class OrbitManager {
      * adding them to their respective parent objects.
      */
     build() {
-        // Dispose of existing orbit lines before rebuilding
-        this.orbitLineMap.forEach(lineOrGroup => {
-            if (lineOrGroup.type === 'Group') {
-                // If this is a container group (for relative orbits), dispose its child Line2
-                const line = lineOrGroup.children.find(child => child.isLine2);
-                if (line) {
-                    line.geometry?.dispose?.();
-                    line.material?.dispose?.();
-                    lineOrGroup.remove(line);
-                }
-                // Remove the group from its parent
-                if (lineOrGroup.parent) {
-                    lineOrGroup.parent.remove(lineOrGroup);
-                }
-            } else {
-                // Otherwise, dispose the Line2 directly
-                lineOrGroup.geometry?.dispose?.();
-                lineOrGroup.material?.dispose?.();
-                if (lineOrGroup.parent) {
-                    lineOrGroup.parent.remove(lineOrGroup);
-                }
-            }
-        });
-        this.orbitLineMap.clear();
-        const planetKeys = Object.keys(celestialBodiesConfig)
-            .filter(key => !['sun','barycenter'].includes(key));
-        
-        for (const key of planetKeys) {
-            try {
-                const config = celestialBodiesConfig[key];
-                const parentKey = config && config.parent;
-                // --- NEW: Get state vector in ecliptic frame, relative to parent ---
-                const state = this.physicsWorld.getBodyStateVectorEcliptic(key, parentKey);
-                if (!state) continue;
-                // Get parent mu (gravitational parameter) in km^3/s^2
-                const G = this.app.Constants.G;
-                let mass = null;
-                if (parentKey && celestialBodiesConfig[parentKey] && celestialBodiesConfig[parentKey].mass) {
-                    mass = celestialBodiesConfig[parentKey].mass;
-                } else if (key === 'earth') {
-                    mass = this.app.Constants.earthMass;
-                } else if (key === 'moon') {
-                    mass = this.app.Constants.moonMass;
-                } else {
-                    mass = this.app.Constants.sunMass;
-                }
-                const mu = G * mass / 1e9; // convert from m^3/s^2 to km^3/s^2
-                // Defensive: log state and mu before computing Keplerian elements
-                console.log(`[OrbitManager] State for ${key}:`, state, 'mu:', mu);
-                // Log relative position and velocity
-                console.log(`[OrbitManager] Relative position for ${key}:`, state.position);
-                console.log(`[OrbitManager] Relative velocity for ${key}:`, state.velocity);
-                // Log magnitudes and dot product
-                const posMag = Math.sqrt(state.position.x**2 + state.position.y**2 + state.position.z**2);
-                const velMag = Math.sqrt(state.velocity.x**2 + state.velocity.y**2 + state.velocity.z**2);
-                const dot = state.position.x * state.velocity.x + state.position.y * state.velocity.y + state.position.z * state.velocity.z;
-                console.log(`[OrbitManager] |position| for ${key}:`, posMag);
-                console.log(`[OrbitManager] |velocity| for ${key}:`, velMag);
-                console.log(`[OrbitManager] dot(position, velocity) for ${key}:`, dot);
-                // Compute Keplerian elements
-                const epochJD = this.physicsWorld.timeUtils.getJulianDate();
-                const elements = stateToKeplerian(state.position, state.velocity, mu, epochJD);
-                // Log computed Keplerian elements
-                console.log(`[OrbitManager] Keplerian elements for ${key}:`, elements);
-                // Defensive: check for NaN/Infinity in elements
-                if (!isFinite(elements.a) || isNaN(elements.a) ||
-                    !isFinite(elements.e) || isNaN(elements.e) ||
-                    !isFinite(elements.i) || isNaN(elements.i) ||
-                    !isFinite(elements.lan) || isNaN(elements.lan) ||
-                    !isFinite(elements.arg_p) || isNaN(elements.arg_p)) {
-                    console.warn(`[OrbitManager] Invalid Keplerian elements for ${key}:`, elements, state, mu);
-                    continue;
-                }
-                // Sample points along the conic
-                const steps = this.config.steps;
-                let points = [];
-                for (let i = 0; i <= steps; i++) {
-                    const nu = 2 * Math.PI * (i / steps);
-                    const pos = getPositionAtTrueAnomaly(elements, mu, nu);
-                    if (!isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z)) {
-                        // Skip NaN/Infinity points
-                        continue;
-                    }
-                    points.push(pos.x, pos.y, pos.z);
-                }
-                // Skip line creation if only one point (or fewer)
-                if (points.length <= 3) {
-                    console.warn(`[OrbitManager] Not enough valid points to draw a line for ${key}.`);
-                    continue;
-                }
-                const geometry = new LineGeometry();
-                geometry.setPositions(points);
-                const material = new LineMaterial({
-                    color: this.config.colors[key] ?? orbitColors[key] ?? 0xffffff,
-                    linewidth: this.config.lineWidth,
-                    dashed: false,
-                    resolution: this.resolution
-                });
-                const line = new Line2(geometry, material);
-                line.computeLineDistances();
-                line.name = `${key}OrbitLine`;
-                // Add orbit line to its parent group (main scene or planet)
-                const parentGroup = this._getParentGroup(key);
-                if (parentKey) {
-                    // Wrap in a group to cancel the parent's rotation
-                    const compGroup = new THREE.Group();
-                    compGroup.quaternion.copy(parentGroup.quaternion).invert();
-                    compGroup.add(line);
-                    parentGroup.add(compGroup);
-                    this.orbitLineMap.set(key, compGroup);
-                } else {
-                    parentGroup.add(line);
-                    this.orbitLineMap.set(key, line);
-                }
-            } catch (e) {
-                console.error(`OrbitManager build failed for ${key}:`, e);
-            }
-        }
+        console.warn('[OrbitManager] build disabled; using sim stream for planet positions');
     }
 
     /**
@@ -230,6 +107,6 @@ export class OrbitManager {
      * Update all orbits (rebuilds all orbit lines). Call this once per simulation timestep.
      */
     update() {
-        this.build();
+        console.warn('[OrbitManager] update disabled; using sim stream for planet positions');
     }
 } 

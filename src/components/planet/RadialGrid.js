@@ -85,7 +85,11 @@ export class RadialGrid {
         const dashedMaterialBase = {
             color: 0xaaaaaa,
             transparent: true,
-            // opacity: TBD,
+            depthWrite: false,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor,
             dashSize: 500,
             gapSize: 300
         };
@@ -93,13 +97,23 @@ export class RadialGrid {
         const markerMaterial = new THREE.LineBasicMaterial({
             color: 0x888888,
             transparent: true,
-            opacity: markerOpacity
+            opacity: markerOpacity,
+            depthWrite: false,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor
         });
 
         const radialLineMaterial = new THREE.LineBasicMaterial({
             color: 0x888888,
             transparent: true,
-            opacity: radialOpacity
+            opacity: radialOpacity,
+            depthWrite: false,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor
         });
 
         // --- Scale config values ---

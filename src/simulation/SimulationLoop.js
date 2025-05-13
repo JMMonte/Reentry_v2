@@ -73,11 +73,16 @@ export class SimulationLoop {
         this.stats?.begin();
 
         const timestamp = performance.now();
-        this.timeUtils.update(timestamp);
         // First update scene (physics, visuals, and rebasing)
         this.sceneManager.updateFrame();
         // Then update camera to follow the new positions
         this.cameraControls.updateCameraPosition();
+        // Per-frame planet updates (surface fade, radial grid, etc.)
+        if (Array.isArray(this.app.celestialBodies)) {
+            this.app.celestialBodies.forEach(planet => {
+                if (typeof planet.update === 'function') planet.update();
+            });
+        }
 
         // Update day/night material camera position uniform
         if (this.app.updateDayNightMaterials) {
@@ -123,12 +128,6 @@ export class SimulationLoop {
         if (this.app._connectionsEnabled) this.app._syncConnectionsWorker();
     }
 
-    /** Update time warp in timeUtils and physicsWorld. */
-    updateTimeWarp(value) {
-        this.app.timeUtils.setTimeWarp(value);
-        this.app.physicsWorld.setTimeWarp(value);
-    }
-
     /** Update camera to follow a new body selection. */
     updateSelectedBody(value) {
         this.app.cameraControls?.follow(value, this.app);
@@ -148,13 +147,17 @@ export class SimulationLoop {
                 this.satellites.setSensitivityScale(value);
                 break;
             case 'useAstronomy':
-                this.app.physicsWorld.setUseAstronomy(value);
+                // removed: physicsWorld not used
                 break;
             case 'useRemoteCompute':
-                this.app.physicsWorld.setUseRemote(value);
+                // removed: physicsWorld not used
                 break;
             case 'showAxis':
-                this.app.Planet.instances.forEach(p => p.setAxisVisible(value));
+                if (Array.isArray(this.app.planetVectors)) {
+                    this.app.planetVectors.forEach(v => v.setAxesVisible(value));
+                } else if (this.app.planetVectors) {
+                    this.app.planetVectors.setAxesVisible(value);
+                }
                 break;
         }
     }

@@ -46,7 +46,7 @@ export class RingComponent {
         this.mesh = new THREE.Mesh(geometry, material);
         this.mesh.rotation.x = Math.PI / 2;
         this.mesh.renderOrder = planet.renderOrderOverrides.RINGS ?? RENDER_ORDER.RINGS;
-        planet.tiltGroup.add(this.mesh);
+        planet.orbitGroup.add(this.mesh);
         // Store base emissive intensity for correct modulation
         this.baseEmissiveIntensity = this.mesh.material.emissiveIntensity ?? 5.0;
     }
@@ -63,8 +63,8 @@ export class RingComponent {
         const sunDir = sunPos.clone().sub(planetPos).normalize();
         // Ring normal in world
         const ringNormal = new THREE.Vector3(0, 1, 0);
-        this.planet.tiltGroup.updateMatrixWorld();
-        ringNormal.applyMatrix4(this.planet.tiltGroup.matrixWorld).sub(planetPos).normalize();
+        this.planet.orbitGroup.updateMatrixWorld();
+        ringNormal.applyMatrix4(this.planet.orbitGroup.matrixWorld).sub(planetPos).normalize();
         const cosAngle = Math.abs(ringNormal.dot(sunDir));
         // Sun intensity at planet
         const dist = planetPos.distanceTo(sunPos);
@@ -80,6 +80,6 @@ export class RingComponent {
         if (!this.mesh) return;
         this.mesh.geometry.dispose();
         this.mesh.material.dispose();
-        this.planet.tiltGroup.remove(this.mesh);
+        this.planet.orbitGroup.remove(this.mesh);
     }
 } 

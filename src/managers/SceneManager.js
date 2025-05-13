@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 // import { RadialGrid } from '../components/RadialGrid.js'; // Removed import
 import { initScene } from '../setup/setupScene.js';         // new API
-import { setupPhysicsWorld } from '../setup/setupComponents.js';
+// Removed legacy setupPhysicsWorld import; physics handled by backend sim stream
 
 /**
  * @typedef {import('../app/App3D').App3D} App3D
@@ -57,8 +57,8 @@ export class SceneManager {
         });
         document.body.appendChild(this.labelRenderer.domElement);
 
-        /* 4 ─ physics world (must exist before vectors use it) */
-        this.app.world = setupPhysicsWorld();
+        /* 4 ─ physics handled via backend sim stream; frontend physics world removed */
+        // this.app.world = setupPhysicsWorld();
 
         /* 5 ─ one call sets up textures, lights, bodies, bloom, etc. */
         await initScene(this.app);
@@ -122,120 +122,8 @@ export class SceneManager {
     }
 
     _syncBodiesAndPhysics() {
-        const { physicsWorld, sun, satellites, camera, orbitManager } = this.app;
-        physicsWorld.update();
-        // Only update orbits if time has changed enough
-        const currentJD = physicsWorld.timeUtils.getJulianDate();
-        if (
-            !this._lastOrbitUpdateJD ||
-            Math.abs(currentJD - this._lastOrbitUpdateJD) > this._orbitUpdateThreshold
-        ) {
-            if (orbitManager && typeof orbitManager.update === 'function') {
-                orbitManager.update();
-            }
-            this._lastOrbitUpdateJD = currentJD;
-        }
-        if (sun && physicsWorld?.bodies) {
-            const sunBody = physicsWorld.bodies.find(b => b.nameLower === 'sun');
-            if (sunBody?.position) {
-                // Store previous sun position for interpolation
-                if (!sunBody.prevPosition) {
-                    // Initialize prevPosition as a THREE.Vector3 copy of plain position
-                    sunBody.prevPosition = new THREE.Vector3(
-                        sunBody.position.x,
-                        sunBody.position.y,
-                        sunBody.position.z
-                    );
-                } else {
-                    // Update prevPosition from current sun mesh position or physics position
-                    const src = sun.position || sunBody.position;
-                    sunBody.prevPosition.set(src.x, src.y, src.z);
-                }
-                // Update actual sun mesh position using physics position
-                sun.setPosition(
-                    new THREE.Vector3(
-                        sunBody.position.x,
-                        sunBody.position.y,
-                        sunBody.position.z
-                    )
-                );
-            }
-        }
-        const kmToM = 1 / this.app.Constants.metersToKm;
-        physicsWorld.satellites.forEach((psat, id) => {
-            const satVis = satellites.getSatellites()[id];
-            if (satVis && psat.position && psat.velocity) {
-                // Convert plain position/velocity to THREE.Vector3 before scaling
-                const posM = new THREE.Vector3(
-                    psat.position.x,
-                    psat.position.y,
-                    psat.position.z
-                ).multiplyScalar(kmToM);
-                const velM = new THREE.Vector3(
-                    psat.velocity.x,
-                    psat.velocity.y,
-                    psat.velocity.z
-                ).multiplyScalar(kmToM);
-                satVis.updatePosition(posM, velM, psat.debug);
-            }
-        });
-        // Only update radial grids when grid setting is enabled
-        const showGrid = this.app.displaySettingsManager.getSetting('showGrid');
-        const bodiesByKey = new Map(physicsWorld.bodies.map(b => [b.name.toLowerCase(), b]));
-        const alpha = 1;
-        const cam = camera;
-        for (const p of this.app.Planet.instances) {
-            const bodyKey = p.name.toLowerCase();
-            // Render EMB orbit for Earth (IAU standard)
-            // const orbitKey = (bodyKey === 'earth') ? 'emb' : bodyKey;
-            // if (this.app.orbitManager) {
-            //     this.app.orbitManager.updateOrbitPath(orbitKey);
-            // }
-            const body = bodiesByKey.get(bodyKey);
-            if (body?.position) {
-                let x, y, z;
-                if (body.prevPosition) {
-                    x = body.prevPosition.x + (body.position.x - body.prevPosition.x) * alpha;
-                    y = body.prevPosition.y + (body.position.y - body.prevPosition.y) * alpha;
-                    z = body.prevPosition.z + (body.position.z - body.prevPosition.z) * alpha;
-                } else {
-                    ({ x, y, z } = body.position);
-                }
-                const cfg = this.app.celestialBodiesConfig[p.nameLower];
-                // Apply parent-relative offset for bodies with relative orbits
-                if (cfg.parent && cfg.orbitType === 'relative') {
-                    const parent = bodiesByKey.get(cfg.parent);
-                    if (parent?.position) {
-                        x -= parent.position.x;
-                        y -= parent.position.y;
-                        z -= parent.position.z;
-                    }
-                }
-                p.getOrbitGroup().position.set(x, y, z);
-            }
-            p.updateAxisHelperPosition?.();
-            if (showGrid) {
-                p.radialGrid?.updatePosition();
-                p.radialGrid?.updateFading(cam);
-            }
-            p.getOrbitGroup().updateMatrixWorld(true);
-            p.update();
-        }
-        // Interpolated sun position for atmosphere update
-        let interpolatedSunPos = null;
-        if (sun && physicsWorld?.bodies) {
-            const sunBody = physicsWorld.bodies.find(b => b.nameLower === 'sun');
-            if (sunBody?.position && sunBody.prevPosition) {
-                interpolatedSunPos = sunBody.prevPosition.clone().lerp(sunBody.position, alpha);
-                sun.sun.getWorldPosition = (target) => {
-                    if (target) target.copy(interpolatedSunPos);
-                    return interpolatedSunPos.clone();
-                };
-            }
-        }
-        for (const p of this.app.Planet.instances) {
-            p.atmosphereComponent?.update();
-        }
+        // PhysicsWorld and orbitManager loops are now disabled.
+        // All planetary and satellite state is updated via simSocket stream in App3D.
     }
 
     _updateVectors() {

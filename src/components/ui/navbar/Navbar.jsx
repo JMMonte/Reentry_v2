@@ -86,6 +86,12 @@ export function Navbar({
   // --- Save/Import/Share Simulation State ---
   const importInputRef = useRef(null);
 
+  // Debug: log timewarp changes
+  const handleTimeWarpChange = (newWarp) => {
+    console.log('[Navbar] handleTimeWarpChange', newWarp);
+    onTimeWarpChange(newWarp);
+  };
+
   const handleSaveState = () => {
     const app = app3DRef.current;
     if (!app) return;
@@ -163,7 +169,7 @@ export function Navbar({
           />
           <TimeControls
             timeWarp={timeWarp}
-            onTimeWarpChange={onTimeWarpChange}
+            onTimeWarpChange={handleTimeWarpChange}
             simulatedTime={simulatedTime}
             onSimulatedTimeChange={onSimulatedTimeChange}
             timeWarpOptions={timeWarpOptions}
@@ -220,7 +226,7 @@ export function Navbar({
               />
               <TimeControls
                 timeWarp={timeWarp}
-                onTimeWarpChange={onTimeWarpChange}
+                onTimeWarpChange={handleTimeWarpChange}
                 simulatedTime={simulatedTime}
                 onSimulatedTimeChange={onSimulatedTimeChange}
                 timeWarpOptions={timeWarpOptions}

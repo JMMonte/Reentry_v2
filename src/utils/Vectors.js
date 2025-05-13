@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helveticaRegular from '../assets/fonts/helvetiker_regular.typeface.json';
+import { TimeUtils } from './TimeUtils.js';
 
 export class Vectors {
     constructor(earth, scene, timeUtils) {
@@ -92,7 +93,7 @@ export class Vectors {
 
     initSunDirection() {
         // compute actual sun direction from timeUtils
-        const sunDirection = this.timeUtils.getSunPosition().normalize();
+        const sunDirection = TimeUtils.getSunPosition(this.timeUtils.getSimulatedTime()).normalize();
         this.sunDirectionArrow = new THREE.ArrowHelper(
             sunDirection,
             this.earth.getMesh().position,
@@ -169,7 +170,7 @@ export class Vectors {
             this.northPoleLabel.position.copy(this.northPoleVector.position.clone().add(northPoleDirection.multiplyScalar(this.scale)));
         }
         if (this.sunDirectionArrow) {
-            const sunDirection = this.timeUtils.getSunPosition().normalize();
+            const sunDirection = TimeUtils.getSunPosition(this.timeUtils.getSimulatedTime()).normalize();
             this.sunDirectionArrow.setDirection(sunDirection);
             this.sunDirectionLabel.position.copy(this.sunDirectionArrow.position.clone().add(sunDirection.multiplyScalar(this.scale)));
         }

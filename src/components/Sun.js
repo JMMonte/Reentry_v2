@@ -10,7 +10,8 @@ export class Sun {
         this.symbol = '☉';
         this.name = config.name || 'sun';
         this.nameLower = this.name.toLowerCase();
-        this.radius = config.radius * Constants.metersToKm;
+        this.radius = config.radius; // Use radius as provided (should be in scene units, e.g., km)
+        this.type = config.type || 'star';
         // Store initial flare specs for later scaling
         this.initialFlareSpecs = [
             { url: '/assets/texture/lensflare/lensflare0.png', size: 700, distance: 0.0 },
@@ -35,13 +36,15 @@ export class Sun {
         });
 
         this.sun = new THREE.Mesh(geometry, material);
-        this.scene.add(this.sun);
+        // Do not add to scene here; handled externally
+        // this.scene.add(this.sun);
 
         this.sunLight = new THREE.PointLight(0xffffff, 1e6, 0);
         this.sunLight.decay = 0.7;
         this.sunLight.position.copy(this.sun.position);
         this.sunLight.castShadow = false;
-        this.scene.add(this.sunLight);
+        // Do not add to scene here; handled externally
+        // this.scene.add(this.sunLight);
 
         // Add official lens flare effect
         const textureLoader = new THREE.TextureLoader();

@@ -29,16 +29,15 @@ import {
     setupRenderer,
     setupControls
 } from './setup/setupComponents.js';
-import { initTimeControls } from './controls/timeControls.js';
 
 // Global listeners & UI
 import { setupEventListeners as setupGlobalListeners }
     from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
-import { PhysicsWorld } from './world/PhysicsWorld.js';
-import { OrbitManager } from './managers/OrbitManager.js';
+
 import { celestialBodiesConfig } from './config/celestialBodiesConfig.js';
-import { setupSocketListeners } from './setup/setupListeners.js';
+// import { setupSocketListeners } from './setup/setupListeners.js'; // removed socket.io listener setup
+import { initSimStream } from './simulation/simSocket.js';
 
 // Domain helpers
 import {
@@ -49,6 +48,7 @@ import {
 }
     from './components/Satellite/createSatellite.js';
 import { Planet } from './components/planet/Planet.js';
+import { PlanetVectors } from './components/planet/PlanetVectors.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 2. SMALL UTILITIES
@@ -101,7 +101,6 @@ class App3D extends EventTarget {
         // — Misc util — --------------------------------------------------------
         this._timeUtils = new TimeUtils({ simulatedTime: new Date().toISOString() });
         this._stats = new Stats();
-        this.physicsWorld = new PhysicsWorld({ timeUtils: this._timeUtils });
 
         // — Workers & helpers — -----------------------------------------------
         this._lineOfSightWorker = null;
@@ -148,18 +147,6 @@ class App3D extends EventTarget {
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
 
-            // Load planets & sun into physics world
-            this.physicsWorld.loadFromPlanets(this.celestialBodies);
-
-            // Build and display planetary orbits
-            this.orbitManager = new OrbitManager({
-                physicsWorld: this.physicsWorld,
-                scene: this.scene,
-                app: this,
-                config: { steps: 360, lineWidth: 1 }
-            });
-            this.orbitManager.build();
-
             this._initPOIPicking();
             this._setupControls();
 
@@ -167,14 +154,28 @@ class App3D extends EventTarget {
             this.satellites._initPhysicsWorker?.();
 
             // Time controls
-            initTimeControls(this.timeUtils);
 
             this._injectStatsPanel();
             this._wireResizeListener();
+            // Live sim stream: planetary & simulation state from backend
+            await initSimStream(this, 'ECLIPJ2000');
 
-            // Initialize socket manager and wire message listeners
-            this.socketManager.init();
-            setupSocketListeners(this, this.socketManager.socket);
+            // Enable axis and vector visualization for all planets
+            this.planetVectors = [];
+            if (this.celestialBodies) {
+                for (const planet of this.celestialBodies) {
+                    if (planet && typeof planet.setAxisVisible === 'function') {
+                        planet.setAxisVisible(true);
+                    }
+                    // Only add vectors for planets with a mesh and rotationGroup
+                    if (planet && planet.getMesh && planet.rotationGroup && this._scene) {
+                        const vec = new PlanetVectors(planet, this._scene, { name: planet.name, scale: planet.radius * 2 });
+                        this.planetVectors.push(vec);
+                    }
+                }
+            }
+
+            // SocketManager init & socket.io listeners disabled; using sim stream only
 
             // Simulation heartbeat
             this.simulationLoop = new SimulationLoop({
@@ -471,9 +472,6 @@ class App3D extends EventTarget {
 
     // Display-linked getters / setters
     getDisplaySetting(k) { return this.displaySettingsManager.getSetting(k); }
-    updateTimeWarp(v) {
-        this.simulationLoop?.updateTimeWarp(v);
-    }
 
     /**
      * Update camera to follow a new body selection (string or object).

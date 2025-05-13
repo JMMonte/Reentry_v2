@@ -20,7 +20,7 @@ export class SocketManager {
         // Use the centralized socket
         this.socket = getSocket();
         this.socket.on('connect', () => {
-            console.log('SocketManager: Connected to server');
+            // Connected to server (log removed)
         });
         this.socket.on('connect_error', (err) => {
             console.error('SocketManager: Error connecting to server:', err.message);

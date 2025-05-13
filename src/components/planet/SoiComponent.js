@@ -12,7 +12,7 @@ export class SoiComponent {
         if (!mat) return;
         this.mesh = new THREE.Mesh(geo, mat);
         this.mesh.renderOrder = planet.renderOrderOverrides.SOI ?? RENDER_ORDER.SOI;
-        planet.tiltGroup.add(this.mesh);
+        planet.orbitGroup.add(this.mesh);
     }
 
     update() {
@@ -27,6 +27,6 @@ export class SoiComponent {
         if (!this.mesh) return;
         this.mesh.geometry.dispose();
         this.mesh.material.dispose();
-        this.planet.tiltGroup.remove(this.mesh);
+        this.planet.orbitGroup.remove(this.mesh);
     }
 } 

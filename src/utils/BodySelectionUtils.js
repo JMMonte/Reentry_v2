@@ -32,9 +32,10 @@ export const formatBodySelection = (value) => {
  * Get the display name for a body selection value
  * @param {string} value - The body selection value
  * @param {Object} satellites - The satellites object for looking up names
+ * @param {Array} celestialBodies - The array of celestial bodies (planets, sun, etc.)
  * @returns {string} The display name
  */
-export const getBodyDisplayName = (value, satellites) => {
+export const getBodyDisplayName = (value, satellites, celestialBodies) => {
   if (!value || value === 'none') {
     return 'None';
   }
@@ -54,8 +55,8 @@ export const getBodyDisplayName = (value, satellites) => {
     }
   }
   
-  // Handle dynamic planets
-  const planetOption = getPlanetOptions().find(opt => opt.value === value);
+  // Handle dynamic planets (including Sun)
+  const planetOption = getPlanetOptions(celestialBodies || (window.app3d && window.app3d.celestialBodies)).find(opt => opt.value === value);
   if (planetOption) {
     return planetOption.text;
   }
@@ -144,12 +145,11 @@ export const getSatelliteOptions = (satellites) => {
  * @returns {Array<{value:string, text:string}>}
  */
 export const getPlanetOptions = (celestialBodies) => {
-  // Filter for instances that have a 'getMesh' method (likely planets, not Sun)
-  // and have a valid name.
+  // Include all planets and the Sun (type: 'star')
   return (celestialBodies || [])
-    .filter(body => typeof body?.getMesh === 'function' && body.name) 
-    .map(planet => ({
-      value: planet.name,
-      text: planet.name.charAt(0).toUpperCase() + planet.name.slice(1),
-  }));
+    .filter(body => (typeof body?.getMesh === 'function' && body.name) || body?.type === 'star')
+    .map(body => ({
+      value: body.name,
+      text: body.type === 'star' ? 'Sun' : (body.name.charAt(0).toUpperCase() + body.name.slice(1)),
+    }));
 };

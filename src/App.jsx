@@ -10,6 +10,7 @@ import './styles/animations.css';
 import LZString from 'lz-string';
 import { SimulationProvider } from './simulation/SimulationContext';
 import { useBodySelection } from './hooks/useBodySelection';
+import { setSimulationDate, setTimewarp } from './utils/simApi.js';
 
 const ToastContext = createContext({ showToast: () => { } });
 
@@ -83,8 +84,6 @@ function App3DMain() {
   const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
   const [satellites, setSatellites] = useState({});
-  const [timeWarp, setTimeWarp] = useState(1);
-  const [simulatedTime, setSimulatedTime] = useState(new Date());
   const [displaySettings, setDisplaySettings] = useState(() => getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash()));
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
@@ -140,53 +139,10 @@ function App3DMain() {
       app3d.displaySettingsManager.applyAll();
     }
   }, [app3d]);
-  useEffect(() => {
-    const handleTimeUpdate = (event) => {
-      const { simulatedTime, timeWarp } = event.detail;
-      setSimulatedTime(simulatedTime);
-      setTimeWarp(timeWarp);
-    };
-    document.addEventListener('timeUpdate', handleTimeUpdate);
-    return () => document.removeEventListener('timeUpdate', handleTimeUpdate);
-  }, []);
-  useEffect(() => {
-    if (!app3d) return;
-    document.dispatchEvent(new CustomEvent('updateTimeWarp', { detail: { value: timeWarp } }));
-  }, [timeWarp, app3d]);
-  useEffect(() => {
-    if (!app3d) return;
-    app3d.createDebugWindow = (satellite) => {
-      setDebugWindows(prev => {
-        if (prev.some(w => w.id === satellite.id)) return prev;
-        return [
-          ...prev,
-          {
-            id: satellite.id,
-            satellite,
-            onBodySelect: handleBodyChange,
-            onClose: () => app3d.removeDebugWindow(satellite.id)
-          }
-        ];
-      });
-    };
-    app3d.updateSatelliteList = () => {
-      setSatellites(app3d.satellites.getSatellites());
-    };
-    app3d.removeDebugWindow = (satelliteId) => {
-      setDebugWindows(prev => prev.filter(w => w.id !== satelliteId));
-    };
-  }, [app3d]);
-  useEffect(() => {
-    const handleSatelliteDeleted = (event) => {
-      setDebugWindows(prev => prev.filter(w => w.id !== event.detail.id));
-    };
-    document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
-    return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
-  }, []);
   const handleSimulatedTimeChange = (newTime) => {
-    if (app3d?.timeUtils) {
-      app3d.timeUtils.setSimulatedTime(newTime);
-    }
+    // Only send to backend
+    const sessionId = app3d?.sessionId || controller?.sessionId;
+    if (sessionId) setSimulationDate(sessionId, new Date(newTime).toISOString());
   };
   const {
     selectedBody,
@@ -325,9 +281,13 @@ ${shareUrl}`);
     isSatelliteModalOpen,
     selectedBody,
     onBodySelect: handleBodyChange,
-    timeWarp,
-    onTimeWarpChange: setTimeWarp,
-    simulatedTime,
+    timeWarp: app3d?.timeUtils?.getTimeWarp() ?? 1,
+    onTimeWarpChange: (newWarp) => {
+      // Only send to backend
+      const sessionId = app3d?.sessionId || controller?.sessionId;
+      if (sessionId && app3d?.simSocket) setTimewarp(sessionId, newWarp, app3d.simSocket);
+    },
+    simulatedTime: app3d?.timeUtils?.getSimulatedTime() ?? new Date(),
     onSimulatedTimeChange: handleSimulatedTimeChange,
     app3DRef: { current: app3d },
     satellites: Object.values(satellites),
@@ -404,7 +364,7 @@ ${shareUrl}`);
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <ToastContext.Provider value={{ showToast }}>
-        <SimulationProvider timeUtils={app3d?.timeUtils} displaySettings={displaySettings}>
+        <SimulationProvider timeUtils={app3d?.timeUtils} displaySettings={displaySettings} simulatedTime={app3d?.timeUtils?.getSimulatedTime() ?? new Date()} timeWarp={app3d?.timeUtils?.getTimeWarp() ?? 1}>
           <Layout
             navbarProps={navbarProps}
             chatModalProps={chatModalProps}

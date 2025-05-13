@@ -172,8 +172,12 @@ export class DisplaySettingsManager {
                 break;
             }
             case 'showAxis': {
-                // Toggle axis helpers on all planets
-                Planet.instances.forEach(p => p.setAxisVisible(value));
+                // Toggle axis helpers on all planets via PlanetVectors
+                if (Array.isArray(app3d.planetVectors)) {
+                    app3d.planetVectors.forEach(v => v.setAxesVisible(value));
+                } else if (app3d.planetVectors) {
+                    app3d.planetVectors.setAxesVisible(value);
+                }
                 break;
             }
             // Add more settings as needed

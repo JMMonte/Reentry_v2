@@ -2,19 +2,18 @@
 import * as THREE from 'three';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { Constants } from '../../utils/Constants.js';
-import { PlanetSurface } from './PlanetSurface.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
-import { RadialGrid } from './RadialGrid.js';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { celestialBodiesConfig } from '../../config/celestialBodiesConfig.js';
 import atmosphereMeshVertexShader from '../../shaders/atmosphereMesh.vert?raw';
 import atmosphereMeshFragmentShader from '../../shaders/atmosphereMesh.frag?raw';
-import { RotationComponent } from './RotationComponent.js';
 import { AtmosphereComponent } from './AtmosphereComponent.js';
 import { CloudComponent } from './CloudComponent.js';
-import { RingComponent } from './RingComponent.js';
 import { DistantMeshComponent } from './DistantMeshComponent.js';
 import { SoiComponent } from './SoiComponent.js';
+import { PlanetSurface } from './PlanetSurface.js';
+import { RadialGrid } from './RadialGrid.js';
+import { RingComponent } from './RingComponent.js';
+import { RotationComponent } from './RotationComponent.js';
 
 // ---- General Render Order Constants ----
 export const RENDER_ORDER = {
@@ -42,12 +41,14 @@ export class Planet {
         const {
             name, radius,
             orbitRadius = 0, oblateness = 0,
-            rotationPeriod = 86_400, orbitalPeriod = 365.25,
-            tilt = 0, rotationOffset = 0,
-            meshRes = 128, atmosphereRes = 128, cloudRes = 128,
+            rotationPeriod = 86_400,
+            orbitalPeriod = 365.25,
+            meshRes = 128,
+            atmosphereRes = 128,
+            cloudRes = 128,
             cloudThickness = 0,
             orbitElements = null,
-            addSurface = false, surfaceOptions = {},
+            surfaceOptions = {},
             primaryGeojsonData, stateGeojsonData,
             cityData, airportsData, spaceportsData,
             groundStationsData, observatoriesData, missionsData,
@@ -67,7 +68,7 @@ export class Planet {
         this.textureManager = textureManager;
 
         this.name = name;
-        this.nameLower = this.name.toLowerCase();
+        this.nameLower = name ? name.toLowerCase() : '';
         this.symbol = symbol || name.charAt(0);
 
         this.radius = radius;
@@ -75,8 +76,8 @@ export class Planet {
         this.oblateness = oblateness;
         this.rotationPeriod = rotationPeriod;
         this.orbitalPeriod = orbitalPeriod;
-        this.tilt = tilt;
-        this.rotationOffset = rotationOffset;
+
+
 
         this.meshRes = meshRes;
         this.atmosphereRes = atmosphereRes;
@@ -93,9 +94,6 @@ export class Planet {
         Planet.instances.push(this);
         // Component system
         this.components = [];
-        // Rotation handling
-        this.rotationComponent = new RotationComponent(this);
-        this.components.push(this.rotationComponent);
 
         /* ---------- materials ---------- */
         this.materials = new PlanetMaterials(
@@ -117,7 +115,7 @@ export class Planet {
         this.#initGroups();
         this.#initMaterials();
         this.#initMeshes();
-        
+
         if (config.atmosphere) {
             // Compute thickness and densityScaleHeight from fractions if present
             const atm = { ...config.atmosphere };
@@ -156,59 +154,9 @@ export class Planet {
         }
         this.distantComponent = new DistantMeshComponent(this);
         this.components.push(this.distantComponent);
-        if (this.soiRadius > 0) {
-            this.soiComponent = new SoiComponent(this);
-            this.components.push(this.soiComponent);
-        }
-
-        /* ---------- optional surface ---------- */
-        if (addSurface) {
-            const polarScale = 1 - this.oblateness;
-            const surfaceOpts = { ...surfaceOptions, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
-            this.planetMesh.userData.planetName = this.name;
-            this.surface = new PlanetSurface(
-                this.planetMesh,
-                this.radius,
-                primaryGeojsonData,
-                stateGeojsonData,
-                surfaceOpts
-            );
-            this.#addSurfaceDetails({
-                surfaceOptions,
-                cityData,
-                airportsData,
-                spaceportsData,
-                groundStationsData,
-                observatoriesData,
-                missionsData
-            });
-        }
-
-        /* ---------- optional radial grid ---------- */
-        if (radialGridConfig) this.radialGrid = new RadialGrid(this, radialGridConfig);
-
-        /* ---------- optional light ---------- */
-        if (addLight) this.#addLight(lightOptions);
-
-        /* ----- rings ----- */
-        if (addRings && ringConfig) {
-            this.ringComponent = new RingComponent(this, ringConfig);
-            this.components.push(this.ringComponent);
-        }
-
-        // Special case: if this is the EMB, add a visible marker
-        if (this.nameLower === 'emb') {
-            this.marker = new THREE.Mesh(
-                new THREE.SphereGeometry(1000, 16, 16), // Small sphere
-                new THREE.MeshBasicMaterial({ color: 0xff00ff })
-            );
-            this.unrotatedGroup = new THREE.Group();
-            this.unrotatedGroup.add(this.marker);
-            this.scene.add(this.unrotatedGroup);
-        } else {
-            this.unrotatedGroup = new THREE.Group();
-            this.scene.add(this.unrotatedGroup);
-        }
+        // Only create surface features for non-barycenter objects
+        this.unrotatedGroup = new THREE.Group();
+        this.scene.add(this.unrotatedGroup);
 
         // Cloud layer component
         if (this.cloudMaterial) {
@@ -216,7 +164,107 @@ export class Planet {
             this.components.push(this.cloudComponent);
         }
 
-        this.update(); // initial orientation & orbit
+        // --- Surface features ---
+        const defaultSurfaceOpts = {
+            addLatitudeLines: true,
+            latitudeStep: 10,
+            addLongitudeLines: true,
+            longitudeStep: 10,
+            addCountryBorders: true,
+            addStates: true,
+            addCities: true,
+            addAirports: true,
+            addSpaceports: true,
+            addGroundStations: true,
+            addObservatories: true,
+            markerSize: 0.7,
+            circleSegments: 8,
+            circleTextureSize: 32,
+            fadeStartPixelSize: 700,
+            fadeEndPixelSize: 600,
+            heightOffset: 0,
+            ...surfaceOptions // allow config to override if needed (for future flexibility)
+        };
+        const polarScale = 1 - this.oblateness;
+        const surfaceOpts = { ...defaultSurfaceOpts, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
+        this.planetMesh.userData.planetName = this.name;
+        this.surface = new PlanetSurface(
+            this.planetMesh,
+            this.radius,
+            primaryGeojsonData,
+            stateGeojsonData,
+            surfaceOpts
+        );
+        // Add surface details (POIs, etc.)
+        if (this.surface) {
+            const o = surfaceOpts;
+            if (o.addLatitudeLines) this.surface.addLatitudeLines(o.latitudeStep);
+            if (o.addLongitudeLines) this.surface.addLongitudeLines(o.longitudeStep);
+            if (o.addCountryBorders) this.surface.addCountryBorders();
+            if (o.addStates) this.surface.addStates();
+            const layers = [
+                [o.addCities, cityData, 'cityPoint', 'cities'],
+                [o.addAirports, airportsData, 'airportPoint', 'airports'],
+                [o.addSpaceports, spaceportsData, 'spaceportPoint', 'spaceports'],
+                [o.addGroundStations, groundStationsData, 'groundStationPoint', 'groundStations'],
+                [o.addObservatories, observatoriesData, 'observatoryPoint', 'observatories'],
+                [o.addMissions, missionsData, 'missionPoint', 'missions']
+            ];
+            for (const [flag, data, matKey, layer] of layers) {
+                if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
+            }
+        }
+
+        // --- Radial grid ---
+        if (radialGridConfig) {
+            this.radialGrid = new RadialGrid(this, radialGridConfig);
+        }
+        // Treat surface fade as a component for per-frame updates
+        if (this.surface) {
+            this.components.push({
+                update: () => {
+                    if (Planet.camera) this.surface.updateFade(Planet.camera);
+                }
+            });
+        }
+        // Treat radial grid position and fading as a component
+        if (this.radialGrid) {
+            this.components.push({
+                update: () => {
+                    if (Planet.camera) {
+                        this.radialGrid.updatePosition();
+                        this.radialGrid.updateFading(Planet.camera);
+                    }
+                }
+            });
+        }
+
+        // --- Light ---
+        if (addLight) {
+            const light = new THREE.PointLight(
+                lightOptions.color || 0xffffff,
+                lightOptions.intensity || 1,
+                lightOptions.distance,
+                lightOptions.decay || 1
+            );
+            if (lightOptions.position) light.position.copy(lightOptions.position);
+            this.orbitGroup.add(light);
+            if (lightOptions.helper) this.scene.add(new THREE.PointLightHelper(light, lightOptions.helperSize || 5));
+        }
+
+        // --- Rings ---
+        if (addRings && ringConfig) {
+            this.ringComponent = new RingComponent(this, ringConfig);
+            this.components.push(this.ringComponent);
+        }
+
+        this.update(); // initial build and initial per-frame updates
+
+        // Apply base orientation using RotationComponent
+        if (this.rotationGroup) {
+            // You can adjust baseRotation or applyBase for debug
+            RotationComponent.applyBaseOrientation(this.rotationGroup);
+        }
     }
 
     /* ===== private helpers ===== */
@@ -226,15 +274,12 @@ export class Planet {
         this.scene.add(this.unrotatedGroup);
 
         this.orbitGroup = new THREE.Group();
-        this.tiltGroup = new THREE.Group();
+        this.orientationGroup = new THREE.Group();
         this.rotationGroup = new THREE.Group();
 
-        this.tiltGroup.add(this.rotationGroup);
-        this.orbitGroup.add(this.tiltGroup);
+        this.orientationGroup.add(this.rotationGroup);
+        this.orbitGroup.add(this.orientationGroup);
         this.scene.add(this.orbitGroup);
-
-        this.orbitGroup.rotation.set(-Math.PI / 2, 0, Math.PI); // Z-north
-        this.tiltGroup.rotation.x = THREE.MathUtils.degToRad(this.tilt);
     }
 
     #initMaterials() {
@@ -294,62 +339,11 @@ export class Planet {
         }
     }
 
-    #addSurfaceDetails({
-        surfaceOptions: o = {},
-        cityData,
-        airportsData,
-        spaceportsData,
-        groundStationsData,
-        observatoriesData,
-        missionsData
-    }) {
-        const {
-            addLatitudeLines = false, latitudeStep = 1,
-            addLongitudeLines = false, longitudeStep = 1,
-            addCountryBorders = false,
-            addStates = false,
-            addCities = false,
-            addAirports = false,
-            addSpaceports = false,
-            addGroundStations = false,
-            addObservatories = false,
-            addMissions = false
-        } = o;
-
-        if (addLatitudeLines) this.surface.addLatitudeLines(latitudeStep);
-        if (addLongitudeLines) this.surface.addLongitudeLines(longitudeStep);
-        if (addCountryBorders) this.surface.addCountryBorders();
-        if (addStates) this.surface.addStates();
-
-        const layers = [
-            [addCities, cityData, 'cityPoint', 'cities'],
-            [addAirports, airportsData, 'airportPoint', 'airports'],
-            [addSpaceports, spaceportsData, 'spaceportPoint', 'spaceports'],
-            [addGroundStations, groundStationsData, 'groundStationPoint', 'groundStations'],
-            [addObservatories, observatoriesData, 'observatoryPoint', 'observatories'],
-            [addMissions, missionsData, 'missionPoint', 'missions']
-        ];
-        for (const [flag, data, matKey, layer] of layers) {
-            if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
-        }
-    }
-
-    #addLight({
-        color = 0xffffff, intensity = 1, distance,
-        decay = 1, position = new THREE.Vector3(),
-        helper = false, helperSize = 5
-    } = {}) {
-        const light = new THREE.PointLight(color, intensity, distance, decay);
-        light.position.copy(position);
-        this.orbitGroup.add(light);
-        if (helper) this.scene.add(new THREE.PointLightHelper(light, helperSize));
-    }
-
     /* ===== per-frame ===== */
     update() {
-        // Update all registered components
+        // Update all registered components (rotation, atmosphere, cloud, distant, soi, surface fade, radial grid, etc.)
         this.components.forEach(c => c.update());
-        // Update EMB marker position if this is EMB
+        // EMB marker position update
         if (this.nameLower === 'emb' && this.marker && window.Astronomy) {
             const jd = this.timeManager.getJulianDate();
             const embState = window.Astronomy.BaryState(window.Astronomy.Body.EMB, jd);
@@ -361,22 +355,10 @@ export class Planet {
             );
         }
         // Shader uniforms are now updated externally by App3D after final position sync
-
-        // Update surface/grid fading
-        this.surface && Planet.camera && this.surface.updateFade(Planet.camera);
-    }
-
-    updateAxisHelperPosition() {
-        if (this._axisHelper && this._axisHelper.visible) {
-            const worldPos = new THREE.Vector3();
-            this.getOrbitGroup().getWorldPosition(worldPos);
-            this._axisHelper.position.copy(worldPos);
-        }
     }
 
     /* ===== public ===== */
     getMesh() { return this.planetMesh; }
-    getTiltGroup() { return this.tiltGroup; }
     getOrbitGroup() { return this.orbitGroup; }
     getUnrotatedGroup() {
         return this.unrotatedGroup;
@@ -437,45 +419,33 @@ export class Planet {
         if (i !== -1) Planet.instances.splice(i, 1);
     }
 
-    setAxisVisible(visible) {
-        if (visible) {
-            if (!this._axisHelper) {
-                // Use Mercury's radius if this.radius is falsy (for barycenters)
-                const mercuryRadius = celestialBodiesConfig.mercury.radius;
-                const size = (this.radius && this.radius > 0) ? this.radius * 2 : mercuryRadius * 2;
-                this._axisHelper = new THREE.AxesHelper(size);
-                this._axisHelper.name = `${this.name}_AxisHelper`;
-                // Add labeled axis
-                const color = { X: '#ff0000', Y: '#00ff00', Z: '#0000ff' };
-                this._axisLabels = [];
-                const mkLabel = axis => {
-                    const div = document.createElement('div');
-                    div.className = 'axis-label';
-                    div.textContent = axis;
-                    div.style.color = color[axis];
-                    div.style.fontSize = '14px';
-                    return new CSS2DObject(div);
-                };
-                ['X', 'Y', 'Z'].forEach(axis => {
-                    const lbl = mkLabel(axis);
-                    lbl.position.set(axis === 'X' ? size : 0,
-                        axis === 'Y' ? size : 0,
-                        axis === 'Z' ? size : 0);
-                    this._axisHelper.add(lbl);
-                    this._axisLabels.push(lbl);
-                });
-            }
-            if (!this._axisHelper.parent) {
-                this.scene.add(this._axisHelper);
-            }
-            this._axisHelper.visible = true;
-            if (this._axisLabels) {
-                this._axisLabels.forEach(lbl => lbl.visible = true);
-            }
-        } else {
-            if (this._axisHelper && this._axisHelper.parent) {
-                this.scene.remove(this._axisHelper);
-            }
-        }
+    /**
+     * Converts a quaternion from Z-up (server) to Y-up (Three.js) reference frame.
+     * @param {THREE.Quaternion} qServer - Quaternion from server (Z-up)
+     * @returns {THREE.Quaternion} - Quaternion for Three.js (Y-up)
+     */
+    static zUpToYUpQuaternion(qServer) {
+        const zUpToYUp = new THREE.Quaternion();
+        zUpToYUp.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+        return qServer.clone().premultiply(zUpToYUp);
+    }
+
+    /**
+     * Set the planet orientation from a server quaternion (Z-up reference frame).
+     * @param {THREE.Quaternion} qServer - Quaternion from server (Z-up)
+     */
+    setOrientationFromServerQuaternion(qServer) {
+        // Centralized in RotationComponent
+        RotationComponent.applyServerQuaternion(this.orientationGroup, qServer);
+    }
+
+    /**
+     * TEST: Set a 90-degree rotation about Z (server frame) to verify orientation effect.
+     * Call this from the console or a test button.
+     */
+    static testOrientation(planetInstance) {
+        // 90 degrees about Z in server (Z-up) frame
+        const qServer = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+        planetInstance.setOrientationFromServerQuaternion(qServer);
     }
 }

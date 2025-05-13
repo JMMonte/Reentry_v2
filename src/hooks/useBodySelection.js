@@ -76,7 +76,7 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
     };
 
     // Display name formatter
-    const getDisplayValue = (value) => getBodyDisplayName(value, satellites);
+    const getDisplayValue = (value) => getBodyDisplayName(value, satellites, app3dRef.current?.celestialBodies);
 
     return { selectedBody, handleBodyChange, planetOptions, satelliteOptions, getDisplayValue };
 } 

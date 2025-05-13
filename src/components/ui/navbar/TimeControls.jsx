@@ -22,7 +22,7 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(getNextTimeWarp(timeWarp, false))}>
+                            <Button variant="ghost" size="icon" onClick={() => { console.log('[TimeControls] Decrease Time Warp'); onTimeWarpChange(getNextTimeWarp(timeWarp, false)); }}>
                                 <Rewind className="h-4 w-4" />
                             </Button>
                         </TooltipTrigger>
@@ -32,7 +32,7 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(timeWarp === 0 ? 1 : 0)}>
+                            <Button variant="ghost" size="icon" onClick={() => { console.log('[TimeControls] Toggle Pause/Resume'); onTimeWarpChange(timeWarp === 0 ? 1 : 0); }}>
                                 {timeWarp === 0 ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
                             </Button>
                         </TooltipTrigger>
@@ -41,7 +41,7 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
                 </TooltipProvider>
                 <Select
                     value={timeWarp.toString()}
-                    onValueChange={(value) => onTimeWarpChange(parseFloat(value))}
+                    onValueChange={(value) => { console.log('[TimeControls] Select Time Warp', value); onTimeWarpChange(parseFloat(value)); }}
                     defaultValue="1"
                 >
                     <SelectTrigger className="w-[100px]">
@@ -60,7 +60,7 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(getNextTimeWarp(timeWarp, true))}>
+                            <Button variant="ghost" size="icon" onClick={() => { console.log('[TimeControls] Increase Time Warp'); onTimeWarpChange(getNextTimeWarp(timeWarp, true)); }}>
                                 <FastForward className="h-4 w-4" />
                             </Button>
                         </TooltipTrigger>
@@ -68,7 +68,7 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
                     </Tooltip>
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => onTimeWarpChange(1)}>
+                            <Button variant="ghost" size="icon" onClick={() => { console.log('[TimeControls] Reset Time Warp'); onTimeWarpChange(1); }}>
                                 <RotateCcw className="h-4 w-4" />
                             </Button>
                         </TooltipTrigger>

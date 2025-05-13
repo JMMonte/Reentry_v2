@@ -58,16 +58,6 @@ export class SimulationStateManager {
         if (safeParams.velocity) safeParams.velocity = toSimUnits(safeParams.velocity);
         // Create Three.js satellite
         const sat = this.satellites.addSatellite(safeParams);
-        // Register with physics world
-        if (sat && this.app.physicsWorld) {
-            this.app.physicsWorld.addSatellite({
-                id: sat.id,
-                position: safeParams.position.clone(),
-                velocity: safeParams.velocity.clone(),
-                mass: safeParams.mass,
-                size: safeParams.size
-            });
-        }
         return sat;
     }
 
@@ -77,10 +67,6 @@ export class SimulationStateManager {
      */
     removeSatellite(satelliteId) {
         this.satellites.removeSatellite(satelliteId);
-        // Remove from physics world
-        if (this.app.physicsWorld) {
-            this.app.physicsWorld.removeSatellite(satelliteId);
-        }
     }
 
     /**
@@ -157,11 +143,10 @@ export class SimulationStateManager {
     }
 
     _restoreTimeState(state) {
-        state.simulatedTime && this.app.timeUtils.setSimulatedTime(state.simulatedTime);
-        if (state.timeWarp !== undefined) {
-            this.app.timeUtils.setTimeWarp(state.timeWarp);
-            this.satellites.setTimeWarp(state.timeWarp);
+        if (state.simulatedTime !== undefined && state.timeWarp !== undefined) {
+            this.app.timeUtils.setSimTimeFromServer(state.simulatedTime, state.timeWarp);
         }
+        // satellites.setTimeWarp should be handled by server-driven updates
     }
 
     _restoreDisplaySettings(settings) {
