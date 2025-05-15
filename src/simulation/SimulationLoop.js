@@ -1,6 +1,8 @@
 /**
  * Manages the animation and simulation update loop for the 3D app.
  */
+import { Clock } from 'three';
+
 export class SimulationLoop {
     /**
      * @param {Object} options
@@ -18,6 +20,7 @@ export class SimulationLoop {
         this.cameraControls = cameraControls;
         this.timeUtils = timeUtils;
         this.stats = stats;
+        this.clock = new Clock();
         this._running = false;
         this._lastTime = performance.now();
         this._frameId = null;
@@ -28,17 +31,13 @@ export class SimulationLoop {
     start() {
         if (this._running) return;
         this._running = true;
-        this._lastTime = performance.now();
-        this._animate();
+        this.app.renderer.setAnimationLoop(this._animate.bind(this));
     }
 
     /** Stop the animation/simulation loop. */
     stop() {
         this._running = false;
-        if (this._frameId) {
-            cancelAnimationFrame(this._frameId);
-            this._frameId = null;
-        }
+        this.app.renderer.setAnimationLoop(null);
     }
 
     /** Dispose of the loop and cleanup. */
@@ -46,57 +45,10 @@ export class SimulationLoop {
         this.stop();
     }
 
-    /**
-     * Throttled update for preview nodes: calls update() no more than 10Hz, and ensures predictedOrbit is visible.
-     * @param {Object} node
-     * @param {number} timestamp
-     */
-    _updatePreviewNode(node, timestamp) {
-        if ((node._lastPredTime ?? 0) < timestamp - 100) {
-            node.update();
-            node._lastPredTime = timestamp;
-        }
-        if (node.predictedOrbit) {
-            if (node.predictedOrbit.setVisible) {
-                node.predictedOrbit.setVisible(true);
-            } else if (node.predictedOrbit.orbitLine) {
-                node.predictedOrbit.orbitLine.visible = true;
-            }
-        }
-    }
-
     /** The main animation frame callback. */
     _animate() {
-
-        if (!this._running) return;
-        this._frameId = requestAnimationFrame(() => this._animate());
-        this.stats?.begin();
-
-        const timestamp = performance.now();
-        // First update scene (physics, visuals, and rebasing)
-        this.sceneManager.updateFrame();
-        // Then update camera to follow the new positions
-        this.cameraControls.updateCameraPosition();
-        // Per-frame planet updates (surface fade, radial grid, etc.)
-        if (Array.isArray(this.app.celestialBodies)) {
-            this.app.celestialBodies.forEach(planet => {
-                if (typeof planet.update === 'function') planet.update();
-            });
-        }
-
-        // Update day/night material camera position uniform
-        if (this.app.updateDayNightMaterials) {
-            this.app.updateDayNightMaterials();
-        }
-
-        // Unified preview node(s) update (throttled to 10Hz)
-        const previewNodes = [];
-        if (this.app.previewNode) previewNodes.push(this.app.previewNode);
-        if (Array.isArray(this.app.previewNodes)) previewNodes.push(...this.app.previewNodes);
-        const now = timestamp;
-        for (const node of previewNodes) {
-            this._updatePreviewNode(node, now);
-        }
+        const delta = this.clock.getDelta();
+        this.app.tick?.(delta);
 
         // Render scene
         if (this.sceneManager.composers.final) {
@@ -104,17 +56,6 @@ export class SimulationLoop {
         } else {
             this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
         }
-
-        // Render CSS2D labels (throttled to 30Hz)
-        if (this.sceneManager.labelRenderer) {
-            if (timestamp - this._lastLabelTime > 33) {
-                this.sceneManager.labelRenderer.render(this.sceneManager.scene, this.sceneManager.camera);
-                this._lastLabelTime = timestamp;
-            }
-        }
-
-        this.stats?.end();
-
     }
 
     /** Update the satellite list and notify UI. */

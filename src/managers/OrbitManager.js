@@ -1,10 +1,21 @@
 import * as THREE from 'three';
-import { celestialBodiesConfig } from '../config/celestialBodiesConfig.js.bak';
+import { celestialBodiesConfig } from '../config/celestialBodiesConfig.js';
+import { stateToKeplerian, getPositionAtTrueAnomaly } from '../utils/KeplerianUtils.js';
+import { Constants } from '../utils/Constants.js';
 
 /**
- * OrbitManager handles sampling planetary orbits from Backend stream
- * and rendering them as fat lines using Three.js Line2,
- * attaching them to the correct parent object (scene root or parent planet).
+ * OrbitManager handles rendering planetary orbits by propagating a 2-body canonical orbit
+ * from the current backend state vector (position, velocity) for each planet/moon.
+ *
+ * For each planet/moon:
+ *   - Uses the latest state vector (already fetched from backend for position update)
+ *   - Converts to Keplerian elements
+ *   - Samples points along the orbit (0 to 2π true anomaly)
+ *   - Draws the orbit as a THREE.Line
+ *   - Parents the line to the correct group
+ *   - Stores the line in orbitLineMap
+ *
+ * No backend trajectory fetching is used. Only the current state vector is used.
  */
 export class OrbitManager {
     /**
@@ -56,6 +67,77 @@ export class OrbitManager {
         }
         // Default: add to main scene (barycentric orbits)
         return this.scene;
+    }
+
+    /**
+     * Render planetary orbits by propagating a 2-body canonical orbit from the current state vector.
+     * Call this after planet positions are updated from the backend.
+     */
+    renderPlanetaryOrbits() {
+        // Remove old lines
+        this.orbitLineMap.forEach(line => {
+            if (line.parent) line.parent.remove(line);
+            line.geometry?.dispose();
+            line.material?.dispose();
+        });
+        this.orbitLineMap.clear();
+
+        const numPoints = 360; // Number of points to sample along the orbit
+        const sceneUnit = 1000; // Convert km to meters for scene units if needed
+
+        console.log('[OrbitManager] renderPlanetaryOrbits: processing', this.app.celestialBodies.length, 'bodies');
+
+        for (const body of this.app.celestialBodies) {
+            // Only process planets/moons with position and velocity
+            if (!body.getOrbitGroup || !body.position || !body.velocity) {
+                console.log(`[OrbitManager] Skipping ${body.name} (missing getOrbitGroup/position/velocity)`);
+                continue;
+            }
+            const group = this._getParentGroup(body.nameLower);
+            // Get state vector in km, km/s
+            const pos = body.position; // THREE.Vector3, km
+            const vel = body.velocity; // THREE.Vector3, km/s
+            if (!pos || !vel) {
+                console.log(`[OrbitManager] Skipping ${body.name} (no pos/vel)`);
+                continue;
+            }
+            console.log(`[OrbitManager] ${body.name}: pos=`, pos, 'vel=', vel);
+
+            // Convert to plain objects for KeplerianUtils
+            const posObj = { x: pos.x, y: pos.y, z: pos.z };
+            const velObj = { x: vel.x, y: vel.y, z: vel.z };
+            // Use GM of parent body if available, else fallback to sun
+            const cfg = celestialBodiesConfig[body.nameLower];
+            let mu = Constants.sunGravitationalParameter;
+            if (cfg && cfg.parent && celestialBodiesConfig[cfg.parent] && celestialBodiesConfig[cfg.parent].mass) {
+                mu = Constants.G * celestialBodiesConfig[cfg.parent].mass;
+            } else if (cfg && cfg.mass) {
+                mu = Constants.G * cfg.mass;
+            }
+            // Get orbital elements
+            const elements = stateToKeplerian(posObj, velObj, mu, 0);
+            if (!elements || !isFinite(elements.a) || elements.a === 0) {
+                console.log(`[OrbitManager] Skipping ${body.name} (invalid elements)`, elements);
+                continue;
+            }
+            // Sample points along the orbit
+            const points = [];
+            for (let i = 0; i <= numPoints; ++i) {
+                const f = (i / numPoints) * 2 * Math.PI;
+                const p = getPositionAtTrueAnomaly(elements, mu, f);
+                // Convert km to meters for scene units
+                points.push(new THREE.Vector3(p.x * sceneUnit, p.y * sceneUnit, p.z * sceneUnit));
+            }
+            // Create geometry and line
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: false, opacity: 1 });
+            const line = new THREE.Line(geometry, material);
+            line.frustumCulled = false;
+            // Parent to correct group
+            group.add(line);
+            this.orbitLineMap.set(body.nameLower, line);
+            console.log(`[OrbitManager] Orbit line created for ${body.name}`);
+        }
     }
 
     /**

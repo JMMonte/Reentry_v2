@@ -44,9 +44,15 @@ export class RingComponent {
         });
         // Mesh
         this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.rotation.x = Math.PI / 2;
+        // Align the ring with the planet's equator (spin axis)
+        // Get the planet's rotationGroup world quaternion
+        const planetQuat = new THREE.Quaternion();
+        planet.rotationGroup.getWorldQuaternion(planetQuat);
+        this.mesh.quaternion.copy(planetQuat);
+        // Rotate the ring so its normal matches the planet's Y axis
+        this.mesh.rotateX(Math.PI / 2);
         this.mesh.renderOrder = planet.renderOrderOverrides.RINGS ?? RENDER_ORDER.RINGS;
-        planet.orbitGroup.add(this.mesh);
+        planet.rotationGroup.add(this.mesh);
         // Store base emissive intensity for correct modulation
         this.baseEmissiveIntensity = this.mesh.material.emissiveIntensity ?? 5.0;
     }

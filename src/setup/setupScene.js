@@ -32,6 +32,8 @@ import {
     stars
 } from '../config/celestialBodiesConfig.js';
 
+import { OrbitManager } from '../managers/OrbitManager.js';
+
 const addAmbientLight = (scene) => {
     const light = new THREE.AmbientLight(
         ambientLightConfig.color,
@@ -132,6 +134,10 @@ export async function initScene(app) {
         app.celestialBodies.push(planet);
         app.bodiesByNaifId[cfg.naif_id] = planet;
     }
+
+    // Instantiate OrbitManager for planetary orbits
+    app.orbitManager = new OrbitManager({ scene, app });
+    console.log('[setupScene] OrbitManager instantiated:', !!app.orbitManager);
 
     // 3. Parent ALL bodies appropriately
     for (const cfg of Object.values(celestialBodiesConfig)) {

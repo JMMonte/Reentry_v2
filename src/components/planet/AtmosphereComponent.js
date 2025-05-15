@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Planet } from './Planet.js';
+// import { Planet } from './Planet.js'; // Removed unused import
 import { Constants } from '../../utils/Constants.js';
 import { RENDER_ORDER } from './Planet.js';
 
@@ -99,7 +99,7 @@ export class AtmosphereComponent {
         outer.material.uniforms.uOpticalDepthLUT = { value: lutTex };
     }
 
-    update() {
+    update(camera, sun) {
         if (!this.mesh) return;
         // Ensure the entire parent chain is up-to-date
         let root = this.mesh;
@@ -110,11 +110,10 @@ export class AtmosphereComponent {
         // Planet world position
         this.mesh.getWorldPosition(this._planetPos);
         // Camera relative to planet center
-        const cam = Planet.camera;
-        this._camRel.copy(cam.position).sub(this._planetPos);
+        this._camRel.copy(camera.position).sub(this._planetPos);
         // Sun position
-        if (window.app3d?.sun?.sun?.getWorldPosition) {
-            window.app3d.sun.sun.getWorldPosition(this._sunPos);
+        if (sun?.sun?.getWorldPosition) {
+            sun.sun.getWorldPosition(this._sunPos);
         } else {
             this._sunPos.set(0, 0, 0);
         }

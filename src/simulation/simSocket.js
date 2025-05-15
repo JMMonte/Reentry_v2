@@ -96,6 +96,14 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     if (body && typeof body.getOrbitGroup === 'function') {
                         body.getOrbitGroup().position.set(pos[0], pos[1], pos[2]);
                         if (body.velocity) body.velocity.set(...vel);
+                        // // Log only the first time both position and velocity are set for each planet
+                        // if (typeof window !== 'undefined') {
+                        //     if (!window._loggedPlanets) window._loggedPlanets = new Set();
+                        //     if (!window._loggedPlanets.has(naif_id) && body.getOrbitGroup().position && body.velocity) {
+                        //         window._loggedPlanets.add(naif_id);
+                        //         console.log('[simSocket] First update for', config.name, `(NAIF ${naif_id}):`, 'position=', pos, 'velocity=', vel);
+                        //     }
+                        // }
                         if (body.setOrientationFromServerQuaternion) {
                             const qServer = new THREE.Quaternion(...quat);
                             body.setOrientationFromServerQuaternion(qServer);
@@ -109,6 +117,10 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                         body.setPosition(new THREE.Vector3(pos[0], pos[1], pos[2]));
                     }
                 }
+            }
+            // After all planet positions/velocities are updated, update orbit lines
+            if (app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
+                app.orbitManager.renderPlanetaryOrbits();
             }
         } else {
             // (log removed)
@@ -134,6 +146,10 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                         console.warn(`[SimStream] no planet found for`, b.name);
                     }
                 });
+                // After all planet positions/velocities are updated, update orbit lines
+                if (app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
+                    app.orbitManager.renderPlanetaryOrbits();
+                }
             } catch (e) {
                 console.error('[SimStream] parse error on planetary update', e);
             }

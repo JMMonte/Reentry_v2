@@ -239,6 +239,14 @@ export class Planet {
             });
         }
 
+        // --- SOI (Sphere of Influence) ---
+        if (this.soiRadius > 0) {
+            this.soiComponent = new SoiComponent(this);
+            if (this.soiComponent.mesh) {
+                this.components.push(this.soiComponent);
+            }
+        }
+
         // --- Light ---
         if (addLight) {
             const light = new THREE.PointLight(
@@ -341,8 +349,21 @@ export class Planet {
 
     /* ===== per-frame ===== */
     update() {
-        // Update all registered components (rotation, atmosphere, cloud, distant, soi, surface fade, radial grid, etc.)
-        this.components.forEach(c => c.update());
+        // If distant mesh is visible, only update distant component
+        if (this.distantComponent?.mesh?.visible) {
+            this.distantComponent.update();
+            return;
+        }
+        // Otherwise, update all components as usual
+        this.components.forEach(c => {
+            if (c && typeof c.update === 'function') {
+                if (c.constructor && c.constructor.name === 'AtmosphereComponent') {
+                    c.update(Planet.camera, window.app3d?.sun);
+                } else {
+                    c.update();
+                }
+            }
+        });
         // EMB marker position update
         if (this.nameLower === 'emb' && this.marker && window.Astronomy) {
             const jd = this.timeManager.getJulianDate();
@@ -354,7 +375,6 @@ export class Planet {
                 embState.z * kmPerAU
             );
         }
-        // Shader uniforms are now updated externally by App3D after final position sync
     }
 
     /* ===== public ===== */
@@ -412,8 +432,9 @@ export class Planet {
 
         this.orbitLine?.geometry?.dispose();
         this.orbitLine?.material?.dispose();
-        this.surface?.dispose?.();
-        this.radialGrid?.dispose?.();
+
+        // Dispose all components if they have a dispose method
+        this.components.forEach(c => c.dispose?.());
 
         const i = Planet.instances.indexOf(this);
         if (i !== -1) Planet.instances.splice(i, 1);

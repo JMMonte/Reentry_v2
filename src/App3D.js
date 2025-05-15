@@ -485,6 +485,27 @@ class App3D extends EventTarget {
     updateSatelliteList() {
         this.simulationLoop?.updateSatelliteList();
     }
+
+    /**
+     * Centralized per-frame update for animation loop.
+     * @param {number} delta - Time since last frame in seconds
+     */
+    tick(delta) {
+        this.stats?.begin();
+        this.sceneManager.updateFrame?.(delta);
+        this.cameraControls?.updateCameraPosition?.(delta);
+        if (Array.isArray(this.celestialBodies)) {
+            this.celestialBodies.forEach(planet => planet.update?.(delta));
+        }
+        // Preview nodes update (if any)
+        if (this.previewNode) this.previewNode.update?.(delta);
+        if (Array.isArray(this.previewNodes)) {
+            this.previewNodes.forEach(node => node.update?.(delta));
+        }
+        // Render CSS2D labels (if present)
+        this.labelRenderer?.render?.(this.scene, this.camera);
+        this.stats?.end();
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
