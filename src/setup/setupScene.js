@@ -107,6 +107,7 @@ export async function initScene(app) {
     for (const cfg of Object.values(barycenters)) {
         const group = new THREE.Group();
         group.name = cfg.name;
+        group.naif_id = cfg.naif_id;
         const marker = new THREE.Mesh(
             new THREE.SphereGeometry(0.1, 8, 8),
             new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.2 })
@@ -119,6 +120,7 @@ export async function initScene(app) {
     app.stars = [];
     for (const cfg of Object.values(stars)) {
         const star = new Sun(scene, timeUtils, cfg);
+        star.naif_id = cfg.naif_id;
         app.stars.push(star);
         if (cfg.name.toLowerCase() === 'sun') app.sun = star; // legacy convenience
         app.bodiesByNaifId[cfg.naif_id] = star;
@@ -131,6 +133,7 @@ export async function initScene(app) {
     // 4. Create all planets and moons
     for (const cfg of [...Object.values(planets), ...Object.values(moons)]) {
         const planet = new Planet(scene, renderer, timeUtils, textureManager, cfg);
+        planet.naif_id = cfg.naif_id;
         app.celestialBodies.push(planet);
         app.bodiesByNaifId[cfg.naif_id] = planet;
     }
@@ -142,13 +145,12 @@ export async function initScene(app) {
     // 3. Parent ALL bodies appropriately
     for (const cfg of Object.values(celestialBodiesConfig)) {
         if (!cfg.parent || typeof cfg.naif_id !== 'number') continue; // Skip if no parent or no ID
-
+        if (cfg.type === 'barycenter') continue; // Do not parent barycenters under each other
         const childObject = app.bodiesByNaifId[cfg.naif_id];
         if (!childObject) {
             console.warn(`Child object not found for NAIF ID: ${cfg.naif_id} (${cfg.name})`);
             continue;
         }
-
         // Find parent config and object
         const parentCfg = celestialBodiesConfig[cfg.parent] || Object.values(celestialBodiesConfig).find(c => c.name === cfg.parent);
         if (!parentCfg || typeof parentCfg.naif_id !== 'number') {
@@ -160,15 +162,13 @@ export async function initScene(app) {
             console.warn(`Parent object not found for NAIF ID: ${parentCfg.naif_id} (${parentCfg.name})`);
             continue;
         }
-
         // Determine the actual THREE object to parent under
         let parentAttachmentPoint = parentObject; // Default for Groups or Stars
         if (parentObject instanceof Planet && parentObject.getOrbitGroup) {
             parentAttachmentPoint = parentObject.getOrbitGroup(); // Planets have an orbit group
         }
-
         // Determine the actual THREE object to attach
-        let childAttachmentObject = childObject; // Default for Groups
+        let childAttachmentObject = childObject;
         if (childObject instanceof Planet && childObject.getOrbitGroup) {
             childAttachmentObject = childObject.getOrbitGroup(); // Planets attach their orbit group
         } else if (childObject instanceof Sun && childObject.sun) {
@@ -180,7 +180,6 @@ export async function initScene(app) {
             console.log(` - Sun light parented: ${!!childObject.sunLight.parent}`);
             continue; // Skip default attachment below for stars
         }
-
         // Perform the parenting
         if (childAttachmentObject instanceof THREE.Object3D) { // Ensure it's something addable
             parentAttachmentPoint.add(childAttachmentObject);

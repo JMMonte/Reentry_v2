@@ -5,9 +5,6 @@ import * as THREE from 'three';
 export const PHYSICS_SERVER_URL = import.meta.env.VITE_PHYSICS_SERVER_URL || 'http://localhost:8000';
 export const PHYSICS_WS_URL = PHYSICS_SERVER_URL.replace(/^http/, 'ws') + '/ws';
 
-import { naifIdToConfig } from '../config/celestialBodiesConfig.js';
-import { Sun } from '../components/Sun.js'; // Import Sun class
-
 /**
  * Create a new sim session, seeding it with the current simulation time.
  * @param {string} startTimeISO - ISO string of the simulation start time
@@ -36,6 +33,14 @@ function convertETtoDate(et) {
     return new Date(j2000 + et * 1000);
 }
 
+// Helper to check if all planets have position and velocity
+function allPlanetsHavePositionAndVelocity(app) {
+    if (!app.celestialBodies || !Array.isArray(app.celestialBodies)) return false;
+    return app.celestialBodies.every(
+        p => (p.naif_id === 0) || (p && p.position && p.velocity)
+    );
+}
+
 /**
  * Start live sim stream: msgType 10 = planetary updates, msgType 2 = sim time
  * @param {import('../App3D').default} app
@@ -50,7 +55,9 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
 
-    ws.onopen = () => { };
+    ws.onopen = () => {
+        app._simStreamActive = true;
+    };
     ws.onerror = err => console.error('[SimStream] error', err);
 
     ws.onmessage = evt => {
@@ -79,6 +86,13 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 let offset = 0;
                 const msgType = dv.getUint8(offset); offset += 1;
                 if (msgType === 10) {
+                    // --- DEBUG: Log raw backend data ---
+                    console.log('[SimSocket] Raw planetary update (bytes):', new Uint8Array(data));
+                    try {
+                        const floats = new Float64Array(data);
+                        console.log('[SimSocket] Raw planetary update (Float64Array):', floats);
+                    } catch {/* ignore errors in debug float log */}
+                    let offset = 1;
                     const naif_id = dv.getUint32(offset, true); offset += 4;
                     const pos = [];
                     for (let i = 0; i < 3; i++) { pos.push(dv.getFloat64(offset, true)); offset += 8; }
@@ -87,40 +101,91 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     const quat = [];
                     for (let i = 0; i < 4; i++) { quat.push(dv.getFloat64(offset, true)); offset += 8; }
 
-                    if (!app.bodiesByNaifId) app.bodiesByNaifId = {};
-                    const config = naifIdToConfig[naif_id];
-                    if (!config) return;
+                    // --- DEBUG: Log parsed values ---
+                    console.log(`[SimSocket] NAIF ${naif_id} parsed pos:`, pos, 'vel:', vel, 'quat:', quat);
 
-                    let body = app.bodiesByNaifId[naif_id];
-                    // --- Update body state from backend ---
-                    if (body && typeof body.getOrbitGroup === 'function') {
-                        body.getOrbitGroup().position.set(pos[0], pos[1], pos[2]);
-                        if (body.velocity) body.velocity.set(...vel);
-                        // // Log only the first time both position and velocity are set for each planet
-                        // if (typeof window !== 'undefined') {
-                        //     if (!window._loggedPlanets) window._loggedPlanets = new Set();
-                        //     if (!window._loggedPlanets.has(naif_id) && body.getOrbitGroup().position && body.velocity) {
-                        //         window._loggedPlanets.add(naif_id);
-                        //         console.log('[simSocket] First update for', config.name, `(NAIF ${naif_id}):`, 'position=', pos, 'velocity=', vel);
-                        //     }
-                        // }
-                        if (body.setOrientationFromServerQuaternion) {
-                            const qServer = new THREE.Quaternion(...quat);
-                            body.setOrientationFromServerQuaternion(qServer);
-                        } else if (body.getOrbitGroup().quaternion) {
-                            body.getOrbitGroup().quaternion.set(...quat);
+                    if (!app.bodiesByNaifId) app.bodiesByNaifId = {};
+                    const body = app.bodiesByNaifId[naif_id];
+                    if (!body) {
+                        console.warn(`[SimSocket] No body found for NAIF ${naif_id}`);
+                        return;
+                    }
+
+                    // Set position directly on the object (Group or Planet orbit group)
+                    let target = body;
+                    if (typeof body.getOrbitGroup === 'function') {
+                        target = body.getOrbitGroup();
+                    }
+                    if (target && target.position) {
+                        target.position.set(pos[0], pos[1], pos[2]);
+                    }
+                    // Set velocity if present
+                    if (body) {
+                        if (!body.velocity) body.velocity = new THREE.Vector3();
+                        body.velocity.set(...vel);
+                    }
+                    // Set orientation if quaternion is present
+                    if (target && target.quaternion && quat.length === 4) {
+                        // Backend: [w, x, y, z] -> Three.js: (x, y, z, w)
+                        let q = new THREE.Quaternion(quat[1], quat[2], quat[3], quat[0]);
+                        if (typeof body.setOrientationFromServerQuaternion === 'function') {
+                            body.setOrientationFromServerQuaternion(q);
+                        } else {
+                            target.quaternion.copy(q);
                         }
-                    } else if (body instanceof THREE.Group) {
-                        body.position.set(pos[0], pos[1], pos[2]);
-                        body.quaternion.set(...quat);
-                    } else if (body instanceof Sun) {
-                        body.setPosition(new THREE.Vector3(pos[0], pos[1], pos[2]));
+                    }
+                    // --- DEBUG: Log local and world positions after setting ---
+                    if (target && target.position && target.getWorldPosition) {
+                        const local = target.position.toArray();
+                        const world = target.getWorldPosition(new THREE.Vector3()).toArray();
+                        console.log(`[SimSocket] NAIF ${naif_id} set local:`, local, 'world:', world);
+                    }
+                    _planetaryUpdateCount++;
+                    _planetaryUpdateNaifIds.add(naif_id);
+                    if (Object.keys(_planetaryUpdateSamples).length < 5) {
+                        _planetaryUpdateSamples[naif_id] = pos;
+                    }
+                    const now = Date.now();
+                    if (now - _lastPlanetaryLogTime > 5000) {
+                        const naifArr = Array.from(_planetaryUpdateNaifIds);
+                        const sampleIds = naifArr.slice(0, 5);
+                        let sampleStr = '';
+                        if (sampleIds.length > 0) {
+                            sampleStr = sampleIds.map(id => {
+                                const pos = _planetaryUpdateSamples[id];
+                                return `    NAIF ${id} pos=[${pos.map(x => x.toExponential(2)).join(', ')}]`;
+                            }).join('\n');
+                            sampleStr = '\n' + sampleStr;
+                        }
+                        console.log(`[SimStream] ${_planetaryUpdateCount} planetary updates in last 5 seconds (${naifArr.length} unique bodies)${sampleStr}`);
+                        _lastPlanetaryLogTime = now;
+                        _planetaryUpdateCount = 0;
+                        _planetaryUpdateNaifIds.clear();
+                        _planetaryUpdateSamples = {};
                     }
                 }
             }
             // After all planet positions/velocities are updated, update orbit lines
             if (app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
-                app.orbitManager.renderPlanetaryOrbits();
+                // Debug: print full list once
+                if (!app._printedCelestialBodies) {
+                    app._printedCelestialBodies = true;
+                }
+                // Debug: print which planets are missing position/velocity
+                if (app.celestialBodies && Array.isArray(app.celestialBodies)) {
+                    // Removed unused forEach loop
+                }
+                if (app._simStreamActive) {
+                    const allReady = allPlanetsHavePositionAndVelocity(app);
+                    if (!app._orbitsReady) {
+                        if (allReady) {
+                            app._orbitsReady = true;
+                            app.orbitManager.renderPlanetaryOrbits();
+                        }
+                    } else {
+                        app.orbitManager.renderPlanetaryOrbits();
+                    }
+                }
             }
         } else {
             // (log removed)
@@ -131,25 +196,16 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 const raw = data.trim();
                 const fixed = raw.replace(/([{,])\s*([A-Za-z0-9_]+)\s*:/g, '$1"$2":');
                 const parsed = JSON.parse(fixed);
-                console.log('[SimStream] received:', parsed);
                 const { bodies } = parsed;
                 if (!bodies || !Array.isArray(bodies)) {
-                    console.warn('[SimStream] no bodies array in update');
                     return;
                 }
                 bodies.forEach(b => {
                     const planet = app.Planet.instances.find(p => p.nameLower === b.name.toLowerCase());
                     if (planet) {
-                        console.log(`[SimStream] updating ${b.name} to`, b.position);
                         planet.getOrbitGroup().position.set(b.position.x, b.position.y, b.position.z);
-                    } else {
-                        console.warn(`[SimStream] no planet found for`, b.name);
                     }
                 });
-                // After all planet positions/velocities are updated, update orbit lines
-                if (app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
-                    app.orbitManager.renderPlanetaryOrbits();
-                }
             } catch (e) {
                 console.error('[SimStream] parse error on planetary update', e);
             }
@@ -157,4 +213,9 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
     };
 
     app.simSocket = ws;
-} 
+}
+
+let _lastPlanetaryLogTime = 0;
+let _planetaryUpdateCount = 0;
+let _planetaryUpdateNaifIds = new Set();
+let _planetaryUpdateSamples = {}; 

@@ -68,7 +68,7 @@ export class Planet {
         this.textureManager = textureManager;
 
         this.name = name;
-        this.nameLower = name ? name.toLowerCase() : '';
+        this.nameLower = (name || '').toLowerCase();
         this.symbol = symbol || name.charAt(0);
 
         this.radius = radius;

@@ -33,8 +33,8 @@ export class RotationComponent {
             rotationGroup.rotation.set(0, 0, 0); // Reset
             rotationGroup.rotateX(baseRotation);
             // Uncomment below for other debug/test rotations:
-            rotationGroup.rotateX(Math.PI);
             // rotationGroup.rotateX(-Math.PI / 2);
+            // rotationGroup.rotateX(Math.PI);
         }
     }
 
@@ -46,10 +46,10 @@ export class RotationComponent {
      */
     static applyServerQuaternion(orientationGroup, qServer, options = {}) {
         const { applyServer = true } = options;
-        // if (applyServer && qServer) {
-        //     orientationGroup.quaternion.copy(qServer);
-        // }
+        if (applyServer && qServer) {
+            orientationGroup.quaternion.copy(qServer);
+        }
         // Uncomment for debug: do not apply server quaternion
-        if (!applyServer) orientationGroup.quaternion.identity();
+        // if (!applyServer) orientationGroup.quaternion.identity();
     }
 } 
