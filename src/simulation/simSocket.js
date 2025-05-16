@@ -49,6 +49,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
     // Seed backend with the current simulated time
     const startTimeISO = app.timeUtils.getSimulatedTime().toISOString();
     const sessionId = await createSimSession(startTimeISO);
+    app.sessionId = sessionId; // Store the session ID on the app instance
     const url = `${PHYSICS_WS_URL}?session_id=${sessionId}&frame=${frame}`;
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
@@ -85,10 +86,10 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 const msgType = dv.getUint8(offset); offset += 1;
                 if (msgType === 10) {
                     // --- DEBUG: Log raw backend data ---
-                    console.log('[SimSocket] Raw planetary update (bytes):', new Uint8Array(data));
+                    // console.log('[SimSocket] Raw planetary update (bytes):', new Uint8Array(data));
                     try {
-                        const floats = new Float64Array(data);
-                        console.log('[SimSocket] Raw planetary update (Float64Array):', floats);
+                        // const floats = new Float64Array(data);
+                        // console.log('[SimSocket] Raw planetary update (Float64Array):', floats);
                     } catch {/* ignore errors in debug float log */}
                     let offset = 1;
                     const naif_id = dv.getUint32(offset, true); offset += 4;
@@ -100,7 +101,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     for (let i = 0; i < 4; i++) { quat.push(dv.getFloat64(offset, true)); offset += 8; }
 
                     // --- DEBUG: Log parsed values ---
-                    console.log(`[SimSocket] NAIF ${naif_id} parsed pos:`, pos, 'vel:', vel, 'quat:', quat);
+                    // console.log(`[SimSocket] NAIF ${naif_id} parsed pos:`, pos, 'vel:', vel, 'quat:', quat);
 
                     if (!app.bodiesByNaifId) app.bodiesByNaifId = {};
                     const body = app.bodiesByNaifId[naif_id];
@@ -134,11 +135,10 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     }
                     // --- DEBUG: Log local and world positions after setting ---
                     if (target && target.position && target.getWorldPosition) {
-                        const local = target.position.toArray();
-                        const world = target.getWorldPosition(new THREE.Vector3()).toArray();
-                        console.log(`[SimSocket] NAIF ${naif_id} set local:`, local, 'world:', world);
+                        // const local = target.position.toArray();
+                        // const world = target.getWorldPosition(new THREE.Vector3()).toArray();
+                        // console.log(`[SimSocket] NAIF ${naif_id} set local:`, local, 'world:', world);
                     }
-                    _planetaryUpdateCount++;
                     _planetaryUpdateNaifIds.add(naif_id);
                     if (Object.keys(_planetaryUpdateSamples).length < 5) {
                         _planetaryUpdateSamples[naif_id] = pos;
@@ -147,17 +147,17 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     if (now - _lastPlanetaryLogTime > 5000) {
                         const naifArr = Array.from(_planetaryUpdateNaifIds);
                         const sampleIds = naifArr.slice(0, 5);
-                        let sampleStr = '';
+                        // let sampleStr = ''; // sampleStr is assigned but its value is never read
                         if (sampleIds.length > 0) {
-                            sampleStr = sampleIds.map(id => {
+                            /* sampleStr = sampleIds.map(id => {
                                 const pos = _planetaryUpdateSamples[id];
                                 return `    NAIF ${id} pos=[${pos.map(x => x.toExponential(2)).join(', ')}]`;
                             }).join('\n');
-                            sampleStr = '\n' + sampleStr;
+                            sampleStr = '\n' + sampleStr; */
                         }
-                        console.log(`[SimStream] ${_planetaryUpdateCount} planetary updates in last 5 seconds (${naifArr.length} unique bodies)${sampleStr}`);
+                        // console.log(`[SimStream] ${_planetaryUpdateCount} planetary updates in last 5 seconds (${naifArr.length} unique bodies)${sampleStr}`);
                         _lastPlanetaryLogTime = now;
-                        _planetaryUpdateCount = 0;
+                        // _planetaryUpdateCount = 0;
                         _planetaryUpdateNaifIds.clear();
                         _planetaryUpdateSamples = {};
                     }
@@ -214,6 +214,6 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
 }
 
 let _lastPlanetaryLogTime = 0;
-let _planetaryUpdateCount = 0;
+// let _planetaryUpdateCount = 0;
 let _planetaryUpdateNaifIds = new Set();
 let _planetaryUpdateSamples = {}; 

@@ -70,7 +70,7 @@ class App3D extends EventTarget {
 
     constructor({ simulatedTime } = {}) {
         super();
-        console.log('[App3D] constructor');
+        // console.log('[App3D] constructor');
 
         // — Canvas & DOM — -----------------------------------------------------
         this._canvas = document.getElementById('three-canvas');
@@ -142,7 +142,7 @@ class App3D extends EventTarget {
      * Call exactly once right after constructing `App3D`.
      */
     async init() {
-        console.log('[App3D] init start');
+        // console.log('[App3D] init start');
         try {
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
@@ -190,7 +190,7 @@ class App3D extends EventTarget {
 
             this._isInitialized = true;
             this._dispatchSceneReady();
-            console.log('[App3D] init done');
+            // console.log('[App3D] init done');
         } catch (err) {
             console.error('App3D init failed:', err);
             this.dispose();
@@ -200,7 +200,7 @@ class App3D extends EventTarget {
 
     /** Release workers, Three.js resources, and DOM artefacts. */
     dispose() {
-        console.log('[App3D] dispose');
+        // console.log('[App3D] dispose');
         this._isInitialized = false;
 
         // Workers

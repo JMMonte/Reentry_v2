@@ -142,7 +142,11 @@ function App3DMain() {
   }, [app3d]);
   useEffect(() => {
     if (app3d && app3d.sessionId) {
-      setSimulationDate(app3d.sessionId, new Date().toISOString());
+      // console.log('[App.jsx] sessionId useEffect - sessionId acquired:', app3d.sessionId, 'Initial simTime state for potential sync:', simTime.toISOString());
+      // This call ensures that when a session ID first becomes available,
+      // the backend is synced with the current simTime established by initialState or defaults.
+      // It should NOT run every time simTime changes, only when sessionId becomes available.
+      setSimulationDate(app3d.sessionId, simTime.toISOString());
     }
   }, [app3d?.sessionId]);
   useEffect(() => {
@@ -158,9 +162,16 @@ function App3DMain() {
     return () => document.removeEventListener('timeUpdate', handler);
   }, [app3d]);
   const handleSimulatedTimeChange = (newTime) => {
+    console.log('[App.jsx] handleSimulatedTimeChange called with newTime:', newTime);
     setSimTime(new Date(newTime));
     const sessionId = app3d?.sessionId || controller?.sessionId;
-    if (sessionId) setSimulationDate(sessionId, new Date(newTime).toISOString());
+    console.log('[App.jsx] handleSimulatedTimeChange - sessionId:', sessionId);
+    if (sessionId) {
+      console.log('[App.jsx] handleSimulatedTimeChange - Calling setSimulationDate for backend.');
+      setSimulationDate(sessionId, new Date(newTime).toISOString());
+    } else {
+      console.warn('[App.jsx] handleSimulatedTimeChange - No sessionId found, backend will not be updated.');
+    }
   };
   const {
     selectedBody,
