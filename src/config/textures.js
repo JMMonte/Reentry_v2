@@ -5,7 +5,7 @@ import earthNormalTexture from '../assets/texture/earth_normal.jpg';
 import earthNightTexture from '../assets/texture/earth_night.jpg';
 import cloudTexture from '../assets/texture/earth_clouds.png';
 import moonTexture from '../assets/texture/moon_surface.jpg';
-import moonBumpTexture from '../assets/texture/ldem_8_deflate.png';
+import moonNormalTexture from '../assets/texture/moon_normal.png';
 import mercuryTexture from '../assets/texture/mercury_surface.jpg';
 import mercuryNormalTexture from '../assets/texture/mercury_normal.png';
 import venusTexture from '../assets/texture/venus_surface.jpg';
@@ -24,6 +24,7 @@ import callistoTexture from '../assets/texture/callisto_surface.png';
 import uranusRingTexture from '../assets/texture/uranus_rings.png';
 import neptuneRingTexture from '../assets/texture/neptune_rings.png';
 import plutoTexture from '../assets/texture/pluto_surface.png';
+import plutoNormalTexture from '../assets/texture/pluto_normal.png';
 import charonTexture from '../assets/texture/charon_surface.png';
 
 export {
@@ -33,7 +34,7 @@ export {
     earthNightTexture,
     cloudTexture,
     moonTexture,
-    moonBumpTexture,
+    moonNormalTexture,
     mercuryTexture,
     mercuryNormalTexture,
     venusTexture,
@@ -52,5 +53,6 @@ export {
     ganymedeTexture,
     callistoTexture,
     plutoTexture,
+    plutoNormalTexture,
     charonTexture
 };

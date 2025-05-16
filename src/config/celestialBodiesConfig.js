@@ -13,13 +13,13 @@ import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 import {
     earthTexture, earthSpecTexture, earthNormalTexture,
-    cloudTexture, moonTexture, moonBumpTexture,
+    cloudTexture, moonTexture, moonNormalTexture,
     mercuryTexture, mercuryNormalTexture, venusTexture, venusAtmosphereTexture,
     marsTexture, marsNormalTexture, jupiterTexture, saturnTexture, saturnRingTexture,
     uranusRingTexture, neptuneRingTexture,
     uranusTexture, neptuneTexture,
     ioTexture, europaTexture, ganymedeTexture, callistoTexture,
-    plutoTexture, charonTexture
+    plutoTexture, plutoNormalTexture, charonTexture
 } from './textures.js';
 
 import geojsonDataSovereignty from './ne_50m_admin_0_sovereignty.json';
@@ -52,7 +52,7 @@ export const textureDefinitions = [
     { key: 'earthNormalTexture', src: earthNormalTexture },
     { key: 'cloudTexture', src: cloudTexture },
     { key: 'moonTexture', src: moonTexture },
-    { key: 'moonBumpTexture', src: moonBumpTexture },
+    { key: 'moonNormalTexture', src: moonNormalTexture },
     { key: 'mercuryTexture', src: mercuryTexture },
     { key: 'mercuryNormalTexture', src: mercuryNormalTexture },
     { key: 'venusTexture', src: venusTexture },
@@ -71,6 +71,7 @@ export const textureDefinitions = [
     { key: 'ganymedeTexture', src: ganymedeTexture },
     { key: 'callistoTexture', src: callistoTexture },
     { key: 'plutoTexture', src: plutoTexture },
+    { key: 'plutoNormalTexture', src: plutoNormalTexture },
     { key: 'charonTexture', src: charonTexture },
 ];
 
@@ -473,6 +474,12 @@ const planets = {
                 if (map) matParams.map = map;
                 return new THREE.MeshLambertMaterial(matParams);
             },
+            createNormalMaterial: tm => {
+                const matParams = {};
+                const normalMap = tm.getTexture('plutoNormalTexture');
+                if (normalMap) matParams.normalMap = normalMap;
+                return new THREE.MeshPhongMaterial(matParams);
+            },
         },
         radialGridConfig: {
             maxDisplayRadius: 1_200_000,
@@ -508,8 +515,9 @@ const moons = {
         materials: {
             createSurfaceMaterial: tm => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('moonTexture'),
-                bumpMap: tm.getTexture('moonBumpTexture'),
-                bumpScale: 1.5,
+                normalMap: tm.getTexture('moonNormalTexture'),
+                normalScale: new THREE.Vector2(0.5, 0.5),
+                roughness: 0.5, metalness: 0,
             }),
 
 
