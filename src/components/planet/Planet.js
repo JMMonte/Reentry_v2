@@ -184,8 +184,8 @@ export class Planet {
             markerSize: 0.7,
             circleSegments: 8,
             circleTextureSize: 32,
-            fadeStartPixelSize: 700,
-            fadeEndPixelSize: 600,
+            fadeStartPixelSize: 320,
+            fadeEndPixelSize: 240,
             heightOffset: 0,
             ...surfaceOptions // allow config to override if needed (for future flexibility)
         };
@@ -225,21 +225,27 @@ export class Planet {
         }
         // Treat surface fade as a component for per-frame updates
         if (this.surface) {
-            this.components.push({
-                update: () => {
-                    if (Planet.camera) this.surface.updateFade(Planet.camera);
-                }
-            });
+            // Remove the direct call to updateFade from here. It will be handled by a new method.
+            // this.components.push({
+            //     update: () => {
+            //         if (Planet.camera) this.surface.updateFade(Planet.camera);
+            //     }
+            // });
         }
         // Treat radial grid position and fading as a component
         if (this.radialGrid) {
-            this.components.push({
-                update: () => {
-                    if (Planet.camera) {
-                        this.radialGrid.updateFading(Planet.camera);
-                    }
-                }
-            });
+            // The radialGrid itself doesn't have an update() method in the traditional sense for position,
+            // as it's parented. We keep it in components if it had other generic update logic.
+            // For now, let's assume it might, or this entry can be removed if RadialGrid.update() is empty/doesn't exist.
+            // If RadialGrid needs other non-fading updates, it should have its own update() method.
+            // For now, we remove the direct call to updateFading from here.
+            // this.components.push({
+            //     update: () => {
+            //         // if (Planet.camera) {
+            //         //     this.radialGrid.updateFading(Planet.camera);
+            //         // }
+            //     }
+            // });
         }
 
         // --- SOI (Sphere of Influence) ---
@@ -382,10 +388,7 @@ export class Planet {
                 // as it has been handled (or skipped if not visible) already.
                 if (c === this.distantComponent) return; 
 
-                // AtmosphereComponent.update() is now simplified and doesn't take camera/sun
-                // It handles planet-specific updates like mesh scaling.
-                // The camera/sun dependent uniforms will be updated later via updateAtmosphereUniforms.
-                c.update(); // Pass delta if needed, or nothing based on component requirements
+                c.update(); 
             }
         });
     }
@@ -394,6 +397,20 @@ export class Planet {
     updateAtmosphereUniforms(camera, sun) {
         if (this.atmosphereComponent && typeof this.atmosphereComponent.updateUniforms === 'function') {
             this.atmosphereComponent.updateUniforms(camera, sun);
+        }
+    }
+
+    // New method for updating surface (lines/POIs) fading, called from App3D.tick() after camera update
+    updateSurfaceFading(camera) {
+        if (this.surface && typeof this.surface.updateFade === 'function') {
+            this.surface.updateFade(camera);
+        }
+    }
+
+    // New method for updating radial grid fading, called from App3D.tick() after camera update
+    updateRadialGridFading(camera) {
+        if (this.radialGrid && typeof this.radialGrid.updateFading === 'function') {
+            this.radialGrid.updateFading(camera);
         }
     }
 

@@ -210,27 +210,22 @@ export class PlanetSurface {
     /* ===== visibility helpers ===== */
 
     #setPointsVisible(cat, v) {
-        // Update internal state
+        // Update internal state only
         this.pointVisibility[cat] = v;
-        // Update actual mesh visibility immediately based on current fade opacity
-        // This avoids waiting for the next updateFade call
-        this.points[cat].forEach(m => {
-            const currentOpacity = m.material.opacity;
-            m.visible = v && currentOpacity > 0;
-        });
+        // DO NOT set m.visible here; updateFade will handle it.
     }
 
     setSurfaceLinesVisible(v) {
         this.lineVisibility.surfaceLines = v;
-        this.surfaceLines.forEach(l => { l.visible = v && l.material.opacity > 0; });
+        // DO NOT set l.visible here; updateFade will handle it.
     }
     setCountryBordersVisible(v) {
         this.lineVisibility.countryBorders = v;
-        this.countryBorders.forEach(b => { b.visible = v && b.material.opacity > 0; });
+        // DO NOT set b.visible here; updateFade will handle it.
     }
     setStatesVisible(v) {
         this.lineVisibility.states = v;
-        this.states.forEach(s => { s.visible = v && s.material.opacity > 0; });
+        // DO NOT set s.visible here; updateFade will handle it.
     }
 
     setCitiesVisible(v) { this.#setPointsVisible('cities', v); }
@@ -268,56 +263,69 @@ export class PlanetSurface {
      * @param {THREE.Camera} camera
      */
     updateFade(camera) {
-        if (!camera || !window) return;
+        if (!camera || !this.root?.visible) return;
 
-        const worldPos = new THREE.Vector3();
-        this.root.getWorldPosition(worldPos);
-        const dist = worldPos.distanceTo(camera.position);
+        const vFOV = THREE.MathUtils.degToRad(camera.fov);
+        const halfH = window.innerHeight / 2;
 
-        const fovY = THREE.MathUtils.degToRad(camera.fov);
-        const screenH = window.innerHeight;
-        const angularDiameter = 2 * Math.atan(this.planetRadius / dist);
-        const pixelHeight = (angularDiameter / fovY) * screenH;
+        const planetWorldPos = new THREE.Vector3();
+        this.root.getWorldPosition(planetWorldPos);
+        const distToPlanet = camera.position.distanceTo(planetWorldPos);
+        const planetApparentRadius = (this.planetRadius / distToPlanet) * halfH / Math.tan(vFOV / 2);
 
-        let opacity;
-        if (pixelHeight >= this.fadeStartPixelSize) {
-            opacity = 1;
-        } else if (pixelHeight <= this.fadeEndPixelSize) {
-            opacity = 0;
+        let masterOpacity;
+        if (planetApparentRadius < this.fadeEndPixelSize) {
+            masterOpacity = 0;
+        } else if (planetApparentRadius < this.fadeStartPixelSize) {
+            masterOpacity = (planetApparentRadius - this.fadeEndPixelSize) /
+                (this.fadeStartPixelSize - this.fadeEndPixelSize);
         } else {
-            opacity = (pixelHeight - this.fadeEndPixelSize) / (this.fadeStartPixelSize - this.fadeEndPixelSize);
+            masterOpacity = 1;
         }
+        masterOpacity = THREE.MathUtils.clamp(masterOpacity, 0, 1);
 
-        // Clamp opacity
-        const clampedOpacity = Math.max(0, Math.min(1, opacity));
-
-        // Apply to graticules, borders, and states
-        const surfaceLinesVisible = this.lineVisibility.surfaceLines;
-        this.surfaceLines.forEach(line => {
-            line.material.opacity = clampedOpacity;
-            line.visible = surfaceLinesVisible && clampedOpacity > 0;
-        });
-
-        const countryBordersVisible = this.lineVisibility.countryBorders;
-        this.countryBorders.forEach(line => {
-            line.material.opacity = clampedOpacity;
-            line.visible = countryBordersVisible && clampedOpacity > 0;
-        });
-
-        const statesVisible = this.lineVisibility.states;
-        this.states.forEach(line => {
-            line.material.opacity = clampedOpacity;
-            line.visible = statesVisible && clampedOpacity > 0;
-        });
-
-        // Apply to point features, respecting individual visibility toggles
-        for (const category in this.points) {
-            const isCategoryVisible = this.pointVisibility[category];
-            this.points[category].forEach(mesh => {
-                mesh.material.opacity = clampedOpacity;
-                // Visible only if category toggle is on AND fade opacity > 0
-                mesh.visible = isCategoryVisible && clampedOpacity > 0;
+        // Apply to surface lines based on their individual visibility flags
+        const applyLineFade = (lines, visibilityFlag) => {
+            lines.forEach(line => {
+                if (line.material) { // Ensure material exists
+                    line.material.opacity = masterOpacity;
+                }
+                line.visible = visibilityFlag && masterOpacity > 0;
             });
-        }
+        };
+
+        applyLineFade(this.surfaceLines, this.lineVisibility.surfaceLines);
+        applyLineFade(this.countryBorders, this.lineVisibility.countryBorders);
+        applyLineFade(this.states, this.lineVisibility.states);
+
+        // Apply to POIs (points) based on their individual visibility flags
+        Object.keys(this.points).forEach(cat => {
+            const categoryIsCurrentlyVisible = this.pointVisibility[cat];
+            this.points[cat].forEach(mesh => {
+                if (mesh.material) { // Ensure material exists
+                    mesh.material.opacity = masterOpacity;
+                }
+                mesh.visible = categoryIsCurrentlyVisible && masterOpacity > 0;
+
+                if (mesh.visible) {
+                    const poiWorldPos = new THREE.Vector3();
+                    // Ensure mesh's world matrix is updated if its parent (this.root) has moved
+                    // this.root.updateWorldMatrix(true, false); // Done by THREE.js render loop or App3D's sceneManager
+                    mesh.getWorldPosition(poiWorldPos); 
+                    const distToPOI = camera.position.distanceTo(poiWorldPos);
+                    
+                    const pixelSizeTarget = 8; 
+                    const poiScale = (distToPOI / (halfH / Math.tan(vFOV / 2))) * pixelSizeTarget;
+                    // Clamp scale to avoid POIs becoming too small or inverted
+                    const minScale = 0.1; // Minimum sensible scale
+                    const maxScale = 100; // Maximum sensible scale (adjust as needed)
+                    mesh.scale.set(
+                        THREE.MathUtils.clamp(poiScale, minScale, maxScale), 
+                        THREE.MathUtils.clamp(poiScale, minScale, maxScale), 
+                        1
+                    );
+                }
+            });
+        });
     }
 }
