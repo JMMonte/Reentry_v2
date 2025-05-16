@@ -232,7 +232,6 @@ export class Planet {
             this.components.push({
                 update: () => {
                     if (Planet.camera) {
-                        this.radialGrid.updatePosition();
                         this.radialGrid.updateFading(Planet.camera);
                     }
                 }

@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 import {
     earthTexture, earthSpecTexture, earthNormalTexture,
-    cloudTexture, moonTexture, moonNormalTexture,
+    cloudTexture, moonTexture, moonBumpTexture,
     mercuryTexture, mercuryNormalTexture, venusTexture, venusAtmosphereTexture,
     marsTexture, marsNormalTexture, jupiterTexture, saturnTexture, saturnRingTexture,
     uranusRingTexture, neptuneRingTexture,
@@ -51,7 +51,7 @@ export const textureDefinitions = [
     { key: 'earthNormalTexture', src: earthNormalTexture },
     { key: 'cloudTexture', src: cloudTexture },
     { key: 'moonTexture', src: moonTexture },
-    { key: 'moonNormalTexture', src: moonNormalTexture },
+    { key: 'moonBumpTexture', src: moonBumpTexture },
     { key: 'mercuryTexture', src: mercuryTexture },
     { key: 'mercuryNormalTexture', src: mercuryNormalTexture },
     { key: 'venusTexture', src: venusTexture },
@@ -458,11 +458,11 @@ const moons = {
         materials: {
             createSurfaceMaterial: tm => new THREE.MeshPhongMaterial({
                 map: tm.getTexture('moonTexture'),
-                normalMap: tm.getTexture('moonNormalTexture'),
-                normalScale: new THREE.Vector2(0.2, 0.2),
+                bumpMap: tm.getTexture('moonBumpTexture'),
+                bumpScale: 1.5,
             }),
-            createCloudMaterial: () => null,
-            createGlowMaterial: () => null,
+
+
         },
         radialGridConfig: {
             maxDisplayRadius: 29_000,

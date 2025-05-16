@@ -6,9 +6,9 @@
 uniform float uPlanetRadius;    // Planet equatorial radius (km)
 uniform float uPolarRadius;     // Planet polar radius (km)
 uniform float uAtmosphereHeight; // Atmosphere height above surface (km)
-uniform vec3 uSunPosition;    // World position of the sun (km)
+uniform vec3 uSunPosition;    // World position of the sun (km) - actually sun_world - planet_world from JS
 uniform float uSunIntensity;
-uniform vec3 uCameraPosition; // Camera position in world space
+uniform vec3 uCameraPosition; // Camera position in world space - actually cam_world - planet_world from JS
 
 // Raymarching parameters
 uniform int uNumLightSteps;   // Steps for light and view sampling
@@ -24,12 +24,16 @@ uniform float uMieAnisotropy;         // Mie phase function anisotropy (g)
 // Global haze intensity multiplier (1.0 = normal)
 uniform float uHazeIntensity;
 
+// New uniform for boosting scale heights
+uniform float uScaleHeightMultiplier;
+
 // Transformation
 uniform mat3 uPlanetFrame;      // World-to-Local rotation matrix for planet tilt
 
 // Varyings from vertex shader
-varying vec3 vWorldPositionFromPlanetCenter; // World position minus planet center
-varying vec3 vNormal;        // Fragment normal in world space
+// varying vec3 vWorldPositionFromPlanetCenter; // OLD
+varying vec3 vFragPositionPlanetLocal; // NEW - fragment position in planet's local, body-fixed, scaled frame
+// varying vec3 vNormal;        // OLD - Fragment normal in world space, unused
 
 const float PI = 3.141592653589793;
 
@@ -83,6 +87,9 @@ vec3 calculateOpticalDepthEllipsoid(
     float aAtm, float bAtm, float aPl, float bPl,
     float scaleHeight, vec3 rayleighCoeff, float mieCoeff
 ) {
+    // Apply multiplier to the incoming scaleHeight (e.g., uDensityScaleHeight)
+    float effectiveScaleHeight = scaleHeight * uScaleHeightMultiplier;
+
     vec2 atmIsect = intersectEllipsoid(rayOrigin, rayDir, aAtm, bAtm);
     if(atmIsect.y < 0.0) return vec3(0.0);
     float rayStart = max(0.0, atmIsect.x);
@@ -94,7 +101,7 @@ vec3 calculateOpticalDepthEllipsoid(
         vec3 samplePos = rayOrigin + rayDir * t;
         float height = ellipsoidAltitude(samplePos, aPl, bPl);
         if(height < 0.0) continue;
-        float density = getDensity(height, scaleHeight);
+        float density = getDensity(height, effectiveScaleHeight); // Use boosted scale height
         // separate Rayleigh and Mie extinction
         vec3 rayExt = rayleighCoeff * density;
         vec3 mieExt = vec3(mieCoeff * density);
@@ -106,10 +113,15 @@ vec3 calculateOpticalDepthEllipsoid(
 // --- Main Raymarching Logic (adapted for mesh) --- 
 
 void main() {
-    // We now receive camera & sun already relative to planet center;
+    // uCameraPosition from JS is (camera_world - planet_world_center)
+    // uSunPosition from JS is (sun_world - planet_world_center)
+    // uPlanetFrame transforms these world-oriented relative vectors to planet's local rotated frame.
     vec3 eyeLocal = uPlanetFrame * uCameraPosition;
     vec3 sunLocal = uPlanetFrame * uSunPosition;
-    vec3 fragLocal = uPlanetFrame * vWorldPositionFromPlanetCenter;
+
+    // vFragPositionPlanetLocal is the fragment's position in the planet's local, body-fixed, scaled frame.
+    vec3 fragLocal = vFragPositionPlanetLocal;
+    
     vec3 dirLocal = normalize(fragLocal - eyeLocal);
 
     // Offset ray origin slightly if inside or very close to the surface
@@ -148,9 +160,9 @@ void main() {
 
     vec3 accumulatedColor = vec3(0.0);
     vec3 accumulatedTransmittance = vec3(1.0);
-    // use separate scale heights
-    float rayleighScale = uRayleighScaleHeight;
-    float mieScale      = uMieScaleHeight;
+    // use separate scale heights, multiplied by the new uniform
+    float rayleighScale = uRayleighScaleHeight * uScaleHeightMultiplier;
+    float mieScale      = uMieScaleHeight * uScaleHeightMultiplier;
 
     // initial boundary in-scatter at tStart to avoid black rim
     {
@@ -174,7 +186,7 @@ void main() {
                     boundaryPos, lightDir0, uNumLightSteps,
                     atmEquatorialRadius, atmPolarRadius,
                     planetEquatorialRadius, planetPolarRadius,
-                    uDensityScaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
+                    uDensityScaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff // uDensityScaleHeight will be boosted inside the function
                 );
                 vec3 trans0 = exp(-od0);
                 // accumulate initial sample
@@ -209,7 +221,7 @@ void main() {
             samplePos, lightDir, uNumLightSteps,
             atmEquatorialRadius, atmPolarRadius,
             planetEquatorialRadius, planetPolarRadius,
-            uDensityScaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff
+            uDensityScaleHeight, uRayleighScatteringCoeff, uMieScatteringCoeff // uDensityScaleHeight will be boosted inside the function
         );
         vec3 transToSun = exp(-opticalDepthToSun);
         float cosTheta = dot(dirLocal, lightDir);
@@ -228,5 +240,5 @@ void main() {
     float meanTrans = (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z) / 3.0;
     // Apply haze intensity multiplier to scattered color
     accumulatedColor *= uHazeIntensity;
-    gl_FragColor = vec4(accumulatedColor, meanTrans);
+    gl_FragColor = vec4(accumulatedColor, 1.0 - meanTrans); // Corrected alpha for transmittance
 } 

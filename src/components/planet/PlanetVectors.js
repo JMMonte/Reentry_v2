@@ -14,8 +14,12 @@ const ARROW_COLORS = {
 const LABEL_FONT_SIZE = 64;
 const LABEL_COLOR = 'white';
 
+// Add a simple unique ID generator for debugging
+let planetVectorsInstanceCounter = 0;
+
 export class PlanetVectors {
     constructor(body, scene, sun, options = {}) {
+        this.instanceId = planetVectorsInstanceCounter++; // Assign unique ID
         this.body = body;
         this.scene = scene; // should be rebaseGroup
         this.sun = sun; // Sun mesh or object with getWorldPosition
@@ -29,20 +33,27 @@ export class PlanetVectors {
         this.arrowHeadWidth = this.radius * 0.07;
         this.fontLoader = new FontLoader();
         this.font = null;
-        this.group = new THREE.Group();
+        this.group = new THREE.Group(); // This group is always added to the scene and remains visible.
+                                         // Its children's visibility will be toggled.
         scene.add(this.group);
         this.isBarycenter = isBarycenter;
         const { name = 'Planet', showGreenwich = true } = options;
         this.options = { name, showGreenwich };
+
+        this.directionalArrows = [];
+        this.directionalLabels = [];
+        this.axesHelper = null; // Initialize axesHelper
+        this.axisLabels = []; // Initialize axisLabels
+
         if (isBarycenter) {
-            // Only create axes helper for barycenters
-            this.setAxesVisible(true);
+            // Only create axes helper for barycenters initially, controlled by setAxesVisible
+            this.setAxesVisible(false); // Start with axes hidden for barycenters too
             return;
         }
         // Attempt to parse the imported font JSON
         try {
             this.font = this.fontLoader.parse(helveticaRegular);
-            this.initVectors();
+            this.initVectors(); // This will populate directionalArrows and directionalLabels
         } catch (error) {
             console.error('Failed to parse font:', error);
         }
@@ -57,16 +68,17 @@ export class PlanetVectors {
         this.initSunDirection();
         this.initGreenwichVector();
         this.initVernalEquinoxVector();
-        // Now that all labels are created, initialize the label fader
-        const labels = [
-            this.northPoleLabel,
-            this.sunDirectionLabel,
-            this.greenwichLabel,
-            this.vernalEquinoxLabel
-        ];
+        
+        // Consolidate all directional labels for the LabelFader
+        const allLabelsForFader = [...this.directionalLabels]; 
+        // Note: AxesHelper CSS2D labels are not part of this LabelFader instance.
+
         const fadeStart = this.radius * 5;
         const fadeEnd = this.radius * 10;
-        this.labelFader = new LabelFader(labels, fadeStart, fadeEnd);
+        this.labelFader = new LabelFader(allLabelsForFader, fadeStart, fadeEnd);
+
+        // Initially, directional vectors are hidden until toggled on.
+        this.setVisible(false);
     }
 
     createLabel(text, position) {
@@ -121,10 +133,13 @@ export class PlanetVectors {
             this.arrowHeadWidth
         );
         this.group.add(this.northPoleVector);
+        this.directionalArrows.push(this.northPoleVector); // Add to managed array
+
         this.northPoleLabel = this.createLabel(
             `${this.options.name} Rotation Axis (Y)`,
             center.clone().add(northPoleDirection.clone().multiplyScalar(this.arrowLength))
         );
+        this.directionalLabels.push(this.northPoleLabel); // Add to managed array
     }
 
     initSunDirection() {
@@ -150,11 +165,14 @@ export class PlanetVectors {
             this.arrowHeadWidth
         );
         this.group.add(this.sunDirectionArrow);
+        this.directionalArrows.push(this.sunDirectionArrow); // Add to managed array
+
         // label at world-space tip location
         this.sunDirectionLabel = this.createLabel(
             `${this.options.name} Sun Direction`,
             center.clone().add(sunDirection.clone().multiplyScalar(this.arrowLength))
         );
+        this.directionalLabels.push(this.sunDirectionLabel); // Add to managed array
     }
 
     initGreenwichVector() {
@@ -176,10 +194,13 @@ export class PlanetVectors {
             this.arrowHeadWidth
         );
         this.group.add(this.greenwichVector);
+        this.directionalArrows.push(this.greenwichVector); // Add to managed array
+
         this.greenwichLabel = this.createLabel(
             `${this.options.name} Prime Meridian (X)`,
             center.clone().add(primeMeridianDirection.clone().multiplyScalar(this.arrowLength))
         );
+        this.directionalLabels.push(this.greenwichLabel); // Add to managed array
     }
 
     initVernalEquinoxVector() {
@@ -199,16 +220,52 @@ export class PlanetVectors {
             this.arrowHeadWidth
         );
         this.group.add(this.vernalEquinoxVector);
+        this.directionalArrows.push(this.vernalEquinoxVector); // Add to managed array
+
         this.vernalEquinoxLabel = this.createLabel(
             `${this.options.name} Vernal Equinox (World +X)`,
             center.clone().add(vernalEquinoxDir.clone().multiplyScalar(this.arrowLength))
         );
+        this.directionalLabels.push(this.vernalEquinoxLabel); // Add to managed array
     }
 
     updateVectors() {
         // update axis and prime meridian based on world transforms
         const center = new THREE.Vector3();
+        if (!this.body || !this.body.getMesh || !this.body.getMesh() || !this.body.getOrbitGroup) { // Added check for getOrbitGroup
+            console.warn(`PlanetVectors (ID: ${this.instanceId}, Name: ${this.options.name || 'Unknown'}): body, getMesh(), or getOrbitGroup() is invalid. Skipping update.`);
+            return;
+        }
         this.body.getMesh().getWorldPosition(center);
+
+        // --- BEGIN DIAGNOSTIC LOGGING ---
+        // Conditional logging to avoid flooding, remove or adjust as needed
+        if (this.options.name) { // Log for all bodies with names
+            let parentName = 'N/A';
+            const parentCenter = new THREE.Vector3();
+            let parentWorldPositionStr = 'N/A';
+            const planetOrbitGroup = this.body.getOrbitGroup();
+            const parentObject = planetOrbitGroup ? planetOrbitGroup.parent : null;
+
+            if (parentObject) {
+                parentName = parentObject.name || 'Unnamed Parent';
+                parentObject.getWorldPosition(parentCenter);
+                parentWorldPositionStr = `x=${parentCenter.x.toFixed(2)}, y=${parentCenter.y.toFixed(2)}, z=${parentCenter.z.toFixed(2)}`;
+            }
+            
+            const planetLocalPosition = planetOrbitGroup ? planetOrbitGroup.position : new THREE.Vector3();
+            const planetLocalPositionStr = `x=${planetLocalPosition.x.toFixed(2)}, y=${planetLocalPosition.y.toFixed(2)}, z=${planetLocalPosition.z.toFixed(2)}`;
+
+            console.log(
+                `PV_Update - ID: ${this.instanceId}, Planet: ${this.options.name}, ` +
+                `PlanetWorldCenter: [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}], ` +
+                `Parent: ${parentName}, ParentWorldCenter: [${parentWorldPositionStr}], ` +
+                `PlanetLocalPos: [${planetLocalPositionStr}], ` +
+                `GroupVisible: ${this.group.visible}`
+            );
+        }
+        // --- END DIAGNOSTIC LOGGING ---
+
         if (this.northPoleVector) {
             // recalc orientation along spin axis (planet's local Y axis)
             const worldQuat = new THREE.Quaternion();
@@ -250,7 +307,13 @@ export class PlanetVectors {
     }
 
     setVisible(visible) {
-        this.group.visible = visible;
+        // This method now controls only the directional vectors and their labels.
+        this.directionalArrows.forEach(arrow => {
+            if (arrow) arrow.visible = visible;
+        });
+        this.directionalLabels.forEach(label => {
+            if (label) label.visible = visible;
+        });
     }
 
     toggleNorthPoleVectorVisibility(visible) {
@@ -291,13 +354,22 @@ export class PlanetVectors {
             opacity = Math.max(0, Math.min(1, opacity));
         }
 
-        // Apply the calculated opacity to all labels (Sprites)
-        this.labelFader.sprites.forEach(label => {
+        // Apply the calculated opacity to all directional labels (Sprites)
+        // Check individual label visibility before applying opacity from fader.
+        this.directionalLabels.forEach(label => {
             if (label && label.material) {
-                label.material.opacity = opacity;
-                label.material.transparent = opacity < 1;
-                label.material.needsUpdate = true;
-                label.material.depthWrite = opacity === 1; // Only write depth when fully opaque
+                if (label.visible) { // Only apply fading if the label is supposed to be visible by its toggle
+                    label.material.opacity = opacity;
+                    label.material.transparent = opacity < 1;
+                    label.material.needsUpdate = true;
+                    label.material.depthWrite = opacity === 1; // Only write depth when fully opaque
+                } else {
+                    // Ensure labels explicitly hidden by setVisible(false) are fully transparent
+                    label.material.opacity = 0;
+                    label.material.transparent = true;
+                    label.material.needsUpdate = true;
+                    label.material.depthWrite = false;
+                }
             }
         });
     }
@@ -345,8 +417,14 @@ export class PlanetVectors {
                 this.axisLabels.forEach(lbl => lbl.visible = true);
             }
         } else {
-            if (this.axesHelper && this.axesHelper.parent) {
-                this.group.remove(this.axesHelper);
+            if (this.axesHelper) {
+                 this.axesHelper.visible = false; // Ensure it's hidden
+                 if (this.axisLabels) {
+                    this.axisLabels.forEach(lbl => lbl.visible = false);
+                }
+                // Optionally remove from group if it won't be toggled frequently,
+                // but keeping it and toggling visibility is generally fine.
+                // if (this.axesHelper.parent) this.group.remove(this.axesHelper);
             }
         }
     }

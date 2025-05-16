@@ -129,12 +129,25 @@ export class SceneManager {
     _updateVectors() {
         const { displaySettingsManager, planetVectors, satelliteVectors, camera } = this.app;
         const showVectors = displaySettingsManager.getSetting('showVectors');
-        if (showVectors && planetVectors) {
+        const showAxis = displaySettingsManager.getSetting('showAxis');
+
+        if (planetVectors) {
             planetVectors.forEach(v => {
-                v.updateVectors?.();
-                v.updateFading?.(camera);
+                if (v.setAxesVisible) {
+                    v.setAxesVisible(showAxis);
+                }
+                
+                if (v.setVisible) {
+                    v.setVisible(showVectors);
+                }
+
+                if (showAxis || showVectors) {
+                    v.updateVectors?.();
+                    v.updateFading?.(camera);
+                }
             });
         }
+
         const showSatVectors = displaySettingsManager.getSetting('showSatVectors');
         if (showSatVectors && satelliteVectors) {
             satelliteVectors.updateSatelliteVectors?.();

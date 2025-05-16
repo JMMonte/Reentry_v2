@@ -131,7 +131,7 @@ export class PlanetMaterials {
         const mat = this.surfaceCreator(this.textureManager, this.maxAnisotropy);
         if (mat.map) mat.map.anisotropy = this.maxAnisotropy;
         if (mat.normalMap) mat.normalMap.anisotropy = this.maxAnisotropy;
-        if (mat.bumpMap) mat.bumpMap.anisotropy = this.maxAnisotropy;
+        // if (mat.bumpMap) mat.bumpMap.anisotropy = this.maxAnisotropy;
         return mat;
     }
 
@@ -239,17 +239,17 @@ export class PlanetMaterials {
      *   - emissivity: number (default 0.2) - controls the ring's diffusion-like glow
      */
     getRingMaterial(colorTexture, alphaTexture, options = {}) {
-        const emissivity = options.emissivity ?? 0.5;
+        const emissivity = options.emissivity ?? 1.0;
         return new THREE.MeshPhongMaterial({
             map: colorTexture || null,
             alphaMap: alphaTexture || null,
             alphaTest: 0.01,
             side: THREE.DoubleSide,
             transparent: true,
-            depthWrite: true,
+            depthWrite: false,
             shininess: options.shininess ?? 15,
             specular: options.specular ?? 0x333333,
-            emissive: options.emissive ?? 0x222222,
+            emissive: options.emissive ?? 0xffffff,
             emissiveIntensity: options.emissiveIntensity ?? emissivity
         });
     }

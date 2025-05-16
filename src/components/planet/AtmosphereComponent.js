@@ -19,11 +19,21 @@ export class AtmosphereComponent {
         const equAtm = equR + planet.atmosphereThickness;
         const polAtm = polR + planet.atmosphereThickness;
 
-        // Store initial atmosphere equatorial radius for dynamic scaling
-        this._baseEquAtm = equAtm;
+        // Store initial atmosphere equatorial radius for dynamic scaling - REMOVED, direct scaling now
+        // this._baseEquAtm = equAtm; // Old
 
-        const yScale = equAtm === 0 ? 1 : polAtm / equAtm;
-        outer.scale.set(1, yScale, 1);
+        // const yScale = equAtm === 0 ? 1 : polAtm / equAtm; // Old
+        // outer.scale.set(1, yScale, 1); // Old, for pre-scaled geometry
+        outer.scale.set(equAtm, polAtm, equAtm); // New, for radius 1 geometry from PlanetMaterials
+
+        // Pass actual radii for vertex shader scaling
+        if (outer.material.uniforms) { // Check if uniforms exist
+            outer.material.uniforms.uEquatorialAtmRadiusForScaling = { value: equAtm };
+            outer.material.uniforms.uPolarAtmRadiusForScaling = { value: polAtm };
+        }
+
+        // const yScale = equAtm === 0 ? 1 : polAtm / equAtm; // Old
+        // outer.scale.set(1, yScale, 1); // Commented out, direct scale above
         // Render order for the atmosphere mesh
         outer.renderOrder = planet.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
         planet.rotationGroup.add(outer);
@@ -97,6 +107,12 @@ export class AtmosphereComponent {
         lutTex.needsUpdate = true;
         // Attach LUT to material
         outer.material.uniforms.uOpticalDepthLUT = { value: lutTex };
+
+        // Add scale height multiplier uniform
+        const scaleHeightMultiplier = config.atmosphere && typeof config.atmosphere.scaleHeightMultiplier === 'number' 
+            ? config.atmosphere.scaleHeightMultiplier 
+            : 5.0; // Default to 5.0 if not specified in config
+        outer.material.uniforms.uScaleHeightMultiplier = { value: scaleHeightMultiplier };
     }
 
     update(camera, sun) {
@@ -149,15 +165,26 @@ export class AtmosphereComponent {
         }
 
         // Update mesh scale if atmosphere thickness changed
-        const equR = this.planet.radius;
+        const equR = this.planet.radius; // Already defined above, but good for clarity here
         const polR = equR * (1 - this.planet.oblateness);
         const newAtmHeight = this.planet.atmosphereThickness;
         const newEquAtm = equR + newAtmHeight;
         const newPolAtm = polR + newAtmHeight;
-        const baseEquAtm = this._baseEquAtm;
-        const scaleXZ = baseEquAtm === 0 ? 1 : newEquAtm / baseEquAtm;
-        const scaleY = baseEquAtm === 0 ? 1 : newPolAtm / baseEquAtm;
-        this.mesh.scale.set(scaleXZ, scaleY, scaleXZ);
+
+        // const baseEquAtm = this._baseEquAtm; // Old
+        // const scaleXZ = baseEquAtm === 0 ? 1 : newEquAtm / baseEquAtm; // Old
+        // const scaleY = baseEquAtm === 0 ? 1 : newPolAtm / baseEquAtm; // Old
+        // this.mesh.scale.set(scaleXZ, scaleY, scaleXZ); // Old
+
+        this.mesh.scale.set(newEquAtm, newPolAtm, newEquAtm); // New direct scale
+
+        // Update uniforms for vertex shader scaling
+        if (this.mesh.material.uniforms.uEquatorialAtmRadiusForScaling) {
+            this.mesh.material.uniforms.uEquatorialAtmRadiusForScaling.value = newEquAtm;
+        }
+        if (this.mesh.material.uniforms.uPolarAtmRadiusForScaling) {
+            this.mesh.material.uniforms.uPolarAtmRadiusForScaling.value = newPolAtm;
+        }
     }
 
     dispose() {

@@ -11,16 +11,42 @@ export class RadialGrid {
     constructor(planet, config) {
         this.planet = planet;
         this.config = config;
-        this.scene = planet.scene; // Store scene reference
-        this.parentRef = this.scene; // Reference parent for removal in dispose
+        // this.scene = planet.scene; // Store scene reference // REMOVED
+        // this.parentRef = this.scene; // Reference parent for removal in dispose // MODIFIED BELOW
 
         this.group = new THREE.Group();
         this.group.name = `${planet.name}_radialGrid`;
+        this.worldPosition = new THREE.Vector3(); // Added for updateFading
+
+        const planetOrbitGroup = planet.getOrbitGroup();
+
+        if (!planetOrbitGroup) {
+            console.error(`RadialGrid constructor: Planet ${planet.name} does not have a valid orbitGroup. Grid cannot be initialized.`);
+            // In a real scenario, might set a flag this.isValid = false and return
+            // For now, assume planetOrbitGroup is always valid based on Planet.js structure
+            // If it could be null, this.group might not be added, and subsequent calls would fail.
+        }
+
+        this.parentRef = planetOrbitGroup; // Set parentRef to the orbitGroup
+        if (planetOrbitGroup) {
+            planetOrbitGroup.add(this.group); // Add to planet's orbit group
+            this.group.position.set(0, 0, 0);    // Set local position to origin
+            this.group.quaternion.identity();    // Set local rotation to identity
+        } else {
+            // Fallback or error: if orbit group isn's available, add to scene as before,
+            // but this would likely not solve the user's original issue.
+            // This path should ideally not be hit.
+            console.warn(`RadialGrid: Planet ${planet.name}'s orbitGroup not found. Adding grid to scene as fallback.`);
+            this.scene = planet.scene; // Fallback to original scene ref
+            this.parentRef = this.scene;
+            if (this.scene) this.scene.add(this.group);
+        }
+
         // No counter-rotation needed when attached to scene
         // this.group.rotation.set(Math.PI / 2, 0, -Math.PI);
 
         // Add to the planet's parent group (should be rebaseGroup)
-        this.scene.add(this.group); // scene is rebaseGroup for planets
+        // this.scene.add(this.group); // scene is rebaseGroup for planets // REMOVED (handled above)
         this.labelsSprites = [];
 
         if (!config) {
@@ -272,7 +298,8 @@ export class RadialGrid {
     updateFading(camera) {
         if (this.labelFader && this.group && this.planet) {
             // Pass the grid's world position, the grid group, and the planet itself
-            this.labelFader.update(camera, this.group.position, this.group, this.planet);
+            this.group.getWorldPosition(this.worldPosition);
+            this.labelFader.update(camera, this.worldPosition, this.group, this.planet);
         }
     }
 
@@ -310,10 +337,15 @@ export class RadialGrid {
 
     /** Update the grid's world position to match the planet's orbital position */
     updatePosition() {
-        if (this.planet && this.group && this.planet.getOrbitGroup()) { // Check orbit group exists
-            // Use camera-relative position (already rebased)
-            this.group.position.copy(this.planet.getOrbitGroup().position);
-        }
+        // This method is no longer needed as the grid is a child of the planet's orbitGroup
+        // and its local position is set to (0,0,0).
+        // Its world position will automatically update when the parent orbitGroup's position updates.
+
+        // Original content:
+        // if (this.planet && this.group && this.planet.getOrbitGroup()) { // Check orbit group exists
+        //     // Use camera-relative position (already rebased)
+        //     this.group.position.copy(this.planet.getOrbitGroup().position);
+        // }
     }
 }
 

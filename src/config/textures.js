@@ -5,7 +5,7 @@ import earthNormalTexture from '../assets/texture/earth_normal.jpg';
 import earthNightTexture from '../assets/texture/earth_night.jpg';
 import cloudTexture from '../assets/texture/earth_clouds.png';
 import moonTexture from '../assets/texture/moon_surface.jpg';
-import moonNormalTexture from '../assets/texture/moon_normal.jpg';
+import moonBumpTexture from '../assets/texture/ldem_8_deflate.png';
 import mercuryTexture from '../assets/texture/mercury_surface.jpg';
 import mercuryNormalTexture from '../assets/texture/mercury_normal.png';
 import venusTexture from '../assets/texture/venus_surface.jpg';
@@ -31,7 +31,7 @@ export {
     earthNightTexture,
     cloudTexture,
     moonTexture,
-    moonNormalTexture,
+    moonBumpTexture,
     mercuryTexture,
     mercuryNormalTexture,
     venusTexture,
