@@ -41,7 +41,7 @@ export function setupEventListeners(app) {
     // Listen for bodySelected events from UI and delegate to camera
     document.addEventListener('bodySelected', ({ detail }) => {
         const value = detail?.body;
-        app.updateSelectedBody?.(value);
+        app.updateSelectedBody?.(value, !app.isInitialized);
     });
 }
 

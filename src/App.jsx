@@ -188,8 +188,13 @@ function App3DMain() {
     ready
   });
   useEffect(() => {
-    if (controller?.app3d?.updateSelectedBody && ready) {
-      controller.app3d.updateSelectedBody(selectedBody);
+    if (
+      controller?.app3d?.updateSelectedBody &&
+      ready &&
+      Array.isArray(controller.app3d.celestialBodies) &&
+      controller.app3d.celestialBodies.length > 0
+    ) {
+      controller.app3d.updateSelectedBody(selectedBody, false);
     }
   }, [selectedBody, controller, ready]);
   const onCreateSatellite = async (params) => {

@@ -5,18 +5,26 @@ import { Constants } from '../../utils/Constants.js';
 
 // Inlined from EarthMaterials.js
 function createEarthMaterial(textureManager, anisotropy) {
-    const earthTextureMap = textureManager.getTexture('earthTexture');
-    earthTextureMap.anisotropy = anisotropy;
     const matParams = {
-        map: earthTextureMap,
-        specularMap: textureManager.getTexture('earthSpecTexture'),
         specular: 0xffffff,
         shininess: 40.0,
-        normalMap: textureManager.getTexture('earthNormalTexture'),
         normalScale: new THREE.Vector2(5.0, 5.0),
         normalMapType: THREE.TangentSpaceNormalMap,
         depthWrite: true
     };
+    const earthTextureMap = textureManager.getTexture('earthTexture');
+    if (earthTextureMap) {
+        earthTextureMap.anisotropy = anisotropy;
+        matParams.map = earthTextureMap;
+    }
+    const specularMap = textureManager.getTexture('earthSpecTexture');
+    if (specularMap) {
+        matParams.specularMap = specularMap;
+    }
+    const normalMap = textureManager.getTexture('earthNormalTexture');
+    if (normalMap) {
+        matParams.normalMap = normalMap;
+    }
     const bump = textureManager.getTexture('earthBumpMap');
     if (bump) {
         matParams.bumpMap = bump;

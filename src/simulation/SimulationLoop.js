@@ -75,8 +75,8 @@ export class SimulationLoop {
     }
 
     /** Update camera to follow a new body selection. */
-    updateSelectedBody(value) {
-        this.app.cameraControls?.follow(value, this.app);
+    updateSelectedBody(value, suppressLog = false) {
+        this.app.cameraControls?.follow(value, this.app, suppressLog);
     }
 
     /** Update display setting and propagate to relevant managers. */

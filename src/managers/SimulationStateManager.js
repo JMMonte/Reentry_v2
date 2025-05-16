@@ -197,7 +197,7 @@ export class SimulationStateManager {
             camControls.spherical.set(cameraState.spherical.radius, cameraState.spherical.phi, cameraState.spherical.theta);
         }
         controls.update();
-        cameraState.focusedBody ? this.app.updateSelectedBody(cameraState.focusedBody) : camControls.clearCameraTarget();
+        cameraState.focusedBody ? this.app.updateSelectedBody(cameraState.focusedBody, true) : camControls.clearCameraTarget();
     }
 
     _serializeSatellites() {

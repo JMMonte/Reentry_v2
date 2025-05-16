@@ -24,58 +24,8 @@ export class DisplaySettingsManager {
      * Apply all settings to the scene and satellites.
      */
     applyAll() {
-        // Batch all planet-related settings into a single loop
-        const planetSettings = [
-            'showGrid', 'showSurfaceLines', 'showCities', 'showAirports', 'showSpaceports',
-            'showObservatories', 'showGroundStations', 'showMissions', 'showCountryBorders',
-            'showTopographicIsolines', 'showSOI'
-        ];
-        // Collect the current values for each planet-related setting
-        const settingValues = {};
-        planetSettings.forEach(key => {
-            if (key in this.settings) settingValues[key] = this.settings[key];
-        });
-        // Batch apply all planet-related settings in one loop
-        Planet.instances.forEach(planet => {
-            if ('showGrid' in settingValues && planet.radialGrid && typeof planet.setRadialGridVisible === 'function') {
-                planet.setRadialGridVisible(settingValues['showGrid']);
-            }
-            if ('showSurfaceLines' in settingValues && typeof planet.setSurfaceLinesVisible === 'function') {
-                planet.setSurfaceLinesVisible(settingValues['showSurfaceLines']);
-            }
-            if ('showCities' in settingValues && typeof planet.setCitiesVisible === 'function') {
-                planet.setCitiesVisible(settingValues['showCities']);
-            }
-            if ('showAirports' in settingValues && typeof planet.setAirportsVisible === 'function') {
-                planet.setAirportsVisible(settingValues['showAirports']);
-            }
-            if ('showSpaceports' in settingValues && typeof planet.setSpaceportsVisible === 'function') {
-                planet.setSpaceportsVisible(settingValues['showSpaceports']);
-            }
-            if ('showObservatories' in settingValues && typeof planet.setObservatoriesVisible === 'function') {
-                planet.setObservatoriesVisible(settingValues['showObservatories']);
-            }
-            if ('showGroundStations' in settingValues && typeof planet.setGroundStationsVisible === 'function') {
-                planet.setGroundStationsVisible(settingValues['showGroundStations']);
-            }
-            if ('showMissions' in settingValues && typeof planet.setMissionsVisible === 'function') {
-                planet.setMissionsVisible(settingValues['showMissions']);
-            }
-            if ('showCountryBorders' in settingValues && typeof planet.setCountryBordersVisible === 'function') {
-                planet.setCountryBordersVisible(settingValues['showCountryBorders']);
-            }
-            if ('showTopographicIsolines' in settingValues && typeof planet.setStatesVisible === 'function') {
-                planet.setStatesVisible(settingValues['showTopographicIsolines']);
-            }
-            if ('showSOI' in settingValues && typeof planet.setSOIVisible === 'function') {
-                planet.setSOIVisible(settingValues['showSOI']);
-            }
-        });
-        // Apply all other settings as before
         Object.entries(this.settings).forEach(([key, value]) => {
-            if (!planetSettings.includes(key)) {
-                this._applySetting(key, value);
-            }
+            this._applySetting(key, value);
         });
     }
 
@@ -110,6 +60,15 @@ export class DisplaySettingsManager {
                 if (ambientLight) ambientLight.intensity = value;
                 break;
             }
+            case 'showGrid': {
+                // Iterate through planets and set grid visibility
+                Planet.instances.forEach(planet => {
+                    if (planet.radialGrid && typeof planet.setRadialGridVisible === 'function') {
+                        planet.setRadialGridVisible(value);
+                    }
+                });
+                break;
+            }
             case 'showVectors':
                 // Toggle planet-centric vectors (now an array)
                 if (Array.isArray(app3d.planetVectors)) {
@@ -122,21 +81,67 @@ export class DisplaySettingsManager {
                 // Toggle satellite-centric velocity/gravity arrows only
                 if (app3d.satelliteVectors) app3d.satelliteVectors.setVisible(value);
                 break;
+            case 'showSurfaceLines':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setSurfaceLinesVisible === 'function') p.setSurfaceLinesVisible(value);
+                });
+                break;
             case 'showOrbits':
                 Object.values(app3d.satellites.getSatellites()).forEach(sat => {
                     if (sat.orbitPath?.setVisible) sat.orbitPath.setVisible(value);
                     if (sat.apsisVisualizer?.setVisible) sat.apsisVisualizer.setVisible(value);
                 });
                 break;
-            case 'showAxis': {
-                // Toggle axis helpers on all planets via PlanetVectors
-                if (Array.isArray(app3d.planetVectors)) {
-                    app3d.planetVectors.forEach(v => v.setAxesVisible(value));
-                } else if (app3d.planetVectors) {
-                    app3d.planetVectors.setAxesVisible(value);
-                }
+            case 'showCities':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setCitiesVisible === 'function') p.setCitiesVisible(value);
+                });
                 break;
-            }
+            case 'showAirports':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setAirportsVisible === 'function') p.setAirportsVisible(value);
+                });
+                break;
+            case 'showSpaceports':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setSpaceportsVisible === 'function') p.setSpaceportsVisible(value);
+                });
+                break;
+            case 'showObservatories':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setObservatoriesVisible === 'function') p.setObservatoriesVisible(value);
+                });
+                break;
+            case 'showGroundStations':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setGroundStationsVisible === 'function') p.setGroundStationsVisible(value);
+                });
+                break;
+            case 'showMissions':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setMissionsVisible === 'function') p.setMissionsVisible(value);
+                });
+                break;
+            case 'showCountryBorders':
+                Planet.instances.forEach(p => {
+                    if (typeof p.setCountryBordersVisible === 'function') p.setCountryBordersVisible(value);
+                });
+                break;
+            case 'showTopographicIsolines':
+                // Toggle topographic isolines (state-style geo features) on all planets
+                Planet.instances.forEach(p => {
+                    if (typeof p.setStatesVisible === 'function') p.setStatesVisible(value);
+                });
+                break;
+            case 'showSOI':
+                // Toggle sphere of influence rim glow on all planets
+                Planet.instances.forEach(p => {
+                    if (typeof p.setSOIVisible === 'function') p.setSOIVisible(value);
+                });
+                break;
+            case 'showPlanetOrbits':
+                if (app3d.orbitManager) app3d.orbitManager.setVisible(value);
+                break;
             case 'enableFXAA':
                 // Enable or disable the FXAA pass
                 if (app3d.sceneManager?.composers?.fxaaPass) {
@@ -163,6 +168,15 @@ export class DisplaySettingsManager {
                         1 / (window.innerWidth * value),
                         1 / (window.innerHeight * value)
                     );
+                }
+                break;
+            }
+            case 'showAxis': {
+                // Toggle axis helpers on all planets via PlanetVectors
+                if (Array.isArray(app3d.planetVectors)) {
+                    app3d.planetVectors.forEach(v => v.setAxesVisible(value));
+                } else if (app3d.planetVectors) {
+                    app3d.planetVectors.setAxesVisible(value);
                 }
                 break;
             }

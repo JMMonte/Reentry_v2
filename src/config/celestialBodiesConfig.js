@@ -18,7 +18,8 @@ import {
     marsTexture, marsNormalTexture, jupiterTexture, saturnTexture, saturnRingTexture,
     uranusRingTexture, neptuneRingTexture,
     uranusTexture, neptuneTexture,
-    ioTexture, europaTexture, ganymedeTexture, callistoTexture
+    ioTexture, europaTexture, ganymedeTexture, callistoTexture,
+    plutoTexture, charonTexture
 } from './textures.js';
 
 import geojsonDataSovereignty from './ne_50m_admin_0_sovereignty.json';
@@ -69,6 +70,8 @@ export const textureDefinitions = [
     { key: 'europaTexture', src: europaTexture },
     { key: 'ganymedeTexture', src: ganymedeTexture },
     { key: 'callistoTexture', src: callistoTexture },
+    { key: 'plutoTexture', src: plutoTexture },
+    { key: 'charonTexture', src: charonTexture },
 ];
 
 /* =======================================================================
@@ -95,7 +98,7 @@ const planets = {
     earth: {
         name: 'earth', parent: 'emb', naif_id: 399, symbol: '♁',
         radius: EARTH_RAD, rotationOffset: 4.89496121, oblateness: 0.0033528106647474805,
-        cloudThickness: 2,
+        cloudThickness: 5,
         primaryGeojsonData: geojsonDataSovereignty,
         stateGeojsonData: geojsonDataStates,
         cityData: geojsonDataCities,
@@ -106,7 +109,7 @@ const planets = {
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: EARTH_RAD * 10, helper: false },
         lodLevels: generateLodLevelsForRadius(EARTH_RAD),
-        dotPixelSizeThreshold: 1, soiRadius: 145,
+        dotPixelSizeThreshold: 2, soiRadius: 145,
         atmosphere: {
             thickness: 60, densityScaleHeight: 20, hazeIntensity: 3,
             scaleHeightMultiplier: 4.0,
@@ -118,13 +121,19 @@ const planets = {
             polarRadius: EARTH_RAD * (1 - 0.0033528106647474805),
         },
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshPhongMaterial({
-                    map: tm.getTexture('earthTexture'),
-                    normalMap: tm.getTexture('earthNormalTexture'),
-                    specularMap: tm.getTexture('earthSpecTexture'),
-                emissive: 0x000000, shininess: 150, specular: 0x888888,
+            createSurfaceMaterial: tm => {
+                const matParams = {
+                    emissive: 0x000000, shininess: 150, specular: 0x888888,
                     normalScale: new THREE.Vector2(1, -1),
-            }),
+                };
+                const map = tm.getTexture('earthTexture');
+                if (map) matParams.map = map;
+                const normalMap = tm.getTexture('earthNormalTexture');
+                if (normalMap) matParams.normalMap = normalMap;
+                const specularMap = tm.getTexture('earthSpecTexture');
+                if (specularMap) matParams.specularMap = specularMap;
+                return new THREE.MeshPhongMaterial(matParams);
+            },
             createCloudMaterial: tm => new THREE.MeshLambertMaterial({
                 alphaMap: tm.getTexture('cloudTexture'),
                 color: 0xffffff, transparent: true,
@@ -154,14 +163,16 @@ const planets = {
         name: 'mercury', parent: 'mercury_barycenter', naif_id: 199, symbol: '☿',
         radius: 2439.7, rotationPeriod: 5_067_000, oblateness: 0,
         lodLevels: generateLodLevelsForRadius(2439.7),
-        dotPixelSizeThreshold: 1, soiRadius: 46,
+        dotPixelSizeThreshold: 2, soiRadius: 46,
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshPhongMaterial({
-                map: tm.getTexture('mercuryTexture'),
-                shininess: 5,
-                normalMap: tm.getTexture('mercuryNormalTexture'),
-                normalScale: new THREE.Vector2(0.5, 0.5),
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = { shininess: 5, normalScale: new THREE.Vector2(0.5, 0.5) };
+                const map = tm.getTexture('mercuryTexture');
+                if (map) matParams.map = map;
+                const normalMap = tm.getTexture('mercuryNormalTexture');
+                if (normalMap) matParams.normalMap = normalMap;
+                return new THREE.MeshPhongMaterial(matParams);
+            },
         },
         radialGridConfig: {
             maxDisplayRadius: 112_000,
@@ -185,15 +196,20 @@ const planets = {
         radius: 6051.8, rotationPeriod: -20_997_000, oblateness: 0,
         cloudThickness: 10,
         lodLevels: generateLodLevelsForRadius(6051.8),
-        dotPixelSizeThreshold: 1, soiRadius: 101,
+        dotPixelSizeThreshold: 2, soiRadius: 101,
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshPhongMaterial({
-                map: tm.getTexture('venusTexture'), shininess: 10,
-            }),
-            createCloudMaterial: tm => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('venusAtmosphereTexture'),
-                transparent: false, opacity: 1, blending: THREE.NormalBlending,
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = { shininess: 10 };
+                const map = tm.getTexture('venusTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshPhongMaterial(matParams);
+            },
+            createCloudMaterial: tm => {
+                const matParams = { transparent: false, opacity: 1, blending: THREE.NormalBlending };
+                const map = tm.getTexture('venusAtmosphereTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
         },
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 3,
@@ -225,13 +241,16 @@ const planets = {
         name: 'mars', parent: 'mars_barycenter', naif_id: 499, symbol: '♂',
         radius: 3389.5, rotationPeriod: 88_643, oblateness: 0.00589,
         lodLevels: generateLodLevelsForRadius(3389.5),
-        dotPixelSizeThreshold: 1, soiRadius: 169,
+        dotPixelSizeThreshold: 2, soiRadius: 169,
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshPhongMaterial({
-                map: tm.getTexture('marsTexture'), shininess: 5,
-                normalMap: tm.getTexture('marsNormalTexture'),
-                normalScale: new THREE.Vector2(0.5, 0.5),
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = { shininess: 5, normalScale: new THREE.Vector2(0.5, 0.5) };
+                const map = tm.getTexture('marsTexture');
+                if (map) matParams.map = map;
+                const normalMap = tm.getTexture('marsNormalTexture');
+                if (normalMap) matParams.normalMap = normalMap;
+                return new THREE.MeshPhongMaterial(matParams);
+            },
         },
         atmosphere: {
             hazeIntensity: 4.6, thickness: 11, densityScaleHeight: 11.1,
@@ -262,11 +281,14 @@ const planets = {
         name: 'jupiter', parent: 'jupiter_barycenter', naif_id: 599, symbol: '♃',
         radius: 69_911, rotationPeriod: 35_730, oblateness: 0.06487,
         lodLevels: generateLodLevelsForRadius(69_911),
-        dotPixelSizeThreshold: 1, soiRadius: 690,
+        dotPixelSizeThreshold: 2, soiRadius: 690,
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('jupiterTexture'),
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('jupiterTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
         },
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 3,
@@ -300,7 +322,7 @@ const planets = {
         mass: 5.6834e26, radius: 58_232, tilt: 26.73,
         rotationPeriod: 38_362, oblateness: 0.09796,
         lodLevels: generateLodLevelsForRadius(58_232),
-        dotPixelSizeThreshold: 1, soiRadius: 946, addRings: true,
+        dotPixelSizeThreshold: 2, soiRadius: 946, addRings: true,
         rings: {
             innerRadius: 70_000, outerRadius: 140_000,
             textureKey: 'saturnRingTexture',
@@ -308,9 +330,12 @@ const planets = {
             emissiveIntensity: 3, resolution: 256,
         },
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('saturnTexture'),
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('saturnTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
         },
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 3,
@@ -344,7 +369,7 @@ const planets = {
         mass: 8.6810e25, radius: 25_362, tilt: 97.77, rotationPeriod: -62_064,
         oblateness: 0.02293,
         lodLevels: generateLodLevelsForRadius(25_362),
-        dotPixelSizeThreshold: 1, soiRadius: 2039, addRings: true,
+        dotPixelSizeThreshold: 2, soiRadius: 2039, addRings: true,
         rings: {
             innerRadius: 41000,
             outerRadius: 51500,
@@ -355,9 +380,12 @@ const planets = {
             resolution: 256,
         },
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('uranusTexture'),
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('uranusTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
         },
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 1.5,
@@ -391,7 +419,7 @@ const planets = {
         mass: 1.02413e26, radius: 24_622, tilt: 28.32, rotationPeriod: 57_996,
         oblateness: 0.01708,
         lodLevels: generateLodLevelsForRadius(24_622),
-        dotPixelSizeThreshold: 1, soiRadius: 3508, addRings: true,
+        dotPixelSizeThreshold: 2, soiRadius: 3508, addRings: true,
         rings: {
             innerRadius: 62_000, outerRadius: 65_000,
             textureKey: 'neptuneRingTexture',
@@ -399,9 +427,12 @@ const planets = {
             emissiveIntensity: 30, resolution: 256,
         },
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('neptuneTexture'),
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('neptuneTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
         },
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 1.5,
@@ -433,12 +464,15 @@ const planets = {
     pluto: {
         name: 'pluto', parent: 'pluto_barycenter', naif_id: 999, symbol: '♇',
         mass: 1.303e22, radius: 1_188.3, tilt: 122.472,
-        rotationPeriod: 6.38723 * Constants.daysInYear, oblateness: 0.2488,
+        rotationPeriod: 6.38723 * Constants.daysInYear, oblateness: 0.02488,
         lodLevels: generateLodLevelsForRadius(1_188.3),
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('plutoTexture'),
-            }),
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('plutoTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
         },
         radialGridConfig: {
             maxDisplayRadius: 1_200_000,
@@ -467,7 +501,7 @@ const moons = {
         name: 'moon', parent: 'emb', naif_id: 301, symbol: '☾',
         radius: MOON_RAD, rotationPeriod: 29.53058867 * Constants.secondsInDay,
         lodLevels: generateLodLevelsForRadius(MOON_RAD),
-        dotPixelSizeThreshold: 1, soiRadius: 10.3,
+        dotPixelSizeThreshold: 2, soiRadius: 10.3,
         missionsData: geojsonDataMissions,
         addLight: true,
         lightOptions: { color: 0xffffff, intensity: MOON_RAD * 10, helper: false },
@@ -493,42 +527,464 @@ const moons = {
     },
 
     /* Jupiter (Galileans) */
-    io: { name: 'io', naif_id: 501, parent: 'jupiter_barycenter', mass: 8.9319e22, radius: 1_821.6, symbol: '🜋', lodLevels: generateLodLevelsForRadius(1_821.6), dotPixelSizeThreshold: 1 },
-    europa: { name: 'europa', naif_id: 502, parent: 'jupiter_barycenter', mass: 4.7998e22, radius: 1_560.8, symbol: '⟁', lodLevels: generateLodLevelsForRadius(1_560.8), dotPixelSizeThreshold: 1 },
-    ganymede: { name: 'ganymede', naif_id: 503, parent: 'jupiter_barycenter', mass: 1.4819e23, radius: 2_634.1, symbol: '⟁⟁', lodLevels: generateLodLevelsForRadius(2_634.1), dotPixelSizeThreshold: 1 },
-    callisto: { name: 'callisto', naif_id: 504, parent: 'jupiter_barycenter', mass: 1.0759e23, radius: 2_410.3, symbol: '⟁⟁⟁', lodLevels: generateLodLevelsForRadius(2_410.3), dotPixelSizeThreshold: 1 },
+    io: {
+        name: 'io',
+        naif_id: 501,
+        parent: 'jupiter_barycenter',
+        mass: 8.9319e22,
+        radius: 1_821.6,
+        symbol: '🜋',
+        lodLevels: generateLodLevelsForRadius(1_821.6),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('ioTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    europa: {
+        name: 'europa',
+        naif_id: 502,
+        parent: 'jupiter_barycenter',
+        mass: 4.7998e22,
+        radius: 1_560.8,
+        symbol: '⟁',
+        lodLevels: generateLodLevelsForRadius(1_560.8),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('europaTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    ganymede: {
+        name: 'ganymede',
+        naif_id: 503,
+        parent: 'jupiter_barycenter',
+        mass: 1.4819e23,
+        radius: 2_634.1,
+        symbol: '⟁⟁',
+        lodLevels: generateLodLevelsForRadius(2_634.1),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('ganymedeTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    callisto: {
+        name: 'callisto',
+        naif_id: 504,
+        parent: 'jupiter_barycenter',
+        mass: 1.0759e23,
+        radius: 2_410.3,
+        symbol: '⟁⟁⟁',
+        lodLevels: generateLodLevelsForRadius(2_410.3),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('callistoTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
 
     /* Mars */
-    deimos: { name: 'deimos', naif_id: 402, parent: 'mars_barycenter', mass: 1.4762e15, radius: 6.2, symbol: '⧫', lodLevels: generateLodLevelsForRadius(6.2), dotPixelSizeThreshold: 1 },
-    phobos: { name: 'phobos', naif_id: 401, parent: 'mars_barycenter', mass: 1.0659e16, radius: 11.1, symbol: '◉', lodLevels: generateLodLevelsForRadius(11.1), dotPixelSizeThreshold: 1 },
+    deimos: {
+        name: 'deimos',
+        naif_id: 402,
+        parent: 'mars_barycenter',
+        mass: 1.4762e15,
+        radius: 6.2,
+        symbol: '⧫',
+        lodLevels: generateLodLevelsForRadius(6.2),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('deimosTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    phobos: {
+        name: 'phobos',
+        naif_id: 401,
+        parent: 'mars_barycenter',
+        mass: 1.0659e16,
+        radius: 11.1,
+        symbol: '◉',
+        lodLevels: generateLodLevelsForRadius(11.1),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('phobosTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
 
     /* Saturn (selection) */
-    mimas: { name: 'mimas', naif_id: 601, parent: 'saturn_barycenter', radius: 198.2, symbol: 'M', lodLevels: generateLodLevelsForRadius(198.2), dotPixelSizeThreshold: 1 },
-    enceladus: { name: 'enceladus', naif_id: 602, parent: 'saturn_barycenter', radius: 252.1, symbol: 'E', lodLevels: generateLodLevelsForRadius(252.1), dotPixelSizeThreshold: 1 },
-    tethys: { name: 'tethys', naif_id: 603, parent: 'saturn_barycenter', radius: 531.1, symbol: 'T', lodLevels: generateLodLevelsForRadius(531.1), dotPixelSizeThreshold: 1 },
-    dione: { name: 'dione', naif_id: 604, parent: 'saturn_barycenter', radius: 561.4, symbol: 'D', lodLevels: generateLodLevelsForRadius(561.4), dotPixelSizeThreshold: 1 },
-    rhea: { name: 'rhea', naif_id: 605, parent: 'saturn_barycenter', radius: 763.8, symbol: 'R', lodLevels: generateLodLevelsForRadius(763.8), dotPixelSizeThreshold: 1 },
-    titan: { name: 'titan', naif_id: 606, parent: 'saturn_barycenter', radius: 2_574.7, symbol: 'Ti', lodLevels: generateLodLevelsForRadius(2_574.7), dotPixelSizeThreshold: 1 },
-    iapetus: { name: 'iapetus', naif_id: 608, parent: 'saturn_barycenter', radius: 734.5, symbol: 'Ia', lodLevels: generateLodLevelsForRadius(734.5), dotPixelSizeThreshold: 1 },
+    mimas: {
+        name: 'mimas',
+        naif_id: 601,
+        parent: 'saturn_barycenter',
+        radius: 198.2,
+        symbol: 'M',
+        lodLevels: generateLodLevelsForRadius(198.2),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('mimasTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    enceladus: {
+        name: 'enceladus',
+        naif_id: 602,
+        parent: 'saturn_barycenter',
+        radius: 252.1,
+        symbol: 'E',
+        lodLevels: generateLodLevelsForRadius(252.1),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('enceladusTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    tethys: {
+        name: 'tethys',
+        naif_id: 603,
+        parent: 'saturn_barycenter',
+        radius: 531.1,
+        symbol: 'T',
+        lodLevels: generateLodLevelsForRadius(531.1),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('tethysTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    dione: {
+        name: 'dione',
+        naif_id: 604,
+        parent: 'saturn_barycenter',
+        radius: 561.4,
+        symbol: 'D',
+        lodLevels: generateLodLevelsForRadius(561.4),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('dioneTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    rhea: {
+        name: 'rhea',
+        naif_id: 605,
+        parent: 'saturn_barycenter',
+        radius: 763.8,
+        symbol: 'R',
+        lodLevels: generateLodLevelsForRadius(763.8),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('rheaTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    titan: {
+        name: 'titan',
+        naif_id: 606,
+        parent: 'saturn_barycenter',
+        radius: 2_574.7,
+        symbol: 'Ti',
+        lodLevels: generateLodLevelsForRadius(2_574.7),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('titanTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    iapetus: {
+        name: 'iapetus',
+        naif_id: 608,
+        parent: 'saturn_barycenter',
+        radius: 734.5,
+        symbol: 'Ia',
+        lodLevels: generateLodLevelsForRadius(734.5),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('iapetusTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
 
     /* Uranus (selection) */
-    ariel: { name: 'ariel', naif_id: 701, parent: 'uranus_barycenter', radius: 578.9, symbol: 'A', lodLevels: generateLodLevelsForRadius(578.9), dotPixelSizeThreshold: 1 },
-    umbriel: { name: 'umbriel', naif_id: 702, parent: 'uranus_barycenter', radius: 584.7, symbol: 'U', lodLevels: generateLodLevelsForRadius(584.7), dotPixelSizeThreshold: 1 },
-    titania: { name: 'titania', naif_id: 703, parent: 'uranus_barycenter', radius: 788.9, symbol: 'Ti', lodLevels: generateLodLevelsForRadius(788.9), dotPixelSizeThreshold: 1 },
-    oberon: { name: 'oberon', naif_id: 704, parent: 'uranus_barycenter', radius: 761.4, symbol: 'O', lodLevels: generateLodLevelsForRadius(761.4), dotPixelSizeThreshold: 1 },
-    miranda: { name: 'miranda', naif_id: 705, parent: 'uranus_barycenter', radius: 235.8, symbol: 'M', lodLevels: generateLodLevelsForRadius(235.8), dotPixelSizeThreshold: 1 },
+    ariel: {
+        name: 'ariel',
+        naif_id: 701,
+        parent: 'uranus_barycenter',
+        radius: 578.9,
+        symbol: 'A',
+        lodLevels: generateLodLevelsForRadius(578.9),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('arielTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    umbriel: {
+        name: 'umbriel',
+        naif_id: 702,
+        parent: 'uranus_barycenter',
+        radius: 584.7,
+        symbol: 'U',
+        lodLevels: generateLodLevelsForRadius(584.7),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('umbrielTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    titania: {
+        name: 'titania',
+        naif_id: 703,
+        parent: 'uranus_barycenter',
+        radius: 788.9,
+        symbol: 'Ti',
+        lodLevels: generateLodLevelsForRadius(788.9),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('titaniaTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    oberon: {
+        name: 'oberon',
+        naif_id: 704,
+        parent: 'uranus_barycenter',
+        radius: 761.4,
+        symbol: 'O',
+        lodLevels: generateLodLevelsForRadius(761.4),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('oberonTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    miranda: {
+        name: 'miranda',
+        naif_id: 705,
+        parent: 'uranus_barycenter',
+        radius: 235.8,
+        symbol: 'M',
+        lodLevels: generateLodLevelsForRadius(235.8),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('mirandaTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
 
     /* Neptune (selection) */
-    triton: { name: 'triton', naif_id: 801, parent: 'neptune_barycenter', radius: 1_353.4, symbol: 'Tr', lodLevels: generateLodLevelsForRadius(1_353.4), dotPixelSizeThreshold: 1 },
-    proteus: { name: 'proteus', naif_id: 802, parent: 'neptune_barycenter', radius: 210, symbol: 'P', lodLevels: generateLodLevelsForRadius(210), dotPixelSizeThreshold: 1 },
-    nereid: { name: 'nereid', naif_id: 803, parent: 'neptune_barycenter', radius: 170, symbol: 'Ne', lodLevels: generateLodLevelsForRadius(170), dotPixelSizeThreshold: 1 },
+    triton: {
+        name: 'triton',
+        naif_id: 801,
+        parent: 'neptune_barycenter',
+        radius: 1_353.4,
+        symbol: 'Tr',
+        lodLevels: generateLodLevelsForRadius(1_353.4),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('tritonTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    proteus: {
+        name: 'proteus',
+        naif_id: 802,
+        parent: 'neptune_barycenter',
+        radius: 210,
+        symbol: 'P',
+        lodLevels: generateLodLevelsForRadius(210),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('proteusTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    nereid: {
+        name: 'nereid',
+        naif_id: 803,
+        parent: 'neptune_barycenter',
+        radius: 170,
+        symbol: 'Ne',
+        lodLevels: generateLodLevelsForRadius(170),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('nereidTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
 
     /* Pluto */
-    charon: { name: 'charon', naif_id: 901, parent: 'pluto_barycenter', radius: 606, symbol: '⚫', lodLevels: generateLodLevelsForRadius(606), dotPixelSizeThreshold: 1 },
-    nix: { name: 'nix', naif_id: 902, parent: 'pluto_barycenter', radius: 25, symbol: 'N', lodLevels: generateLodLevelsForRadius(25), dotPixelSizeThreshold: 1 },
-    hydra: { name: 'hydra', naif_id: 903, parent: 'pluto_barycenter', radius: 30, symbol: 'H', lodLevels: generateLodLevelsForRadius(30), dotPixelSizeThreshold: 1 },
-    kerberos: { name: 'kerberos', naif_id: 904, parent: 'pluto_barycenter', radius: 12, symbol: 'K', lodLevels: generateLodLevelsForRadius(12), dotPixelSizeThreshold: 1 },
-    styx: { name: 'styx', naif_id: 905, parent: 'pluto_barycenter', radius: 7, symbol: 'S', lodLevels: generateLodLevelsForRadius(7), dotPixelSizeThreshold: 1 },
+    charon: {
+        name: 'charon',
+        naif_id: 901,
+        parent: 'pluto_barycenter',
+        radius: 606,
+        symbol: '⚫',
+        lodLevels: generateLodLevelsForRadius(606),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('charonTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    nix: {
+        name: 'nix',
+        naif_id: 902,
+        parent: 'pluto_barycenter',
+        radius: 25,
+        symbol: 'N',
+        lodLevels: generateLodLevelsForRadius(25),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('nixTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    hydra: {
+        name: 'hydra',
+        naif_id: 903,
+        parent: 'pluto_barycenter',
+        radius: 30,
+        symbol: 'H',
+        lodLevels: generateLodLevelsForRadius(30),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('hydraTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    kerberos: {
+        name: 'kerberos',
+        naif_id: 904,
+        parent: 'pluto_barycenter',
+        radius: 12,
+        symbol: 'K',
+        lodLevels: generateLodLevelsForRadius(12),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('kerberosTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
+    styx: {
+        name: 'styx',
+        naif_id: 905,
+        parent: 'pluto_barycenter',
+        radius: 7,
+        symbol: 'S',
+        lodLevels: generateLodLevelsForRadius(7),
+        dotPixelSizeThreshold: 2,
+        materials: {
+            createSurfaceMaterial: tm => {
+                const matParams = {};
+                const map = tm.getTexture('styxTexture');
+                if (map) matParams.map = map;
+                return new THREE.MeshLambertMaterial(matParams);
+            },
+        },
+    },
 };
 
 /* =======================================================================

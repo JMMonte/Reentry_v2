@@ -103,7 +103,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     if (app.cameraControls && typeof app.cameraControls.follow === 'function') {
                         const initialTargetName = app.config?.initialCameraTarget || 'Earth'; // Default to Earth or use app config
                         console.log(`[SimSocket] Setting initial camera target to: ${initialTargetName}`);
-                        app.cameraControls.follow(initialTargetName, app);
+                        app.cameraControls.follow(initialTargetName, app, true); // suppressLog: true for initial setup
                     } else {
                         console.warn('[SimSocket] app.cameraControls not found or follow method missing after scene init.');
                     }

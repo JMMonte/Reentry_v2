@@ -117,6 +117,14 @@ class App3D extends EventTarget {
         this.Planet = Planet;
         this.THREE = THREE;
         this.celestialBodiesConfig = celestialBodiesConfig;
+
+        // For animation loop optimization
+        this._lastCameraPos = new THREE.Vector3();
+        this._lastSunPos = new THREE.Vector3();
+        this._frustum = new THREE.Frustum();
+        this._projScreenMatrix = new THREE.Matrix4();
+        // Frame counter for throttling UI updates
+        this._frameCount = 0;
     }
 
     // ───── Properties (read-only public) ──────────────────────────────────────
@@ -473,8 +481,8 @@ class App3D extends EventTarget {
      * Update camera to follow a new body selection (string or object).
      * Called by React/App3DController on selectedBody changes.
      */
-    updateSelectedBody(value) {
-        this.simulationLoop?.updateSelectedBody(value);
+    updateSelectedBody(value, suppressLog = false) {
+        this.simulationLoop?.updateSelectedBody(value, suppressLog);
     }
 
     /** Notify React UI about updated satellite roster. */
@@ -490,33 +498,116 @@ class App3D extends EventTarget {
         this.stats?.begin();
         this.sceneManager.updateFrame?.(delta);
 
-        // Combine all per-planet updates into a single loop
         if (Array.isArray(this.celestialBodies)) {
-            this.celestialBodies.forEach(planet => {
-                planet.update?.(delta);
-                planet.updateAtmosphereUniforms?.(this.camera, this.sun);
-                planet.updateRadialGridFading?.(this.camera);
-                planet.updateSurfaceFading?.(this.camera);
-            });
+            this.celestialBodies.forEach(planet => planet.update?.(delta));
         }
 
-        // Combine all previewNode(s) updates into a single block
-        if (this.previewNode) {
-            this.previewNode.update?.(delta);
-            this.previewNode.updateAtmosphereUniforms?.(this.camera, this.sun);
-            this.previewNode.updateRadialGridFading?.(this.camera);
-            this.previewNode.updateSurfaceFading?.(this.camera);
-        }
+        if (this.previewNode) this.previewNode.update?.(delta);
         if (Array.isArray(this.previewNodes)) {
-            this.previewNodes.forEach(node => {
-                node.update?.(delta);
-                node.updateAtmosphereUniforms?.(this.camera, this.sun);
-                node.updateRadialGridFading?.(this.camera);
-                node.updateSurfaceFading?.(this.camera);
-            });
+            this.previewNodes.forEach(node => node.update?.(delta));
         }
 
         this.cameraControls?.updateCameraPosition?.(delta);
+
+        // --- Optimized per-frame updates ---
+        // Track camera and sun movement
+        const cameraMoved = !this._lastCameraPos.equals(this.camera.position);
+        this._lastCameraPos.copy(this.camera.position);
+        let sunMoved = false;
+        if (this.sun && this.sun.getWorldPosition) {
+            const sunPos = new THREE.Vector3();
+            this.sun.getWorldPosition(sunPos);
+            sunMoved = !this._lastSunPos.equals(sunPos);
+            this._lastSunPos.copy(sunPos);
+        }
+
+        // Update frustum
+        this._projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+        this._frustum.setFromProjectionMatrix(this._projScreenMatrix);
+
+        // Helper to check if a mesh is visible in the frustum
+        const isVisible = mesh => {
+            if (!mesh) return false;
+            mesh.updateWorldMatrix?.(true, false);
+            // Only check frustum for Meshes with geometry
+            if (mesh.isMesh && mesh.geometry) {
+                if (!mesh.geometry.boundingSphere) {
+                    mesh.geometry.computeBoundingSphere();
+                }
+                return this._frustum.intersectsObject(mesh);
+            }
+            // For Groups or objects without geometry, assume visible (or skip)
+            return true;
+        };
+
+        // Throttle UI-only updates to every 3rd frame
+        this._frameCount = (this._frameCount + 1) % 3;
+        const shouldUpdateUI = this._frameCount === 0;
+
+        // Only update if camera, sun, or planet moved, and if visible
+        if (Array.isArray(this.celestialBodies)) {
+            this.celestialBodies.forEach(body => {
+                // Track if planet moved (compare world position)
+                if (!body.getMesh) return;
+                const mesh = body.getMesh();
+                if (!mesh) return;
+                if (!isVisible(mesh)) return;
+                // Track last world position on the mesh
+                if (!mesh._lastWorldPos) mesh._lastWorldPos = new THREE.Vector3();
+                const worldPos = new THREE.Vector3();
+                mesh.getWorldPosition(worldPos);
+                const planetMoved = !mesh._lastWorldPos.equals(worldPos);
+                mesh._lastWorldPos.copy(worldPos);
+
+                // Atmosphere uniforms
+                if (typeof body.updateAtmosphereUniforms === 'function') {
+                    if (cameraMoved || sunMoved || planetMoved) {
+                        body.updateAtmosphereUniforms(this.camera, this.sun);
+                    }
+                }
+                // Radial grid fading
+                if (shouldUpdateUI && typeof body.updateRadialGridFading === 'function') {
+                    if (cameraMoved || planetMoved) {
+                        body.updateRadialGridFading(this.camera);
+                    }
+                }
+                // Surface fading
+                if (shouldUpdateUI && typeof body.updateSurfaceFading === 'function') {
+                    if (cameraMoved || planetMoved) {
+                        body.updateSurfaceFading(this.camera);
+                    }
+                }
+            });
+        }
+        // Preview node(s)
+        const previewNodes = [this.previewNode, ...(Array.isArray(this.previewNodes) ? this.previewNodes : [])].filter(Boolean);
+        previewNodes.forEach(node => {
+            if (!node.getMesh) return;
+            const mesh = node.getMesh();
+            if (!mesh) return;
+            if (!isVisible(mesh)) return;
+            if (!mesh._lastWorldPos) mesh._lastWorldPos = new THREE.Vector3();
+            const worldPos = new THREE.Vector3();
+            mesh.getWorldPosition(worldPos);
+            const nodeMoved = !mesh._lastWorldPos.equals(worldPos);
+            mesh._lastWorldPos.copy(worldPos);
+            if (typeof node.updateAtmosphereUniforms === 'function') {
+                if (cameraMoved || sunMoved || nodeMoved) {
+                    node.updateAtmosphereUniforms(this.camera, this.sun);
+                }
+            }
+            if (shouldUpdateUI && typeof node.updateRadialGridFading === 'function') {
+                if (cameraMoved || nodeMoved) {
+                    node.updateRadialGridFading(this.camera);
+                }
+            }
+            if (shouldUpdateUI && typeof node.updateSurfaceFading === 'function') {
+                if (cameraMoved || nodeMoved) {
+                    node.updateSurfaceFading(this.camera);
+                }
+            }
+        });
+
         this.labelRenderer?.render?.(this.scene, this.camera);
         this.stats?.end();
     }

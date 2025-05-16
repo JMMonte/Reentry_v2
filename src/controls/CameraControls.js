@@ -52,8 +52,9 @@ class CameraControls {
      * Follow a selection value or object directly.
      * @param {string|object} value - 'none', planet name, 'satellite-<id>', or object instance
      * @param {App3D} app3d - the App3D instance to lookup satellites
+     * @param {boolean} [suppressLog] - If true, suppress warnings for missing bodies
      */
-    follow(value, app3d) {
+    follow(value, app3d, suppressLog = false) {
         if (!value || value === 'none') {
             this.clearCameraTarget();
             return;
@@ -69,21 +70,29 @@ class CameraControls {
         } else if (typeof value === 'object' && value.id != null) {
             target = value; // direct satellite object
         } else {
-            // Planet selection by name
+            // Planet selection by name (case-sensitive first)
             target = app3d.celestialBodies?.find(p => p.name === value);
+            // Fallback to case-insensitive match if not found
+            if (!target && typeof value === 'string') {
+                target = app3d.celestialBodies?.find(p => p.name?.toLowerCase() === value.toLowerCase());
+            }
         }
         // Fallback to first *planet* if nothing matched
         if (!target) {
             const fallback = app3d.celestialBodies?.find(p => typeof p.getMesh === 'function'); // Find first actual planet
             if (fallback) {
-                console.warn(`CameraControls.follow: no body found for '${value}', falling back to '${fallback.name}'`);
+                if (!suppressLog) {
+                    console.warn(`CameraControls.follow: no body found for '${value}', falling back to '${fallback.name}'`);
+                }
                 target = fallback;
             }
         }
         if (target) {
             this.updateCameraTarget(target);
         } else {
-            console.warn('CameraControls.follow: no body found for', value);
+            if (!suppressLog) {
+                console.warn('CameraControls.follow: no body found for', value);
+            }
         }
     }
 

@@ -23,6 +23,8 @@ import ganymedeTexture from '../assets/texture/ganymede_surface.jpg';
 import callistoTexture from '../assets/texture/callisto_surface.png';
 import uranusRingTexture from '../assets/texture/uranus_rings.png';
 import neptuneRingTexture from '../assets/texture/neptune_rings.png';
+import plutoTexture from '../assets/texture/pluto_surface.png';
+import charonTexture from '../assets/texture/charon_surface.png';
 
 export {
     earthTexture,
@@ -48,5 +50,7 @@ export {
     ioTexture,
     europaTexture,
     ganymedeTexture,
-    callistoTexture
+    callistoTexture,
+    plutoTexture,
+    charonTexture
 };

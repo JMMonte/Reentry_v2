@@ -38,14 +38,14 @@ export class App3DController {
                 this.app3d.importSimulationState(this._initialState);
                 // Ensure camera follows the loaded focused body
                 if (this._initialState.camera && typeof this._initialState.camera.focusedBody === 'string') {
-                    this.app3d.updateSelectedBody(this._initialState.camera.focusedBody);
+                    this.app3d.updateSelectedBody(this._initialState.camera.focusedBody, true);
                 }
             } catch (err) {
                 console.error('Failed to import initial simulation state:', err);
             }
         } else {
             // No initial state: default to Earth
-            this.app3d.updateSelectedBody('earth');
+            this.app3d.updateSelectedBody('earth', true);
         }
     }
 
