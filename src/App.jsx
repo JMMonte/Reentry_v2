@@ -95,6 +95,7 @@ function App3DMain() {
   const [isGroundtrackOpen, setIsGroundtrackOpen] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
   const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
+  const [simTime, setSimTime] = useState(() => new Date());
   const { controller, ready } = useApp3D(importedState);
   const app3d = controller?.app3d;
   const [checkedInitialState, setCheckedInitialState] = useState(false);
@@ -139,8 +140,25 @@ function App3DMain() {
       app3d.displaySettingsManager.applyAll();
     }
   }, [app3d]);
+  useEffect(() => {
+    if (app3d && app3d.sessionId) {
+      setSimulationDate(app3d.sessionId, new Date().toISOString());
+    }
+  }, [app3d?.sessionId]);
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.simulatedTime) {
+        setSimTime(new Date(e.detail.simulatedTime));
+      }
+    };
+    document.addEventListener('timeUpdate', handler);
+    if (app3d?.timeUtils?.getSimulatedTime) {
+      setSimTime(app3d.timeUtils.getSimulatedTime());
+    }
+    return () => document.removeEventListener('timeUpdate', handler);
+  }, [app3d]);
   const handleSimulatedTimeChange = (newTime) => {
-    // Only send to backend
+    setSimTime(new Date(newTime));
     const sessionId = app3d?.sessionId || controller?.sessionId;
     if (sessionId) setSimulationDate(sessionId, new Date(newTime).toISOString());
   };
@@ -287,7 +305,7 @@ ${shareUrl}`);
       const sessionId = app3d?.sessionId || controller?.sessionId;
       if (sessionId && app3d?.simSocket) setTimewarp(sessionId, newWarp, app3d.simSocket);
     },
-    simulatedTime: app3d?.timeUtils?.getSimulatedTime() ?? new Date(),
+    simulatedTime: simTime,
     onSimulatedTimeChange: handleSimulatedTimeChange,
     app3DRef: { current: app3d },
     satellites: Object.values(satellites),

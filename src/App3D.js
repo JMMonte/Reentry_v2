@@ -68,7 +68,7 @@ const getDefaultDisplaySettings = src =>
  */
 class App3D extends EventTarget {
 
-    constructor() {
+    constructor({ simulatedTime } = {}) {
         super();
         console.log('[App3D] constructor');
 
@@ -99,7 +99,7 @@ class App3D extends EventTarget {
         this.socketManager = new SocketManager(this);
 
         // — Misc util — --------------------------------------------------------
-        this._timeUtils = new TimeUtils({ simulatedTime: new Date().toISOString() });
+        this._timeUtils = new TimeUtils({ simulatedTime: simulatedTime || new Date().toISOString() });
         this._stats = new Stats();
 
         // — Workers & helpers — -----------------------------------------------

@@ -21,11 +21,25 @@ This document describes how to integrate a JavaScript/React frontend with the Da
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 
+// Create a session with default epoch:
 async function createSession() {
   const resp = await axios.post("http://localhost:8000/session");
   return resp.data.session_id; // string UUID
 }
+
+// Create a session with a custom initial datetime (UTC):
+async function createSessionWithDate(utcString) {
+  // utcString: e.g. '2026-01-01T12:00:00'
+  const resp = await axios.post(
+    `http://localhost:8000/session?utc=${encodeURIComponent(utcString)}`
+  );
+  return resp.data.session_id;
+}
 ```
+
+- If you provide the `utc` query parameter, the session will start at that datetime.
+- If omitted, the session starts at the default (`2025-05-11T00:00:00`).
+- If the date string is invalid, the API will return a 400 error.
 
 Store `sessionId` in React state or context.
 
@@ -448,3 +462,65 @@ The following table lists all planets, barycenters, and major moons supported by
 
 > **Note:**
 > If a body is not covered by SPICE, canonical fallback is used and the `source` field in responses will be `"canonical"`. The `/ephemeris_coverage/{naif_id}` endpoint will return a fallback interval for such bodies.
+
+## Frontend Controls: Timewarp and Framerate
+
+You can (and should) provide users with controls for both simulation speed (timewarp) and the update framerate (WebSocket rate) directly in your frontend UI. Both controls are session-specific and must use the correct `session_id`.
+
+### 1. Timewarp (Simulation Speed) Control
+
+Add a slider or input to let users set the simulation speed multiplier. For example, in React:
+
+```jsx
+// Example: Timewarp slider (React)
+const [timewarp, setTimewarp] = useState(1);
+const ws = useRef(null); // Your open WebSocket instance
+
+function handleTimewarpChange(e) {
+  const value = parseFloat(e.target.value);
+  setTimewarp(value);
+  if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+    const buf = new ArrayBuffer(5);
+    const dv = new DataView(buf);
+    dv.setUint8(0, 1); // msgType = 1
+    dv.setFloat32(1, value, true);
+    ws.current.send(buf);
+  }
+}
+
+// In your JSX:
+<input type="range" min={1} max={1000} step={1} value={timewarp} onChange={handleTimewarpChange} />
+<span>{timewarp}x</span>
+```
+
+### 2. Framerate (WebSocket Update Rate) Control
+
+Let users choose how often the frontend receives updates from the backend. This is set when you open the WebSocket:
+
+```jsx
+// Example: Framerate dropdown (React)
+const [rate, setRate] = useState(60); // Hz
+const sessionId = ...; // your session id
+
+function openWebSocket() {
+  const wsUrl = `ws://localhost:8000/ws?session_id=${sessionId}&rate=${rate}`;
+  ws.current = new WebSocket(wsUrl);
+  // ... handle onmessage, etc.
+}
+
+// In your JSX:
+<select value={rate} onChange={e => setRate(Number(e.target.value))}>
+  <option value={10}>10 Hz</option>
+  <option value={30}>30 Hz</option>
+  <option value={60}>60 Hz</option>
+  <option value={120}>120 Hz</option>
+</select>
+<button onClick={openWebSocket}>Connect</button>
+```
+
+**Best Practices:**
+
+- Always use the correct `session_id` for all controls and WebSocket/API calls.
+- Provide reasonable min/max values for timewarp and framerate (e.g., 1–1000x for timewarp, 10–120 Hz for framerate).
+- Show the current values to the user for clarity.
+- If the user changes the framerate, you may need to reconnect the WebSocket with the new `rate` value.

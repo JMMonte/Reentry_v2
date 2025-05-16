@@ -10,10 +10,8 @@ export const PHYSICS_WS_URL = PHYSICS_SERVER_URL.replace(/^http/, 'ws') + '/ws';
  * @param {string} startTimeISO - ISO string of the simulation start time
  */
 async function createSimSession(startTimeISO) {
-    const resp = await fetch(`${PHYSICS_SERVER_URL}/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start_time: startTimeISO })
+    const resp = await fetch(`${PHYSICS_SERVER_URL}/session?utc=${encodeURIComponent(startTimeISO)}`, {
+        method: 'POST'
     });
     if (!resp.ok) {
         throw new Error(`Failed to create sim session: ${resp.statusText}`);

@@ -7,7 +7,8 @@ import { setupExternalApi } from './externalApi.js';
  */
 export class App3DController {
     constructor(initialState) {
-        this.app3d = new App3D();
+        const simTime = initialState?.simulatedTime || new Date().toISOString();
+        this.app3d = new App3D({ simulatedTime: simTime });
         // Ensure we clean up workers and resources on page refresh/unload
         window.addEventListener('beforeunload', () => {
             try {
