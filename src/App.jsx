@@ -142,7 +142,6 @@ function App3DMain() {
   }, [app3d]);
   useEffect(() => {
     if (app3d && app3d.sessionId) {
-      // console.log('[App.jsx] sessionId useEffect - sessionId acquired:', app3d.sessionId, 'Initial simTime state for potential sync:', simTime.toISOString());
       // This call ensures that when a session ID first becomes available,
       // the backend is synced with the current simTime established by initialState or defaults.
       // It should NOT run every time simTime changes, only when sessionId becomes available.
@@ -162,15 +161,10 @@ function App3DMain() {
     return () => document.removeEventListener('timeUpdate', handler);
   }, [app3d]);
   const handleSimulatedTimeChange = (newTime) => {
-    console.log('[App.jsx] handleSimulatedTimeChange called with newTime:', newTime);
     setSimTime(new Date(newTime));
     const sessionId = app3d?.sessionId || controller?.sessionId;
-    console.log('[App.jsx] handleSimulatedTimeChange - sessionId:', sessionId);
     if (sessionId) {
-      console.log('[App.jsx] handleSimulatedTimeChange - Calling setSimulationDate for backend.');
       setSimulationDate(sessionId, new Date(newTime).toISOString());
-    } else {
-      console.warn('[App.jsx] handleSimulatedTimeChange - No sessionId found, backend will not be updated.');
     }
   };
   const {
@@ -311,10 +305,34 @@ ${shareUrl}`);
     selectedBody,
     onBodySelect: handleBodyChange,
     timeWarp: app3d?.timeUtils?.getTimeWarp() ?? 1,
-    onTimeWarpChange: (newWarp) => {
-      // Only send to backend
+    onTimeWarpChange: async (newWarp) => {
       const sessionId = app3d?.sessionId || controller?.sessionId;
-      if (sessionId && app3d?.simSocket) setTimewarp(sessionId, newWarp, app3d.simSocket);
+      console.log('[App.jsx] onTimeWarpChange (HTTP trigger):', { newWarp, sessionId });
+
+      // Optimistically update UI for immediate responsiveness
+      if (app3d?.timeUtils?.setLocalTimeWarp) {
+        app3d.timeUtils.setLocalTimeWarp(newWarp);
+      }
+
+      if (sessionId) {
+        const appliedFactor = await setTimewarp(sessionId, newWarp);
+        if (appliedFactor !== null && app3d?.timeUtils?.setLocalTimeWarp) {
+          // Reconcile with backend's confirmed factor if different from optimistic update
+          // or if optimistic update didn't happen for some reason.
+          // This also ensures TimeUtils is updated with the true backend state.
+          if (app3d.timeUtils.getTimeWarp() !== appliedFactor) {
+            console.log(`[App.jsx] Reconciling timewarp. UI was ${app3d.timeUtils.getTimeWarp()}x, backend applied ${appliedFactor}x`);
+            app3d.timeUtils.setLocalTimeWarp(appliedFactor); // Update TimeUtils and dispatch event
+          }
+        } else if (appliedFactor === null) {
+          // Handle error case: backend call failed or returned invalid data
+          // Optionally, revert optimistic update or show error to user
+          console.warn('[App.jsx] Timewarp HTTP call failed or returned invalid data. UI might be out of sync.');
+          // Example: Revert to old timewarp if you have it stored, or fetch current from backend if possible.
+        }
+      } else {
+        console.warn('[App.jsx] onTimeWarpChange - No sessionId found. Timewarp command not sent.');
+      }
     },
     simulatedTime: simTime,
     onSimulatedTimeChange: handleSimulatedTimeChange,

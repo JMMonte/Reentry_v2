@@ -8,6 +8,18 @@ export class TimeUtils {
         this.timeWarp = 1;
     }
 
+    setLocalTimeWarp(newWarp) {
+        this.timeWarp = newWarp;
+        // Optionally, dispatch timeUpdate here as well if UI needs to react immediately
+        // without waiting for backend confirmation, though current structure might handle it.
+        document.dispatchEvent(new CustomEvent('timeUpdate', {
+            detail: {
+                simulatedTime: this.simulatedTime.toISOString(), // Keep current time
+                timeWarp: this.timeWarp,
+            }
+        }));
+    }
+
     setSimTimeFromServer(date, timeWarp) {
         this.simulatedTime = new Date(date);
         this.timeWarp = timeWarp;

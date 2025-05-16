@@ -1,3 +1,4 @@
+export const PHYSICS_SERVER_URL = import.meta.env.VITE_PHYSICS_SERVER_URL || 'http://localhost:8000';
 // No axios import needed
 
 /**
@@ -12,21 +13,31 @@ export async function setSimulationDate(sessionId, utcString) {
 }
 
 /**
- * Set the simulation timewarp on the backend.
+ * Set the simulation timewarp on the backend via HTTP POST.
  * @param {string} sessionId
  * @param {number} factor
- * @param {WebSocket} ws
+ * @returns {Promise<number|null>} The applied timewarp factor from the backend, or null on error.
  */
-export function setTimewarp(sessionId, factor, ws) {
-    console.log('[simApi] setTimewarp', { sessionId, factor, wsReadyState: ws?.readyState, ws });
-    if (!ws || ws.readyState !== 1) {
-        console.warn('[simApi] WebSocket not ready for timewarp', ws);
-        return;
+export async function setTimewarp(sessionId, factor) {
+    const url = `${PHYSICS_SERVER_URL}/session/${sessionId}/timewarp?factor=${factor}`;
+    console.log('[simApi] setTimewarp (HTTP)', { sessionId, factor, url });
+    try {
+        const response = await fetch(url, { method: 'POST' });
+        if (!response.ok) {
+            const errorData = await response.text();
+            console.error('[simApi] Failed to set timewarp. Status:', response.status, 'Response:', errorData);
+            // alert(`Failed to set timewarp: ${errorData}`);
+            return null;
+        }
+        const data = await response.json();
+        if (data && typeof data.timewarp_factor === 'number') {
+            console.log('[simApi] Timewarp set successfully. Applied factor:', data.timewarp_factor);
+            return data.timewarp_factor;
+        }
+        console.warn('[simApi] Timewarp response did not contain a valid timewarp_factor:', data);
+        return null;
+    } catch (error) {
+        console.error('[simApi] Error setting timewarp:', error);
+        return null;
     }
-    // Send binary message as per backend spec
-    const buf = new ArrayBuffer(5);
-    const dv = new DataView(buf);
-    dv.setUint8(0, 1); // msgType = 1
-    dv.setFloat32(1, factor, true); // little-endian float
-    ws.send(buf);
 } 

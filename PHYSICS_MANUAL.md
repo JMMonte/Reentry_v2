@@ -80,30 +80,56 @@ async function deleteSatellite(sessionId, satId) {
 
 ### Set Timewarp (Simulation Speed)
 
-To control the simulation speed ("timewarp"), you must:
+To control the simulation speed ("timewarp") for your session, send a POST request:
 
-1. **Connect to the WebSocket endpoint with your session ID:**
+```plaintext
+POST /session/{session_id}/timewarp?factor={timewarp_factor}
+```
 
-   ```plaintext
-   ws://localhost:8000/ws?session_id=YOUR_SESSION_ID
-   ```
+- Replace `{session_id}` with your valid session ID.
+- Replace `{timewarp_factor}` with the desired speed multiplier (e.g., `1.0` for real-time, `10.0` for 10x speed, `0.0` to pause).
 
-2. **Send a binary message to set the timewarp factor:**
+**Example (JavaScript using axios):**
 
-   ```js
-   function setTimewarp(factor, ws) {
-     // ws: an open WebSocket connected with the correct session_id
-     const buf = new ArrayBuffer(5);
-     const dv = new DataView(buf);
-     dv.setUint8(0, 1); // msgType = 1 (set timewarp)
-     dv.setFloat32(1, factor, true); // little-endian float
-     ws.send(buf);
-   }
-   // Example usage:
-   setTimewarp(1000.0, ws); // 1000x real time
-   ```
+```js
+async function setTimewarp(sessionId, factor) {
+  const url = `http://localhost:8000/session/${sessionId}/timewarp?factor=${factor}`;
+  try {
+    const response = await axios.post(url);
+    console.log("Timewarp set:", response.data);
+    return response.data; // { status: "ok", timewarp_factor: X.X }
+  } catch (error) {
+    console.error(
+      "Failed to set timewarp:",
+      error.response ? error.response.data : error.message
+    );
+    throw error;
+  }
+}
 
-**Note:** The WebSocket URL **must** include your `session_id`. If you omit it, the backend will not know which simulation to control.
+// Example usage:
+// setTimewarp(yourSessionId, 10.0); // For 10x speed
+// setTimewarp(yourSessionId, 0.0);  // To pause
+```
+
+**Example response (Success):**
+
+```json
+{
+  "status": "ok",
+  "timewarp_factor": 10.0
+}
+```
+
+\*\*Example response (Error if factor is invalid):
+
+```json
+{
+  "detail": "Invalid timewarp factor: some_invalid_value (error_details)"
+}
+```
+
+**Note:** The `session_id` is required in the URL path. The backend will apply `max(0.0, factor)`.
 
 ### Change Simulation Date/Time (Epoch)
 
@@ -144,23 +170,31 @@ curl -X POST "http://localhost:8000/session/550e8400-e29b-41d4-a716-446655440000
 
 All WebSocket and API calls require a valid `session_id`. For endpoints that require a reference frame, always include `frame` (default: `ECLIPJ2000`). All state vectors and quaternions are always returned in the requested frame.
 
-The WebSocket stream provides three types of binary messages:
+The WebSocket stream now primarily sends data from the backend to the frontend. The following message types are sent by the backend:
 
+- **msgType = 0**: Satellite state vector (details omitted for brevity, see original manual section if needed)
 - **msgType = 2**: Simulation epoch time (ECLIPJ2000 ET)
   - `uint8  msgType` (value 2)
-  - `float64 et` (seconds past ECLIPJ2000)
+  - `float64 et` (seconds past ECLIPJ2000, little-endian)
+- **msgType = 10**: Planet state vector (details omitted for brevity, see original manual section if needed)
 
-**Example (JavaScript):**
+**Previously defined `msgType 3` (Timewarp update/confirmation) sent by the backend is now REMOVED, as timewarp is controlled via HTTP POST.**
+
+**Example (JavaScript for handling epoch):**
 
 ```js
 ws.onmessage = (event) => {
   const data = new DataView(event.data);
   const msgType = data.getUint8(0);
   if (msgType === 2) {
-    const et = data.getFloat64(1, true);
+    const et = data.getFloat64(1, true); // little-endian
     console.log("Simulation epoch ET:", et);
+  } else if (msgType === 0) {
+    // Handle satellite state ...
+  } else if (msgType === 10) {
+    // Handle planet state ...
   }
-  // ... handle other msgTypes ...
+  // ... handle other msgTypes if any ...
 };
 ```
 
@@ -469,27 +503,28 @@ You can (and should) provide users with controls for both simulation speed (time
 
 ### 1. Timewarp (Simulation Speed) Control
 
-Add a slider or input to let users set the simulation speed multiplier. For example, in React:
+Add a slider or input to let users set the simulation speed multiplier. This now uses an HTTP POST request.
 
 ```jsx
 // Example: Timewarp slider (React)
-const [timewarp, setTimewarp] = useState(1);
-const ws = useRef(null); // Your open WebSocket instance
+const [timewarp, setTimewarpUi] = useState(1);
+const sessionId = /* your active session ID */;
 
-function handleTimewarpChange(e) {
-  const value = parseFloat(e.target.value);
-  setTimewarp(value);
-  if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-    const buf = new ArrayBuffer(5);
-    const dv = new DataView(buf);
-    dv.setUint8(0, 1); // msgType = 1
-    dv.setFloat32(1, value, true);
-    ws.current.send(buf);
+async function handleTimewarpChange(e) {
+  const newFactor = parseFloat(e.target.value);
+  try {
+    // Assuming 'axios' is imported and 'sessionId' is available
+    const response = await axios.post(`http://localhost:8000/session/${sessionId}/timewarp?factor=${newFactor}`);
+    setTimewarpUi(response.data.timewarp_factor); // Update UI with confirmed factor
+    console.log("Timewarp successfully set to:", response.data.timewarp_factor);
+  } catch (error) {
+    console.error("Failed to set timewarp:", error.response ? error.response.data : error.message);
+    // Optionally revert UI or show error to user
   }
 }
 
 // In your JSX:
-<input type="range" min={1} max={1000} step={1} value={timewarp} onChange={handleTimewarpChange} />
+<input type="range" min={0} max={1000} step={1} value={timewarp} onChange={handleTimewarpChange} />
 <span>{timewarp}x</span>
 ```
 

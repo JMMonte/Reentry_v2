@@ -50,14 +50,30 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
     const startTimeISO = app.timeUtils.getSimulatedTime().toISOString();
     const sessionId = await createSimSession(startTimeISO);
     app.sessionId = sessionId; // Store the session ID on the app instance
-    const url = `${PHYSICS_WS_URL}?session_id=${sessionId}&frame=${frame}`;
+    const frameToUse = frame || 'ECLIPJ2000'; // Ensure frame has a default
+    const rateToUse = 60; // Default rate, can be made configurable later
+    const url = `${PHYSICS_WS_URL}?session_id=${sessionId}&frame=${frameToUse}&rate=${rateToUse}`;
+    console.log('[SimSocket] Connecting to WebSocket URL:', url); // Log the URL
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
+        console.log('[SimSocket] WebSocket connection opened.');
         app._simStreamActive = true;
+        // Optional: Send a simple test ping message
+        // const testMsg = new Uint8Array([99]); // Example: byte value 99
+        // ws.send(testMsg.buffer);
+        // console.log('[SimSocket] Sent test ping message.');
     };
-    ws.onerror = err => console.error('[SimStream] error', err);
+    ws.onerror = err => console.error('[SimStream] WebSocket error:', err);
+    ws.onclose = evt => {
+        console.warn('[SimStream] WebSocket connection closed:', {
+            code: evt.code,
+            reason: evt.reason,
+            wasClean: evt.wasClean,
+        });
+        app._simStreamActive = false;
+    };
 
     ws.onmessage = evt => {
         const data = evt.data;
@@ -73,13 +89,6 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 app.timeUtils.setSimTimeFromServer(simDate, warp);
                 if (options.onSimTimeUpdate) options.onSimTimeUpdate(simDate, et);
             }
-            if (msgType === 3) {
-                const warp = dv.getFloat32(1, true);
-                // Use last known simDate or current
-                const simDate = app.timeUtils.getSimulatedTime ? app.timeUtils.getSimulatedTime() : new Date();
-                app.timeUtils.setSimTimeFromServer(simDate, warp);
-                if (options.onTimeWarpUpdate) options.onTimeWarpUpdate(warp);
-            }
             const bytes = new Uint8Array(data);
             if (bytes.length === 85) {
                 let offset = 0;
@@ -90,7 +99,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     try {
                         // const floats = new Float64Array(data);
                         // console.log('[SimSocket] Raw planetary update (Float64Array):', floats);
-                    } catch {/* ignore errors in debug float log */}
+                    } catch {/* ignore errors in debug float log */ }
                     let offset = 1;
                     const naif_id = dv.getUint32(offset, true); offset += 4;
                     const pos = [];

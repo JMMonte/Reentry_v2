@@ -42,11 +42,6 @@ export function useChatSocket(socket) {
     useEffect(() => {
         if (!socket) return;
 
-        // Remove debug: Log raw tool_call_sent events
-        // socket.on('tool_call_sent', (rawEvent) => {
-        //     console.log('[FRONTEND RAW tool_call_sent EVENT]', JSON.stringify(rawEvent, null, 2));
-        // });
-
         Object.keys(eventHandlers).forEach(event => {
             socket.on(event, eventHandlers[event]);
         });
