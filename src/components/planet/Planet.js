@@ -81,6 +81,8 @@ export class Planet {
         this.targetPosition = new THREE.Vector3();
         this.targetOrientation = new THREE.Quaternion();
 
+        this.hasBeenInitializedByServer = false;
+
         this.meshRes = meshRes;
         this.atmosphereRes = atmosphereRes;
         this.cloudRes = cloudRes;
@@ -387,17 +389,6 @@ export class Planet {
                 }
             }
         });
-        // EMB marker position update
-        if (this.nameLower === 'emb' && this.marker && window.Astronomy) {
-            const jd = this.timeManager.getJulianDate();
-            const embState = window.Astronomy.BaryState(window.Astronomy.Body.EMB, jd);
-            const kmPerAU = 149597870.7;
-            this.marker.position.set(
-                embState.x * kmPerAU,
-                embState.y * kmPerAU,
-                embState.z * kmPerAU
-            );
-        }
     }
 
     /* ===== public ===== */
@@ -425,7 +416,20 @@ export class Planet {
     setRadialGridVisible(v) { this.radialGrid?.setVisible(v); }
     setRingsVisible(v) { if (this.ringComponent?.mesh) this.ringComponent.mesh.visible = v; }
 
-    // Methods to set target state for interpolation
+    // Method to apply the very first server state directly, bypassing interpolation
+    applyInitialServerState(position, orientation) {
+        if (this.orbitGroup) {
+            this.orbitGroup.position.copy(position);
+            this.targetPosition.copy(position);
+        }
+        if (this.orientationGroup) {
+            this.orientationGroup.quaternion.copy(orientation);
+            this.targetOrientation.copy(orientation);
+        }
+        this.hasBeenInitializedByServer = true;
+    }
+
+    // Methods to set target state for interpolation for subsequent updates
     setTargetPosition(worldPositionVector) {
         this.targetPosition.copy(worldPositionVector);
     }

@@ -1,6 +1,7 @@
 // Kick off live sim stream from Python physics backend
 
 import * as THREE from 'three';
+import { createSceneObjects } from '../setup/setupScene.js';
 
 export const PHYSICS_SERVER_URL = import.meta.env.VITE_PHYSICS_SERVER_URL || 'http://localhost:8000';
 export const PHYSICS_WS_URL = PHYSICS_SERVER_URL.replace(/^http/, 'ws') + '/ws';
@@ -75,7 +76,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
         app._simStreamActive = false;
     };
 
-    ws.onmessage = evt => {
+    ws.onmessage = async evt => {
         const data = evt.data;
         if (data instanceof ArrayBuffer) {
             const dv = new DataView(data);
@@ -90,66 +91,76 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 if (options.onSimTimeUpdate) options.onSimTimeUpdate(simDate, et);
             }
             const bytes = new Uint8Array(data);
-            if (bytes.length === 85) {
-                let offset = 0;
-                const msgType = dv.getUint8(offset); offset += 1;
-                if (msgType === 10) {
-                    // --- DEBUG: Log raw backend data ---
-                    // console.log('[SimSocket] Raw planetary update (bytes):', new Uint8Array(data));
-                    try {
-                        // const floats = new Float64Array(data);
-                        // console.log('[SimSocket] Raw planetary update (Float64Array):', floats);
-                    } catch {/* ignore errors in debug float log */ }
-                    offset = 1; // Reset offset after msgType read
-                    const naif_id = dv.getUint32(offset, true); offset += 4;
-                    
-                    const posX = dv.getFloat64(offset, true); offset += 8;
-                    const posY = dv.getFloat64(offset, true); offset += 8;
-                    const posZ = dv.getFloat64(offset, true); offset += 8;
-                    
-                    const vel = []; // velocity components
-                    for (let i = 0; i < 3; i++) { vel.push(dv.getFloat64(offset, true)); offset += 8; }
-                    
-                    // Quaternion components from backend: w, x, y, z
-                    const quatW = dv.getFloat64(offset, true); offset += 8;
-                    const quatX = dv.getFloat64(offset, true); offset += 8;
-                    const quatY = dv.getFloat64(offset, true); offset += 8;
-                    const quatZ = dv.getFloat64(offset, true); offset += 8;
+            if (bytes.length === 85 && dv.getUint8(0) === 10) {
+                // Initialize scene objects if this is the first relevant message
+                if (!app.sceneObjectsInitialized) {
+                    console.log('[SimSocket] First planetary update received. Initializing scene objects...');
+                    await createSceneObjects(app);
+                    app.sceneObjectsInitialized = true;
+                    console.log('[SimSocket] Scene objects initialized.');
 
-                    // --- DEBUG: Log parsed values ---
-                    // console.log(`[SimSocket] NAIF ${naif_id} parsed pos:`, [posX, posY, posZ], 'vel:', vel, 'quat:', [quatW, quatX, quatY, quatZ]);
-
-                    if (!app.bodiesByNaifId) app.bodiesByNaifId = {};
-                    const body = app.bodiesByNaifId[naif_id];
-                    if (!body) {
-                        console.warn(`[SimSocket] No body found for NAIF ${naif_id}`);
-                        return;
+                    // Now that objects are initialized, set the initial camera target
+                    if (app.cameraControls && typeof app.cameraControls.follow === 'function') {
+                        const initialTargetName = app.config?.initialCameraTarget || 'Earth'; // Default to Earth or use app config
+                        console.log(`[SimSocket] Setting initial camera target to: ${initialTargetName}`);
+                        app.cameraControls.follow(initialTargetName, app);
+                    } else {
+                        console.warn('[SimSocket] app.cameraControls not found or follow method missing after scene init.');
                     }
 
-                    const serverPosition = new THREE.Vector3(posX, posY, posZ);
-                    // Three.js Quaternion constructor is (x, y, z, w)
-                    const serverOrientation = new THREE.Quaternion(quatX, quatY, quatZ, quatW);
+                    // Dispatch an event to notify the UI that the scene is ready
+                    window.dispatchEvent(new CustomEvent('sceneReadyFromBackend'));
+                    console.log('[SimSocket] Dispatched sceneReadyFromBackend event.');
+                }
 
-                    // Use new target methods if available (for Planets primarily)
+                let offset = 1; // Start offset after msgType
+                const naif_id = dv.getUint32(offset, true); offset += 4;
+
+                const posX = dv.getFloat64(offset, true); offset += 8;
+                const posY = dv.getFloat64(offset, true); offset += 8;
+                const posZ = dv.getFloat64(offset, true); offset += 8;
+
+                const vel = []; // velocity components
+                for (let i = 0; i < 3; i++) { vel.push(dv.getFloat64(offset, true)); offset += 8; }
+
+                // Quaternion components from backend: w, x, y, z
+                const quatW = dv.getFloat64(offset, true); offset += 8;
+                const quatX = dv.getFloat64(offset, true); offset += 8;
+                const quatY = dv.getFloat64(offset, true); offset += 8;
+                const quatZ = dv.getFloat64(offset, true); offset += 8;
+
+                if (!app.bodiesByNaifId) app.bodiesByNaifId = {};
+                const body = app.bodiesByNaifId[naif_id];
+                if (!body) {
+                    console.warn(`[SimSocket] No body found for NAIF ${naif_id}`);
+                    return;
+                }
+
+                const serverPosition = new THREE.Vector3(posX, posY, posZ);
+                // Three.js Quaternion constructor is (x, y, z, w)
+                const serverOrientation = new THREE.Quaternion(quatX, quatY, quatZ, quatW);
+
+                // Handle initial state snap for Planets, otherwise interpolate or set directly
+                if (body instanceof app.Planet && !body.hasBeenInitializedByServer) {
+                    body.applyInitialServerState(serverPosition, serverOrientation);
+                } else {
+                    // Use new target methods if available (for Planets primarily after init)
                     if (typeof body.setTargetPosition === 'function') {
                         body.setTargetPosition(serverPosition);
                     } else {
-                        // Fallback for non-Planet objects or those not yet updated
+                        // Fallback for non-Planet objects
                         let directPosTarget = (body instanceof app.Planet && body.getOrbitGroup()) ? body.getOrbitGroup() : body;
                         if (directPosTarget && directPosTarget.position) {
-                           directPosTarget.position.copy(serverPosition);
-                        } else if (body.constructor.name === 'Sun' && body.sun && body.sun.position){ 
-                           body.sun.position.copy(serverPosition);
+                            directPosTarget.position.copy(serverPosition);
+                        } else if (body.constructor.name === 'Sun' && body.sun && body.sun.position) {
+                            body.sun.position.copy(serverPosition);
                         }
                     }
 
                     if (typeof body.setTargetOrientation === 'function') {
                         body.setTargetOrientation(serverOrientation);
                     } else {
-                        // Fallback for non-Planet objects or those not yet updated
-                        // For Planet instances, orientation is on orientationGroup.
-                        // For Sun, it's on body.sun (the mesh).
-                        // For Barycenters (THREE.Group), it's on the group itself.
+                        // Fallback for non-Planet objects
                         let directOrientTarget;
                         if (body instanceof app.Planet && body.orientationGroup) {
                             directOrientTarget = body.orientationGroup;
@@ -161,56 +172,56 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
 
                         if (directOrientTarget && directOrientTarget.quaternion) {
                             directOrientTarget.quaternion.copy(serverOrientation);
-                        } 
-                    }
-                    
-                    // Update velocity (no interpolation for now)
-                    if (body) {
-                        if (!body.velocity) body.velocity = new THREE.Vector3();
-                        body.velocity.set(vel[0], vel[1], vel[2]);
-                    }
-
-                    // --- DEBUG: Log local and world positions after setting ---
-                    let debugPosObject = null;
-                    if (body instanceof app.Planet && body.getOrbitGroup()) {
-                        debugPosObject = body.getOrbitGroup();
-                    } else if (body.constructor.name === 'Sun' && body.sun) {
-                        debugPosObject = body.sun;
-                    } else if (body instanceof THREE.Group) {
-                        debugPosObject = body;
-                    }
-
-                    if (debugPosObject && debugPosObject.position && typeof debugPosObject.getWorldPosition === 'function') {
-                        // const local = debugPosObject.position.toArray();
-                        // const world = debugPosObject.getWorldPosition(new THREE.Vector3()).toArray();
-                        // console.log(`[SimSocket] NAIF ${naif_id} effective local:`, local, 'world:', world);
-                    }
-                    _planetaryUpdateNaifIds.add(naif_id);
-                    if (Object.keys(_planetaryUpdateSamples).length < 5) {
-                        _planetaryUpdateSamples[naif_id] = [posX, posY, posZ];
-                    }
-                    const now = Date.now();
-                    if (now - _lastPlanetaryLogTime > 5000) {
-                        const naifArr = Array.from(_planetaryUpdateNaifIds);
-                        const sampleIds = naifArr.slice(0, 5);
-                        // let sampleStr = ''; // sampleStr is assigned but its value is never read
-                        if (sampleIds.length > 0) {
-                            /* sampleStr = sampleIds.map(id => {
-                                const pos = _planetaryUpdateSamples[id];
-                                return `    NAIF ${id} pos=[${pos.map(x => x.toExponential(2)).join(', ')}]`;
-                            }).join('\n');
-                            sampleStr = '\n' + sampleStr; */
                         }
-                        // console.log(`[SimStream] ${_planetaryUpdateCount} planetary updates in last 5 seconds (${naifArr.length} unique bodies)${sampleStr}`);
-                        _lastPlanetaryLogTime = now;
-                        // _planetaryUpdateCount = 0;
-                        _planetaryUpdateNaifIds.clear();
-                        _planetaryUpdateSamples = {};
                     }
+                }
+
+                // Update velocity (no interpolation for now)
+                if (body) {
+                    if (!body.velocity) body.velocity = new THREE.Vector3();
+                    body.velocity.set(vel[0], vel[1], vel[2]);
+                }
+
+                // --- DEBUG: Log local and world positions after setting ---
+                let debugPosObject = null;
+                if (body instanceof app.Planet && body.getOrbitGroup()) {
+                    debugPosObject = body.getOrbitGroup();
+                } else if (body.constructor.name === 'Sun' && body.sun) {
+                    debugPosObject = body.sun;
+                } else if (body instanceof THREE.Group) {
+                    debugPosObject = body;
+                }
+
+                if (debugPosObject && debugPosObject.position && typeof debugPosObject.getWorldPosition === 'function') {
+                    // const local = debugPosObject.position.toArray();
+                    // const world = debugPosObject.getWorldPosition(new THREE.Vector3()).toArray();
+                    // console.log(`[SimSocket] NAIF ${naif_id} effective local:`, local, 'world:', world);
+                }
+                _planetaryUpdateNaifIds.add(naif_id);
+                if (Object.keys(_planetaryUpdateSamples).length < 5) {
+                    _planetaryUpdateSamples[naif_id] = [posX, posY, posZ];
+                }
+                const now = Date.now();
+                if (now - _lastPlanetaryLogTime > 5000) {
+                    const naifArr = Array.from(_planetaryUpdateNaifIds);
+                    const sampleIds = naifArr.slice(0, 5);
+                    // let sampleStr = ''; // sampleStr is assigned but its value is never read
+                    if (sampleIds.length > 0) {
+                        /* sampleStr = sampleIds.map(id => {
+                            const pos = _planetaryUpdateSamples[id];
+                            return `    NAIF ${id} pos=[${pos.map(x => x.toExponential(2)).join(', ')}]`;
+                        }).join('\n');
+                        sampleStr = '\n' + sampleStr; */
+                    }
+                    // console.log(`[SimStream] ${_planetaryUpdateCount} planetary updates in last 5 seconds (${naifArr.length} unique bodies)${sampleStr}`);
+                    _lastPlanetaryLogTime = now;
+                    // _planetaryUpdateCount = 0;
+                    _planetaryUpdateNaifIds.clear();
+                    _planetaryUpdateSamples = {};
                 }
             }
             // After all planet positions/velocities are updated, update orbit lines
-            if (app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
+            if (app.sceneObjectsInitialized && app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
                 // Debug: print full list once
                 if (!app._printedCelestialBodies) {
                     app._printedCelestialBodies = true;
@@ -235,7 +246,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
             // (log removed)
         }
         // Existing handler for text frames (kept for future compatibility)
-        if (typeof data === 'string') {
+        if (app.sceneObjectsInitialized && typeof data === 'string') {
             try {
                 const raw = data.trim();
                 const fixed = raw.replace(/([{,])\s*([A-Za-z0-9_]+)\s*:/g, '$1"$2":');

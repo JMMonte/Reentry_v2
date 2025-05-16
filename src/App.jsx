@@ -103,6 +103,9 @@ function App3DMain() {
   const toastRef = useRef();
   const [openPointModals, setOpenPointModals] = useState([]);
   const showToast = (msg) => { toastRef.current?.showToast(msg); };
+
+  const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
+
   useEffect(() => { setCheckedInitialState(true); }, []);
   useEffect(() => {
     const onHashChange = () => {
@@ -294,6 +297,19 @@ ${shareUrl}`);
       window.app3d = app3d;
     }
   }, [app3d]);
+
+  // Listen for the custom event from simSocket.js
+  useEffect(() => {
+    const handleSceneReady = () => {
+      setIsLoadingInitialData(false);
+      console.log('[App.jsx] sceneReadyFromBackend event received, hiding spinner.');
+    };
+    window.addEventListener('sceneReadyFromBackend', handleSceneReady);
+    return () => {
+      window.removeEventListener('sceneReadyFromBackend', handleSceneReady);
+    };
+  }, []);
+
   if (!checkedInitialState) return null;
   // Build props for Layout
   const navbarProps = {
@@ -429,6 +445,7 @@ ${shareUrl}`);
             simulationWindowProps={{ isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), satellites: Object.values(satellites) }}
             groundTrackWindowProps={groundTrackWindowProps}
             earthPointModalProps={earthPointModalProps}
+            isLoadingInitialData={isLoadingInitialData}
           >
             {/* Main app content (canvas, etc.) */}
             <canvas id="three-canvas" className="absolute inset-0 z-0" />

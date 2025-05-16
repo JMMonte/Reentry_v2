@@ -206,6 +206,24 @@ ShareModal.propTypes = {
     onShareEmail: PropTypes.func.isRequired
 };
 
+const loadingMessages = [
+    "Loading 4.5 Billion Years...",
+    "Collapsing Primordial Gas Cloud...",
+    "Accreting Stellar Disk...",
+    "Spinning Up Magnetospheres...",
+    "Igniting Fusion Core...",
+    "Calibrating Orbital Resonances...",
+    "Plotting Interplanetary Trajectories...",
+    "Rendering Celestial Tapestry...",
+    "Synchronizing Cosmic Clocks...",
+    "Simulating the Universe...",
+    "Building the Solar System...",
+    "Calculating Gravitational Constants...",
+    "Solving the Navier-Stokes Equations...",
+    "Simulating the Big Bang...",
+    "Synchronizing Cosmic Clocks..."
+];
+
 export function Layout({
     groundTrackWindowProps,
     children,
@@ -218,7 +236,8 @@ export function Layout({
     shareModalProps,
     authModalProps,
     simulationWindowProps,
-    earthPointModalProps
+    earthPointModalProps,
+    isLoadingInitialData
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {
@@ -227,13 +246,36 @@ export function Layout({
     const [resetModalOpen, setResetModalOpen] = useState(false);
     const [maneuverSat, setManeuverSat] = useState(null);
     const handleOpenManeuver = (satellite) => setManeuverSat(satellite);
-    // Intro modal on first app open
     const [showIntro, setShowIntro] = useState(false);
+
+    const [currentLoadingMessage, setCurrentLoadingMessage] = useState(loadingMessages[0]);
+    const loadingMessageIndexRef = useRef(0);
+
+    useEffect(() => {
+        if (isLoadingInitialData) {
+            // Start with a random message
+            const randomIndex = Math.floor(Math.random() * loadingMessages.length);
+            setCurrentLoadingMessage(loadingMessages[randomIndex]);
+            loadingMessageIndexRef.current = randomIndex;
+            
+            const intervalId = setInterval(() => {
+                loadingMessageIndexRef.current = (loadingMessageIndexRef.current + 1) % loadingMessages.length;
+                setCurrentLoadingMessage(loadingMessages[loadingMessageIndexRef.current]);
+            }, 2500); // Change message every 2.5 seconds
+
+            return () => clearInterval(intervalId); // Cleanup interval on unmount or when loading finishes
+        } else {
+             // Optional: if you want to clear the message or set a default when not loading
+             // setCurrentLoadingMessage(''); 
+        }
+    }, [isLoadingInitialData]);
+
     useEffect(() => {
         if (typeof window !== 'undefined' && !localStorage.getItem('introShown')) {
             setShowIntro(true);
         }
     }, []);
+
     const handleDismissIntro = () => {
         localStorage.setItem('introShown', 'true');
         setShowIntro(false);
@@ -262,6 +304,46 @@ export function Layout({
         <ToastContext.Provider value={{ showToast }}>
             <Navbar {...navbarProps} />
             <main>{children}</main>
+
+            {/* Loading Spinner Overlay */}
+            {isLoadingInitialData && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)', 
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    zIndex: 9999, 
+                    color: 'white',
+                    fontSize: '16px',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+                }}>
+                    <style>
+                        {`
+                            @keyframes spin {
+                                to {
+                                    transform: rotate(360deg);
+                                }
+                            }
+                        `}
+                    </style>
+                    <div style={{
+                        border: '4px solid rgba(255, 255, 255, 0.2)',
+                        borderTopColor: '#fff',
+                        borderRadius: '50%',
+                        width: '40px',
+                        height: '40px',
+                        animation: 'spin 1s linear infinite'
+                    }}></div>
+                    <span style={{ marginTop: '20px', letterSpacing: '0.5px' }}>{currentLoadingMessage}</span>
+                </div>
+            )}
+
             <ModalPortal>
                 <ChatModal {...chatModalProps} />
                 <DisplayOptions {...displayOptionsProps} />
@@ -373,5 +455,6 @@ Layout.propTypes = {
             })
         ).isRequired,
         onToggle: PropTypes.func.isRequired
-    })
+    }),
+    isLoadingInitialData: PropTypes.bool.isRequired
 }; 

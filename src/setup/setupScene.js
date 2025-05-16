@@ -89,20 +89,11 @@ const setupPostProcessing = (app) => {
 };
 
 /**
- * The only function you import elsewhere.
- * Handles: textures ➜ primitives ➜ planets ➜ post-processing.
+ * Creates and initializes all celestial bodies and related managers.
+ * This function is called AFTER the first data from the backend is received.
  */
-export async function initScene(app) {
+export async function createSceneObjects(app) {
     const { scene, renderer, camera, timeUtils, textureManager } = app;
-    Planet.setCamera(camera);
-
-    if (!scene || !renderer || !camera) throw new Error('Scene, camera, or renderer not set.');
-    if (!textureManager) throw new Error('TextureManager not initialized.');
-
-    // 1. Assets & background
-    await loadTextures(textureManager);
-    addAmbientLight(scene);
-    new BackgroundStars(scene, camera);
 
     // --- Refactored Object Creation ---
     app.bodiesByNaifId = {};   // Map NAIF ID -> Object (Group, Star, Planet)
@@ -146,7 +137,7 @@ export async function initScene(app) {
 
     // Instantiate OrbitManager for planetary orbits
     app.orbitManager = new OrbitManager({ scene, app });
-    console.log('[setupScene] OrbitManager instantiated:', !!app.orbitManager);
+    console.log('[createSceneObjects] OrbitManager instantiated:', !!app.orbitManager);
 
     // 3. Parent ALL bodies appropriately
     for (const cfg of Object.values(celestialBodiesConfig)) {
@@ -230,33 +221,35 @@ export async function initScene(app) {
         }
     }
 
-
     // --- Refactored Helper Population ---
 
     // 4. Populate mapping for planets/moons needed by simSocket
     app.planetsByNaifId = {}; // ONLY planets/moons for simulation updates
     app.celestialBodies.forEach(planet => {
-        const cfg = celestialBodiesConfig[planet.nameLower];
-        if (cfg && typeof cfg.naif_id === 'number') {
-            app.planetsByNaifId[cfg.naif_id] = planet;
+        // Ensure we are dealing with Planet instances for planetsByNaifId
+        if (planet instanceof Planet) {
+            const cfg = celestialBodiesConfig[planet.nameLower] || Object.values(celestialBodiesConfig).find(c => c.naif_id === planet.naif_id);
+            if (cfg && typeof cfg.naif_id === 'number') {
+                app.planetsByNaifId[cfg.naif_id] = planet;
+            }
         }
     });
-
+    
     // 5. Create PlanetVectors (only for planets/moons)
     app.planetVectors = app.celestialBodies
-        .filter(p => p.getMesh && p.rotationGroup) // Ensure it's a Planet with needed groups
+        .filter(p => p instanceof Planet && p.getMesh && p.rotationGroup) // Ensure it's a Planet with needed groups
         .map(p => new PlanetVectors(p, scene, app.sun?.sun, { name: p.name }));
 
     // 6. Construct gravitySources correctly (planets/moons + stars)
     const gravitySources = [];
     // Add planets/moons and Sun
     app.celestialBodies.forEach(body => {
-        const cfg = celestialBodiesConfig[body.nameLower];
+        const cfg = celestialBodiesConfig[body.nameLower] || Object.values(celestialBodiesConfig).find(c => c.naif_id === body.naif_id);
         if (cfg) {
             let mesh = null;
-            if (typeof body.getMesh === 'function') {
+            if (body instanceof Planet && typeof body.getMesh === 'function') {
                 mesh = body.getMesh();
-            } else if (body.sun) {
+            } else if (body instanceof Sun && body.sun) { // Check if body is an instance of Sun
                 mesh = body.sun;
             }
             gravitySources.push({
@@ -279,9 +272,37 @@ export async function initScene(app) {
         camera
     });
 
-    // 7. Display tuning & Post-processing
+    // 7. Display tuning
     if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
+    
+    console.log('[createSceneObjects] Scene objects created and configured.');
+}
+
+
+/**
+ * The only function you import elsewhere.
+ * Handles: textures ➜ primitives ➜ planets ➜ post-processing.
+ */
+export async function initScene(app) {
+    const { scene, renderer, camera, textureManager } = app;
+    
+    app.sceneObjectsInitialized = false; // Flag to track initialization
+    
+    Planet.setCamera(camera);
+
+    if (!scene || !renderer || !camera) throw new Error('Scene, camera, or renderer not set.');
+    if (!textureManager) throw new Error('TextureManager not initialized.');
+
+    // 1. Assets & background (these can be set up before backend data)
+    await loadTextures(textureManager);
+    addAmbientLight(scene);
+    new BackgroundStars(scene, camera);
+    
+    // Post-processing can also be set up early
     setupPostProcessing(app);
+    
+    // Note: Celestial bodies and related managers (OrbitManager, PlanetVectors, etc.)
+    // will be created by createSceneObjects(app) once the first backend message arrives.
 
     return scene; // gives callers a fluent handle
 }

@@ -103,10 +103,10 @@ export class PhysicsWorld {
         this._lastRealTime = now;
         const simDelta = realDelta * this.timeWarp;
 
-        // update attractors using astronomy-engine ephemeris (DISABLED, handled by backend)
-        // this._updateAttractorsAstronomy();
+        this.physicsWorker.postMessage({ type: 'SET_TIME_STEP', payload: simDelta });
+
         // always integrate satellites
-        this._updateSatellites(simDelta);
+        this._integrateSatellites(simDelta);
     }
 
     /** Internal: load attractor bodies from config */
@@ -129,7 +129,7 @@ export class PhysicsWorld {
     /**
      * Internal: integrate all satellites and handle SOI transitions
      */
-    _updateSatellites(dt) {
+    _integrateSatellites(dt) {
         // Prepare dynamic bodies in meters for integration
         const dynamic = this.bodies.map(b => ({
             name: b.name,
