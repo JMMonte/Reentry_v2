@@ -50,6 +50,11 @@ export class SimulationLoop {
         const delta = this.clock.getDelta();
         this.app.tick?.(delta);
 
+        // Update TimeUtils for smooth time progression
+        if (this.timeUtils && typeof this.timeUtils.update === 'function') {
+            this.timeUtils.update();
+        }
+
         // Render scene
         if (this.sceneManager.composers.final) {
             this.sceneManager.composers.final.render();

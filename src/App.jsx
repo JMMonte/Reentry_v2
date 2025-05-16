@@ -161,10 +161,15 @@ function App3DMain() {
     return () => document.removeEventListener('timeUpdate', handler);
   }, [app3d]);
   const handleSimulatedTimeChange = (newTime) => {
+    // console.log('[App.jsx] handleSimulatedTimeChange called with newTime:', newTime);
     setSimTime(new Date(newTime));
     const sessionId = app3d?.sessionId || controller?.sessionId;
+    // console.log('[App.jsx] handleSimulatedTimeChange - sessionId:', sessionId);
     if (sessionId) {
+      // console.log('[App.jsx] handleSimulatedTimeChange - Calling setSimulationDate for backend.');
       setSimulationDate(sessionId, new Date(newTime).toISOString());
+    } else {
+      console.warn('[App.jsx] handleSimulatedTimeChange - No sessionId found, backend will not be updated.');
     }
   };
   const {
@@ -307,7 +312,7 @@ ${shareUrl}`);
     timeWarp: app3d?.timeUtils?.getTimeWarp() ?? 1,
     onTimeWarpChange: async (newWarp) => {
       const sessionId = app3d?.sessionId || controller?.sessionId;
-      console.log('[App.jsx] onTimeWarpChange (HTTP trigger):', { newWarp, sessionId });
+      // console.log('[App.jsx] onTimeWarpChange (HTTP trigger):', { newWarp, sessionId });
 
       // Optimistically update UI for immediate responsiveness
       if (app3d?.timeUtils?.setLocalTimeWarp) {

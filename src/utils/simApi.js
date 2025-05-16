@@ -8,7 +8,7 @@ export const PHYSICS_SERVER_URL = import.meta.env.VITE_PHYSICS_SERVER_URL || 'ht
  */
 export async function setSimulationDate(sessionId, utcString) {
     const url = `http://localhost:8000/session/${sessionId}/date?utc=${encodeURIComponent(utcString)}`;
-    console.log('[simApi] setSimulationDate', { sessionId, utcString, url });
+    // console.log('[simApi] setSimulationDate', { sessionId, utcString, url });
     await fetch(url, { method: 'POST' });
 }
 
@@ -20,7 +20,7 @@ export async function setSimulationDate(sessionId, utcString) {
  */
 export async function setTimewarp(sessionId, factor) {
     const url = `${PHYSICS_SERVER_URL}/session/${sessionId}/timewarp?factor=${factor}`;
-    console.log('[simApi] setTimewarp (HTTP)', { sessionId, factor, url });
+    // console.log('[simApi] setTimewarp (HTTP)', { sessionId, factor, url });
     try {
         const response = await fetch(url, { method: 'POST' });
         if (!response.ok) {
@@ -31,7 +31,7 @@ export async function setTimewarp(sessionId, factor) {
         }
         const data = await response.json();
         if (data && typeof data.timewarp_factor === 'number') {
-            console.log('[simApi] Timewarp set successfully. Applied factor:', data.timewarp_factor);
+            // console.log('[simApi] Timewarp set successfully. Applied factor:', data.timewarp_factor);
             return data.timewarp_factor;
         }
         console.warn('[simApi] Timewarp response did not contain a valid timewarp_factor:', data);

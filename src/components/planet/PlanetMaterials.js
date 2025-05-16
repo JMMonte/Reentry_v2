@@ -239,7 +239,7 @@ export class PlanetMaterials {
      *   - emissivity: number (default 0.2) - controls the ring's diffusion-like glow
      */
     getRingMaterial(colorTexture, alphaTexture, options = {}) {
-        const emissivity = options.emissivity ?? 0.2;
+        const emissivity = options.emissivity ?? 0.5;
         return new THREE.MeshPhongMaterial({
             map: colorTexture || null,
             alphaMap: alphaTexture || null,

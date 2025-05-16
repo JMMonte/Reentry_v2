@@ -5,7 +5,9 @@ import { Constants } from './Constants.js';
 export class TimeUtils {
     constructor(settings) {
         this.simulatedTime = new Date(settings.simulatedTime);
+        this._targetSimulatedTime = new Date(settings.simulatedTime); // Initialize target time
         this.timeWarp = 1;
+        // this._lastTimeUpdate = performance.now(); // No longer needed for current interpolation
     }
 
     setLocalTimeWarp(newWarp) {
@@ -21,14 +23,49 @@ export class TimeUtils {
     }
 
     setSimTimeFromServer(date, timeWarp) {
-        this.simulatedTime = new Date(date);
+        this._targetSimulatedTime = new Date(date);
         this.timeWarp = timeWarp;
+        // Dispatch event with the TARGET time and current warp, so UI reflects backend state
         document.dispatchEvent(new CustomEvent('timeUpdate', {
             detail: {
-                simulatedTime: this.simulatedTime.toISOString(),
+                simulatedTime: this._targetSimulatedTime.toISOString(),
                 timeWarp: this.timeWarp,
             }
         }));
+    }
+
+    // Method to be called every frame from the simulation loop
+    update() {
+        // const now = performance.now();
+        // const deltaMs = now - this._lastTimeUpdate;
+        // this._lastTimeUpdate = now;
+
+        if (this.timeWarp === 0) {
+            return; // Time is paused, no interpolation needed
+        }
+
+        const currentTime = this.simulatedTime.getTime();
+        const targetTime = this._targetSimulatedTime.getTime();
+
+        if (currentTime === targetTime) {
+            return; // Already at target
+        }
+
+        // Simple interpolation: move a fraction of the difference each frame.
+        // Adjust interpolation factor as needed. A smaller factor means slower, smoother interpolation.
+        const interpolationFactor = 0.1; // Adjust this for desired smoothness
+        let newTime = currentTime + (targetTime - currentTime) * interpolationFactor;
+
+        // Ensure we don't overshoot if close
+        if (Math.abs(targetTime - currentTime) < 50) { // If less than 50ms difference, just snap
+            newTime = targetTime;
+        }
+        
+        this.simulatedTime = new Date(newTime);
+
+        // We do NOT dispatch 'timeUpdate' here for the interpolated time frequently,
+        // as that event is for UI sync to backend's target time.
+        // The visual simulation directly uses this.simulatedTime via getTimeSimulated().
     }
 
     getSimulatedTime() { return this.simulatedTime; }

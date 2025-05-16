@@ -12,7 +12,7 @@ import { Sun } from '../components/Sun.js';
 // Post-processing ───────────────────────────────────────────────────────────────
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'; // Re-enabled
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
@@ -25,7 +25,7 @@ import {
     celestialBodiesConfig,
     textureDefinitions,
     ambientLightConfig,
-    bloomConfig,
+    bloomConfig, // Re-enabled
     barycenters,
     planets,
     moons,
@@ -69,17 +69,23 @@ const setupPostProcessing = (app) => {
     composer.addPass(fxaaPass);
     sceneManager.composers.fxaaPass = fxaaPass;
 
-    // 3. Bloom Pass (kept)
+    // 3. Bloom Pass (re-enabled with potentially adjusted settings)
     const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        bloomConfig.strength,
+        bloomConfig.strength, // We will use the existing config values for now
         bloomConfig.radius,
         bloomConfig.threshold
     );
-    bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2);
+    bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2); // Using half resolution is good for perf
     bloomPass.renderToScreen = true;
     composer.addPass(bloomPass);
-    sceneManager.composers.final = composer;
+    
+    sceneManager.composers.final = composer; 
+
+    // If bloom is re-enabled, FXAA should not render to screen itself.
+    // The final pass in the composer (which is now bloom) will render to screen.
+    fxaaPass.renderToScreen = false;
+
 };
 
 /**
@@ -276,32 +282,6 @@ export async function initScene(app) {
     // 7. Display tuning & Post-processing
     if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
     setupPostProcessing(app);
-
-    // 8. Day/Night Material Update Helper
-    app.updateDayNightMaterials = () => {
-        if (!app.sun || !app.sun.sun) return; // Guard against missing sun
-        const sunPos = new THREE.Vector3();
-        app.sun.sun.getWorldPosition(sunPos);
-
-        for (const planet of app.celestialBodies) { // Loop only over actual planets
-            if (planet.surfaceMaterial && planet.surfaceMaterial.uniforms) {
-                const uniforms = planet.surfaceMaterial.uniforms;
-                if (uniforms.uCameraPosition) {
-                    uniforms.uCameraPosition.value.copy(app.camera.position);
-                }
-                if (uniforms.sunDirection) {
-                    const planetPos = new THREE.Vector3();
-                    // Use getMesh() which should return the LOD or main mesh
-                    const planetMesh = planet.getMesh();
-                    if (planetMesh) {
-                        planetMesh.getWorldPosition(planetPos);
-                        const sunDir = new THREE.Vector3().subVectors(sunPos, planetPos).normalize();
-                        uniforms.sunDirection.value.copy(sunDir);
-                    }
-                }
-            }
-        }
-    };
 
     return scene; // gives callers a fluent handle
 }
