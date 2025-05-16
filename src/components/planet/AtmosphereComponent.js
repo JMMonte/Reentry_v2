@@ -115,75 +115,88 @@ export class AtmosphereComponent {
         outer.material.uniforms.uScaleHeightMultiplier = { value: scaleHeightMultiplier };
     }
 
-    update(camera, sun) {
-        if (!this.mesh) return;
-        // Ensure the entire parent chain is up-to-date
-        let root = this.mesh;
-        while (root.parent) root = root.parent;
-        root.updateMatrixWorld(true);
-        // Update the single atmosphere mesh material
-        const materials = [this.mesh.material];
-        // Planet world position
-        this.mesh.getWorldPosition(this._planetPos);
-        // Camera relative to planet center
-        this._camRel.copy(camera.position).sub(this._planetPos);
-        // Sun position
-        if (sun?.sun?.getWorldPosition) {
-            sun.sun.getWorldPosition(this._sunPos);
-        } else {
-            this._sunPos.set(0, 0, 0);
-        }
-        // Relative sun
-        const sunRel = this._sunPos.clone().sub(this._planetPos);
-        for (const mat of materials) {
-            mat.uniforms.uCameraPosition.value.copy(this._camRel);
-            mat.uniforms.uSunPosition.value.copy(sunRel);
-
-            // Planet frame rotation
-            this.mesh.getWorldQuaternion(this._worldQuat);
-            this._worldQuat.invert();
-            this._invMat.makeRotationFromQuaternion(this._worldQuat);
-            mat.uniforms.uPlanetFrame.value.setFromMatrix4(this._invMat);
-
-            // Sun intensity
-            const dist = this._planetPos.distanceTo(this._sunPos);
-            const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU * Constants.metersToKm : 149597870.7;
-            const BASE = 10.6;
-            const EPS = 1e-6;
-            mat.uniforms.uSunIntensity.value = BASE * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
-
-            // Planet center & radius
-            mat.uniforms.uPlanetPositionWorld.value.copy(this._planetPos);
-            if (mat.uniforms.uPlanetRadius) mat.uniforms.uPlanetRadius.value = this.planet.radius;
-            if (mat.uniforms.uAtmosphereHeight) {
-                const thickness = this.planet.atmosphereThickness;
-                // preserve the same fudge factor set in the material
-                const fudge = mat.uniforms.uLimbFudgeFactor ? mat.uniforms.uLimbFudgeFactor.value : 0;
-                mat.uniforms.uAtmosphereHeight.value = thickness * (1.0 + fudge);
-            }
-
-        }
+    // This update is called by Planet's component loop, handles planet-state-dependent scaling
+    update() {
+        if (!this.mesh || !this.mesh.material?.uniforms) return;
 
         // Update mesh scale if atmosphere thickness changed
-        const equR = this.planet.radius; // Already defined above, but good for clarity here
+        const equR = this.planet.radius;
         const polR = equR * (1 - this.planet.oblateness);
         const newAtmHeight = this.planet.atmosphereThickness;
         const newEquAtm = equR + newAtmHeight;
         const newPolAtm = polR + newAtmHeight;
 
-        // const baseEquAtm = this._baseEquAtm; // Old
-        // const scaleXZ = baseEquAtm === 0 ? 1 : newEquAtm / baseEquAtm; // Old
-        // const scaleY = baseEquAtm === 0 ? 1 : newPolAtm / baseEquAtm; // Old
-        // this.mesh.scale.set(scaleXZ, scaleY, scaleXZ); // Old
-
-        this.mesh.scale.set(newEquAtm, newPolAtm, newEquAtm); // New direct scale
+        this.mesh.scale.set(newEquAtm, newPolAtm, newEquAtm);
 
         // Update uniforms for vertex shader scaling
-        if (this.mesh.material.uniforms.uEquatorialAtmRadiusForScaling) {
-            this.mesh.material.uniforms.uEquatorialAtmRadiusForScaling.value = newEquAtm;
+        const mat = this.mesh.material;
+        if (mat.uniforms.uEquatorialAtmRadiusForScaling) {
+            mat.uniforms.uEquatorialAtmRadiusForScaling.value = newEquAtm;
         }
-        if (this.mesh.material.uniforms.uPolarAtmRadiusForScaling) {
-            this.mesh.material.uniforms.uPolarAtmRadiusForScaling.value = newPolAtm;
+        if (mat.uniforms.uPolarAtmRadiusForScaling) {
+            mat.uniforms.uPolarAtmRadiusForScaling.value = newPolAtm;
+        }
+    }
+
+    // This update is called from App3D.tick AFTER planet and camera positions are finalized
+    updateUniforms(camera, sun) { // camera is the main app camera, sun is the main app sun
+        if (!this.mesh || !this.mesh.material?.uniforms) return;
+        
+        // Ensure the planet's own matrixWorld is up-to-date after its lerp
+        // This should already be true if Planet.update() updated its transforms
+        // and App3D calls updateMatrixWorld on scene before this.
+        // For safety, or if planet group isn't part of main scene graph auto-update:
+        if (this.planet.orbitGroup) this.planet.orbitGroup.updateWorldMatrix(true, false);
+        if (this.mesh.parent) this.mesh.parent.updateWorldMatrix(true, false); // Ensures parent (rotationGroup) is updated
+        this.mesh.updateWorldMatrix(true, false); // Ensures mesh itself is updated if it had local transforms relative to rotationGroup
+
+        // Planet world position
+        // this.mesh.getWorldPosition(this._planetPos); // This gets the atmosphere mesh center
+        // It's better to get the planet's defined center (orbitGroup)
+        this.planet.orbitGroup.getWorldPosition(this._planetPos);
+
+        // Camera relative to planet center
+        this._camRel.copy(camera.position).sub(this._planetPos);
+        
+        // Sun position
+        if (sun?.sun?.getWorldPosition) { // Assuming sun is an object that has a 'sun' mesh/light with getWorldPosition
+            sun.sun.getWorldPosition(this._sunPos);
+        } else if (sun?.getWorldPosition) { // If sun itself is the object with getWorldPosition
+             sun.getWorldPosition(this._sunPos);
+        } else {
+            this._sunPos.set(0, 0, 0); // Fallback if sun is not properly defined
+        }
+        
+        // Relative sun
+        const sunRel = this._sunPos.clone().sub(this._planetPos);
+        
+        const mat = this.mesh.material;
+
+        mat.uniforms.uCameraPosition.value.copy(this._camRel);
+        mat.uniforms.uSunPosition.value.copy(sunRel);
+
+        // Planet frame rotation
+        // The atmosphere mesh is added to planet.rotationGroup, which has the planet's axial tilt.
+        // We need the world orientation of this rotationGroup.
+        this.planet.rotationGroup.getWorldQuaternion(this._worldQuat);
+        this._worldQuat.invert(); // Shader wants world-to-local
+        this._invMat.makeRotationFromQuaternion(this._worldQuat);
+        mat.uniforms.uPlanetFrame.value.setFromMatrix4(this._invMat);
+
+        // Sun intensity
+        const dist = this._planetPos.distanceTo(this._sunPos); // Distance between planet center and sun center
+        const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU * Constants.metersToKm : 149597870.7;
+        const BASE = 10.6; // Base sun intensity factor
+        const EPS = 1e-6;
+        mat.uniforms.uSunIntensity.value = BASE * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
+
+        // Planet center & radius for shader
+        mat.uniforms.uPlanetPositionWorld.value.copy(this._planetPos); // This is planet's world center
+        if (mat.uniforms.uPlanetRadius) mat.uniforms.uPlanetRadius.value = this.planet.radius;
+        if (mat.uniforms.uAtmosphereHeight) {
+            const thickness = this.planet.atmosphereThickness;
+            const fudge = mat.uniforms.uLimbFudgeFactor ? mat.uniforms.uLimbFudgeFactor.value : 0;
+            mat.uniforms.uAtmosphereHeight.value = thickness * (1.0 + fudge);
         }
     }
 

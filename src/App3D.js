@@ -489,16 +489,40 @@ class App3D extends EventTarget {
     tick(delta) {
         this.stats?.begin();
         this.sceneManager.updateFrame?.(delta);
-        this.cameraControls?.updateCameraPosition?.(delta);
+
         if (Array.isArray(this.celestialBodies)) {
             this.celestialBodies.forEach(planet => planet.update?.(delta));
         }
-        // Preview nodes update (if any)
+
         if (this.previewNode) this.previewNode.update?.(delta);
         if (Array.isArray(this.previewNodes)) {
             this.previewNodes.forEach(node => node.update?.(delta));
         }
-        // Render CSS2D labels (if present)
+
+        this.cameraControls?.updateCameraPosition?.(delta);
+
+        // Update atmosphere uniforms after planet positions and camera position are finalized
+        if (Array.isArray(this.celestialBodies)) {
+            this.celestialBodies.forEach(body => {
+                if (typeof body.updateAtmosphereUniforms === 'function') {
+                    // Pass the main camera (this.camera is a getter for sceneManager.camera)
+                    // and the main sun reference from App3D (assuming this.sun is correctly populated)
+                    body.updateAtmosphereUniforms(this.camera, this.sun);
+                }
+            });
+        }
+        // Also for preview nodes if they can have atmospheres and implement the method
+        if (this.previewNode && typeof this.previewNode.updateAtmosphereUniforms === 'function') {
+             this.previewNode.updateAtmosphereUniforms(this.camera, this.sun);
+        }
+        if (Array.isArray(this.previewNodes)) {
+            this.previewNodes.forEach(node => {
+                 if (typeof node.updateAtmosphereUniforms === 'function') {
+                    node.updateAtmosphereUniforms(this.camera, this.sun);
+                }
+            });
+        }
+
         this.labelRenderer?.render?.(this.scene, this.camera);
         this.stats?.end();
     }

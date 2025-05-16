@@ -368,11 +368,6 @@ export class Planet {
             this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
         }
 
-        // If the camera is following this planet, update its position immediately after lerp.
-        if (Planet.camera && Planet.camera.followTarget === this && typeof Planet.camera.updateCameraPosition === 'function') {
-            Planet.camera.updateCameraPosition();
-        }
-
         // If distant mesh is visible, only update its own component and then return,
         // skipping updates for other more detailed components.
         if (this.distantComponent?.mesh?.visible) {
@@ -387,13 +382,19 @@ export class Planet {
                 // as it has been handled (or skipped if not visible) already.
                 if (c === this.distantComponent) return; 
 
-                if (c.constructor && c.constructor.name === 'AtmosphereComponent') {
-                    c.update(Planet.camera, window.app3d?.sun);
-                } else {
-                    c.update();
-                }
+                // AtmosphereComponent.update() is now simplified and doesn't take camera/sun
+                // It handles planet-specific updates like mesh scaling.
+                // The camera/sun dependent uniforms will be updated later via updateAtmosphereUniforms.
+                c.update(); // Pass delta if needed, or nothing based on component requirements
             }
         });
+    }
+
+    // New method to be called from App3D.tick() after main camera update
+    updateAtmosphereUniforms(camera, sun) {
+        if (this.atmosphereComponent && typeof this.atmosphereComponent.updateUniforms === 'function') {
+            this.atmosphereComponent.updateUniforms(camera, sun);
+        }
     }
 
     /* ===== public ===== */
