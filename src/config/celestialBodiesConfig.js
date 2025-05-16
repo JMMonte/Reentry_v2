@@ -234,7 +234,7 @@ const planets = {
             }),
         },
         atmosphere: {
-            hazeIntensity: 0.6, thickness: 11, densityScaleHeight: 11.1,
+            hazeIntensity: 4.6, thickness: 11, densityScaleHeight: 11.1,
             scaleHeightMultiplier: 4.5,
             rayleighScaleHeight: 11.1, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.005, 0.002, 0.001],

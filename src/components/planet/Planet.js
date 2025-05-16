@@ -77,7 +77,9 @@ export class Planet {
         this.rotationPeriod = rotationPeriod;
         this.orbitalPeriod = orbitalPeriod;
 
-
+        // Target states for interpolation
+        this.targetPosition = new THREE.Vector3();
+        this.targetOrientation = new THREE.Quaternion();
 
         this.meshRes = meshRes;
         this.atmosphereRes = atmosphereRes;
@@ -284,6 +286,10 @@ export class Planet {
         this.orientationGroup = new THREE.Group();
         this.rotationGroup = new THREE.Group();
 
+        // Initialize positions from targets
+        this.orbitGroup.position.copy(this.targetPosition);
+        this.orientationGroup.quaternion.copy(this.targetOrientation);
+
         this.orientationGroup.add(this.rotationGroup);
         this.orbitGroup.add(this.orientationGroup);
         this.scene.add(this.orbitGroup);
@@ -348,14 +354,32 @@ export class Planet {
 
     /* ===== per-frame ===== */
     update() {
-        // If distant mesh is visible, only update distant component
+        const LERP_ALPHA = 0.15; // Smoothing factor (0.1 to 0.2 is usually good)
+
+        // ALWAYS Interpolate position of the orbitGroup towards the targetPosition
+        if (this.orbitGroup) {
+            this.orbitGroup.position.lerp(this.targetPosition, LERP_ALPHA);
+        }
+
+        // ALWAYS Interpolate orientation of the orientationGroup towards the targetOrientation
+        if (this.orientationGroup) {
+            this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
+        }
+
+        // If distant mesh is visible, only update its own component and then return,
+        // skipping updates for other more detailed components.
         if (this.distantComponent?.mesh?.visible) {
-            this.distantComponent.update();
+            this.distantComponent.update(); // The distant component might use the now-interpolated group positions
             return;
         }
-        // Otherwise, update all components as usual
+        
+        // If not distant, update all other detailed components as usual
         this.components.forEach(c => {
             if (c && typeof c.update === 'function') {
+                // We don't want to update the distantComponent again if it's in the list,
+                // as it has been handled (or skipped if not visible) already.
+                if (c === this.distantComponent) return; 
+
                 if (c.constructor && c.constructor.name === 'AtmosphereComponent') {
                     c.update(Planet.camera, window.app3d?.sun);
                 } else {
@@ -400,6 +424,15 @@ export class Planet {
     setSOIVisible(v) { this.soiComponent && (this.soiComponent.mesh.visible = v); }
     setRadialGridVisible(v) { this.radialGrid?.setVisible(v); }
     setRingsVisible(v) { if (this.ringComponent?.mesh) this.ringComponent.mesh.visible = v; }
+
+    // Methods to set target state for interpolation
+    setTargetPosition(worldPositionVector) {
+        this.targetPosition.copy(worldPositionVector);
+    }
+
+    setTargetOrientation(worldOrientationQuaternion) {
+        this.targetOrientation.copy(worldOrientationQuaternion);
+    }
 
     convertEciToGround(posEci) {
         const gmst = PhysicsUtils.calculateGMST(Date.now());
@@ -456,7 +489,10 @@ export class Planet {
      */
     setOrientationFromServerQuaternion(qServer) {
         // Centralized in RotationComponent
-        RotationComponent.applyServerQuaternion(this.orientationGroup, qServer);
+        // RotationComponent.applyServerQuaternion(this.orientationGroup, qServer);
+        // Now, this method will set the TARGET orientation for slerping.
+        // qServer is assumed to be the final Y-up Three.js quaternion.
+        this.targetOrientation.copy(qServer);
     }
 
     /**
