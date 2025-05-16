@@ -221,7 +221,11 @@ const loadingMessages = [
     "Calculating Gravitational Constants...",
     "Solving the Navier-Stokes Equations...",
     "Simulating the Big Bang...",
-    "Synchronizing Cosmic Clocks..."
+    "Synchronizing Cosmic Clocks...",
+    "Collapsing rocky planets...",
+    "Colliding Theia with Earth...",
+    "Ejecting radical proto-planets...",
+    "Painting the rings of Saturn..."
 ];
 
 export function Layout({

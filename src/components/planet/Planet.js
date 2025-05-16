@@ -368,6 +368,11 @@ export class Planet {
             this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
         }
 
+        // If the camera is following this planet, update its position immediately after lerp.
+        if (Planet.camera && Planet.camera.followTarget === this && typeof Planet.camera.updateCameraPosition === 'function') {
+            Planet.camera.updateCameraPosition();
+        }
+
         // If distant mesh is visible, only update its own component and then return,
         // skipping updates for other more detailed components.
         if (this.distantComponent?.mesh?.visible) {
