@@ -344,7 +344,16 @@ const planets = {
         mass: 8.6810e25, radius: 25_362, tilt: 97.77, rotationPeriod: -62_064,
         oblateness: 0.02293,
         lodLevels: generateLodLevelsForRadius(25_362),
-        dotPixelSizeThreshold: 1, soiRadius: 2039,
+        dotPixelSizeThreshold: 1, soiRadius: 2039, addRings: true,
+        rings: {
+            innerRadius: 41000,
+            outerRadius: 51500,
+            textureKey: 'uranusRingTexture',
+            shininess: 1,
+            emissive: 0xffffff,
+            emissiveIntensity: 10,
+            resolution: 256,
+        },
         materials: {
             createSurfaceMaterial: tm => new THREE.MeshLambertMaterial({
                 map: tm.getTexture('uranusTexture'),
@@ -386,8 +395,8 @@ const planets = {
         rings: {
             innerRadius: 62_000, outerRadius: 65_000,
             textureKey: 'neptuneRingTexture',
-            shininess: 5, emissive: 0xffffff,
-            emissiveIntensity: 1, resolution: 256,
+            shininess: 15, emissive: 0xffffff,
+            emissiveIntensity: 30, resolution: 256,
         },
         materials: {
             createSurfaceMaterial: tm => new THREE.MeshLambertMaterial({
