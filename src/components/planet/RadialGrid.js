@@ -80,140 +80,81 @@ export class RadialGrid {
     }
 
     createGrid() {
-        const { circles = [], radialLines, markerStep, labelMarkerStep, maxDisplayRadius } = this.config;
+        // Always create a basic grid, regardless of config
+        const soi = (typeof this.planet.soiRadius === 'number' && isFinite(this.planet.soiRadius) && this.planet.soiRadius > 0)
+            ? this.planet.soiRadius : 1000; // fallback if missing
         const scaledPlanetRadius = this.planet.radius;
+        const maxRadiusScaled = scaledPlanetRadius + soi;
+        const markerStep = Math.max(soi / 10, 1); // at least 1 unit step
+        const markerCount = Math.floor(soi / markerStep);
+        const radialLineCount = 8;
 
-        // --- Materials (Define base opacities - Adjusted) ---
-        const majorOpacity = 0.35;  // Keep major lines as they are
-        const minorOpacity = 0.20;  // Was 0.15
-        const markerOpacity = 0.12; // Was 0.08
-        const radialOpacity = 0.15; // Was 0.1
+        // --- Materials ---
+        const majorOpacity = 0.35;
+        const minorOpacity = 0.20;
+        const markerOpacity = 0.12;
+        const radialOpacity = 0.15;
+        const solidMajorMaterial = new THREE.LineBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: majorOpacity });
+        const solidMinorMaterial = new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: minorOpacity });
+        const markerMaterial = new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: markerOpacity, depthWrite: false });
+        const radialLineMaterial = new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: radialOpacity, depthWrite: false });
 
-        const solidMajorMaterial = new THREE.LineBasicMaterial({
-            color: 0xaaaaaa, // Slightly brighter color for major lines
-            transparent: true,
-            opacity: majorOpacity
-        });
-        const solidMinorMaterial = new THREE.LineBasicMaterial({
-            color: 0x888888,
-            transparent: true,
-            opacity: minorOpacity
-        });
+        // --- Add main SOI circle (major) ---
+        const soiCircle = this.createCircle(scaledPlanetRadius + soi, solidMajorMaterial.clone(), false);
+        if (soiCircle) {
+            soiCircle.userData.baseOpacity = majorOpacity;
+            this.group.add(soiCircle);
+            this.createLabel('SOI', scaledPlanetRadius + soi);
+        }
 
-        // Base for dashed lines - opacity will be set per-instance
-        const dashedMaterialBase = {
-            color: 0xaaaaaa,
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.CustomBlending,
-            blendEquation: THREE.AddEquation,
-            blendSrc: THREE.SrcAlphaFactor,
-            blendDst: THREE.OneMinusSrcAlphaFactor,
-            dashSize: 500,
-            gapSize: 300
-        };
-
-        const markerMaterial = new THREE.LineBasicMaterial({
-            color: 0x888888,
-            transparent: true,
-            opacity: markerOpacity,
-            depthWrite: false,
-            blending: THREE.CustomBlending,
-            blendEquation: THREE.AddEquation,
-            blendSrc: THREE.SrcAlphaFactor,
-            blendDst: THREE.OneMinusSrcAlphaFactor
-        });
-
-        const radialLineMaterial = new THREE.LineBasicMaterial({
-            color: 0x888888,
-            transparent: true,
-            opacity: radialOpacity,
-            depthWrite: false,
-            blending: THREE.CustomBlending,
-            blendEquation: THREE.AddEquation,
-            blendSrc: THREE.SrcAlphaFactor,
-            blendDst: THREE.OneMinusSrcAlphaFactor
-        });
-
-        // --- Scale config values ---
-        const scaledCircles = circles.map(c => ({
-            ...c,
-            scaledRadius: scaledPlanetRadius + c.radius
-        }));
-        const scaledMarkerStep = markerStep;
-        const scaledLabelMarkerStep = labelMarkerStep;
-        const scaledMaxAltitude = maxDisplayRadius;
-        const maxRadiusScaled = scaledPlanetRadius + scaledMaxAltitude;
-
-        // --- Circles from Config ---
-        scaledCircles.forEach(circleConfig => {
-            let material;
-            let isDashed = false;
-            const style = circleConfig.style?.toLowerCase() || 'minor';
-            let baseOpacityValue;
-
-            if (style === 'dashed' || style === 'dashed-major') {
-                const dashScale = circleConfig.dashScale || 1;
-                baseOpacityValue = style === 'dashed-major' ? majorOpacity : minorOpacity;
-                material = new THREE.LineDashedMaterial({
-                    ...dashedMaterialBase,
-                    opacity: baseOpacityValue,
-                    dashSize: dashedMaterialBase.dashSize * dashScale,
-                    gapSize: dashedMaterialBase.gapSize * dashScale,
-                });
-                isDashed = true;
-            } else if (style === 'major') {
+        // --- Add config circles (if any) ---
+        const circles = (this.config && Array.isArray(this.config.circles)) ? this.config.circles : [];
+        circles.forEach(circleConfig => {
+            if (typeof circleConfig.radius !== 'number' || !isFinite(circleConfig.radius)) return;
+            const r = scaledPlanetRadius + circleConfig.radius;
+            if (!isFinite(r) || r > scaledPlanetRadius + soi) return;
+            let material = solidMinorMaterial.clone();
+            let baseOpacityValue = minorOpacity;
+            if (circleConfig.style?.toLowerCase() === 'major') {
                 material = solidMajorMaterial.clone();
                 baseOpacityValue = majorOpacity;
-            } else { // Default to solid minor
-                material = solidMinorMaterial.clone();
-                baseOpacityValue = minorOpacity;
             }
-
-            const circleLine = this.createCircle(circleConfig.scaledRadius, material, isDashed);
+            const circleLine = this.createCircle(r, material, false);
             if (circleLine) {
-                circleLine.userData.baseOpacity = baseOpacityValue; // Set explicitly here
-                this.group.add(circleLine); // Add to group here
-                if (circleConfig.label) {
-                    this.createLabel(circleConfig.label, circleConfig.scaledRadius);
-                }
+                circleLine.userData.baseOpacity = baseOpacityValue;
+                this.group.add(circleLine);
+                if (circleConfig.label) this.createLabel(circleConfig.label, r);
             }
         });
 
-        // --- Intermediate Markers & Labels ---
-        if (scaledMarkerStep > 0) {
-            for (let scaledAlt = scaledMarkerStep; scaledAlt <= scaledMaxAltitude; scaledAlt += scaledMarkerStep) {
-                const scaledRadiusFromCenter = scaledPlanetRadius + scaledAlt;
-                const markerLine = this.createCircle(scaledRadiusFromCenter, markerMaterial.clone(), false);
-                if (markerLine) {
-                    markerLine.userData.baseOpacity = markerOpacity; // Set explicitly here
-                    this.group.add(markerLine); // Add to group here
-                    if (scaledLabelMarkerStep > 0 && (scaledAlt % scaledLabelMarkerStep < scaledMarkerStep * 0.1)) {
-                        const originalAltitudeMeters = scaledAlt;
-                        const labelText = `${originalAltitudeMeters.toFixed(0)}k km`;
-                        this.createLabel(labelText, scaledRadiusFromCenter);
-                    }
-                }
+        // --- Add standard markers and labels ---
+        for (let i = 1; i < markerCount; i++) {
+            const r = scaledPlanetRadius + i * markerStep;
+            if (!isFinite(r) || r > scaledPlanetRadius + soi) continue;
+            const markerLine = this.createCircle(r, markerMaterial.clone(), false);
+            if (markerLine) {
+                markerLine.userData.baseOpacity = markerOpacity;
+                this.group.add(markerLine);
+                // Label at every marker
+                const labelText = `${Math.round(i * markerStep)} km`;
+                this.createLabel(labelText, r);
             }
         }
 
-        // --- Radial Lines ---
-        if (radialLines && radialLines.count > 0) {
-            const lineCount = radialLines.count;
-            for (let i = 0; i < lineCount; i++) {
-                const angle = (i / lineCount) * Math.PI * 2;
-                const geometry = new THREE.BufferGeometry().setFromPoints([
-                    new THREE.Vector3(0, 0, 0),
-                    new THREE.Vector3(
-                        Math.cos(angle) * maxRadiusScaled,
-                        Math.sin(angle) * maxRadiusScaled,
-                        0
-                    )
-                ]);
-                const radialLine = new THREE.Line(geometry, radialLineMaterial.clone());
-                radialLine.userData.baseOpacity = radialOpacity; // Set explicitly here
-                this.group.add(radialLine); // Add to group here
-            }
+        // --- Add radial lines (fixed count) ---
+        for (let i = 0; i < radialLineCount; i++) {
+            const angle = (i / radialLineCount) * Math.PI * 2;
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(
+                    Math.cos(angle) * maxRadiusScaled,
+                    Math.sin(angle) * maxRadiusScaled,
+                    0
+                )
+            ]);
+            const radialLine = new THREE.Line(geometry, radialLineMaterial.clone());
+            radialLine.userData.baseOpacity = radialOpacity;
+            this.group.add(radialLine);
         }
     }
 
