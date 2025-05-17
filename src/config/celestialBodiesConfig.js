@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 import {
-    earthTexture, earthSpecTexture, earthNormalTexture,
+    earthTexture, earthRoughnessTexture, earthNormalTexture,
     cloudTexture, moonTexture, moonNormalTexture,
     mercuryTexture, mercuryNormalTexture, venusTexture, venusAtmosphereTexture,
     marsTexture, marsNormalTexture, jupiterTexture, saturnTexture, saturnRingTexture,
@@ -48,7 +48,7 @@ const generateLodLevelsForRadius = radius => {
 /* ---------- Textures ---------- */
 export const textureDefinitions = [
     { key: 'earthTexture', src: earthTexture },
-    { key: 'earthSpecTexture', src: earthSpecTexture },
+    { key: 'earthRoughnessTexture', src: earthRoughnessTexture },
     { key: 'earthNormalTexture', src: earthNormalTexture },
     { key: 'cloudTexture', src: cloudTexture },
     { key: 'moonTexture', src: moonTexture },
@@ -122,18 +122,15 @@ const planets = {
             polarRadius: EARTH_RAD * (1 - 0.0033528106647474805),
         },
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {
-                    emissive: 0x000000, shininess: 150, specular: 0x888888,
-                    normalScale: new THREE.Vector2(1, -1),
-                };
-                const map = tm.getTexture('earthTexture');
-                if (map) matParams.map = map;
-                const normalMap = tm.getTexture('earthNormalTexture');
-                if (normalMap) matParams.normalMap = normalMap;
-                const specularMap = tm.getTexture('earthSpecTexture');
-                if (specularMap) matParams.specularMap = specularMap;
-                return new THREE.MeshPhongMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'earthTexture',
+                normalMapKey: 'earthNormalTexture',
+                roughnessMap: 'earthRoughnessTexture',
+                params: {
+                    normalScale: new THREE.Vector2(0.5, 0.5),
+                    roughness: 0.9, metalness: 0.0,
+                }
             },
             createCloudMaterial: tm => new THREE.MeshLambertMaterial({
                 alphaMap: tm.getTexture('cloudTexture'),
@@ -166,13 +163,14 @@ const planets = {
         lodLevels: generateLodLevelsForRadius(2439.7),
         dotPixelSizeThreshold: 2, soiRadius: 46,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = { shininess: 5, normalScale: new THREE.Vector2(0.5, 0.5) };
-                const map = tm.getTexture('mercuryTexture');
-                if (map) matParams.map = map;
-                const normalMap = tm.getTexture('mercuryNormalTexture');
-                if (normalMap) matParams.normalMap = normalMap;
-                return new THREE.MeshPhongMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'mercuryTexture',
+                normalMapKey: 'mercuryNormalTexture',
+                params: {
+                    normalScale: new THREE.Vector2(0.5, 0.5),
+                    roughness: 0.7, metalness: 0.1,
+                }
             },
         },
         radialGridConfig: {
@@ -199,11 +197,12 @@ const planets = {
         lodLevels: generateLodLevelsForRadius(6051.8),
         dotPixelSizeThreshold: 2, soiRadius: 101,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = { shininess: 10 };
-                const map = tm.getTexture('venusTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshPhongMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'venusTexture',
+                params: {
+                    roughness: 0.7, metalness: 0.1,
+                }
             },
             createCloudMaterial: tm => {
                 const matParams = { transparent: false, opacity: 1, blending: THREE.NormalBlending };
@@ -244,13 +243,14 @@ const planets = {
         lodLevels: generateLodLevelsForRadius(3389.5),
         dotPixelSizeThreshold: 2, soiRadius: 169,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = { shininess: 5, normalScale: new THREE.Vector2(0.5, 0.5) };
-                const map = tm.getTexture('marsTexture');
-                if (map) matParams.map = map;
-                const normalMap = tm.getTexture('marsNormalTexture');
-                if (normalMap) matParams.normalMap = normalMap;
-                return new THREE.MeshPhongMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'marsTexture',
+                normalMapKey: 'marsNormalTexture',
+                params: {
+                    normalScale: new THREE.Vector2(0.5, 0.5),
+                    roughness: 0.8, metalness: 0.1,
+                }
             },
         },
         atmosphere: {
@@ -284,11 +284,12 @@ const planets = {
         lodLevels: generateLodLevelsForRadius(69_911),
         dotPixelSizeThreshold: 2, soiRadius: 690,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('jupiterTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'jupiterTexture',
+                params: {
+                    roughness: 0.9, metalness: 0.0,
+                }
             },
         },
         atmosphere: {
@@ -331,11 +332,12 @@ const planets = {
             emissiveIntensity: 3, resolution: 256,
         },
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('saturnTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'saturnTexture',
+                params: {
+                    roughness: 0.9, metalness: 0.0,
+                }
             },
         },
         atmosphere: {
@@ -381,11 +383,12 @@ const planets = {
             resolution: 256,
         },
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('uranusTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'uranusTexture',
+                params: {
+                    roughness: 0.95, metalness: 0.0,
+                }
             },
         },
         atmosphere: {
@@ -428,11 +431,12 @@ const planets = {
             emissiveIntensity: 30, resolution: 256,
         },
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('neptuneTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'neptuneTexture',
+                params: {
+                    roughness: 0.95, metalness: 0.0,
+                }
             },
         },
         atmosphere: {
@@ -468,17 +472,13 @@ const planets = {
         rotationPeriod: 6.38723 * Constants.daysInYear, oblateness: 0.02488,
         lodLevels: generateLodLevelsForRadius(1_188.3),
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('plutoTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
-            },
-            createNormalMaterial: tm => {
-                const matParams = {};
-                const normalMap = tm.getTexture('plutoNormalTexture');
-                if (normalMap) matParams.normalMap = normalMap;
-                return new THREE.MeshPhongMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'plutoTexture',
+                normalMapKey: 'plutoNormalTexture',
+                params: {
+                    roughness: 0.8, metalness: 0.05,
+                }
             },
         },
         radialGridConfig: {
@@ -513,14 +513,15 @@ const moons = {
         addLight: true,
         lightOptions: { color: 0xffffff, intensity: MOON_RAD * 10, helper: false },
         materials: {
-            createSurfaceMaterial: tm => new THREE.MeshPhongMaterial({
-                map: tm.getTexture('moonTexture'),
-                normalMap: tm.getTexture('moonNormalTexture'),
-                normalScale: new THREE.Vector2(0.5, 0.5),
-                roughness: 0.5, metalness: 0,
-            }),
-
-
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'moonTexture',
+                normalMapKey: 'moonNormalTexture',
+                params: {
+                    normalScale: new THREE.Vector2(0.5, 0.5),
+                    roughness: 0.7, metalness: 0.1,
+                }
+            },
         },
         radialGridConfig: {
             maxDisplayRadius: 29_000,
@@ -545,11 +546,12 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(1_821.6),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('ioTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'ioTexture',
+                params: {
+                    roughness: 0.7, metalness: 0.1,
+                }
             },
         },
     },
@@ -563,11 +565,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(1_560.8),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('europaTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'europaTexture',
+                params: {}
             },
         },
     },
@@ -581,11 +582,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(2_634.1),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('ganymedeTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'ganymedeTexture',
+                params: {}
             },
         },
     },
@@ -599,11 +599,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(2_410.3),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('callistoTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'callistoTexture',
+                params: {}
             },
         },
     },
@@ -619,11 +618,12 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(6.2),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('deimosTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'deimosTexture',
+                params: {
+                    roughness: 0.8, metalness: 0.1,
+                }
             },
         },
     },
@@ -637,11 +637,12 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(11.1),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('phobosTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'phobosTexture',
+                params: {
+                    roughness: 0.8, metalness: 0.1,
+                }
             },
         },
     },
@@ -656,11 +657,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(198.2),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('mimasTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'mimasTexture',
+                params: {}
             },
         },
     },
@@ -673,11 +673,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(252.1),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('enceladusTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'enceladusTexture',
+                params: {}
             },
         },
     },
@@ -690,11 +689,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(531.1),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('tethysTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'tethysTexture',
+                params: {}
             },
         },
     },
@@ -707,11 +705,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(561.4),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('dioneTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'dioneTexture',
+                params: {}
             },
         },
     },
@@ -724,11 +721,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(763.8),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('rheaTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'rheaTexture',
+                params: {}
             },
         },
     },
@@ -741,11 +737,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(2_574.7),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('titanTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'titanTexture',
+                params: {}
             },
         },
     },
@@ -758,11 +753,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(734.5),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('iapetusTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'iapetusTexture',
+                params: {}
             },
         },
     },
@@ -777,11 +771,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(578.9),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('arielTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'arielTexture',
+                params: {}
             },
         },
     },
@@ -794,11 +787,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(584.7),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('umbrielTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'umbrielTexture',
+                params: {}
             },
         },
     },
@@ -811,11 +803,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(788.9),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('titaniaTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'titaniaTexture',
+                params: {}
             },
         },
     },
@@ -828,11 +819,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(761.4),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('oberonTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'oberonTexture',
+                params: {}
             },
         },
     },
@@ -845,11 +835,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(235.8),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('mirandaTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'mirandaTexture',
+                params: {}
             },
         },
     },
@@ -864,11 +853,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(1_353.4),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('tritonTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'tritonTexture',
+                params: {}
             },
         },
     },
@@ -881,11 +869,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(210),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('proteusTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'proteusTexture',
+                params: {}
             },
         },
     },
@@ -898,11 +885,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(170),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('nereidTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'nereidTexture',
+                params: {}
             },
         },
     },
@@ -917,11 +903,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(606),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('charonTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'charonTexture',
+                params: {}
             },
         },
     },
@@ -934,11 +919,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(25),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('nixTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'nixTexture',
+                params: {}
             },
         },
     },
@@ -951,11 +935,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(30),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('hydraTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'hydraTexture',
+                params: {}
             },
         },
     },
@@ -968,11 +951,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(12),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('kerberosTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'kerberosTexture',
+                params: {}
             },
         },
     },
@@ -985,11 +967,10 @@ const moons = {
         lodLevels: generateLodLevelsForRadius(7),
         dotPixelSizeThreshold: 2,
         materials: {
-            createSurfaceMaterial: tm => {
-                const matParams = {};
-                const map = tm.getTexture('styxTexture');
-                if (map) matParams.map = map;
-                return new THREE.MeshLambertMaterial(matParams);
+            surfaceConfig: {
+                materialType: 'standard',
+                textureKey: 'styxTexture',
+                params: {}
             },
         },
     },

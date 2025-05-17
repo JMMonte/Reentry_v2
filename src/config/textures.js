@@ -1,6 +1,6 @@
 // config/textures.js
 import earthTexture from '../assets/texture/earth_surface.jpg';
-import earthSpecTexture from '../assets/texture/earth_specular.png';
+import earthRoughnessTexture from '../assets/texture/earth_roughness.png';
 import earthNormalTexture from '../assets/texture/earth_normal.jpg';
 import earthNightTexture from '../assets/texture/earth_night.jpg';
 import cloudTexture from '../assets/texture/earth_clouds.png';
@@ -29,7 +29,7 @@ import charonTexture from '../assets/texture/charon_surface.png';
 
 export {
     earthTexture,
-    earthSpecTexture,
+    earthRoughnessTexture,
     earthNormalTexture,
     earthNightTexture,
     cloudTexture,

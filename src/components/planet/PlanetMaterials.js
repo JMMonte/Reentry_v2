@@ -3,34 +3,93 @@ import soiVertexShader from '../../shaders/soiVertexShader.glsl';
 import soiFragmentShader from '../../shaders/soiFragmentShader.glsl';
 import { Constants } from '../../utils/Constants.js';
 
-// Inlined from EarthMaterials.js
-function createEarthMaterial(textureManager, anisotropy) {
-    const matParams = {
-        specular: 0xffffff,
-        shininess: 40.0,
-        normalScale: new THREE.Vector2(5.0, 5.0),
-        normalMapType: THREE.TangentSpaceNormalMap,
-        depthWrite: true
-    };
-    const earthTextureMap = textureManager.getTexture('earthTexture');
-    if (earthTextureMap) {
-        earthTextureMap.anisotropy = anisotropy;
-        matParams.map = earthTextureMap;
+// Generic surface material creator for all planets/moons
+function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
+    const {
+        materialType = 'standard', // 'standard' (PBR), 'phong', or 'lambert'
+        textureKey,
+        normalMapKey,
+        specularMapKey,
+        bumpMapKey,
+        params = {}, // extra material params (roughness, metalness, shininess, etc)
+    } = config;
+    // Separate roughness/metalness for standard, and remove for others
+    const { roughness, metalness, ...matParams } = params;
+    // Main color map
+    if (textureKey) {
+        const map = textureManager.getTexture(textureKey);
+        if (map) {
+            map.anisotropy = anisotropy;
+            matParams.map = map;
+        }
     }
-    const specularMap = textureManager.getTexture('earthSpecTexture');
-    if (specularMap) {
-        matParams.specularMap = specularMap;
+    // Normal map
+    if (normalMapKey) {
+        const normalMap = textureManager.getTexture(normalMapKey);
+        if (normalMap) {
+            normalMap.anisotropy = anisotropy;
+            matParams.normalMap = normalMap;
+        }
     }
-    const normalMap = textureManager.getTexture('earthNormalTexture');
-    if (normalMap) {
-        matParams.normalMap = normalMap;
+    // Roughness map
+    if (config.roughnessMap) {
+        const roughnessMap = textureManager.getTexture(config.roughnessMap);
+        if (roughnessMap) {
+            matParams.roughnessMap = roughnessMap;
+            roughnessMap.encoding = THREE.LinearEncoding;
+        }
     }
-    const bump = textureManager.getTexture('earthBumpMap');
-    if (bump) {
-        matParams.bumpMap = bump;
-        matParams.bumpScale = 0.1;
+    // Specular map (Phong only, or as metalnessMap/roughnessMap for Standard on Earth)
+    if (specularMapKey) {
+        const specularMap = textureManager.getTexture(specularMapKey);
+        if (specularMap) {
+            if (materialType === 'phong') {
+                matParams.specularMap = specularMap;
+            } else if (materialType === 'standard' && textureKey === 'earthTexture') {
+                // For Earth, use specular map as metalnessMap for water reflection only
+                matParams.metalnessMap = specularMap;
+                matParams.metalness = 1.0;
+                matParams.roughness = 0.1;
+                // Do NOT set as roughnessMap
+            }
+        }
     }
-    return new THREE.MeshPhongMaterial(matParams);
+    // Bump map
+    if (bumpMapKey) {
+        const bumpMap = textureManager.getTexture(bumpMapKey);
+        if (bumpMap) {
+            matParams.bumpMap = bumpMap;
+        }
+    }
+    // Material selection
+    if (materialType === 'standard') {
+        let finalRoughness = typeof roughness === 'number' ? roughness : 1.0;
+        let finalMetalness = typeof metalness === 'number' ? metalness : 0.0;
+        // Special handling for Earth: use metalnessMap for water reflection
+        if (textureKey === 'earthTexture' && specularMapKey) {
+            const specularMap = textureManager.getTexture(specularMapKey);
+            if (specularMap) {
+                matParams.metalnessMap = specularMap;
+                finalMetalness = 1.0;
+                finalRoughness = 0.1;
+            }
+        }
+        return new THREE.MeshStandardMaterial({ ...matParams, roughness: finalRoughness, metalness: finalMetalness });
+    } else if (materialType === 'phong') {
+        const mat = new THREE.MeshPhongMaterial(matParams);
+        // Optionally set as custom properties for future use
+        if (typeof roughness !== 'undefined') mat.roughness = roughness;
+        if (typeof metalness !== 'undefined') mat.metalness = metalness;
+        return mat;
+    } else if (materialType === 'lambert') {
+        const mat = new THREE.MeshLambertMaterial(matParams);
+        if (typeof roughness !== 'undefined') mat.roughness = roughness;
+        if (typeof metalness !== 'undefined') mat.metalness = metalness;
+        return mat;
+    } else {
+        // fallback to standard
+        return new THREE.MeshStandardMaterial({ ...matParams, roughness, metalness });
+    }
 }
 
 // Modify this internal default cloud material function
@@ -122,8 +181,8 @@ export class PlanetMaterials {
         this.textureManager = textureManager;
         this.maxAnisotropy = rendererCapabilities.getMaxAnisotropy();
         this.config = materialsConfig;
-        // Default material creator functions
-        this.surfaceCreator = materialsConfig.createSurfaceMaterial || createEarthMaterial;
+        // Use generic surface material creator with config
+        this.surfaceCreator = (tm, aniso) => createSurfaceMaterial(tm, aniso, materialsConfig.surfaceConfig || {});
         this.cloudCreator = materialsConfig.createCloudMaterial || createCloudMaterial;
         this.atmosphereCreator = createAtmosphereMaterial;
         this.glowCreator = materialsConfig.createGlowMaterial || createGlowMaterial;
