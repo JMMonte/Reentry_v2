@@ -32,8 +32,7 @@ export const defaultSettings = {
   showGrid: { value: true, name: 'Grid', icon: Grid,
     description: 'Show a grid overlay to help with navigation and orientation.'
   },
-  showVectors: { value: false, name: 'Vectors', icon: Move },
-  showAxis: { value: false, name: 'Axis', icon: Move },
+  showPlanetVectors: { value: false, name: 'Planetary Vectors', icon: Move },
   enableFXAA: { value: true, name: 'Anti-Aliasing (FXAA)', icon: Settings2,
     description: 'Enable fast approximate anti-aliasing for smoother rendering.'
   },
@@ -93,8 +92,7 @@ const categories = [
     name: 'Solar System',
     keys: [
       'showGrid',
-      'showVectors',
-      'showAxis',
+      'showPlanetVectors',
       'enableFXAA',
       'pixelRatio',
       'showSOI',

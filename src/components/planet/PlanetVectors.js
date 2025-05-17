@@ -1,16 +1,12 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helveticaRegular from '../../assets/fonts/helvetiker_regular.typeface.json';
-import { LabelFader } from '../../utils/LabelFader.js';
 import { celestialBodiesConfig } from '../../config/celestialBodiesConfig.js';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 const ARROW_COLORS = {
-    northPole: 0x00bfff,
     sun: 0xffff00,
-    greenwich: 0x00ff00,
-    equinox: 0xff0000,
-    velocity: 0xff00ff, // bright magenta for debug
+    velocity: 0xff00ff, // bright magenta
 };
 const LABEL_FONT_SIZE = 64;
 const LABEL_COLOR = 'white';
@@ -39,12 +35,10 @@ export class PlanetVectors {
         (body.orientationGroup || body.orbitGroup || scene).add(this.group);
         this.group.position.set(0, 0, 0); // Always at local origin of parent
         this.isBarycenter = isBarycenter;
-        const { name = 'Planet', showGreenwich = true } = options;
-        this.options = { name, showGreenwich };
+        const { name = 'Planet' } = options;
+        this.options = { name };
         this.directionalArrows = [];
         this.directionalLabels = [];
-        this.axesHelper = null; // Initialize axesHelper
-        this.axisLabels = []; // Initialize axisLabels
         if (isBarycenter) {
             // Only create axes helper for barycenters initially, controlled by setAxesVisible
             this.setAxesVisible(false); // Start with axes hidden for barycenters too
@@ -111,12 +105,6 @@ export class PlanetVectors {
         }
         this.initSunDirection();
         this.initVelocityVector(); // NEW
-        // Consolidate all directional labels for the LabelFader
-        const allLabelsForFader = [...this.directionalLabels];
-        // Note: AxesHelper CSS2D labels are not part of this LabelFader instance.
-        const fadeStart = this.radius * 10;
-        const fadeEnd = this.radius * 20;
-        this.labelFader = new LabelFader(allLabelsForFader, fadeStart, fadeEnd);
         // Initially, directional vectors are hidden until toggled on.
         this.setVisible(false);
     }
@@ -272,9 +260,6 @@ export class PlanetVectors {
                 this.velocityLabel.visible = velocityLen > 0;
             }
         }
-        if (this.axesHelper) {
-            this.axesHelper.position.copy(center);
-        }
     }
 
     setVisible(visible) {
@@ -384,5 +369,10 @@ export class PlanetVectors {
             );
             return lbl;
         });
+    }
+
+    setPlanetVectorsVisible(visible) {
+        this.setVisible(visible);
+        this.setAxesVisible(visible);
     }
 } 

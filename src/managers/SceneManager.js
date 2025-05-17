@@ -128,20 +128,14 @@ export class SceneManager {
 
     _updateVectors() {
         const { displaySettingsManager, planetVectors, satelliteVectors, camera } = this.app;
-        const showVectors = displaySettingsManager.getSetting('showVectors');
-        const showAxis = displaySettingsManager.getSetting('showAxis');
+        const showPlanetVectors = displaySettingsManager.getSetting('showPlanetVectors');
 
         if (planetVectors) {
             planetVectors.forEach(v => {
-                if (v.setAxesVisible) {
-                    v.setAxesVisible(showAxis);
+                if (v.setPlanetVectorsVisible) {
+                    v.setPlanetVectorsVisible(showPlanetVectors);
                 }
-                
-                if (v.setVisible) {
-                    v.setVisible(showVectors);
-                }
-
-                if (showAxis || showVectors) {
+                if (showPlanetVectors) {
                     v.updateVectors?.();
                     v.updateFading?.(camera);
                 }

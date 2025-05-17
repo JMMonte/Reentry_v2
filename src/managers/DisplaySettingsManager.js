@@ -69,12 +69,16 @@ export class DisplaySettingsManager {
                 });
                 break;
             }
-            case 'showVectors':
-                // Toggle planet-centric vectors (now an array)
+            case 'showPlanetVectors':
+                // Toggle both vectors and axes helpers for all planets
                 if (Array.isArray(app3d.planetVectors)) {
-                    app3d.planetVectors.forEach(v => v.setVisible(value));
+                    app3d.planetVectors.forEach(v => {
+                        v.setVisible(value);
+                        v.setAxesVisible(value);
+                    });
                 } else if (app3d.planetVectors) {
                     app3d.planetVectors.setVisible(value);
+                    app3d.planetVectors.setAxesVisible(value);
                 }
                 break;
             case 'showSatVectors':
@@ -171,16 +175,6 @@ export class DisplaySettingsManager {
                 }
                 break;
             }
-            case 'showAxis': {
-                // Toggle axis helpers on all planets via PlanetVectors
-                if (Array.isArray(app3d.planetVectors)) {
-                    app3d.planetVectors.forEach(v => v.setAxesVisible(value));
-                } else if (app3d.planetVectors) {
-                    app3d.planetVectors.setAxesVisible(value);
-                }
-                break;
-            }
-            // Add more settings as needed
         }
     }
 } 
