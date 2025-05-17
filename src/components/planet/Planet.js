@@ -93,7 +93,7 @@ export class Planet {
         this.lodLevels = lodLevels;
         this.dotPixelSizeThreshold = dotPixelSizeThreshold;
         this.dotColor = dotColor;
-        this.soiRadius = radius * soiRadius;
+        this.soiRadius = soiRadius;
 
         Planet.instances.push(this);
         // Component system

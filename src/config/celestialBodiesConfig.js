@@ -110,7 +110,7 @@ const planets = {
         addLight: true,
         lightOptions: { color: 0x6699ff, intensity: EARTH_RAD * 10, helper: false },
         lodLevels: generateLodLevelsForRadius(EARTH_RAD),
-        dotPixelSizeThreshold: 1, soiRadius: 145,
+        dotPixelSizeThreshold: 1, soiRadius: 577178,
         atmosphere: {
             thickness: 60, densityScaleHeight: 20, hazeIntensity: 3,
             scaleHeightMultiplier: 4.0,
@@ -140,7 +140,6 @@ const planets = {
             }),
         },
         radialGridConfig: {
-            maxDisplayRadius: 1.5e6,
             circles: [
                 { radius: 200, label: 'LEO Min', style: 'major' },
                 { radius: 2000, label: 'LEO Max', style: 'major' },
@@ -161,7 +160,7 @@ const planets = {
         name: 'mercury', parent: 'mercury_barycenter', naif_id: 199, symbol: '☿',
         radius: 2439.7, rotationPeriod: 5_067_000, oblateness: 0,
         lodLevels: generateLodLevelsForRadius(2439.7),
-        dotPixelSizeThreshold: 1, soiRadius: 46,
+        dotPixelSizeThreshold: 1, soiRadius: 112397,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -174,7 +173,6 @@ const planets = {
             },
         },
         radialGridConfig: {
-            maxDisplayRadius: 112_000,
             markerStep: 8_000, labelMarkerStep: 40_000,
             circles: [
                 { radius: 5_000, label: '5,000 km', style: 'minor' },
@@ -195,7 +193,7 @@ const planets = {
         radius: 6051.8, rotationPeriod: -20_997_000, oblateness: 0,
         cloudThickness: 10,
         lodLevels: generateLodLevelsForRadius(6051.8),
-        dotPixelSizeThreshold: 1, soiRadius: 101,
+        dotPixelSizeThreshold: 1, soiRadius: 616183,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -222,7 +220,6 @@ const planets = {
             equatorialRadius: 6051.8, polarRadius: 6051.8,
         },
         radialGridConfig: {
-            maxDisplayRadius: 613_000,
             markerStep: 50_000, labelMarkerStep: 100_000,
             circles: [
                 { radius: 10_000, label: '10,000 km', style: 'minor' },
@@ -241,7 +238,7 @@ const planets = {
         name: 'mars', parent: 'mars_barycenter', naif_id: 499, symbol: '♂',
         radius: 3389.5, rotationPeriod: 88_643, oblateness: 0.00589,
         lodLevels: generateLodLevelsForRadius(3389.5),
-        dotPixelSizeThreshold: 1, soiRadius: 169,
+        dotPixelSizeThreshold: 1, soiRadius: 577178,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -263,7 +260,6 @@ const planets = {
             equatorialRadius: 3389.5, polarRadius: 3389.5 * (1 - 0.00589),
         },
         radialGridConfig: {
-            maxDisplayRadius: 573_000,
             markerStep: 50_000, labelMarkerStep: 100_000,
             circles: [
                 { radius: 10_000, label: '10,000 km', style: 'minor' },
@@ -282,7 +278,7 @@ const planets = {
         name: 'jupiter', parent: 'jupiter_barycenter', naif_id: 599, symbol: '♃',
         radius: 69_911, rotationPeriod: 35_730, oblateness: 0.06487,
         lodLevels: generateLodLevelsForRadius(69_911),
-        dotPixelSizeThreshold: 1, soiRadius: 690,
+        dotPixelSizeThreshold: 1, soiRadius: 48198595,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -303,7 +299,6 @@ const planets = {
             equatorialRadius: 71_492, polarRadius: 66_854,
         },
         radialGridConfig: {
-            maxDisplayRadius: 48_230_000,
             markerStep: 2_000_000, labelMarkerStep: 10_000_000,
             circles: [
                 { radius: 104_867, label: '1.5 Rj (Inner Belt)', style: 'dashed', dashScale: 1.5 },
@@ -324,7 +319,7 @@ const planets = {
         mass: 5.6834e26, radius: 58_232, tilt: 26.73,
         rotationPeriod: 38_362, oblateness: 0.09796,
         lodLevels: generateLodLevelsForRadius(58_232),
-        dotPixelSizeThreshold: 1, soiRadius: 946, addRings: true,
+        dotPixelSizeThreshold: 1, soiRadius: 54539583, addRings: true,
         rings: {
             innerRadius: 70_000, outerRadius: 140_000,
             textureKey: 'saturnRingTexture',
@@ -351,7 +346,6 @@ const planets = {
             equatorialRadius: 60_268, polarRadius: 54_364,
         },
         radialGridConfig: {
-            maxDisplayRadius: 55_090_000,
             markerStep: 2_000_000, labelMarkerStep: 10_000_000,
             circles: [
                 { radius: 60_000, label: 'Inner Belt', style: 'dashed', dashScale: 1.5 },
@@ -372,7 +366,7 @@ const planets = {
         mass: 8.6810e25, radius: 25_362, tilt: 97.77, rotationPeriod: -62_064,
         oblateness: 0.02293,
         lodLevels: generateLodLevelsForRadius(25_362),
-        dotPixelSizeThreshold: 1, soiRadius: 2039, addRings: true,
+        dotPixelSizeThreshold: 1, soiRadius: 51755377, addRings: true,
         rings: {
             innerRadius: 41000,
             outerRadius: 51500,
@@ -402,7 +396,6 @@ const planets = {
             equatorialRadius: 25_559, polarRadius: 24_973,
         },
         radialGridConfig: {
-            maxDisplayRadius: 51_720_000,
             markerStep: 2_000_000, labelMarkerStep: 10_000_000,
             circles: [
                 { radius: 40_000, label: 'Inner Belt', style: 'dashed', dashScale: 1.5 },
@@ -423,7 +416,7 @@ const planets = {
         mass: 1.02413e26, radius: 24_622, tilt: 28.32, rotationPeriod: 57_996,
         oblateness: 0.01708,
         lodLevels: generateLodLevelsForRadius(24_622),
-        dotPixelSizeThreshold: 1, soiRadius: 3508, addRings: true,
+        dotPixelSizeThreshold: 1, soiRadius: 86645467, addRings: true,
         rings: {
             innerRadius: 62_000, outerRadius: 65_000,
             textureKey: 'neptuneRingTexture',
@@ -450,7 +443,6 @@ const planets = {
             equatorialRadius: 24_764, polarRadius: 24_341,
         },
         radialGridConfig: {
-            maxDisplayRadius: 86_360_000,
             markerStep: 4_000_000, labelMarkerStep: 20_000_000,
             circles: [
                 { radius: 25_000, label: 'Inner Belt', style: 'dashed', dashScale: 1.5 },
@@ -471,6 +463,7 @@ const planets = {
         mass: 1.303e22, radius: 1_188.3, tilt: 122.472,
         rotationPeriod: 6.38723 * Constants.daysInYear, oblateness: 0.02488,
         lodLevels: generateLodLevelsForRadius(1_188.3),
+        soiRadius: 1_200_000,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -482,7 +475,6 @@ const planets = {
             },
         },
         radialGridConfig: {
-            maxDisplayRadius: 1_200_000,
             markerStep: 100_000, labelMarkerStep: 500_000,
             circles: [
                 { radius: 100_000, label: '100,000 km', style: 'minor' },
@@ -508,7 +500,7 @@ const moons = {
         name: 'moon', parent: 'emb', naif_id: 301, symbol: '☾',
         radius: MOON_RAD, rotationPeriod: 29.53058867 * Constants.secondsInDay,
         lodLevels: generateLodLevelsForRadius(MOON_RAD),
-        dotPixelSizeThreshold: 1, soiRadius: 10.3,
+        dotPixelSizeThreshold: 1, soiRadius: 66170,
         missionsData: geojsonDataMissions,
         addLight: true,
         lightOptions: { color: 0xffffff, intensity: MOON_RAD * 10, helper: false },
@@ -524,7 +516,6 @@ const moons = {
             },
         },
         radialGridConfig: {
-            maxDisplayRadius: 29_000,
             circles: [
                 { radius: 100, label: 'LLO', style: 'major' },
                 { radius: 500, label: '500 km', style: 'minor' },
@@ -544,14 +535,12 @@ const moons = {
         radius: 1_821.6,
         symbol: '🜋',
         lodLevels: generateLodLevelsForRadius(1_821.6),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 7169,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
                 textureKey: 'ioTexture',
-                params: {
-                    roughness: 0.7, metalness: 0.1,
-                }
+                params: { roughness: 0.7, metalness: 0.1 }
             },
         },
     },
@@ -563,7 +552,7 @@ const moons = {
         radius: 1_560.8,
         symbol: '⟁',
         lodLevels: generateLodLevelsForRadius(1_560.8),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 11700,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -580,7 +569,7 @@ const moons = {
         radius: 2_634.1,
         symbol: '⟁⟁',
         lodLevels: generateLodLevelsForRadius(2_634.1),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 29800,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -597,7 +586,7 @@ const moons = {
         radius: 2_410.3,
         symbol: '⟁⟁⟁',
         lodLevels: generateLodLevelsForRadius(2_410.3),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 74300,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -616,7 +605,7 @@ const moons = {
         radius: 6.2,
         symbol: '⧫',
         lodLevels: generateLodLevelsForRadius(6.2),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 133,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -635,7 +624,7 @@ const moons = {
         radius: 11.1,
         symbol: '◉',
         lodLevels: generateLodLevelsForRadius(11.1),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 62,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -655,7 +644,7 @@ const moons = {
         radius: 198.2,
         symbol: 'M',
         lodLevels: generateLodLevelsForRadius(198.2),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 334,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -671,7 +660,7 @@ const moons = {
         radius: 252.1,
         symbol: 'E',
         lodLevels: generateLodLevelsForRadius(252.1),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 497,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -687,7 +676,7 @@ const moons = {
         radius: 531.1,
         symbol: 'T',
         lodLevels: generateLodLevelsForRadius(531.1),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 1012,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -703,7 +692,7 @@ const moons = {
         radius: 561.4,
         symbol: 'D',
         lodLevels: generateLodLevelsForRadius(561.4),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 1615,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -719,7 +708,7 @@ const moons = {
         radius: 763.8,
         symbol: 'R',
         lodLevels: generateLodLevelsForRadius(763.8),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 3064,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -735,7 +724,7 @@ const moons = {
         radius: 2_574.7,
         symbol: 'Ti',
         lodLevels: generateLodLevelsForRadius(2_574.7),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 53300,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -751,7 +740,7 @@ const moons = {
         radius: 734.5,
         symbol: 'Ia',
         lodLevels: generateLodLevelsForRadius(734.5),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 90300,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -769,7 +758,7 @@ const moons = {
         radius: 578.9,
         symbol: 'A',
         lodLevels: generateLodLevelsForRadius(578.9),
-        dotPixelSizeThreshold: 1,
+        soiRadius: 1300,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -785,7 +774,7 @@ const moons = {
         radius: 584.7,
         symbol: 'U',
         lodLevels: generateLodLevelsForRadius(584.7),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 1900,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -801,7 +790,7 @@ const moons = {
         radius: 788.9,
         symbol: 'Ti',
         lodLevels: generateLodLevelsForRadius(788.9),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 4200,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -817,7 +806,7 @@ const moons = {
         radius: 761.4,
         symbol: 'O',
         lodLevels: generateLodLevelsForRadius(761.4),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 6000,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -833,7 +822,7 @@ const moons = {
         radius: 235.8,
         symbol: 'M',
         lodLevels: generateLodLevelsForRadius(235.8),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 240,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -851,7 +840,7 @@ const moons = {
         radius: 1_353.4,
         symbol: 'Tr',
         lodLevels: generateLodLevelsForRadius(1_353.4),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 354800,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -867,7 +856,7 @@ const moons = {
         radius: 210,
         symbol: 'P',
         lodLevels: generateLodLevelsForRadius(210),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 1200,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -883,7 +872,7 @@ const moons = {
         radius: 170,
         symbol: 'Ne',
         lodLevels: generateLodLevelsForRadius(170),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 53800,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -901,7 +890,7 @@ const moons = {
         radius: 606,
         symbol: '⚫',
         lodLevels: generateLodLevelsForRadius(606),
-        dotPixelSizeThreshold: 1,
+        soiRadius: 2200,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -917,7 +906,7 @@ const moons = {
         radius: 25,
         symbol: 'N',
         lodLevels: generateLodLevelsForRadius(25),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 1100,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -933,7 +922,7 @@ const moons = {
         radius: 30,
         symbol: 'H',
         lodLevels: generateLodLevelsForRadius(30),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 1400,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -949,7 +938,7 @@ const moons = {
         radius: 12,
         symbol: 'K',
         lodLevels: generateLodLevelsForRadius(12),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 900,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -965,7 +954,7 @@ const moons = {
         radius: 7,
         symbol: 'S',
         lodLevels: generateLodLevelsForRadius(7),
-        dotPixelSizeThreshold: 1,
+        dotPixelSizeThreshold: 1, soiRadius: 700,
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
