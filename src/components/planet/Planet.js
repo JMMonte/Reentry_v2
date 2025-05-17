@@ -362,6 +362,8 @@ export class Planet {
 
     /* ===== per-frame ===== */
     update() {
+        // Always update distantComponent so it can toggle dot visibility
+        this.distantComponent?.update();
         const LERP_ALPHA = 0.15; // Smoothing factor (0.1 to 0.2 is usually good)
 
         // ALWAYS Interpolate position of the orbitGroup towards the targetPosition
@@ -374,20 +376,11 @@ export class Planet {
             this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
         }
 
-        // If distant mesh is visible, only update its own component and then return,
-        // skipping updates for other more detailed components.
-        if (this.distantComponent?.mesh?.visible) {
-            this.distantComponent.update(); // The distant component might use the now-interpolated group positions
-            return;
-        }
-        
+        // Remove the old conditional distantComponent update and return
         // If not distant, update all other detailed components as usual
         this.components.forEach(c => {
             if (c && typeof c.update === 'function') {
-                // We don't want to update the distantComponent again if it's in the list,
-                // as it has been handled (or skipped if not visible) already.
-                if (c === this.distantComponent) return; 
-
+                if (c === this.distantComponent) return; // Already updated above
                 c.update(); 
             }
         });

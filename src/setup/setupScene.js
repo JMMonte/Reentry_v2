@@ -96,6 +96,11 @@ export async function createSceneObjects(app) {
     const { scene, renderer, camera, timeUtils, textureManager } = app;
 
     // --- REMOVE ALL SCENE CHILDREN ---
+    // Dispose of background stars if present
+    if (app.backgroundStars) {
+        app.backgroundStars.dispose();
+        app.backgroundStars = null;
+    }
     if (scene && scene.children) {
         while (scene.children.length > 0) {
             scene.remove(scene.children[0]);
@@ -120,6 +125,9 @@ export async function createSceneObjects(app) {
     app.bodiesByNaifId = {};   // Map NAIF ID -> Object (Group, Star, Planet)
     app.stars = [];            // Array of Star instances
     app.celestialBodies = [];  // Array of all major bodies (planets, moons, Sun)
+
+    // --- Create background stars ---
+    app.backgroundStars = new BackgroundStars(scene, camera);
 
     // 2. Create all barycenters
     for (const cfg of Object.values(barycenters)) {
@@ -353,7 +361,6 @@ export async function initScene(app) {
     // 1. Assets & background (these can be set up before backend data)
     await loadTextures(textureManager);
     addAmbientLight(scene);
-    new BackgroundStars(scene, camera);
 
     // Post-processing can also be set up early
     setupPostProcessing(app);

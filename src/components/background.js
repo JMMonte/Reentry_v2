@@ -92,4 +92,16 @@ export class BackgroundStars {
         this.stars.frustumCulled = false; // Always render stars regardless of frustum culling
         this.scene.add(this.stars);
     }
+
+    dispose() {
+        if (this.stars) {
+            this.scene.remove(this.stars);
+            this.stars.geometry.dispose();
+            this.stars.material.dispose();
+            this.stars = null;
+        }
+        this.starGeometry = null;
+        this.starPositions = null;
+        this.starSizes = null;
+    }
 }
