@@ -71,15 +71,6 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
                 setSelectedBody(importedFocus);
                 setImportSynced(true);
             }
-        } else if (!isImported) {
-            // Default to Earth once it's listed
-            if (
-                planetOptions.find(o => o.value === 'earth') &&
-                !planetOptions.find(o => o.value === selectedBody) &&
-                !satelliteOptions.find(o => o.value === selectedBody)
-            ) {
-                setSelectedBody('earth');
-            }
         }
     }, [planetOptions, satelliteOptions, importedFocus, isImported, selectedBody, importSynced]);
 
@@ -92,16 +83,24 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
     const getDisplayValue = (value) => getBodyDisplayName(value, satellites, app3dRef.current?.celestialBodies);
 
     // Build groupedPlanetOptions for UI
-    const groupedPlanetOptions = planetMoonOrder.map(({ planet, moons }) => {
-        const planetObj = planetOptions.find(o => o.value === planet);
-        // Find barycenter for this planet (by convention: <planet>_barycenter, except for Earth which is 'emb')
-        const barycenterKey = planet === 'earth' ? 'emb' : `${planet}_barycenter`;
-        const barycenterObj = planetOptions.find(o => o.value === barycenterKey);
-        const moonObjs = moons.map(moon => planetOptions.find(o => o.value === moon)).filter(Boolean);
-        // Barycenter (if present) should be first in the moons array
-        const children = [barycenterObj, ...moonObjs].filter(Boolean);
-        return planetObj ? { planet: planetObj, moons: children } : null;
-    }).filter(Boolean);
+    // Add Sun as a top-level option if present in planetOptions
+    const sunObj = planetOptions.find(o => o.value === 'sun');
+    const groupedPlanetOptions = [];
+    if (sunObj) {
+        groupedPlanetOptions.push({ planet: sunObj, moons: [] });
+    }
+    groupedPlanetOptions.push(
+        ...planetMoonOrder.map(({ planet, moons }) => {
+            const planetObj = planetOptions.find(o => o.value === planet);
+            // Find barycenter for this planet (by convention: <planet>_barycenter, except for Earth which is 'emb')
+            const barycenterKey = planet === 'earth' ? 'emb' : `${planet}_barycenter`;
+            const barycenterObj = planetOptions.find(o => o.value === barycenterKey);
+            const moonObjs = moons.map(moon => planetOptions.find(o => o.value === moon)).filter(Boolean);
+            // Barycenter (if present) should be first in the moons array
+            const children = [barycenterObj, ...moonObjs].filter(Boolean);
+            return planetObj ? { planet: planetObj, moons: children } : null;
+        }).filter(Boolean)
+    );
 
     return { selectedBody, handleBodyChange, planetOptions, satelliteOptions, getDisplayValue, groupedPlanetOptions };
 } 

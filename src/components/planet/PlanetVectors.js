@@ -191,7 +191,7 @@ export class PlanetVectors {
             const planetPos = new THREE.Vector3();
             this.sun.getWorldPosition(sunPos);
             if (this.body.getMesh()) {
-                this.body.getMesh().getWorldPosition(planetPos);
+            this.body.getMesh().getWorldPosition(planetPos);
             } else if (this.body.orbitGroup) {
                 this.body.orbitGroup.getWorldPosition(planetPos);
             }
@@ -239,7 +239,7 @@ export class PlanetVectors {
                 const planetPos = new THREE.Vector3();
                 this.sun.getWorldPosition(sunPos);
                 if (this.body.getMesh()) {
-                    this.body.getMesh().getWorldPosition(planetPos);
+                this.body.getMesh().getWorldPosition(planetPos);
                 } else if (this.body.orbitGroup) {
                     this.body.orbitGroup.getWorldPosition(planetPos);
                 }
@@ -290,7 +290,7 @@ export class PlanetVectors {
         // For barycenters, use orbitGroup position if mesh is missing
         let center = new THREE.Vector3();
         if (this.body?.getMesh && this.body.getMesh()) {
-            this.body.getMesh().getWorldPosition(center);
+        this.body.getMesh().getWorldPosition(center);
         } else if (this.isBarycenter && this.body.orbitGroup) {
             this.body.orbitGroup.getWorldPosition(center);
         } else {

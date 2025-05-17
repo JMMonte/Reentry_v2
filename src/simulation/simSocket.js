@@ -151,13 +151,17 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     // Use new target methods if available (for Planets primarily after init)
                     if (typeof body.setTargetPosition === 'function') {
                         body.setTargetPosition(serverPosition);
+                        // Ensure .position is always up-to-date for orbit rendering
+                        body.position = serverPosition.clone();
                     } else {
                         // Fallback for non-Planet objects
                         let directPosTarget = (body instanceof app.Planet && body.getOrbitGroup()) ? body.getOrbitGroup() : body;
                         if (directPosTarget && directPosTarget.position) {
                             directPosTarget.position.copy(serverPosition);
-                        } else if (body.constructor.name === 'Sun' && body.sun && body.sun.position) {
-                            body.sun.position.copy(serverPosition);
+                            // Also update .position property if present
+                            if ('position' in body) body.position = serverPosition.clone();
+                        } else if (body.constructor.name === 'Sun' && typeof body.setPosition === 'function') {
+                            body.setPosition(serverPosition);
                         }
                     }
 

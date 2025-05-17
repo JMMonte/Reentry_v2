@@ -168,6 +168,28 @@ export class OrbitManager {
                 this.orbitLineMap.set(group.name, line);
             }
         }
+        // Ensure orbit line visibility matches display setting
+        const show = this.app.getDisplaySetting?.('showPlanetOrbits') ?? true;
+        this.setVisible(show);
+
+        // --- TEST: Add a static visible line at the origin ---
+        const testRadius = 2e8; // 200,000,000 km (should be visible at solar system scale)
+        const testPoints = [];
+        for (let i = 0; i <= 100; ++i) {
+            const theta = (i / 100) * 2 * Math.PI;
+            testPoints.push(new THREE.Vector3(
+                testRadius * Math.cos(theta),
+                testRadius * Math.sin(theta),
+                0
+            ));
+        }
+        const testGeometry = new THREE.BufferGeometry().setFromPoints(testPoints);
+        const testMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 5 });
+        const testLine = new THREE.Line(testGeometry, testMaterial);
+        testLine.name = 'TEST_ORBIT_LINE';
+        testLine.visible = show;
+        this.scene.add(testLine);
+        this.orbitLineMap.set('TEST_ORBIT_LINE', testLine);
     }
 
     /**

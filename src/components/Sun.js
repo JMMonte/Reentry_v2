@@ -92,4 +92,9 @@ export class Sun {
         this.sun.position.copy(position);
         this.sunLight.position.copy(position);
     }
+
+    // Add a getter for the main mesh, for selection/camera logic compatibility
+    getMesh() {
+        return this.sun;
+    }
 }
