@@ -1,18 +1,19 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import PropTypes from 'prop-types';
 
-const SimulationContext = createContext({ timeUtils: null, displaySettings: {}, simulatedTime: null, timeWarp: 1 });
+export const SimulationContext = createContext();
 
 /**
  * Provider for simulation-wide settings and utilities.
  * @param {{ timeUtils: Object, displaySettings: Object, simulatedTime: Date, timeWarp: number, children: React.ReactNode }} props
  */
-export function SimulationProvider({ timeUtils, displaySettings, simulatedTime, timeWarp, children }) {
-    // Pure JS: use React.createElement instead of JSX
-    return React.createElement(
-        SimulationContext.Provider,
-        { value: { timeUtils, displaySettings, simulatedTime, timeWarp } },
-        children
+export function SimulationProvider({ children, ...props }) {
+    const [sessionId, setSessionId] = useState(null);
+    const value = { sessionId, setSessionId, ...props };
+    return (
+        <SimulationContext.Provider value={value}>
+            {children}
+        </SimulationContext.Provider>
     );
 }
 

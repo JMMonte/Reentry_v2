@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Constants } from '../../../utils/Constants';
 import { PhysicsUtils } from '../../../utils/PhysicsUtils';
 
-const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
+const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ name: 'Earth', naifId: 399 }], selectedBody: initialSelectedBody }, ref) => {
     const [mode, setMode] = useState('latlon');
     const [formData, setFormData] = useState({
         name: '',
@@ -31,6 +31,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
         referenceFrame: 'equatorial',
         circular: false
     });
+    const [selectedBody, setSelectedBody] = useState(initialSelectedBody || availableBodies[0]);
 
     // auto-calc circular velocity on altitude or circular flag change
     useEffect(() => {
@@ -110,7 +111,8 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     mass: params.mass,
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
-                    name: params.name || undefined
+                    name: params.name || undefined,
+                    selectedBody
                 });
             } else if (mode === 'orbital') {
                 await onCreateSatellite({
@@ -125,7 +127,8 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
                     mass: params.mass,
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
-                    name: params.name || undefined
+                    name: params.name || undefined,
+                    selectedBody
                 });
             }
 
@@ -215,8 +218,29 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
     // Label for Reference dropdown
     const rfLabel = formData.referenceFrame === 'ecliptic' ? 'Ecliptic' : 'Equatorial';
 
+    // Label for central body dropdown
+    const centralBodyLabel = selectedBody ? selectedBody.name : 'Select Body';
+
     return (
         <div className="text-xs p-4">
+            {/* Central body selector */}
+            <div className="flex items-center gap-2 mb-2">
+                <Label htmlFor="central-body" className="text-xs text-muted-foreground text-right pr-1">Central Body:</Label>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="justify-start">
+                            {centralBodyLabel}
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                        {availableBodies.map(b => (
+                            <DropdownMenuItem key={b.naifId} onSelect={() => setSelectedBody(b)}>
+                                {b.name}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
             {/* General satellite properties */}
             <div className="flex flex-col gap-y-2 mb-4">
                 {renderField("name", "Name", "text")}
@@ -327,7 +351,15 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite }, ref) => {
 SatelliteCreator.displayName = 'SatelliteCreator';
 
 SatelliteCreator.propTypes = {
-    onCreateSatellite: PropTypes.func.isRequired
+    onCreateSatellite: PropTypes.func.isRequired,
+    availableBodies: PropTypes.arrayOf(PropTypes.shape({
+        name: PropTypes.string.isRequired,
+        naifId: PropTypes.number.isRequired
+    })),
+    selectedBody: PropTypes.shape({
+        name: PropTypes.string.isRequired,
+        naifId: PropTypes.number.isRequired
+    })
 };
 
 export default SatelliteCreator;

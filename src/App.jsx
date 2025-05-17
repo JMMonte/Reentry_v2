@@ -315,6 +315,12 @@ ${shareUrl}`);
     };
   }, []);
 
+  // Build availableBodies from app3d.celestialBodies
+  const availableBodies = app3d?.celestialBodies?.map(b => ({
+    name: b.name,
+    naifId: b.naif_id
+  })) || [{ name: 'Earth', naifId: 399 }];
+
   if (!checkedInitialState) return null;
   // Build props for Layout
   const navbarProps = {
@@ -406,7 +412,8 @@ ${shareUrl}`);
   const satelliteCreatorModalProps = {
     isOpen: isSatelliteModalOpen,
     onClose: () => setIsSatelliteModalOpen(false),
-    onCreate: onCreateSatellite
+    onCreate: onCreateSatellite,
+    availableBodies
   };
   const shareModalProps = {
     isOpen: shareModalOpen,
@@ -434,6 +441,7 @@ ${shareUrl}`);
     }
   };
   const groundTrackWindowProps = { isOpen: isGroundtrackOpen, onClose: () => setIsGroundtrackOpen(false) };
+  const simulationWindowProps = { isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), app3d };
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <ToastContext.Provider value={{ showToast }}>
@@ -447,7 +455,7 @@ ${shareUrl}`);
             satelliteCreatorModalProps={satelliteCreatorModalProps}
             shareModalProps={shareModalProps}
             authModalProps={authModalProps}
-            simulationWindowProps={{ isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), satellites: Object.values(satellites) }}
+            simulationWindowProps={simulationWindowProps}
             groundTrackWindowProps={groundTrackWindowProps}
             earthPointModalProps={earthPointModalProps}
             isLoadingInitialData={isLoadingInitialData}

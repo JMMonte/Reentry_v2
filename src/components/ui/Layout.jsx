@@ -104,7 +104,7 @@ Toast.displayName = 'Toast';
 Toast.propTypes = {};
 
 // SatelliteCreatorModal
-function SatelliteCreatorModal({ isOpen, onClose, onCreate }) {
+function SatelliteCreatorModal({ isOpen, onClose, onCreate, availableBodies }) {
     // Presets and handler for dropdown
     const presets = [
         { label: 'ISS', mode: 'orbital', values: { name: 'ISS', mass: 419725, size: 1, semiMajorAxis: 6778, eccentricity: 0.0007, inclination: 51.6, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
@@ -151,14 +151,15 @@ function SatelliteCreatorModal({ isOpen, onClose, onCreate }) {
             resizable={true}
             rightElement={dropdown}
         >
-            <SatelliteCreator ref={satelliteCreatorRef} onCreateSatellite={onCreate} />
+            <SatelliteCreator ref={satelliteCreatorRef} onCreateSatellite={onCreate} availableBodies={availableBodies} />
         </DraggableModal>
     );
 }
 SatelliteCreatorModal.propTypes = {
     isOpen: PropTypes.bool.isRequired,
     onClose: PropTypes.func.isRequired,
-    onCreate: PropTypes.func.isRequired
+    onCreate: PropTypes.func.isRequired,
+    availableBodies: PropTypes.array
 };
 
 // ShareModal

@@ -465,9 +465,13 @@ class App3D extends EventTarget {
     exportSimulationState() { return this.simulationStateManager.exportState(); }
 
     // Satellite creation helpers
-    createSatelliteFromLatLon(p) { return createSatelliteFromLatLon(this, p); }
+    createSatelliteFromLatLon(p) {
+        return createSatelliteFromLatLon(this, p, this.selectedBody || { naifId: 399 });
+    }
     createSatelliteFromOrbitalElements(p) { return createSatelliteFromOrbitalElements(this, p); }
-    createSatelliteFromLatLonCircular(p) { return createSatelliteFromLatLonCircular(this, p); }
+    createSatelliteFromLatLonCircular(p) {
+        return createSatelliteFromLatLonCircular(this, p, this.selectedBody || { naifId: 399 });
+    }
 
     getVisibleLocationsFromOrbitalElements(p) {
         const { locations, numPoints, numPeriods, ...orbit } = p;

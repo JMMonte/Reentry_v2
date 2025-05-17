@@ -64,23 +64,24 @@ export class SatelliteManager {
      */
     addSatellite(params) {
         const sat = new Satellite({ ...params, scene: this.app3d.scene, app3d: this.app3d });
-
-        // inherit display & timeWarp state
         this._applyDisplaySettings(sat);
         sat.timeWarp = this.app3d.timeUtils?.timeWarp ?? 1;
-
         this._satellites.set(sat.id, sat);
         this._flushListSoon();
-
-        // spin up worker if needed
-        this._ensureWorker();
-
-        if (this._workerReady) {
-            this._pushSatelliteToWorker(sat);
-        } else {
-            this._satelliteAddQueue.push(sat);
-        }
         return sat;
+    }
+
+    /**
+     * Update a satellite from backend data.
+     * @param {number|string} satId
+     * @param {Array} pos - [x, y, z] in meters
+     * @param {Array} vel - [vx, vy, vz] in m/s
+     * @param {Object} debug - optional debug data
+     */
+    updateSatelliteFromBackend(satId, pos, vel, debug) {
+        const sat = this._satellites.get(satId);
+        if (!sat) return;
+        sat.updateFromBackend(pos, vel, debug);
     }
 
     /**

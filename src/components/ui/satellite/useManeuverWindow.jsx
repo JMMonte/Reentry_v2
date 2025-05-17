@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { ManeuverManager } from './ManeuverManager.js';
-import { useSimulation } from '../../../simulation/SimulationContext.js';
+import { useSimulation } from '../../../simulation/SimulationContext.jsx';
 import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
 import formatTimeDelta from '../../../utils/FormatUtils.js';
 import { usePreviewNodes } from './usePreviewNodes.js';

@@ -7,8 +7,10 @@ import { saveAs } from 'file-saver';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '../select';
 import PropTypes from 'prop-types';
+import { listenToSatelliteState } from '../../../components/Satellite/createSatellite.js';
+import { useSimulation } from '../../../simulation/SimulationContext';
 
-export function SimulationWindow({ isOpen, onClose }) {
+export function SimulationWindow({ isOpen, onClose, app3d }) {
     const [simulationData, setSimulationData] = useState({});
     const [isLoading, setIsLoading] = useState(true);
     // refs to batch incoming updates
@@ -37,6 +39,7 @@ export function SimulationWindow({ isOpen, onClose }) {
     const [primaryMetric, setPrimaryMetric] = useState(metricsList[0].key);
     const [secondaryMetric, setSecondaryMetric] = useState(metricsList[1].key);
     const [selectedSatId, setSelectedSatId] = useState(null);
+    const { sessionId } = useSimulation();
 
     useEffect(() => {
         if (!isOpen) {
@@ -95,6 +98,12 @@ export function SimulationWindow({ isOpen, onClose }) {
         if (!selectedSatId && ids.length > 0) setSelectedSatId(ids[0]);
         else if (selectedSatId && !ids.includes(selectedSatId)) setSelectedSatId(ids[0] || null);
     }, [simulationData, selectedSatId]);
+
+    useEffect(() => {
+        if (!isOpen || !sessionId || !app3d) return;
+        const ws = listenToSatelliteState(app3d, sessionId);
+        return () => ws && ws.close();
+    }, [isOpen, sessionId, app3d]);
 
     const handleDownload = () => {
         const rows = [];
@@ -322,5 +331,6 @@ export function SimulationWindow({ isOpen, onClose }) {
 
 SimulationWindow.propTypes = {
     isOpen: PropTypes.bool.isRequired,
-    onClose: PropTypes.func.isRequired
+    onClose: PropTypes.func.isRequired,
+    app3d: PropTypes.object.isRequired,
 }; 

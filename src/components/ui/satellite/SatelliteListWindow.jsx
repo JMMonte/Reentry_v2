@@ -7,7 +7,7 @@ import { ColorPicker } from "./ColorPicker";
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import PropTypes from 'prop-types';
 
-export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect, debugWindows, app3d, onOpenManeuver }) {
+export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect, debugWindows, app3d, onOpenManeuver, availableBodies = [{ name: 'Earth', naifId: 399 }] }) {
     // Open automatically when first satellite is created
     useEffect(() => {
         if (satellites.length > 0 && !isOpen) {
@@ -45,6 +45,12 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
         }
     };
 
+    const getCentralBodyName = (sat) => {
+        const naifId = sat.central_body || sat.centralBody;
+        const body = availableBodies.find(b => b.naifId === naifId);
+        return body ? body.name : (naifId !== undefined ? `NAIF ${naifId}` : 'Unknown');
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -70,14 +76,19 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
                                 key={satellite.id}
                                 className="flex items-center justify-between p-1.5 bg-secondary/50 rounded-md text-xs"
                             >
-                                <div className="flex items-center gap-1.5">
-                                    <ColorPicker
-                                        color={satellite.color}
-                                        onChange={(color) => satellite.setColor(color)}
-                                    />
-                                    <span>
-                                        {satellite.name || `Satellite ${satellite.id}`}
-                                    </span>
+                                <div className="flex flex-col gap-0.5 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                        <ColorPicker
+                                            color={satellite.color}
+                                            onChange={(color) => satellite.setColor(color)}
+                                        />
+                                        <span>
+                                            {satellite.name || `Satellite ${satellite.id}`}
+                                        </span>
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground pl-6">
+                                        {getCentralBodyName(satellite)}
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-1">
                                     <Button
@@ -148,5 +159,6 @@ SatelliteListWindow.propTypes = {
         createDebugWindow: PropTypes.func,
         removeSatellite: PropTypes.func
     }),
-    onOpenManeuver: PropTypes.func.isRequired
+    onOpenManeuver: PropTypes.func.isRequired,
+    availableBodies: PropTypes.array
 };

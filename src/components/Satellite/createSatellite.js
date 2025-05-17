@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { Constants } from '../../utils/Constants.js';
 import { inertialToWorld } from '../../utils/FrameTransforms.js';
+import { PHYSICS_SERVER_URL } from '../../utils/simApi.js';
+import { PHYSICS_WS_URL } from '../../simulation/simSocket.js';
 
 /*──────────────── session-wide unique ID counter ────────────────*/
 let nextSatelliteId = 0;
@@ -46,63 +48,80 @@ export async function createSatellite(app, params) {
     return sat;
 }
 
-/*────────────────────— internal helper —────────────────────────*/
-// Lat/Lon → inertial/ecliptic world:
-function launchFromLatLon(app, {
-    latitude, longitude, altitude,
-    velocity = 0, azimuth = 0, angleOfAttack = 0,
-    mass, size, name
-}) {
-    // 1) pure geodetic → world position (lat,lon) on rotated Earth mesh
-    const earthMesh = app.earth.getMesh();
-    // compute world radius (km × scale)
-    const R_m = Constants.earthRadius + altitude * Constants.kmToMeters;
-    const worldR = R_m * Constants.metersToKm;
-    // local Cartesian before tilt/rotation
-    const posLocal = PhysicsUtils.convertLatLonToCartesian(
-        latitude, longitude, worldR
+/*────────── public wrappers — lat/lon launch (free or circular) ──────────*/
+
+// Utility: Convert lat/lon/alt/velocity/azimuth/angleOfAttack to ECI pos/vel (in km, km/s)
+function latLonAltToECI(params) {
+    // All angles in degrees, altitude in km, velocity in km/s
+    const {
+        latitude, longitude, altitude, velocity, azimuth = 0, angleOfAttack = 0
+    } = params;
+    // PhysicsUtils expects altitude in meters, velocity in m/s
+    const altM = altitude * 1000;
+    const velMS = velocity * 1000;
+    // No tilt/spin for ECI
+    const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocity(
+        latitude, longitude, altM, velMS, azimuth, angleOfAttack,
+        new THREE.Quaternion(), new THREE.Quaternion()
     );
-    // transform through planet's tiltGroup & rotationGroup
-    earthMesh.localToWorld(posLocal);
-    // compute local ECEF position & velocity (m, m/s)
-    const { positionECEF, velocityECEF } = PhysicsUtils.calculatePositionAndVelocity(
-        latitude,
-        longitude,
-        altitude * Constants.kmToMeters,
-        velocity * Constants.kmToMeters,
-        azimuth,
-        angleOfAttack,
-        new THREE.Quaternion(), // no tilt
-        new THREE.Quaternion()  // no spin
-    );
-    // add Earth's spin velocity (m/s)
-    const spinVel = PhysicsUtils.calculateEarthSurfaceVelocity(
-        positionECEF,
-        Constants.earthRotationSpeed
-    );
-    const velECEFfull = velocityECEF.clone().add(spinVel);
-    // rotate ECEF velocity into world orientation and scale to km×scale
-    const worldQuat = earthMesh.getWorldQuaternion(new THREE.Quaternion());
-    const velWorld = velECEFfull.clone()
-        .applyQuaternion(worldQuat)
-        .multiplyScalar(Constants.metersToKm);
-    return createSatellite(app, { position: posLocal, velocity: velWorld, mass, size, name });
+    // Convert to km and km/s arrays
+    return {
+        pos: [positionECI.x * 0.001, positionECI.y * 0.001, positionECI.z * 0.001],
+        vel: [velocityECI.x * 0.001, velocityECI.y * 0.001, velocityECI.z * 0.001]
+    };
 }
 
-/*────────── public wrappers — lat/lon launch (free or circular) ──────────*/
-export function createSatelliteFromLatLon(app, p) {
-    const params = { ...p };
-    if (params.circular) {
-        const r = Constants.earthRadius + params.altitude * Constants.kmToMeters;
-        // orbital velocity in m/s → convert to km/s for launchFromLatLon
-        const vCirc = PhysicsUtils.calculateOrbitalVelocity(Constants.earthMass, r) * Constants.metersToKm;
-        params.velocity = vCirc;
+// Add a local satellite ID counter for backend integer IDs
+let nextSatId = 1;
+
+// Refactored: createSatelliteFromLatLon now builds backend payload and adds to scene
+export async function createSatelliteFromLatLon(app, params, selectedBody) {
+    // selectedBody should have naifId (e.g. 399 for Earth)
+    const { pos, vel } = latLonAltToECI(params);
+    // Only send backend-required fields
+    const satPayload = {
+        sat_id: nextSatId++,
+        mass: params.mass,
+        pos,
+        vel,
+        frame: 'ECLIPJ2000',
+        central_body: selectedBody?.naifId || 399,
+        bc: params.ballisticCoefficient,
+        size: params.size,
+        name: params.name
+    };
+    const url = `${PHYSICS_SERVER_URL}/satellite?session_id=${app.sessionId}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(satPayload)
+    });
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to create satellite: ${error}`);
     }
-    return launchFromLatLon(app, params);
+    const backendSat = await response.json();
+    console.log('[createSatelliteFromLatLon] Backend response:', backendSat);
+    // Add to frontend scene (convert km to meters)
+    const sat = app.satellites.addSatellite({
+        id: backendSat.sat_id,
+        position: new THREE.Vector3(pos[0] * 1000, pos[1] * 1000, pos[2] * 1000),
+        velocity: new THREE.Vector3(vel[0] * 1000, vel[1] * 1000, vel[2] * 1000),
+        mass: params.mass,
+        size: params.size,
+        name: params.name,
+        color: brightColors[Math.floor(Math.random() * brightColors.length)],
+        ballisticCoefficient: params.ballisticCoefficient
+    });
+    console.log('[createSatelliteFromLatLon] Added satellite:', sat);
+    app.createDebugWindow?.(sat);
+    app.updateSatelliteList?.();
+    return sat;
 }
-// backward-compatible alias for circular launches
-export function createSatelliteFromLatLonCircular(app, p) {
-    return createSatelliteFromLatLon(app, { ...p, circular: true });
+
+// Backward-compatible alias for circular launches
+export async function createSatelliteFromLatLonCircular(sessionId, params, selectedBody) {
+    return createSatelliteFromLatLon(sessionId, { ...params, circular: true }, selectedBody);
 }
 
 /*────────── orbital-element creator ───────────────*/
@@ -204,4 +223,65 @@ export async function getVisibleLocationsFromOrbitalElements(
     app.satellites.removeSatellite?.(sat.id);
 
     return out;
+}
+
+/**
+ * Open a WebSocket to listen for satellite state updates and update frontend state.
+ * @param {App3D} app - The App3D instance.
+ * @param {string|number} sessionId - The backend session ID.
+ * @returns {WebSocket} The WebSocket instance.
+ */
+export function listenToSatelliteState(app, sessionId) {
+    const ws = new WebSocket(`${PHYSICS_WS_URL}?session_id=${sessionId}&frame=ECLIPJ2000`);
+    ws.binaryType = 'arraybuffer';
+    ws.onmessage = (event) => {
+        // If backend sends JSON, parse it; otherwise, parse binary and add fields as needed
+        if (typeof event.data === 'string') {
+            // JSON message
+            const msg = JSON.parse(event.data);
+            if (msg.sat_id !== undefined && msg.pos && msg.vel) {
+                app.satellites.updateSatelliteFromBackend(
+                    msg.sat_id,
+                    msg.pos,
+                    msg.vel,
+                    msg // pass all fields
+                );
+            }
+            return;
+        }
+        // Binary protocol (original)
+        const data = new DataView(event.data);
+        const msgType = data.getUint8(0);
+        if (msgType === 0) {
+            const satId = data.getUint32(1, true);
+            const pos = [
+                data.getFloat64(5, true),
+                data.getFloat64(13, true),
+                data.getFloat64(21, true)
+            ];
+            const vel = [
+                data.getFloat64(29, true),
+                data.getFloat64(37, true),
+                data.getFloat64(45, true)
+            ];
+            // TODO: If backend encodes more fields in binary, parse them here and pass as backendFields
+            app.satellites.updateSatelliteFromBackend(satId, pos, vel);
+        }
+    };
+    return ws;
+}
+
+/**
+ * Delete a satellite by ID.
+ * @param {string|number} sessionId - The backend session ID.
+ * @param {number} satId - The satellite ID to delete.
+ * @returns {Promise<void>}
+ */
+export async function deleteSatellite(sessionId, satId) {
+    const url = `${PHYSICS_SERVER_URL}/satellite/${satId}?session_id=${sessionId}`;
+    const response = await fetch(url, { method: 'DELETE' });
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to delete satellite: ${error}`);
+    }
 }

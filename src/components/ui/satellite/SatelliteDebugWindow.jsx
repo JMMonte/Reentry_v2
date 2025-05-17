@@ -6,8 +6,9 @@ import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { Constants } from '../../../utils/Constants';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
+import { listenToSatelliteState } from '../../../components/Satellite/createSatellite.js';
 
-export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenManeuver }) {
+export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenManeuver, sessionId, app3d }) {
   const [apsisData, setApsisData] = useState(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [dragData, setDragData] = useState(null);
@@ -46,6 +47,13 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     document.addEventListener('simulationDataUpdate', handleSimData);
     return () => document.removeEventListener('simulationDataUpdate', handleSimData);
   }, [satellite.id]);
+
+  useEffect(() => {
+    if (!satellite || !sessionId || !app3d) return;
+    // Listen for live satellite state (backend-driven)
+    const ws = listenToSatelliteState(app3d, sessionId);
+    return () => ws && ws.close();
+  }, [satellite, sessionId, app3d]);
 
   const handleFocus = () => {
     if (onBodySelect && satellite) {
@@ -207,6 +215,65 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                 <span className='text-[10px] font-mono'>{formatNumber(lon)}°</span>
               </div>
             )}
+            {satellite.altitude_surface !== undefined && (
+              <div className='grid grid-cols-2 gap-0.5'>
+                <span className='text-[10px] font-mono text-muted-foreground'>Surface Altitude:</span>
+                <span className='text-[10px] font-mono'>{formatNumber(satellite.altitude_surface)} km</span>
+              </div>
+            )}
+            {satellite.altitude_radial !== undefined && (
+              <div className='grid grid-cols-2 gap-0.5'>
+                <span className='text-[10px] font-mono text-muted-foreground'>Radial Altitude:</span>
+                <span className='text-[10px] font-mono'>{formatNumber(satellite.altitude_radial)} km</span>
+              </div>
+            )}
+            {satellite.ground_velocity !== undefined && (
+              <div className='grid grid-cols-2 gap-0.5'>
+                <span className='text-[10px] font-mono text-muted-foreground'>Ground Velocity:</span>
+                <span className='text-[10px] font-mono'>{formatNumber(satellite.ground_velocity)} km/s</span>
+              </div>
+            )}
+            {satellite.orbital_velocity !== undefined && (
+              <div className='grid grid-cols-2 gap-0.5'>
+                <span className='text-[10px] font-mono text-muted-foreground'>Orbital Velocity:</span>
+                <span className='text-[10px] font-mono'>{formatNumber(satellite.orbital_velocity)} km/s</span>
+              </div>
+            )}
+            {satellite.a_total && (
+              <div className='space-y-1'>
+                <div className='text-[10px] font-semibold'>Perturbations (km/s²)</div>
+                <div className='grid grid-cols-4 gap-0.5'>
+                  <span className='text-[10px] font-mono text-muted-foreground'>a_total:</span>
+                  <span className='text-[10px] font-mono'>{formatNumber(satellite.a_total[0])}</span>
+                  <span className='text-[10px] font-mono'>{formatNumber(satellite.a_total[1])}</span>
+                  <span className='text-[10px] font-mono'>{formatNumber(satellite.a_total[2])}</span>
+                </div>
+                {satellite.a_drag && (
+                  <div className='grid grid-cols-4 gap-0.5'>
+                    <span className='text-[10px] font-mono text-muted-foreground'>a_drag:</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(satellite.a_drag[0])}</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(satellite.a_drag[1])}</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(satellite.a_drag[2])}</span>
+                  </div>
+                )}
+                {satellite.a_j2 && (
+                  <div className='grid grid-cols-4 gap-0.5'>
+                    <span className='text-[10px] font-mono text-muted-foreground'>a_j2:</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(satellite.a_j2[0])}</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(satellite.a_j2[1])}</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(satellite.a_j2[2])}</span>
+                  </div>
+                )}
+                {satellite.a_bodies && Object.entries(satellite.a_bodies).map(([bodyId, vec]) => (
+                  <div className='grid grid-cols-5 gap-0.5' key={bodyId}>
+                    <span className='text-[10px] font-mono text-muted-foreground'>a_body {bodyId}:</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(vec[0])}</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(vec[1])}</span>
+                    <span className='text-[10px] font-mono'>{formatNumber(vec[2])}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {renderVector(satellite.position, "Position")}
             {renderVector(satellite.velocity, "Velocity", true)}
             {renderVector(satellite.acceleration, "Acceleration", true)}
@@ -304,4 +371,6 @@ SatelliteDebugWindow.propTypes = {
   onBodySelect: PropTypes.func,
   onClose: PropTypes.func,
   onOpenManeuver: PropTypes.func,
+  sessionId: PropTypes.string,
+  app3d: PropTypes.object,
 };

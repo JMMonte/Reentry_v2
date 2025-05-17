@@ -263,4 +263,56 @@ export class Satellite {
 
         document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
     }
+
+    /**
+     * Update satellite state from backend data (arrays in meters and m/s).
+     * @param {Array} pos - [x, y, z] in meters
+     * @param {Array} vel - [vx, vy, vz] in m/s
+     * @param {Object} backendFields - optional extra backend fields
+     */
+    updateFromBackend(pos, vel, backendFields = {}) {
+        const p = new THREE.Vector3(pos[0], pos[1], pos[2]);
+        const v = new THREE.Vector3(vel[0], vel[1], vel[2]);
+        this.updatePosition(p, v, backendFields.debug);
+        // Store new backend fields for UI
+        this.altitude_surface = backendFields.altitude_surface;
+        this.altitude_radial = backendFields.altitude_radial;
+        this.ground_velocity = backendFields.ground_velocity;
+        this.orbital_velocity = backendFields.orbital_velocity;
+        this.a_bodies = backendFields.a_bodies;
+        this.a_j2 = backendFields.a_j2;
+        this.a_drag = backendFields.a_drag;
+        this.a_total = backendFields.a_total;
+        // Handle central body parenting
+        if (backendFields.central_body !== undefined && backendFields.central_body !== this.central_body) {
+            this.setCentralBody(backendFields.central_body);
+            this.central_body = backendFields.central_body;
+        }
+        // Set mesh position relative to parent (central body) in meters
+        if (this.visualizer?.mesh) {
+            this.visualizer.mesh.position.set(pos[0] * 1000, pos[1] * 1000, pos[2] * 1000);
+        }
+    }
+
+    /**
+     * Parent this satellite's mesh/group under the correct central body.
+     * @param {number} naifId
+     */
+    setCentralBody(naifId) {
+        if (!this.app3d || !this.visualizer?.mesh) return;
+        const parentBody = this.app3d.bodiesByNaifId?.[naifId];
+        if (!parentBody) return;
+        // Remove from previous parent
+        if (this.visualizer.mesh.parent) {
+            this.visualizer.mesh.parent.remove(this.visualizer.mesh);
+        }
+        // Add to new parent
+        if (parentBody.getOrbitGroup) {
+            parentBody.getOrbitGroup().add(this.visualizer.mesh);
+        } else if (parentBody instanceof THREE.Group) {
+            parentBody.add(this.visualizer.mesh);
+        } else if (parentBody.getMesh) {
+            parentBody.getMesh().add(this.visualizer.mesh);
+        }
+    }
 }
