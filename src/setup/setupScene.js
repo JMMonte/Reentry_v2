@@ -127,12 +127,48 @@ export async function createSceneObjects(app) {
         }
     }
 
-    // 4. Create all planets and moons
-    for (const cfg of [...Object.values(planets), ...Object.values(moons)]) {
-        const planet = new Planet(scene, renderer, timeUtils, textureManager, cfg);
-        planet.naif_id = cfg.naif_id;
-        app.celestialBodies.push(planet);
-        app.bodiesByNaifId[cfg.naif_id] = planet;
+    // --- Solar System Order for Planets and Moons ---
+    const planetMoonOrder = [
+        // Mercury
+        { planet: 'mercury', moons: [] },
+        // Venus
+        { planet: 'venus', moons: [] },
+        // Earth
+        { planet: 'earth', moons: ['moon'] },
+        // Mars
+        { planet: 'mars', moons: ['phobos', 'deimos'] },
+        // Jupiter
+        { planet: 'jupiter', moons: ['io', 'europa', 'ganymede', 'callisto'] },
+        // Saturn
+        { planet: 'saturn', moons: ['mimas', 'enceladus', 'tethys', 'dione', 'rhea', 'titan', 'iapetus'] },
+        // Uranus
+        { planet: 'uranus', moons: ['miranda', 'ariel', 'umbriel', 'titania', 'oberon'] },
+        // Neptune
+        { planet: 'neptune', moons: ['triton', 'proteus', 'nereid'] },
+        // Pluto
+        { planet: 'pluto', moons: ['charon', 'nix', 'hydra', 'kerberos', 'styx'] },
+    ];
+
+    // 4. Create all planets and moons (in correct order)
+    for (const entry of planetMoonOrder) {
+        // Create planet
+        const planetCfg = planets[entry.planet];
+        if (planetCfg) {
+            const planet = new Planet(scene, renderer, timeUtils, textureManager, planetCfg);
+            planet.naif_id = planetCfg.naif_id;
+            app.celestialBodies.push(planet);
+            app.bodiesByNaifId[planetCfg.naif_id] = planet;
+        }
+        // Create moons
+        for (const moonName of entry.moons) {
+            const moonCfg = moons[moonName];
+            if (moonCfg) {
+                const moon = new Planet(scene, renderer, timeUtils, textureManager, moonCfg);
+                moon.naif_id = moonCfg.naif_id;
+                app.celestialBodies.push(moon);
+                app.bodiesByNaifId[moonCfg.naif_id] = moon;
+            }
+        }
     }
 
     // Instantiate OrbitManager for planetary orbits
