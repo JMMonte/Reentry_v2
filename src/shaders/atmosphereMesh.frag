@@ -233,7 +233,7 @@ void main() {
         vec3 inScattered = totalScattering * uSunIntensity * transToSun;
         accumulatedColor += inScattered * accumulatedTransmittance * viewStepSize;
         accumulatedTransmittance *= stepTransmittance;
-        if (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z < 3e-5) {
+        if (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z < 1e-2) {
             break;
         }
     }

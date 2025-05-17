@@ -193,7 +193,7 @@ export class PlanetMaterials {
         const extra = thickness * fudgeFactor;
         // Geometry radius includes fudge
         const radius = equR + thickness + extra;
-        const geometry = new THREE.SphereGeometry(radius, 64, 64);
+        const geometry = new THREE.SphereGeometry(radius, 16, 8);
         // Use provided shaders if present, else fallback to default
         const vertexShader = options.vertexShader;
         const fragmentShader = options.fragmentShader;

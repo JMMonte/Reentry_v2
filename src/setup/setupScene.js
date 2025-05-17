@@ -79,8 +79,8 @@ const setupPostProcessing = (app) => {
     bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2); // Using half resolution is good for perf
     bloomPass.renderToScreen = true;
     composer.addPass(bloomPass);
-    
-    sceneManager.composers.final = composer; 
+
+    sceneManager.composers.final = composer;
 
     // If bloom is re-enabled, FXAA should not render to screen itself.
     // The final pass in the composer (which is now bloom) will render to screen.
@@ -94,6 +94,27 @@ const setupPostProcessing = (app) => {
  */
 export async function createSceneObjects(app) {
     const { scene, renderer, camera, timeUtils, textureManager } = app;
+
+    // --- REMOVE ALL SCENE CHILDREN ---
+    if (scene && scene.children) {
+        while (scene.children.length > 0) {
+            scene.remove(scene.children[0]);
+        }
+    }
+
+    // --- CLEANUP OLD BODIES ---
+    if (app.celestialBodies && Array.isArray(app.celestialBodies)) {
+        app.celestialBodies.forEach(body => body.dispose?.());
+        app.celestialBodies.length = 0;
+    }
+    if (app.bodiesByNaifId && typeof app.bodiesByNaifId === 'object') {
+        Object.values(app.bodiesByNaifId).forEach(body => body.dispose?.());
+        Object.keys(app.bodiesByNaifId).forEach(k => { delete app.bodiesByNaifId[k]; });
+    }
+    if (window.Planet && Array.isArray(window.Planet.instances)) {
+        window.Planet.instances.forEach(p => p.dispose?.());
+        window.Planet.instances.length = 0;
+    }
 
     // --- Refactored Object Creation ---
     app.bodiesByNaifId = {};   // Map NAIF ID -> Object (Group, Star, Planet)
@@ -270,7 +291,7 @@ export async function createSceneObjects(app) {
             }
         }
     });
-    
+
     // 5. Create PlanetVectors (only for planets/moons)
     app.planetVectors = app.celestialBodies
         .filter(p => p instanceof Planet && p.getMesh && p.rotationGroup) // Ensure it's a Planet with needed groups
@@ -310,7 +331,7 @@ export async function createSceneObjects(app) {
 
     // 7. Display tuning
     if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
-    
+
     console.log('[createSceneObjects] Scene objects created and configured.');
 }
 
@@ -321,9 +342,9 @@ export async function createSceneObjects(app) {
  */
 export async function initScene(app) {
     const { scene, renderer, camera, textureManager } = app;
-    
+
     app.sceneObjectsInitialized = false; // Flag to track initialization
-    
+
     Planet.setCamera(camera);
 
     if (!scene || !renderer || !camera) throw new Error('Scene, camera, or renderer not set.');
@@ -333,10 +354,15 @@ export async function initScene(app) {
     await loadTextures(textureManager);
     addAmbientLight(scene);
     new BackgroundStars(scene, camera);
-    
+
     // Post-processing can also be set up early
     setupPostProcessing(app);
-    
+
+    // Signal that all assets are loaded
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('assetsLoaded'));
+    }
+
     // Note: Celestial bodies and related managers (OrbitManager, PlanetVectors, etc.)
     // will be created by createSceneObjects(app) once the first backend message arrives.
 

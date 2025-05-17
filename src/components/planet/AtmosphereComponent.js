@@ -202,10 +202,20 @@ export class AtmosphereComponent {
 
     dispose() {
         if (this.mesh) {
-            this.mesh.children.forEach(child => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) child.material.dispose();
-            });
+            // Remove from parent
+            if (this.mesh.parent) {
+                this.mesh.parent.remove(this.mesh);
+            }
+            // Dispose geometry
+            if (this.mesh.geometry) this.mesh.geometry.dispose();
+            // Dispose material and LUT texture if present
+            if (this.mesh.material) {
+                if (this.mesh.material.uniforms?.uOpticalDepthLUT?.value) {
+                    this.mesh.material.uniforms.uOpticalDepthLUT.value.dispose();
+                }
+                this.mesh.material.dispose();
+            }
+            this.mesh = null;
         }
     }
 } 

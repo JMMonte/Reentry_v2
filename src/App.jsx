@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useRef } from 'react';
+import React, { useState, useEffect, createContext, useRef, useContext } from 'react';
 import { ThemeProvider } from './components/ui/theme-provider';
 import { Layout } from './components/ui/Layout';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
@@ -11,8 +11,13 @@ import LZString from 'lz-string';
 import { SimulationProvider } from './simulation/SimulationContext';
 import { useBodySelection } from './hooks/useBodySelection';
 import { setSimulationDate, setTimewarp } from './utils/simApi.js';
+import PropTypes from 'prop-types';
 
-const ToastContext = createContext({ showToast: () => { } });
+// --- Toast Context and Hook ---
+const ToastContext = createContext(null);
+export function useToast() {
+  return useContext(ToastContext);
+}
 
 const Toast = React.forwardRef((props, ref) => {
   const [visible, setVisible] = React.useState(false);
@@ -70,6 +75,21 @@ const Toast = React.forwardRef((props, ref) => {
 });
 Toast.displayName = 'Toast';
 
+// --- Toast Provider ---
+function ToastProvider({ children }) {
+  const toastRef = useRef();
+  const showToast = (msg) => toastRef.current?.showToast(msg);
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      <Toast ref={toastRef} />
+    </ToastContext.Provider>
+  );
+}
+ToastProvider.propTypes = {
+  children: PropTypes.node.isRequired,
+};
+
 function getInitialDisplaySettings(importedState) {
   const loaded = importedState?.displaySettings || {};
   const initial = {};
@@ -102,9 +122,8 @@ function App3DMain() {
   const ignoreNextHashChange = React.useRef(false);
   const toastRef = useRef();
   const [openPointModals, setOpenPointModals] = useState([]);
-  const showToast = (msg) => { toastRef.current?.showToast(msg); };
-
-  const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
+  const [isAssetsLoaded, setIsAssetsLoaded] = useState(false);
+  const [isBackendReady, setIsBackendReady] = useState(false);
 
   useEffect(() => { setCheckedInitialState(true); }, []);
   useEffect(() => {
@@ -240,12 +259,12 @@ ${shareUrl}`);
         const compressed = LZString.compressToEncodedURIComponent(json);
         ignoreNextHashChange.current = true;
         window.location.hash = `state=${compressed}`;
-        showToast('Sim saved');
+        toastRef.current?.showToast('Sim saved');
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [app3d, showToast]);
+  }, [app3d, toastRef]);
   const handleImportState = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -267,7 +286,7 @@ ${shareUrl}`);
         const compressed = LZString.compressToEncodedURIComponent(json);
         ignoreNextHashChange.current = true;
         window.location.hash = `state=${compressed}`;
-        showToast('Sim saved');
+        toastRef.current?.showToast('Sim saved');
       } catch (err) {
         alert('Failed to import simulation state: ' + err.message);
       }
@@ -307,7 +326,7 @@ ${shareUrl}`);
   // Listen for the custom event from simSocket.js
   useEffect(() => {
     const handleSceneReady = () => {
-      setIsLoadingInitialData(false);
+      setIsBackendReady(true);
       console.log('[App.jsx] sceneReadyFromBackend event received, hiding spinner.');
     };
     window.addEventListener('sceneReadyFromBackend', handleSceneReady);
@@ -316,11 +335,36 @@ ${shareUrl}`);
     };
   }, []);
 
+  // Listen for assets loaded event
+  useEffect(() => {
+    const handleAssetsLoaded = () => setIsAssetsLoaded(true);
+    window.addEventListener('assetsLoaded', handleAssetsLoaded);
+    return () => window.removeEventListener('assetsLoaded', handleAssetsLoaded);
+  }, []);
+
   // Build availableBodies from app3d.celestialBodies
   const availableBodies = app3d?.celestialBodies?.map(b => ({
     name: b.name,
     naifId: b.naif_id
   })) || [{ name: 'Earth', naifId: 399 }];
+
+  const { showToast } = useToast();
+  React.useEffect(() => {
+    function handleLost() {
+      showToast('Lost connection to simulation backend');
+    }
+    function handleRestored() {
+      showToast('Reconnected to simulation backend');
+    }
+    window.addEventListener('sim-connection-lost', handleLost);
+    window.addEventListener('sim-connection-restored', handleRestored);
+    return () => {
+      window.removeEventListener('sim-connection-lost', handleLost);
+      window.removeEventListener('sim-connection-restored', handleRestored);
+    };
+  }, [showToast]);
+
+  const isLoadingInitialData = !isAssetsLoaded || !isBackendReady;
 
   if (!checkedInitialState) return null;
   // Build props for Layout
@@ -385,8 +429,6 @@ ${shareUrl}`);
     simulationOpen: isSimulationOpen,
     setSimulationOpen: setIsSimulationOpen,
     planetOptions,
-    satelliteOptions,
-    getDisplayValue
   };
   const chatModalProps = {
     isOpen: isChatVisible,
@@ -448,7 +490,7 @@ ${shareUrl}`);
   const simulationWindowProps = { isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), app3d };
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
-      <ToastContext.Provider value={{ showToast }}>
+      <ToastProvider>
         <SimulationProvider timeUtils={app3d?.timeUtils} displaySettings={displaySettings} simulatedTime={app3d?.timeUtils?.getSimulatedTime() ?? new Date()} timeWarp={app3d?.timeUtils?.getTimeWarp() ?? 1}>
           <Layout
             navbarProps={navbarProps}
@@ -468,8 +510,7 @@ ${shareUrl}`);
             <canvas id="three-canvas" className="absolute inset-0 z-0" />
           </Layout>
         </SimulationProvider>
-        <Toast ref={toastRef} />
-      </ToastContext.Provider>
+      </ToastProvider>
     </ThemeProvider>
   );
 }
@@ -493,11 +534,14 @@ function AppWithCanvas() {
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <div className="relative h-screen w-screen overflow-hidden">
         <canvas id="three-canvas" className="absolute inset-0 z-0" />
-        {canvasReady && <App3DMain />}
+        {canvasReady && (
+          <ToastProvider>
+            <App3DMain />
+          </ToastProvider>
+        )}
       </div>
     </ThemeProvider>
   );
 }
 
 export default AppWithCanvas;
-export { ToastContext };

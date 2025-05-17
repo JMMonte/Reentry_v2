@@ -150,6 +150,11 @@ class App3D extends EventTarget {
      */
     async init() {
         try {
+            // Dispose previous sceneManager if it exists
+            if (this.sceneManager) {
+                this.sceneManager.dispose();
+                this.sceneManager = new SceneManager(this); // Recreate for clean state
+            }
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
 

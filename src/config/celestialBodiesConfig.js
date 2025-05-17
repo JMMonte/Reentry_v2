@@ -117,7 +117,7 @@ const planets = {
             rayleighScaleHeight: 8, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.0015, 0.004, 0.012],
             mieScatteringCoeff: 0.00015, mieAnisotropy: 0.75,
-            numLightSteps: 4, sunIntensity: 6,
+            numLightSteps: 2, sunIntensity: 6,
             equatorialRadius: EARTH_RAD,
             polarRadius: EARTH_RAD * (1 - 0.0033528106647474805),
         },
@@ -219,7 +219,7 @@ const planets = {
             rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.01, 0.008, 0.005],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
-            numLightSteps: 4, sunIntensity: 12,
+            numLightSteps: 2, sunIntensity: 12,
             equatorialRadius: 6051.8, polarRadius: 6051.8,
         },
         radialGridConfig: {
@@ -259,7 +259,7 @@ const planets = {
             rayleighScaleHeight: 11.1, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.005, 0.002, 0.001],
             mieScatteringCoeff: 0.001, mieAnisotropy: 0.8,
-            numLightSteps: 4, sunIntensity: 3,
+            numLightSteps: 2, sunIntensity: 3,
             equatorialRadius: 3389.5, polarRadius: 3389.5 * (1 - 0.00589),
         },
         radialGridConfig: {
@@ -298,7 +298,7 @@ const planets = {
             rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.005, 0.007, 0.012],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
-            numLightSteps: 4, sunIntensity: 12,
+            numLightSteps: 2, sunIntensity: 12,
             equatorialRadius: 71_492, polarRadius: 66_854,
         },
         radialGridConfig: {
@@ -345,7 +345,7 @@ const planets = {
             rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.004, 0.007, 0.013],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
-            numLightSteps: 4, sunIntensity: 12,
+            numLightSteps: 2, sunIntensity: 12,
             equatorialRadius: 60_268, polarRadius: 54_364,
         },
         radialGridConfig: {
@@ -395,7 +395,7 @@ const planets = {
             rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.006, 0.009, 0.015],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
-            numLightSteps: 4, sunIntensity: 12,
+            numLightSteps: 2, sunIntensity: 12,
             equatorialRadius: 25_559, polarRadius: 24_973,
         },
         radialGridConfig: {
@@ -442,7 +442,7 @@ const planets = {
             rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
             rayleighScatteringCoeff: [0.006, 0.009, 0.015],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
-            numLightSteps: 4, sunIntensity: 12,
+            numLightSteps: 2, sunIntensity: 12,
             equatorialRadius: 24_764, polarRadius: 24_341,
         },
         radialGridConfig: {

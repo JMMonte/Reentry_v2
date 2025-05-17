@@ -61,12 +61,15 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
     ws.onopen = () => {
         console.log('[SimSocket] WebSocket connection opened.');
         app._simStreamActive = true;
+        window.dispatchEvent(new CustomEvent('sim-connection-restored'));
         // Optional: Send a simple test ping message
         // const testMsg = new Uint8Array([99]); // Example: byte value 99
         // ws.send(testMsg.buffer);
         // console.log('[SimSocket] Sent test ping message.');
     };
-    ws.onerror = err => console.error('[SimStream] WebSocket error:', err);
+    ws.onerror = err => {
+        console.error('[SimStream] WebSocket error:', err);
+    };
     ws.onclose = evt => {
         console.warn('[SimStream] WebSocket connection closed:', {
             code: evt.code,
@@ -74,6 +77,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
             wasClean: evt.wasClean,
         });
         app._simStreamActive = false;
+        window.dispatchEvent(new CustomEvent('sim-connection-lost'));
     };
 
     ws.onmessage = async evt => {
