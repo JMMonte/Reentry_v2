@@ -68,6 +68,7 @@ export class Planet {
         this.modelUrl = config.model || null;
         this.velocity = new THREE.Vector3(0, 0, 0); // Always present
         Planet.instances.push(this);
+        this.planetLight = null;
         this.#initGroups();
 
         // If model, load it and skip mesh/atmosphere/surface lines, but DO NOT return early
@@ -198,6 +199,22 @@ export class Planet {
             if (this.soiComponent.mesh) {
                 this.components.push(this.soiComponent);
             }
+        }
+
+        if (config.addLight && config.lightOptions) {
+            this.planetLight = new THREE.PointLight(
+                config.lightOptions.color ?? 0xffffff,
+                config.lightOptions.intensity ?? 1,
+                config.lightOptions.distance ?? 0,
+                config.lightOptions.decay ?? 1
+            );
+            this.planetLight.name = `${this.name}_PointLight`;
+            if (config.lightOptions.helper) {
+                // Optionally add a helper if requested
+                const helper = new THREE.PointLightHelper(this.planetLight, this.radius * 0.2);
+                this.orbitGroup.add(helper);
+            }
+            this.orbitGroup.add(this.planetLight);
         }
 
         this.update(); // initial build and initial per-frame updates
@@ -390,6 +407,11 @@ export class Planet {
     dispose() {
         this.orbitGroup.parent?.remove(this.orbitGroup);
         this.orbitLine?.parent?.remove(this.orbitLine);
+
+        if (this.planetLight) {
+            this.planetLight.parent?.remove(this.planetLight);
+            this.planetLight.dispose?.();
+        }
 
         this.orbitGroup.traverse((o) => {
             o.geometry?.dispose();

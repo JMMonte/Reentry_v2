@@ -184,7 +184,7 @@ const planets = {
             radialLines: { count: 22 },
         },
         addLight: true,
-        lightOptions: { color: 0xffffff, intensity: 2439.7, helper: false },
+        lightOptions: { color: 0xcccccc, intensity: 2439.7, helper: false },
     },
 
     /* -------- Venus -------- */
@@ -230,7 +230,7 @@ const planets = {
             radialLines: { count: 22 },
         },
         addLight: true,
-        lightOptions: { color: 0xffffff, intensity: 6051.8, helper: false },
+        lightOptions: { color: 0xffe066, intensity: 6051.8, helper: false },
     },
 
     /* -------- Mars -------- */
@@ -270,7 +270,7 @@ const planets = {
             radialLines: { count: 22 },
         },
         addLight: true,
-        lightOptions: { color: 0xffffff, intensity: 3389.5, helper: false },
+        lightOptions: { color: 0xff9933, intensity: 3389.5, helper: false },
     },
 
     /* -------- Jupiter -------- */
@@ -310,7 +310,7 @@ const planets = {
             radialLines: { count: 22 },
         },
         addLight: true,
-        lightOptions: { color: 0xffffff, intensity: 69_911, helper: false },
+        lightOptions: { color: 0xffcc99, intensity: 69_911, helper: false },
     },
 
     /* -------- Saturn -------- */
@@ -357,7 +357,7 @@ const planets = {
             radialLines: { count: 22 },
         },
         addLight: true,
-        lightOptions: { color: 0xffffff, intensity: 58_232, helper: false },
+        lightOptions: { color: 0xfff2b2, intensity: 58_232, helper: false },
     },
 
     /* -------- Uranus -------- */
@@ -407,7 +407,7 @@ const planets = {
             radialLines: { count: 22 },
         },
         addLight: true,
-        lightOptions: { color: 0xffffff, intensity: 25_362, helper: false },
+        lightOptions: { color: 0x99ffff, intensity: 25_362, helper: false },
     },
 
     /* -------- Neptune -------- */
@@ -454,7 +454,7 @@ const planets = {
             radialLines: { count: 22 },
         },
         addLight: true,
-        lightOptions: { color: 0xffffff, intensity: 24_622, helper: false },
+        lightOptions: { color: 0x3366ff, intensity: 24_622, helper: false },
     },
 
     /* -------- Pluto -------- */
