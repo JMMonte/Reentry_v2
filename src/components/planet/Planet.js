@@ -66,6 +66,7 @@ export class Planet {
         this.soiRadius = config.soiRadius || 0;
         this.components = [];
         this.modelUrl = config.model || null;
+        this.velocity = new THREE.Vector3(0, 0, 0); // Always present
         Planet.instances.push(this);
         this.#initGroups();
 

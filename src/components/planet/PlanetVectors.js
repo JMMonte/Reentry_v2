@@ -10,6 +10,7 @@ const ARROW_COLORS = {
     sun: 0xffff00,
     greenwich: 0x00ff00,
     equinox: 0xff0000,
+    velocity: 0xff00ff, // bright magenta for debug
 };
 const LABEL_FONT_SIZE = 64;
 const LABEL_COLOR = 'white';
@@ -109,14 +110,55 @@ export class PlanetVectors {
             return;
         }
         this.initSunDirection();
+        this.initVelocityVector(); // NEW
         // Consolidate all directional labels for the LabelFader
-        const allLabelsForFader = [...this.directionalLabels]; 
+        const allLabelsForFader = [...this.directionalLabels];
         // Note: AxesHelper CSS2D labels are not part of this LabelFader instance.
-        const fadeStart = this.radius * 5;
-        const fadeEnd = this.radius * 10;
+        const fadeStart = this.radius * 10;
+        const fadeEnd = this.radius * 20;
         this.labelFader = new LabelFader(allLabelsForFader, fadeStart, fadeEnd);
         // Initially, directional vectors are hidden until toggled on.
         this.setVisible(false);
+    }
+
+    initVelocityVector() {
+        // Always create the velocity arrow (initially hidden if velocity is zero)
+        this.velocityArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0), // default direction
+            new THREE.Vector3(0, 0, 0),
+            this.arrowLength,
+            ARROW_COLORS.velocity
+        );
+        this.velocityArrow.setLength(
+            this.arrowLength,
+            this.arrowHeadLength,
+            this.arrowHeadWidth
+        );
+        this.velocityArrow.line.material.depthTest = true;
+        this.velocityArrow.line.material.depthWrite = true;
+        this.velocityArrow.line.material.transparent = false;
+        this.velocityArrow.line.material.opacity = 1;
+        this.velocityArrow.cone.material.depthTest = true;
+        this.velocityArrow.cone.material.depthWrite = true;
+        this.velocityArrow.cone.material.transparent = false;
+        this.velocityArrow.cone.material.opacity = 1;
+        if (this.body.orbitGroup) {
+            this.body.orbitGroup.add(this.velocityArrow);
+        } else {
+            this.group.add(this.velocityArrow);
+        }
+        this.directionalArrows.push(this.velocityArrow);
+        // Create the velocity label
+        this.velocityLabel = this.createLabel(
+            `${this.options.name} Velocity`,
+            new THREE.Vector3(this.arrowLength, 0, 0)
+        );
+        if (this.body.orbitGroup) {
+            this.body.orbitGroup.add(this.velocityLabel);
+        } else {
+            this.group.add(this.velocityLabel);
+        }
+        this.directionalLabels.push(this.velocityLabel);
     }
 
     createLabel(text, position) {
@@ -211,6 +253,25 @@ export class PlanetVectors {
             this.sunDirectionArrow.setDirection(sunDirection);
             this.sunDirectionLabel.position.copy(center.clone().add(sunDirection.clone().multiplyScalar(this.arrowLength)));
         }
+        // Always update the velocity arrow
+        if (this.velocityArrow) {
+            let velocityDir = new THREE.Vector3(1, 0, 0); // fallback
+            let velocityLen = 0;
+            if (this.body.velocity && this.body.velocity.length() > 0) {
+                velocityDir = this.body.velocity.clone().normalize();
+                velocityLen = this.body.velocity.length();
+            }
+            this.velocityArrow.position.copy(center);
+            this.velocityArrow.setDirection(velocityDir);
+            // Always use fixed length (2x planet radius)
+            const len = this.arrowLength;
+            this.velocityArrow.setLength(len, this.arrowHeadLength, this.arrowHeadWidth);
+            this.velocityArrow.visible = velocityLen > 0;
+            if (this.velocityLabel) {
+                this.velocityLabel.position.copy(center.clone().add(velocityDir.clone().multiplyScalar(len)));
+                this.velocityLabel.visible = velocityLen > 0;
+            }
+        }
         if (this.axesHelper) {
             this.axesHelper.position.copy(center);
         }
@@ -233,15 +294,15 @@ export class PlanetVectors {
 
     // Fade labels based on camera distance: fully visible until fadeStart, then fade out to zero at fadeEnd
     updateFading(camera) {
-        if (!this.labelFader || !this.labelFader.sprites?.length || !this.body?.getMesh) return;
+        if (!this.body?.getMesh) return;
 
         const center = new THREE.Vector3();
         this.body.getMesh().getWorldPosition(center);
         const distToCenter = camera.position.distanceTo(center);
 
-        const { fadeStart, fadeEnd } = this.labelFader;
+        const fadeStart = this.radius * 10;
+        const fadeEnd = this.radius * 20;
         let opacity = 1;
-
         if (distToCenter > fadeStart) {
             opacity = distToCenter >= fadeEnd
                 ? 0
@@ -249,24 +310,40 @@ export class PlanetVectors {
             opacity = Math.max(0, Math.min(1, opacity));
         }
 
-        // Apply the calculated opacity to all directional labels (Sprites)
-        // Check individual label visibility before applying opacity from fader.
+        // Fade all directional labels (Sprites)
         this.directionalLabels.forEach(label => {
             if (label && label.material) {
-                if (label.visible) { // Only apply fading if the label is supposed to be visible by its toggle
-                    label.material.opacity = opacity;
-                    label.material.transparent = opacity < 1;
-                    label.material.needsUpdate = true;
-                    label.material.depthWrite = opacity === 1; // Only write depth when fully opaque
-                } else {
-                    // Ensure labels explicitly hidden by setVisible(false) are fully transparent
-                    label.material.opacity = 0;
-                    label.material.transparent = true;
-                    label.material.needsUpdate = true;
-                    label.material.depthWrite = false;
-                }
+                label.material.opacity = opacity;
+                label.material.transparent = opacity < 1;
+                label.material.needsUpdate = true;
+                label.material.depthWrite = opacity === 1;
+                label.visible = opacity > 0;
             }
         });
+        // Fade all directional arrows (velocity, sun, etc.)
+        this.directionalArrows.forEach(arrow => {
+            if (arrow && arrow.line && arrow.cone) {
+                arrow.line.material.opacity = opacity;
+                arrow.line.material.transparent = opacity < 1;
+                arrow.line.material.needsUpdate = true;
+                arrow.cone.material.opacity = opacity;
+                arrow.cone.material.transparent = opacity < 1;
+                arrow.cone.material.needsUpdate = true;
+                arrow.visible = opacity > 0;
+            }
+        });
+        // Fade axes helpers and their CSS2D labels
+        const fadeAxesHelper = (helper, labels) => {
+            if (helper) helper.visible = opacity > 0;
+            if (labels) labels.forEach(lbl => {
+                if (lbl && lbl.element) {
+                    lbl.element.style.opacity = opacity;
+                    lbl.visible = opacity > 0;
+                }
+            });
+        };
+        fadeAxesHelper(this.orbitAxesHelper, this.orbitAxesLabels);
+        fadeAxesHelper(this.rotationAxesHelper, this.rotationAxesLabels);
     }
 
     setAxesVisible(visible) {
