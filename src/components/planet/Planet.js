@@ -38,6 +38,33 @@ export class Planet {
     static setCamera(cam) { Planet.camera = cam; }
 
     constructor(scene, renderer, timeManager, textureManager, config = {}) {
+        // Barycenter minimal path
+        if (config.type === 'barycenter') {
+            this.scene = scene;
+            this.renderer = renderer;
+            this.timeManager = timeManager;
+            this.textureManager = textureManager;
+            this.name = config.name;
+            this.nameLower = (config.name || '').toLowerCase();
+            this.radius = config.radius;
+            this.type = 'barycenter';
+            this.targetPosition = new THREE.Vector3();
+            this.targetOrientation = new THREE.Quaternion();
+            this.velocity = new THREE.Vector3(0, 0, 0);
+            this.meshRes = config.meshRes || 8;
+            // Minimal group structure
+            this.orbitGroup = new THREE.Group();
+            this.orientationGroup = new THREE.Group();
+            this.rotationGroup = new THREE.Group();
+            this.orientationGroup.add(this.rotationGroup);
+            this.orbitGroup.add(this.orientationGroup);
+            this.scene.add(this.orbitGroup);
+            // No mesh for barycenters
+            this.planetMesh = null;
+            // No atmosphere, clouds, surface, or extra features
+            return;
+        }
+
         // Always set up core state and groups
         this.scene = scene;
         this.renderer = renderer;
@@ -301,6 +328,17 @@ export class Planet {
 
     /* ===== per-frame ===== */
     update() {
+        if (this.type === 'barycenter') {
+            // Only interpolate position/orientation for barycenters
+            const LERP_ALPHA = 0.15;
+            if (this.orbitGroup) {
+                this.orbitGroup.position.lerp(this.targetPosition, LERP_ALPHA);
+            }
+            if (this.orientationGroup) {
+                this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
+            }
+            return;
+        }
         // Always update distantComponent so it can toggle dot visibility
         this.distantComponent?.update();
         const LERP_ALPHA = 0.15; // Smoothing factor (0.1 to 0.2 is usually good)
@@ -354,6 +392,7 @@ export class Planet {
     }
 
     getSurfaceTexture() {
+        if (!this.planetMesh) return null;
         const mat = (o) => o instanceof THREE.LOD ? o.levels[0]?.object?.material : o.material;
         return mat(this.planetMesh)?.map?.image;
     }

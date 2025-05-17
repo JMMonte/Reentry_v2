@@ -129,17 +129,25 @@ export async function createSceneObjects(app) {
     // --- Create background stars ---
     app.backgroundStars = new BackgroundStars(scene, camera);
 
-    // 2. Create all barycenters
+    // 2. Create all barycenters as lightweight Planet objects
     for (const cfg of Object.values(barycenters)) {
-        const group = new THREE.Group();
-        group.name = cfg.name;
-        group.naif_id = cfg.naif_id;
-        const marker = new THREE.Mesh(
-            new THREE.SphereGeometry(0.1, 8, 8),
-            new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.2 })
-        );
-        group.add(marker);
-        app.bodiesByNaifId[cfg.naif_id] = group;
+        // Use Mercury's radius as fallback
+        const baryConfig = {
+            ...cfg,
+            type: 'barycenter',
+            radius: celestialBodiesConfig.mercury.radius,
+            meshRes: 8, // minimal mesh
+            materials: {
+                surfaceConfig: {
+                    materialType: 'basic',
+                    params: { color: 0xffff00 }
+                }
+            }
+        };
+        const barycenter = new Planet(scene, renderer, timeUtils, textureManager, baryConfig);
+        barycenter.naif_id = cfg.naif_id;
+        app.celestialBodies.push(barycenter);
+        app.bodiesByNaifId[cfg.naif_id] = barycenter;
     }
 
     // 3. Create all stars
@@ -283,6 +291,8 @@ export async function createSceneObjects(app) {
             continue; // Sun handled, move to next body
         } else if (bodyObject instanceof THREE.Group) {
             object3DForScene = bodyObject;
+            // Debug log for barycenter
+            console.log('[DEBUG] Adding barycenter group to scene:', object3DForScene.name, object3DForScene.position);
         } else {
             // Potentially other types or unhandled cases
             console.warn(`Unhandled body type for scene addition: ${cfg.name}`, bodyObject);
@@ -310,9 +320,9 @@ export async function createSceneObjects(app) {
         }
     });
 
-    // 5. Create PlanetVectors (only for planets/moons)
+    // 5. Create PlanetVectors (for planets and moons only, barycenters are now Planets)
     app.planetVectors = app.celestialBodies
-        .filter(p => p instanceof Planet && p.getMesh && p.rotationGroup) // Ensure it's a Planet with needed groups
+        .filter(p => p instanceof Planet && p.getMesh && p.rotationGroup)
         .map(p => new PlanetVectors(p, scene, app.sun?.sun, { name: p.name }));
 
     // 6. Construct gravitySources correctly (planets/moons + stars)

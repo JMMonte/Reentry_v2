@@ -94,8 +94,13 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
     // Build groupedPlanetOptions for UI
     const groupedPlanetOptions = planetMoonOrder.map(({ planet, moons }) => {
         const planetObj = planetOptions.find(o => o.value === planet);
+        // Find barycenter for this planet (by convention: <planet>_barycenter, except for Earth which is 'emb')
+        const barycenterKey = planet === 'earth' ? 'emb' : `${planet}_barycenter`;
+        const barycenterObj = planetOptions.find(o => o.value === barycenterKey);
         const moonObjs = moons.map(moon => planetOptions.find(o => o.value === moon)).filter(Boolean);
-        return planetObj ? { planet: planetObj, moons: moonObjs } : null;
+        // Barycenter (if present) should be first in the moons array
+        const children = [barycenterObj, ...moonObjs].filter(Boolean);
+        return planetObj ? { planet: planetObj, moons: children } : null;
     }).filter(Boolean);
 
     return { selectedBody, handleBodyChange, planetOptions, satelliteOptions, getDisplayValue, groupedPlanetOptions };

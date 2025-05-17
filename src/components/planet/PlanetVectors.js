@@ -42,7 +42,7 @@ export class PlanetVectors {
         if (isBarycenter) {
             // Only create axes helper for barycenters initially, controlled by setAxesVisible
             this.setAxesVisible(false); // Start with axes hidden for barycenters too
-            return;
+            // Do NOT return; allow vectors to be created for barycenters
         }
         // If mesh is not ready, listen for mesh loaded event
         if (!this.body.getMesh()) {
@@ -279,7 +279,7 @@ export class PlanetVectors {
 
     // Fade labels based on camera distance: fully visible until fadeStart, then fade out to zero at fadeEnd
     updateFading(camera) {
-        if (!this.body?.getMesh) return;
+        if (!this.body?.getMesh || !this.body.getMesh()) return;
 
         const center = new THREE.Vector3();
         this.body.getMesh().getWorldPosition(center);

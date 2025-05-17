@@ -186,6 +186,16 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     body.velocity.set(vel[0], vel[1], vel[2]);
                 }
 
+                // If this is a barycenter, update its PlanetVectors instance as well
+                if (body instanceof THREE.Group && body.type === 'barycenter' && app.planetVectors) {
+                    // Find the PlanetVectors instance for this barycenter
+                    const pv = app.planetVectors.find(v => v.body && v.body.naif_id === naif_id);
+                    if (pv && pv.body) {
+                        pv.body.velocity = body.velocity;
+                        if (typeof pv.updateVectors === 'function') pv.updateVectors();
+                    }
+                }
+
                 // --- DEBUG: Log local and world positions after setting ---
                 let debugPosObject = null;
                 if (body instanceof app.Planet && body.getOrbitGroup()) {

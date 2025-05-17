@@ -145,11 +145,14 @@ export const getSatelliteOptions = (satellites) => {
  * @returns {Array<{value:string, text:string}>}
  */
 export const getPlanetOptions = (celestialBodies) => {
-  // Include all planets and the Sun (type: 'star')
+  // Include all planets, barycenters, and the Sun (type: 'star')
   return (celestialBodies || [])
-    .filter(body => (typeof body?.getMesh === 'function' && body.name) || body?.type === 'star')
+    .filter(body => ((typeof body?.getMesh === 'function' && body.name) || body?.type === 'star' || body?.type === 'barycenter'))
     .map(body => ({
       value: body.name,
-      text: body.type === 'star' ? 'Sun' : (body.name.charAt(0).toUpperCase() + body.name.slice(1)),
+      text:
+        body.type === 'star'
+          ? 'Sun'
+          : (body.name.charAt(0).toUpperCase() + body.name.slice(1)),
     }));
 };

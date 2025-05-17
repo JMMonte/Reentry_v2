@@ -138,6 +138,36 @@ export class OrbitManager {
             this.orbitLineMap.set(body.nameLower, line);
             console.log(`[OrbitManager] Orbit line created for ${body.name}`);
         }
+
+        // Also render orbits for barycenters (THREE.Group with type === 'barycenter')
+        for (const group of Object.values(this.app.bodiesByNaifId)) {
+            if (group instanceof THREE.Group && group.type === 'barycenter' && group.position && group.velocity) {
+                const cfg = celestialBodiesConfig[group.name];
+                if (!cfg) continue;
+                // Use parent for mu if available
+                let mu = Constants.sunGravitationalParameter;
+                if (cfg.parent && celestialBodiesConfig[cfg.parent] && celestialBodiesConfig[cfg.parent].mass) {
+                    mu = Constants.G * celestialBodiesConfig[cfg.parent].mass;
+                }
+                // Convert to plain objects for KeplerianUtils
+                const posObj = { x: group.position.x, y: group.position.y, z: group.position.z };
+                const velObj = { x: group.velocity.x, y: group.velocity.y, z: group.velocity.z };
+                const elements = stateToKeplerian(posObj, velObj, mu, 0);
+                if (!elements || !isFinite(elements.a) || elements.a === 0) continue;
+                const points = [];
+                for (let i = 0; i <= numPoints; ++i) {
+                    const f = (i / numPoints) * 2 * Math.PI;
+                    const p = getPositionAtTrueAnomaly(elements, mu, f);
+                    points.push(new THREE.Vector3(p.x * sceneUnit, p.y * sceneUnit, p.z * sceneUnit));
+                }
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({ color: 0xffff00, transparent: false, opacity: 1 });
+                const line = new THREE.Line(geometry, material);
+                line.frustumCulled = false;
+                this.scene.add(line);
+                this.orbitLineMap.set(group.name, line);
+            }
+        }
     }
 
     /**

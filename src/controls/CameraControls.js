@@ -100,9 +100,25 @@ class CameraControls {
     getBodyPosition(body) {
         const pos = new THREE.Vector3();
         if (body.getMesh) {
-            body.getMesh().getWorldPosition(pos);
-        } else if (body.mesh) {
-            body.mesh.getWorldPosition(pos);
+            const mesh = body.getMesh();
+            if (mesh && typeof mesh.getWorldPosition === 'function') {
+                mesh.getWorldPosition(pos);
+                return pos;
+            }
+        }
+        // Fallback for barycenters: use orbitGroup or orientationGroup
+        if (body.orbitGroup && typeof body.orbitGroup.getWorldPosition === 'function') {
+            body.orbitGroup.getWorldPosition(pos);
+            return pos;
+        }
+        if (body.orientationGroup && typeof body.orientationGroup.getWorldPosition === 'function') {
+            body.orientationGroup.getWorldPosition(pos);
+            return pos;
+        }
+        // Fallback: if body itself is an Object3D
+        if (typeof body.getWorldPosition === 'function') {
+            body.getWorldPosition(pos);
+            return pos;
         }
         return pos;
     }
