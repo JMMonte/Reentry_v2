@@ -295,11 +295,11 @@ const planets = {
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 3,
             scaleHeightMultiplier: 6.0,
-            thickness: 100, densityScaleHeight: 15.9,
-            rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
+            thickness: 100, densityScaleHeight: 100.9,
+            rayleighScaleHeight: 190.9, mieScaleHeight: 28,
             rayleighScatteringCoeff: [0.005, 0.007, 0.012],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
-            numLightSteps: 2, sunIntensity: 12,
+            numLightSteps: 2, sunIntensity: 5,
             equatorialRadius: 71_492, polarRadius: 66_854,
         },
         radialGridConfig: {
@@ -343,8 +343,8 @@ const planets = {
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 3,
             scaleHeightMultiplier: 20.0,
-            thickness: 100, densityScaleHeight: 15.9,
-            rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
+            thickness: 100, densityScaleHeight: 100.9,
+            rayleighScaleHeight: 190.9, mieScaleHeight: 12,
             rayleighScatteringCoeff: [0.004, 0.007, 0.013],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
             numLightSteps: 2, sunIntensity: 12,
@@ -394,8 +394,8 @@ const planets = {
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 1.5,
             scaleHeightMultiplier: 20.5,
-            thickness: 100, densityScaleHeight: 15.9,
-            rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
+            thickness: 100, densityScaleHeight: 100.9,
+            rayleighScaleHeight: 190.9, mieScaleHeight: 20,
             rayleighScatteringCoeff: [0.006, 0.009, 0.015],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
             numLightSteps: 2, sunIntensity: 12,
@@ -442,8 +442,8 @@ const planets = {
         atmosphere: {
             limbFudgeFactor: 1, hazeIntensity: 1.5,
             scaleHeightMultiplier: 80.5,
-            thickness: 100, densityScaleHeight: 15.9,
-            rayleighScaleHeight: 15.9, mieScaleHeight: 1.2,
+            thickness: 100, densityScaleHeight: 100.9,
+            rayleighScaleHeight: 190.9, mieScaleHeight: 30,
             rayleighScatteringCoeff: [0.006, 0.009, 0.015],
             mieScatteringCoeff: 0.015, mieAnisotropy: 0.7,
             numLightSteps: 2, sunIntensity: 12,
