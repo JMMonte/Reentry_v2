@@ -180,7 +180,8 @@ function App3DMain() {
     handleBodyChange,
     planetOptions,
     satelliteOptions,
-    getDisplayValue
+    getDisplayValue,
+    groupedPlanetOptions
   } = useBodySelection({
     app3dRef: { current: app3d },
     satellites: Object.values(satellites),
@@ -336,6 +337,9 @@ ${shareUrl}`);
     isSatelliteModalOpen,
     selectedBody,
     onBodySelect: handleBodyChange,
+    groupedPlanetOptions,
+    satelliteOptions,
+    getDisplayValue,
     timeWarp: app3d?.timeUtils?.getTimeWarp() ?? 1,
     onTimeWarpChange: async (newWarp) => {
       const sessionId = app3d?.sessionId || controller?.sessionId;

@@ -52,7 +52,7 @@ export function Navbar({
   setShareUrl,
   setIsAuthOpen,
   setAuthMode,
-  planetOptions,
+  groupedPlanetOptions,
   satelliteOptions,
   getDisplayValue
 }) {
@@ -163,7 +163,7 @@ export function Navbar({
           <BodySelector
             selectedBody={selectedBody}
             handleBodyChange={handleBodyChange}
-            planetOptions={planetOptions}
+            groupedPlanetOptions={groupedPlanetOptions}
             satelliteOptions={satelliteOptions}
             getDisplayValue={getDisplayValue}
           />
@@ -220,7 +220,7 @@ export function Navbar({
               <BodySelector
                 selectedBody={selectedBody}
                 handleBodyChange={handleBodyChange}
-                planetOptions={planetOptions}
+                groupedPlanetOptions={groupedPlanetOptions}
                 satelliteOptions={satelliteOptions}
                 getDisplayValue={getDisplayValue}
               />
@@ -272,7 +272,7 @@ Navbar.propTypes = {
   ]).isRequired,
   onSimulatedTimeChange: PropTypes.func.isRequired,
   app3DRef: PropTypes.shape({ current: PropTypes.object }).isRequired,
-  planetOptions: PropTypes.array.isRequired,
+  groupedPlanetOptions: PropTypes.array.isRequired,
   satelliteOptions: PropTypes.array.isRequired,
   getDisplayValue: PropTypes.func.isRequired,
   onImportState: PropTypes.func.isRequired,

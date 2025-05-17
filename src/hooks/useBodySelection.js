@@ -6,6 +6,19 @@ import {
     getSatelliteOptions
 } from '../utils/BodySelectionUtils';
 
+// --- Solar System Order for Planets and Moons ---
+const planetMoonOrder = [
+    { planet: 'mercury', moons: [] },
+    { planet: 'venus', moons: [] },
+    { planet: 'earth', moons: ['moon'] },
+    { planet: 'mars', moons: ['phobos', 'deimos'] },
+    { planet: 'jupiter', moons: ['io', 'europa', 'ganymede', 'callisto'] },
+    { planet: 'saturn', moons: ['mimas', 'enceladus', 'tethys', 'dione', 'rhea', 'titan', 'iapetus'] },
+    { planet: 'uranus', moons: ['miranda', 'ariel', 'umbriel', 'titania', 'oberon'] },
+    { planet: 'neptune', moons: ['triton', 'proteus', 'nereid'] },
+    { planet: 'pluto', moons: ['charon', 'nix', 'hydra', 'kerberos', 'styx'] },
+];
+
 /**
  * Hook to manage celestial body selection (planets & satellites).
  * Defaults to Earth or restores imported focused body when available.
@@ -78,5 +91,12 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
     // Display name formatter
     const getDisplayValue = (value) => getBodyDisplayName(value, satellites, app3dRef.current?.celestialBodies);
 
-    return { selectedBody, handleBodyChange, planetOptions, satelliteOptions, getDisplayValue };
+    // Build groupedPlanetOptions for UI
+    const groupedPlanetOptions = planetMoonOrder.map(({ planet, moons }) => {
+        const planetObj = planetOptions.find(o => o.value === planet);
+        const moonObjs = moons.map(moon => planetOptions.find(o => o.value === moon)).filter(Boolean);
+        return planetObj ? { planet: planetObj, moons: moonObjs } : null;
+    }).filter(Boolean);
+
+    return { selectedBody, handleBodyChange, planetOptions, satelliteOptions, getDisplayValue, groupedPlanetOptions };
 } 
