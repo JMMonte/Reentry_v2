@@ -45,7 +45,7 @@ export class PlanetVectors {
             // Do NOT return; allow vectors to be created for barycenters
         }
         // If mesh is not ready, listen for mesh loaded event
-        if (!this.body.getMesh()) {
+        if (!this.body.getMesh() && !isBarycenter) {
             if (typeof this.body.addEventListener === 'function') {
                 this.body.addEventListener('planetMeshLoaded', () => {
                     this.#initVectorsAsync();
@@ -186,11 +186,15 @@ export class PlanetVectors {
         // Vector from planet to sun, in ecliptic/orbital frame
         const center = new THREE.Vector3(0, 0, 0);
         let sunDirection = new THREE.Vector3(1, 0, 0); // fallback
-        if (this.sun && this.sun.getWorldPosition && this.body.getMesh) {
+        if (this.sun && this.sun.getWorldPosition && (this.body.getMesh() || this.isBarycenter)) {
             const sunPos = new THREE.Vector3();
             const planetPos = new THREE.Vector3();
             this.sun.getWorldPosition(sunPos);
-            this.body.getMesh().getWorldPosition(planetPos);
+            if (this.body.getMesh()) {
+                this.body.getMesh().getWorldPosition(planetPos);
+            } else if (this.body.orbitGroup) {
+                this.body.orbitGroup.getWorldPosition(planetPos);
+            }
             sunDirection = sunPos.clone().sub(planetPos).normalize();
         }
         this.sunDirectionArrow = new THREE.ArrowHelper(
@@ -230,11 +234,15 @@ export class PlanetVectors {
         if (this.sunDirectionArrow) {
             // Compute the real sun direction every frame
             let sunDirection = new THREE.Vector3(1, 0, 0); // fallback
-            if (this.sun && this.sun.getWorldPosition && this.body.getMesh) {
+            if (this.sun && this.sun.getWorldPosition && (this.body.getMesh() || this.isBarycenter)) {
                 const sunPos = new THREE.Vector3();
                 const planetPos = new THREE.Vector3();
                 this.sun.getWorldPosition(sunPos);
-                this.body.getMesh().getWorldPosition(planetPos);
+                if (this.body.getMesh()) {
+                    this.body.getMesh().getWorldPosition(planetPos);
+                } else if (this.body.orbitGroup) {
+                    this.body.orbitGroup.getWorldPosition(planetPos);
+                }
                 sunDirection = sunPos.clone().sub(planetPos).normalize();
             }
             this.sunDirectionArrow.position.copy(center);
@@ -279,12 +287,16 @@ export class PlanetVectors {
 
     // Fade labels based on camera distance: fully visible until fadeStart, then fade out to zero at fadeEnd
     updateFading(camera) {
-        if (!this.body?.getMesh || !this.body.getMesh()) return;
-
-        const center = new THREE.Vector3();
-        this.body.getMesh().getWorldPosition(center);
+        // For barycenters, use orbitGroup position if mesh is missing
+        let center = new THREE.Vector3();
+        if (this.body?.getMesh && this.body.getMesh()) {
+            this.body.getMesh().getWorldPosition(center);
+        } else if (this.isBarycenter && this.body.orbitGroup) {
+            this.body.orbitGroup.getWorldPosition(center);
+        } else {
+            return;
+        }
         const distToCenter = camera.position.distanceTo(center);
-
         const fadeStart = this.radius * 10;
         const fadeEnd = this.radius * 20;
         let opacity = 1;
@@ -294,7 +306,6 @@ export class PlanetVectors {
                 : 1 - (distToCenter - fadeStart) / (fadeEnd - fadeStart);
             opacity = Math.max(0, Math.min(1, opacity));
         }
-
         // Fade all directional labels (Sprites)
         this.directionalLabels.forEach(label => {
             if (label && label.material) {

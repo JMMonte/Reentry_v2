@@ -320,9 +320,9 @@ export async function createSceneObjects(app) {
         }
     });
 
-    // 5. Create PlanetVectors (for planets and moons only, barycenters are now Planets)
+    // 5. Create PlanetVectors (for planets, moons, and barycenters)
     app.planetVectors = app.celestialBodies
-        .filter(p => p instanceof Planet && p.getMesh && p.rotationGroup)
+        .filter(p => p instanceof Planet && p.getMesh)
         .map(p => new PlanetVectors(p, scene, app.sun?.sun, { name: p.name }));
 
     // 6. Construct gravitySources correctly (planets/moons + stars)
