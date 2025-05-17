@@ -92,22 +92,6 @@ export class SimulationLoop {
             case 'sensitivityScale':
                 this.satellites.setSensitivityScale(value);
                 break;
-            case 'usePhysics':
-                // No specific action needed, physics is always on
-                break;
-            // case 'useAstronomy':
-            //     // removed: physicsWorld not used
-            //     break;
-            case 'showAxis':
-                if (Array.isArray(this.app.planetVectors)) {
-                    this.app.planetVectors.forEach(v => v.setAxesVisible(value));
-                } else if (this.app.planetVectors) {
-                    this.app.planetVectors.setAxesVisible(value);
-                }
-                break;
-            default:
-                // Handle other cases if needed
-                break;
         }
     }
 } 

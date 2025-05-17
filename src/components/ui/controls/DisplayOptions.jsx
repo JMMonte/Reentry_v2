@@ -189,6 +189,71 @@ Accordion.propTypes = {
   setOpenIndexes: PropTypes.func.isRequired
 };
 
+function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
+  const isNumber = setting.type === 'number';
+  const isRange = setting.type === 'range';
+  return (
+    <div key={keyName} className="flex items-center justify-between px-2 py-1 text-xs">
+      <div className="flex items-center gap-1">
+        {setting.icon && React.createElement(setting.icon, { className: "h-3 w-3" })}
+        <span className="text-[11px] text-muted-foreground">{setting.name}</span>
+        {setting.description && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent sideOffset={4} className="z-[9999]">
+              {setting.description}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+      <div className="pr-2">
+        {isNumber ? (
+          <div className="flex items-center">
+            <Input
+              type="number"
+              size="sm"
+              className="text-xs h-5 w-12"
+              min={setting.min}
+              max={setting.max}
+              step={setting.step}
+              value={value !== undefined ? value : setting.value}
+              onChange={e => onChange(keyName, parseFloat(e.target.value))}
+            />
+            {loading && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+          </div>
+        ) : isRange ? (
+          <input
+            type="range"
+            className="h-1 w-20"
+            min={setting.min}
+            max={setting.max}
+            step={setting.step}
+            value={value !== undefined ? value : setting.value}
+            onChange={e => onChange(keyName, parseFloat(e.target.value))}
+          />
+        ) : (
+          <Switch
+            className="scale-[0.6]"
+            checked={value !== undefined ? value : setting.value}
+            onCheckedChange={checked => onChange(keyName, checked)}
+            disabled={setting.disabled}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+DisplayOptionRow.propTypes = {
+  keyName: PropTypes.string.isRequired,
+  setting: PropTypes.object.isRequired,
+  value: PropTypes.any,
+  onChange: PropTypes.func.isRequired,
+  loading: PropTypes.bool
+};
+
 export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
   const [position, setPosition] = useState({ x: 40, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
@@ -228,7 +293,7 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
             onClick={() => {
               // collect only boolean setting keys
               const booleanKeys = Object.entries(defaultSettings)
-                .filter(([, setting]) => typeof setting.value === 'boolean')
+                .filter(([, setting]) => (setting.type === undefined || setting.type === 'boolean'))
                 .map(([key]) => key);
               // check if all boolean settings are currently enabled
               const allOn = booleanKeys.every(key =>
@@ -243,87 +308,23 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
         }
       >
         <Accordion sections={categories} openIndexes={openIdxs} setOpenIndexes={setOpenIdxs}>
-          {(idx) => (
+          {idx => (
             <div className="space-y-1">
-              {categories[idx].keys.map((key) => {
+              {categories[idx].keys.map(key => {
                 const setting = defaultSettings[key];
                 if (!setting) return null;
                 return (
-                  <div key={key} className="flex items-center justify-between px-2 py-1 text-xs">
-                    <div className="flex items-center gap-1">
-                      {React.createElement(setting.icon, { className: "h-3 w-3" })}
-                      <span className="text-[11px] text-muted-foreground">{setting.name}</span>
-                      {setting.description && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                          </TooltipTrigger>
-                          <TooltipContent sideOffset={4} className="z-[9999]">
-                            {setting.description}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                    <div className="pr-2">
-                      {setting.type === 'number' ? (
-                        <div className="flex items-center">
-                          <Input
-                            type="number"
-                            size="sm"
-                            className="text-xs h-5 w-12"
-                            min={setting.min}
-                            max={setting.max}
-                            step={setting.step}
-                            value={
-                              (() => {
-                                const v = settings[key] !== undefined ? settings[key] : setting.value;
-                                if (typeof v === 'number' && !Number.isInteger(v)) {
-                                  return v.toFixed(3);
-                                }
-                                return v;
-                              })()
-                            }
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              const parsed = raw === '' ? '' : parseFloat(raw);
-                              setLoadingKeys(prev => ({ ...prev, [key]: parsed }));
-                              onSettingChange(key, parsed);
-                            }}
-                          />
-                          {key in loadingKeys && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
-                        </div>
-                      ) : setting.type === 'range' ? (
-                        <input
-                          type="range"
-                          className="h-1 w-20"
-                          min={setting.min}
-                          max={setting.max}
-                          step={setting.step}
-                          value={settings[key] !== undefined ? settings[key] : setting.value}
-                          onChange={(e) => onSettingChange(key, parseFloat(e.target.value))}
-                        />
-                      ) : (
-                        key === 'useRemoteCompute' ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Switch
-                                className="scale-[0.6] opacity-50 cursor-not-allowed"
-                                checked={false}
-                                disabled
-                              />
-                            </TooltipTrigger>
-                            <TooltipContent sideOffset={4}>Work in progress</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Switch
-                            className="scale-[0.6]"
-                            checked={settings[key] !== undefined ? settings[key] : setting.value}
-                            onCheckedChange={(checked) => onSettingChange(key, checked)}
-                          />
-                        )
-                      )}
-                    </div>
-                  </div>
+                  <DisplayOptionRow
+                    key={key}
+                    keyName={key}
+                    setting={setting}
+                    value={settings[key]}
+                    onChange={(k, v) => {
+                      setLoadingKeys(prev => ({ ...prev, [k]: v }));
+                      onSettingChange(k, v);
+                    }}
+                    loading={loadingKeys[key]}
+                  />
                 );
               })}
             </div>

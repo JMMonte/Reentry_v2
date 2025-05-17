@@ -185,9 +185,6 @@ class App3D extends EventTarget {
             this.planetVectors = [];
             if (this.celestialBodies) {
                 for (const planet of this.celestialBodies) {
-                    if (planet && typeof planet.setAxisVisible === 'function') {
-                        planet.setAxisVisible(true);
-                    }
                     // Only add vectors for planets with a mesh and rotationGroup
                     if (planet && planet.getMesh && planet.rotationGroup && this._scene) {
                         const vec = new PlanetVectors(planet, this._scene, { name: planet.name, scale: planet.radius * 2 });
