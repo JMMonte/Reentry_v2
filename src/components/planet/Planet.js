@@ -55,7 +55,7 @@ export class Planet {
             addLight = false, lightOptions = {},
             materials: materialOverrides = {},
             symbol, lodLevels = [],
-            dotPixelSizeThreshold = 4, dotColor = 0xffffff,
+            dotColor = 0xffffff,
             soiRadius = 0,
             addRings = false,
             rings: ringConfig = null,
@@ -96,7 +96,7 @@ export class Planet {
         this.orbitElements = orbitElements;
 
         this.lodLevels = lodLevels;
-        this.dotPixelSizeThreshold = dotPixelSizeThreshold;
+        this.dotPixelSizeThreshold = 2;
         this.dotColor = dotColor;
         this.soiRadius = soiRadius;
 
