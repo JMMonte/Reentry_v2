@@ -5,6 +5,16 @@
 import * as THREE from 'three';
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);                   // use Z-up globally
 
+// Monkey-patch to debug NaN boundingSphere issues
+const origComputeBoundingSphere = THREE.BufferGeometry.prototype.computeBoundingSphere;
+THREE.BufferGeometry.prototype.computeBoundingSphere = function() {
+    origComputeBoundingSphere.apply(this, arguments);
+    if (this.boundingSphere && isNaN(this.boundingSphere.radius)) {
+        // Log stack and geometry for debugging
+        console.error('NaN boundingSphere detected!', this, new Error().stack);
+    }
+};
+
 // External helpers
 // import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import Stats from 'stats.js';
@@ -540,6 +550,12 @@ class App3D extends EventTarget {
             mesh.updateWorldMatrix?.(true, false);
             // Only check frustum for Meshes with geometry
             if (mesh.isMesh && mesh.geometry) {
+                const pos = mesh.geometry.attributes.position;
+                if (!pos || !pos.count || isNaN(pos.array[0])) {
+                    // Defensive: skip meshes with invalid geometry
+                    console.warn('Skipping mesh with invalid geometry for frustum check:', mesh, mesh.geometry);
+                    return false;
+                }
                 if (!mesh.geometry.boundingSphere) {
                     mesh.geometry.computeBoundingSphere();
                 }

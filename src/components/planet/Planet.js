@@ -77,6 +77,11 @@ export class Planet {
         this.rotationPeriod = rotationPeriod;
         this.orbitalPeriod = orbitalPeriod;
 
+        // Guard: ensure radius is valid before proceeding
+        if (typeof this.radius !== 'number' || !isFinite(this.radius) || this.radius <= 0) {
+            throw new Error(`Invalid radius for planet ${this.name}: ${this.radius}`);
+        }
+
         // Target states for interpolation
         this.targetPosition = new THREE.Vector3();
         this.targetOrientation = new THREE.Quaternion();
@@ -222,30 +227,6 @@ export class Planet {
         // --- Radial grid ---
         if (radialGridConfig) {
             this.radialGrid = new RadialGrid(this, radialGridConfig);
-        }
-        // Treat surface fade as a component for per-frame updates
-        if (this.surface) {
-            // Remove the direct call to updateFade from here. It will be handled by a new method.
-            // this.components.push({
-            //     update: () => {
-            //         if (Planet.camera) this.surface.updateFade(Planet.camera);
-            //     }
-            // });
-        }
-        // Treat radial grid position and fading as a component
-        if (this.radialGrid) {
-            // The radialGrid itself doesn't have an update() method in the traditional sense for position,
-            // as it's parented. We keep it in components if it had other generic update logic.
-            // For now, let's assume it might, or this entry can be removed if RadialGrid.update() is empty/doesn't exist.
-            // If RadialGrid needs other non-fading updates, it should have its own update() method.
-            // For now, we remove the direct call to updateFading from here.
-            // this.components.push({
-            //     update: () => {
-            //         // if (Planet.camera) {
-            //         //     this.radialGrid.updateFading(Planet.camera);
-            //         // }
-            //     }
-            // });
         }
 
         // --- SOI (Sphere of Influence) ---

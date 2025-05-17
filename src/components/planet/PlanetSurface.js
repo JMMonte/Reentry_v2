@@ -133,16 +133,25 @@ export class PlanetSurface {
             }
         }
         if (majorPoints.length > 0) {
-            const majorGeom = new THREE.BufferGeometry().setFromPoints(majorPoints);
-            const majorLine = new THREE.LineSegments(majorGeom, this.materials.latitudeMajor);
-            this.root.add(majorLine);
-            this.surfaceLines.push(majorLine);
+            // Defensive check: skip invalid lines
+            if (majorPoints.length < 2 || majorPoints.some(p => !p.isVector3 || !isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z))) {
+                console.warn('Skipping invalid major graticule line geometry in PlanetSurface:', majorPoints);
+            } else {
+                const majorGeom = new THREE.BufferGeometry().setFromPoints(majorPoints);
+                const majorLine = new THREE.LineSegments(majorGeom, this.materials.latitudeMajor);
+                this.root.add(majorLine);
+                this.surfaceLines.push(majorLine);
+            }
         }
         if (minorPoints.length > 0) {
-            const minorGeom = new THREE.BufferGeometry().setFromPoints(minorPoints);
-            const minorLine = new THREE.LineSegments(minorGeom, this.materials.latitudeMinor);
-            this.root.add(minorLine);
-            this.surfaceLines.push(minorLine);
+            if (minorPoints.length < 2 || minorPoints.some(p => !p.isVector3 || !isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z))) {
+                console.warn('Skipping invalid minor graticule line geometry in PlanetSurface:', minorPoints);
+            } else {
+                const minorGeom = new THREE.BufferGeometry().setFromPoints(minorPoints);
+                const minorLine = new THREE.LineSegments(minorGeom, this.materials.latitudeMinor);
+                this.root.add(minorLine);
+                this.surfaceLines.push(minorLine);
+            }
         }
     }
 
@@ -160,6 +169,11 @@ export class PlanetSurface {
             polys.forEach(poly => poly.forEach(ring => {
                 const pts = ring.map(([lon, lat]) => this.#spherical(lon, lat));
                 pts.push(pts[0]);
+                // Defensive check: skip invalid lines
+                if (pts.length < 2 || pts.some(p => !p.isVector3 || !isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z))) {
+                    console.warn('Skipping invalid border line geometry in PlanetSurface:', pts);
+                    return;
+                }
                 const line = new THREE.Line(
                     new THREE.BufferGeometry().setFromPoints(pts),
                     material
@@ -185,6 +199,11 @@ export class PlanetSurface {
             const [lon, lat] = feat.geometry.coordinates;
             // Compute position on oblate spheroid via mesh scale + offset
             const pos = this.#spherical(lon, lat);
+            // Defensive check: skip invalid POIs
+            if (!pos.isVector3 || !isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z)) {
+                console.warn('Skipping invalid POI position in PlanetSurface:', pos, feat);
+                return;
+            }
             const circleMaterial = new THREE.MeshBasicMaterial({
                 map: material.map,
                 color: material.color.getHex(),

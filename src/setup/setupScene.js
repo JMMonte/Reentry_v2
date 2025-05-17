@@ -182,20 +182,30 @@ export async function createSceneObjects(app) {
     for (const entry of planetMoonOrder) {
         // Create planet
         const planetCfg = planets[entry.planet];
-        if (planetCfg) {
+        if (
+            planetCfg &&
+            typeof planetCfg.radius === 'number' && isFinite(planetCfg.radius) && planetCfg.radius > 0
+        ) {
             const planet = new Planet(scene, renderer, timeUtils, textureManager, planetCfg);
             planet.naif_id = planetCfg.naif_id;
             app.celestialBodies.push(planet);
             app.bodiesByNaifId[planetCfg.naif_id] = planet;
+        } else if (planetCfg) {
+            console.warn(`Skipping planet ${planetCfg.name} due to missing/invalid data`, planetCfg);
         }
         // Create moons
         for (const moonName of entry.moons) {
             const moonCfg = moons[moonName];
-            if (moonCfg) {
+            if (
+                moonCfg &&
+                typeof moonCfg.radius === 'number' && isFinite(moonCfg.radius) && moonCfg.radius > 0
+            ) {
                 const moon = new Planet(scene, renderer, timeUtils, textureManager, moonCfg);
                 moon.naif_id = moonCfg.naif_id;
                 app.celestialBodies.push(moon);
                 app.bodiesByNaifId[moonCfg.naif_id] = moon;
+            } else if (moonCfg) {
+                console.warn(`Skipping moon ${moonCfg.name} due to missing/invalid data`, moonCfg);
             }
         }
     }
