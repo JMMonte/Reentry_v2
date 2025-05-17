@@ -12,8 +12,8 @@ import { DistantMeshComponent } from './DistantMeshComponent.js';
 import { SoiComponent } from './SoiComponent.js';
 import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
-import { RingComponent } from './RingComponent.js';
 import { RotationComponent } from './RotationComponent.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // ---- General Render Order Constants ----
 export const RENDER_ORDER = {
@@ -38,195 +38,157 @@ export class Planet {
     static setCamera(cam) { Planet.camera = cam; }
 
     constructor(scene, renderer, timeManager, textureManager, config = {}) {
-        const {
-            name, radius,
-            orbitRadius = 0, oblateness = 0,
-            rotationPeriod = 86_400,
-            orbitalPeriod = 365.25,
-            meshRes = 128,
-            atmosphereRes = 128,
-            cloudRes = 128,
-            cloudThickness = 0,
-            orbitElements = null,
-            surfaceOptions = {},
-            primaryGeojsonData, stateGeojsonData,
-            cityData, airportsData, spaceportsData,
-            groundStationsData, observatoriesData, missionsData,
-            addLight = false, lightOptions = {},
-            materials: materialOverrides = {},
-            symbol, lodLevels = [],
-            dotColor = 0xffffff,
-            soiRadius = 0,
-            addRings = false,
-            rings: ringConfig = null,
-            radialGridConfig = null
-        } = config;
-
+        // Always set up core state and groups
         this.scene = scene;
         this.renderer = renderer;
         this.timeManager = timeManager;
         this.textureManager = textureManager;
-
-        this.name = name;
-        this.nameLower = (name || '').toLowerCase();
-        this.symbol = symbol || name.charAt(0);
-
-        this.radius = radius;
-        this.orbitRadius = orbitRadius;
-        this.oblateness = oblateness;
-        this.rotationPeriod = rotationPeriod;
-        this.orbitalPeriod = orbitalPeriod;
-
-        // Guard: ensure radius is valid before proceeding
-        if (typeof this.radius !== 'number' || !isFinite(this.radius) || this.radius <= 0) {
-            throw new Error(`Invalid radius for planet ${this.name}: ${this.radius}`);
-        }
-
-        // Target states for interpolation
+        this.name = config.name;
+        this.nameLower = (config.name || '').toLowerCase();
+        this.symbol = config.symbol || config.name.charAt(0);
+        this.radius = config.radius;
+        this.orbitRadius = config.orbitRadius || 0;
+        this.oblateness = config.oblateness || 0;
+        this.rotationPeriod = config.rotationPeriod || 86_400;
+        this.orbitalPeriod = config.orbitalPeriod || 365.25;
         this.targetPosition = new THREE.Vector3();
         this.targetOrientation = new THREE.Quaternion();
-
         this.hasBeenInitializedByServer = false;
-
-        this.meshRes = meshRes;
-        this.atmosphereRes = atmosphereRes;
-        this.cloudRes = cloudRes;
+        this.meshRes = config.meshRes || 128;
+        this.atmosphereRes = config.atmosphereRes || 128;
+        this.cloudRes = config.cloudRes || 128;
         this.atmosphereThickness = (config.atmosphere && typeof config.atmosphere.thickness === 'number') ? config.atmosphere.thickness : 0;
-        this.cloudThickness = cloudThickness;
-        this.orbitElements = orbitElements;
-
-        this.lodLevels = lodLevels;
+        this.cloudThickness = config.cloudThickness || 0;
+        this.orbitElements = config.orbitElements || null;
+        this.lodLevels = config.lodLevels || [];
         this.dotPixelSizeThreshold = 2;
-        this.dotColor = dotColor;
-        this.soiRadius = soiRadius;
-
-        Planet.instances.push(this);
-        // Component system
+        this.dotColor = config.dotColor || 0xffffff;
+        this.soiRadius = config.soiRadius || 0;
         this.components = [];
-
-        /* ---------- materials ---------- */
-        this.materials = new PlanetMaterials(
-            this.textureManager,
-            this.renderer.capabilities,
-            materialOverrides
-        );
-
-        /* ---------- Render order overrides ---------- */
-        this.renderOrderOverrides = (config.materials && config.materials.renderOrderOverrides) || {};
-        // Dynamic per-planet render order grouping to interleave surface and atmosphere on draw
-        const planetIndex = Planet.instances.length - 1;
-        const blockSize = 10;
-        this.renderOrderOverrides.SURFACE = planetIndex * blockSize + RENDER_ORDER.SURFACE;
-        this.renderOrderOverrides.CLOUDS = planetIndex * blockSize + RENDER_ORDER.CLOUDS;
-        this.renderOrderOverrides.ATMOSPHERE = planetIndex * blockSize + RENDER_ORDER.ATMOSPHERE;
-
-        /* ---------- build ---------- */
+        this.modelUrl = config.model || null;
+        Planet.instances.push(this);
         this.#initGroups();
-        this.#initMaterials();
-        this.#initMeshes();
 
-        if (config.atmosphere) {
-            // Compute thickness and densityScaleHeight from fractions if present
-            const atm = { ...config.atmosphere };
-            if ('thicknessFraction' in atm) {
-                atm.thickness = atm.thicknessFraction * this.radius;
-            }
-            // Store computed thickness on the planet so AtmosphereComponent uses it
-            this.atmosphereThickness = atm.thickness;
-            if ('densityScaleHeightFraction' in atm) {
-                atm.densityScaleHeight = atm.densityScaleHeightFraction * this.radius;
-            }
-            // Normalize scattering coefficients to reference Earth radius
-            const earthRef = celestialBodiesConfig.earth.radius;
-            if (Array.isArray(atm.rayleighScatteringCoeff)) {
-                atm.rayleighScatteringCoeff = atm.rayleighScatteringCoeff.map(v => v * (earthRef / this.radius));
-            }
-            if (typeof atm.mieScatteringCoeff === 'number') {
-                atm.mieScatteringCoeff *= (earthRef / this.radius);
-            }
-            // Build a config copy with computed values
-            const configWithComputedAtmo = { ...config, atmosphere: atm };
-            this.atmosphereComponent = new AtmosphereComponent(
-                this,
-                configWithComputedAtmo,
-                {
-                    vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
-                    fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
+        // If model, load it and skip mesh/atmosphere/surface lines, but DO NOT return early
+        if (this.modelUrl) {
+            this.planetMesh = null;
+            this.modelLoaded = false;
+            const loader = new GLTFLoader();
+            loader.load(
+                this.modelUrl,
+                (gltf) => {
+                    this.planetMesh = gltf.scene;
+                    this.rotationGroup.add(this.planetMesh);
+                    this.modelLoaded = true;
+                    // Dispatch event for listeners (e.g., PlanetVectors)
+                    if (typeof this.onMeshLoaded === 'function') this.onMeshLoaded();
+                    if (typeof this.dispatchEvent === 'function') {
+                        this.dispatchEvent({ type: 'planetMeshLoaded' });
+                    }
+                },
+                undefined,
+                (error) => {
+                    console.error('Error loading 3D model for', this.name, error);
                 }
             );
-            this.components.push(this.atmosphereComponent);
-            // Assign atmosphere mesh and apply render order if available
-            this.atmosphereMesh = this.atmosphereComponent.mesh;
-            if (this.atmosphereMesh) {
-                this.atmosphereMesh.renderOrder = this.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
+        } else {
+            // --- Standard mesh/atmosphere/surface lines logic ---
+            const materialOverrides = config.materials || {};
+            this.materials = new PlanetMaterials(
+                this.textureManager,
+                this.renderer.capabilities,
+                materialOverrides
+            );
+            this.renderOrderOverrides = (config.materials && config.materials.renderOrderOverrides) || {};
+            const planetIndex = Planet.instances.length - 1;
+            const blockSize = 10;
+            this.renderOrderOverrides.SURFACE = planetIndex * blockSize + RENDER_ORDER.SURFACE;
+            this.renderOrderOverrides.CLOUDS = planetIndex * blockSize + RENDER_ORDER.CLOUDS;
+            this.renderOrderOverrides.ATMOSPHERE = planetIndex * blockSize + RENDER_ORDER.ATMOSPHERE;
+            this.#initMaterials();
+            this.#initMeshes();
+            if (config.atmosphere) {
+                const atm = { ...config.atmosphere };
+                if ('thicknessFraction' in atm) atm.thickness = atm.thicknessFraction * this.radius;
+                this.atmosphereThickness = atm.thickness;
+                if ('densityScaleHeightFraction' in atm) atm.densityScaleHeight = atm.densityScaleHeightFraction * this.radius;
+                const earthRef = celestialBodiesConfig.earth.radius;
+                if (Array.isArray(atm.rayleighScatteringCoeff)) atm.rayleighScatteringCoeff = atm.rayleighScatteringCoeff.map(v => v * (earthRef / this.radius));
+                if (typeof atm.mieScatteringCoeff === 'number') atm.mieScatteringCoeff *= (earthRef / this.radius);
+                const configWithComputedAtmo = { ...config, atmosphere: atm };
+                this.atmosphereComponent = new AtmosphereComponent(
+                    this,
+                    configWithComputedAtmo,
+                    {
+                        vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
+                        fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
+                    }
+                );
+                this.components.push(this.atmosphereComponent);
+                this.atmosphereMesh = this.atmosphereComponent.mesh;
+                if (this.atmosphereMesh) {
+                    this.atmosphereMesh.renderOrder = this.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
+                }
             }
-        }
-        this.distantComponent = new DistantMeshComponent(this);
-        this.components.push(this.distantComponent);
-        // Only create surface features for non-barycenter objects
-        this.unrotatedGroup = new THREE.Group();
-        this.scene.add(this.unrotatedGroup);
-
-        // Cloud layer component
-        if (this.cloudMaterial) {
-            this.cloudComponent = new CloudComponent(this);
-            this.components.push(this.cloudComponent);
-        }
-
-        // --- Surface features ---
-        const defaultSurfaceOpts = {
-            addLatitudeLines: true,
-            latitudeStep: 10,
-            addLongitudeLines: true,
-            longitudeStep: 10,
-            addCountryBorders: true,
-            addStates: true,
-            addCities: true,
-            addAirports: true,
-            addSpaceports: true,
-            addGroundStations: true,
-            addObservatories: true,
-            markerSize: 0.7,
-            circleSegments: 8,
-            circleTextureSize: 32,
-            fadeStartPixelSize: 320,
-            fadeEndPixelSize: 240,
-            heightOffset: 0,
-            ...surfaceOptions // allow config to override if needed (for future flexibility)
-        };
-        const polarScale = 1 - this.oblateness;
-        const surfaceOpts = { ...defaultSurfaceOpts, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
-        this.planetMesh.userData.planetName = this.name;
-        this.surface = new PlanetSurface(
-            this.planetMesh,
-            this.radius,
-            primaryGeojsonData,
-            stateGeojsonData,
-            surfaceOpts
-        );
-        // Add surface details (POIs, etc.)
-        if (this.surface) {
-            const o = surfaceOpts;
-            if (o.addLatitudeLines) this.surface.addLatitudeLines(o.latitudeStep);
-            if (o.addLongitudeLines) this.surface.addLongitudeLines(o.longitudeStep);
-            if (o.addCountryBorders) this.surface.addCountryBorders();
-            if (o.addStates) this.surface.addStates();
-            const layers = [
-                [o.addCities, cityData, 'cityPoint', 'cities'],
-                [o.addAirports, airportsData, 'airportPoint', 'airports'],
-                [o.addSpaceports, spaceportsData, 'spaceportPoint', 'spaceports'],
-                [o.addGroundStations, groundStationsData, 'groundStationPoint', 'groundStations'],
-                [o.addObservatories, observatoriesData, 'observatoryPoint', 'observatories'],
-                [o.addMissions, missionsData, 'missionPoint', 'missions']
-            ];
-            for (const [flag, data, matKey, layer] of layers) {
-                if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
+            this.distantComponent = new DistantMeshComponent(this);
+            this.components.push(this.distantComponent);
+            this.unrotatedGroup = new THREE.Group();
+            this.scene.add(this.unrotatedGroup);
+            if (this.cloudMaterial) {
+                this.cloudComponent = new CloudComponent(this);
+                this.components.push(this.cloudComponent);
             }
-        }
-
-        // --- Radial grid ---
-        if (radialGridConfig) {
-            this.radialGrid = new RadialGrid(this, radialGridConfig);
+            const defaultSurfaceOpts = {
+                addLatitudeLines: true,
+                latitudeStep: 10,
+                addLongitudeLines: true,
+                longitudeStep: 10,
+                addCountryBorders: true,
+                addStates: true,
+                addCities: true,
+                addAirports: true,
+                addSpaceports: true,
+                addGroundStations: true,
+                addObservatories: true,
+                markerSize: 0.7,
+                circleSegments: 8,
+                circleTextureSize: 32,
+                fadeStartPixelSize: 320,
+                fadeEndPixelSize: 240,
+                heightOffset: 0,
+                ...config.surfaceOptions // allow config to override if needed
+            };
+            const polarScale = 1 - this.oblateness;
+            const surfaceOpts = { ...defaultSurfaceOpts, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
+            this.planetMesh.userData.planetName = this.name;
+            this.surface = new PlanetSurface(
+                this.planetMesh,
+                this.radius,
+                config.primaryGeojsonData,
+                config.stateGeojsonData,
+                surfaceOpts
+            );
+            if (this.surface) {
+                const o = surfaceOpts;
+                if (o.addLatitudeLines) this.surface.addLatitudeLines(o.latitudeStep);
+                if (o.addLongitudeLines) this.surface.addLongitudeLines(o.longitudeStep);
+                if (o.addCountryBorders) this.surface.addCountryBorders();
+                if (o.addStates) this.surface.addStates();
+                const layers = [
+                    [o.addCities, config.cityData, 'cityPoint', 'cities'],
+                    [o.addAirports, config.airportsData, 'airportPoint', 'airports'],
+                    [o.addSpaceports, config.spaceportsData, 'spaceportPoint', 'spaceports'],
+                    [o.addGroundStations, config.groundStationsData, 'groundStationPoint', 'groundStations'],
+                    [o.addObservatories, config.observatoriesData, 'observatoryPoint', 'observatories'],
+                    [o.addMissions, config.missionsData, 'missionPoint', 'missions']
+                ];
+                for (const [flag, data, matKey, layer] of layers) {
+                    if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
+                }
+            }
+            if (config.radialGridConfig) {
+                this.radialGrid = new RadialGrid(this, config.radialGridConfig);
+            }
         }
 
         // --- SOI (Sphere of Influence) ---
@@ -237,30 +199,8 @@ export class Planet {
             }
         }
 
-        // --- Light ---
-        if (addLight) {
-            const light = new THREE.PointLight(
-                lightOptions.color || 0xffffff,
-                lightOptions.intensity || 1,
-                lightOptions.distance,
-                lightOptions.decay || 1
-            );
-            if (lightOptions.position) light.position.copy(lightOptions.position);
-            this.orbitGroup.add(light);
-            if (lightOptions.helper) this.scene.add(new THREE.PointLightHelper(light, lightOptions.helperSize || 5));
-        }
-
-        // --- Rings ---
-        if (addRings && ringConfig) {
-            this.ringComponent = new RingComponent(this, ringConfig);
-            this.components.push(this.ringComponent);
-        }
-
         this.update(); // initial build and initial per-frame updates
-
-        // Apply base orientation using RotationComponent
         if (this.rotationGroup) {
-            // You can adjust baseRotation or applyBase for debug
             RotationComponent.applyBaseOrientation(this.rotationGroup);
         }
     }
@@ -362,7 +302,7 @@ export class Planet {
         this.components.forEach(c => {
             if (c && typeof c.update === 'function') {
                 if (c === this.distantComponent) return; // Already updated above
-                c.update(); 
+                c.update();
             }
         });
     }

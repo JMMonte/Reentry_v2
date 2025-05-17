@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helveticaRegular from '../../assets/fonts/helvetiker_regular.typeface.json';
 import { LabelFader } from '../../utils/LabelFader.js';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { celestialBodiesConfig } from '../../config/celestialBodiesConfig.js';
+import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 const ARROW_COLORS = {
     northPole: 0x00bfff,
@@ -34,23 +34,67 @@ export class PlanetVectors {
         this.fontLoader = new FontLoader();
         this.font = null;
         this.group = new THREE.Group(); // This group is always added to the scene and remains visible.
-                                         // Its children's visibility will be toggled.
-        scene.add(this.group);
+        // Parent to orientationGroup (ecliptic/orbital frame), not rotationGroup
+        (body.orientationGroup || body.orbitGroup || scene).add(this.group);
+        this.group.position.set(0, 0, 0); // Always at local origin of parent
         this.isBarycenter = isBarycenter;
         const { name = 'Planet', showGreenwich = true } = options;
         this.options = { name, showGreenwich };
-
         this.directionalArrows = [];
         this.directionalLabels = [];
         this.axesHelper = null; // Initialize axesHelper
         this.axisLabels = []; // Initialize axisLabels
-
         if (isBarycenter) {
             // Only create axes helper for barycenters initially, controlled by setAxesVisible
             this.setAxesVisible(false); // Start with axes hidden for barycenters too
             return;
         }
-        // Attempt to parse the imported font JSON
+        // If mesh is not ready, listen for mesh loaded event
+        if (!this.body.getMesh()) {
+            if (typeof this.body.addEventListener === 'function') {
+                this.body.addEventListener('planetMeshLoaded', () => {
+                    this.#initVectorsAsync();
+                });
+            } else {
+                // fallback: poll every 100ms (should not be needed)
+                const poll = setInterval(() => {
+                    if (this.body.getMesh()) {
+                        clearInterval(poll);
+                        this.#initVectorsAsync();
+                    }
+                }, 100);
+            }
+        } else {
+            this.#initVectorsAsync();
+        }
+        // Add axes helpers to both orbitGroup and rotationGroup
+        this.orbitAxesHelper = new THREE.AxesHelper(this.radius * 2);
+        if (body.orbitGroup) {
+            body.orbitGroup.add(this.orbitAxesHelper);
+            this.orbitAxesHelper.position.set(0, 0, 0);
+            this.orbitAxesHelper.visible = false;
+            this.orbitAxesLabels = this.#createAxesLabels(this.radius * 2, ['X', 'Y', 'Z'], 'ecliptic', body.name);
+            this.orbitAxesLabels.forEach(lbl => this.orbitAxesHelper.add(lbl));
+        }
+        // Only X and Y axes for the body (rotation) axes helper
+        this.rotationAxesHelper = new THREE.AxesHelper(this.radius * 2);
+        if (body.rotationGroup) {
+            // Remove the Z axis from the geometry
+            const positions = this.rotationAxesHelper.geometry.attributes.position;
+            // AxesHelper geometry: 6 lines (X+,X-,Y+,Y-,Z+,Z-), each line = 2 points
+            // Remove Z+ and Z- (last 4 points)
+            const newPositions = new Float32Array(4 * 3); // 4 points (X+,X-,Y+,Y-)
+            newPositions.set(positions.array.slice(0, 12));
+            this.rotationAxesHelper.geometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+            body.rotationGroup.add(this.rotationAxesHelper);
+            this.rotationAxesHelper.position.set(0, 0, 0);
+            this.rotationAxesHelper.visible = false;
+            this.rotationAxesLabels = this.#createAxesLabels(this.radius * 2, ['X', 'Y'], 'body', body.name);
+            this.rotationAxesLabels.forEach(lbl => this.rotationAxesHelper.add(lbl));
+        }
+    }
+
+    #initVectorsAsync() {
         try {
             this.font = this.fontLoader.parse(helveticaRegular);
             this.initVectors(); // This will populate directionalArrows and directionalLabels
@@ -64,19 +108,13 @@ export class PlanetVectors {
             console.warn('Font not loaded yet, skipping vector initialization');
             return;
         }
-        this.initNorthPoleVector();
         this.initSunDirection();
-        this.initGreenwichVector();
-        this.initVernalEquinoxVector();
-        
         // Consolidate all directional labels for the LabelFader
         const allLabelsForFader = [...this.directionalLabels]; 
         // Note: AxesHelper CSS2D labels are not part of this LabelFader instance.
-
         const fadeStart = this.radius * 5;
         const fadeEnd = this.radius * 10;
         this.labelFader = new LabelFader(allLabelsForFader, fadeStart, fadeEnd);
-
         // Initially, directional vectors are hidden until toggled on.
         this.setVisible(false);
     }
@@ -114,45 +152,17 @@ export class PlanetVectors {
         return sprite;
     }
 
-    initNorthPoleVector() {
-        // Place at planet mesh position, direction is planet's local Y axis in world space
-        const center = new THREE.Vector3();
-        this.body.getMesh().getWorldPosition(center);
-        const worldQuat = new THREE.Quaternion();
-        this.body.rotationGroup.getWorldQuaternion(worldQuat);
-        const northPoleDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(worldQuat).normalize();
-        this.northPoleVector = new THREE.ArrowHelper(
-            northPoleDirection,
-            center,
-            this.arrowLength,
-            ARROW_COLORS.northPole
-        );
-        this.northPoleVector.setLength(
-            this.arrowLength,
-            this.arrowHeadLength,
-            this.arrowHeadWidth
-        );
-        this.group.add(this.northPoleVector);
-        this.directionalArrows.push(this.northPoleVector); // Add to managed array
-
-        this.northPoleLabel = this.createLabel(
-            `${this.options.name} Rotation Axis (Y)`,
-            center.clone().add(northPoleDirection.clone().multiplyScalar(this.arrowLength))
-        );
-        this.directionalLabels.push(this.northPoleLabel); // Add to managed array
-    }
-
     initSunDirection() {
-        // compute sun direction from sun object in scene
-        const sunPos = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        if (this.sun && this.sun.getWorldPosition) {
+        // Vector from planet to sun, in ecliptic/orbital frame
+        const center = new THREE.Vector3(0, 0, 0);
+        let sunDirection = new THREE.Vector3(1, 0, 0); // fallback
+        if (this.sun && this.sun.getWorldPosition && this.body.getMesh) {
+            const sunPos = new THREE.Vector3();
+            const planetPos = new THREE.Vector3();
             this.sun.getWorldPosition(sunPos);
-        } else {
-            sunPos.set(0, 0, 0); // fallback
+            this.body.getMesh().getWorldPosition(planetPos);
+            sunDirection = sunPos.clone().sub(planetPos).normalize();
         }
-        this.body.getMesh().getWorldPosition(center);
-        const sunDirection = sunPos.clone().sub(center).normalize();
         this.sunDirectionArrow = new THREE.ArrowHelper(
             sunDirection,
             center,
@@ -164,142 +174,42 @@ export class PlanetVectors {
             this.arrowHeadLength,
             this.arrowHeadWidth
         );
-        this.group.add(this.sunDirectionArrow);
-        this.directionalArrows.push(this.sunDirectionArrow); // Add to managed array
-
-        // label at world-space tip location
+        // Parent to orbitGroup for correct ecliptic/orbital frame
+        if (this.body.orbitGroup) {
+            this.body.orbitGroup.add(this.sunDirectionArrow);
+        } else {
+            this.group.add(this.sunDirectionArrow);
+        }
+        this.directionalArrows.push(this.sunDirectionArrow);
         this.sunDirectionLabel = this.createLabel(
             `${this.options.name} Sun Direction`,
             center.clone().add(sunDirection.clone().multiplyScalar(this.arrowLength))
         );
-        this.directionalLabels.push(this.sunDirectionLabel); // Add to managed array
-    }
-
-    initGreenwichVector() {
-        // Prime meridian: local X axis in world space
-        const center = new THREE.Vector3();
-        this.body.getMesh().getWorldPosition(center);
-        const worldQuat = new THREE.Quaternion();
-        this.body.rotationGroup.getWorldQuaternion(worldQuat);
-        const primeMeridianDirection = new THREE.Vector3(1, 0, 0).applyQuaternion(worldQuat).normalize();
-        this.greenwichVector = new THREE.ArrowHelper(
-            primeMeridianDirection,
-            center,
-            this.arrowLength,
-            ARROW_COLORS.greenwich
-        );
-        this.greenwichVector.setLength(
-            this.arrowLength,
-            this.arrowHeadLength,
-            this.arrowHeadWidth
-        );
-        this.group.add(this.greenwichVector);
-        this.directionalArrows.push(this.greenwichVector); // Add to managed array
-
-        this.greenwichLabel = this.createLabel(
-            `${this.options.name} Prime Meridian (X)`,
-            center.clone().add(primeMeridianDirection.clone().multiplyScalar(this.arrowLength))
-        );
-        this.directionalLabels.push(this.greenwichLabel); // Add to managed array
-    }
-
-    initVernalEquinoxVector() {
-        // The vernal equinox direction is the world +X direction (not rotated by planet)
-        const center = new THREE.Vector3();
-        this.body.getMesh().getWorldPosition(center);
-        const vernalEquinoxDir = new THREE.Vector3(1, 0, 0).normalize();
-        this.vernalEquinoxVector = new THREE.ArrowHelper(
-            vernalEquinoxDir,
-            center,
-            this.arrowLength,
-            ARROW_COLORS.equinox
-        );
-        this.vernalEquinoxVector.setLength(
-            this.arrowLength,
-            this.arrowHeadLength,
-            this.arrowHeadWidth
-        );
-        this.group.add(this.vernalEquinoxVector);
-        this.directionalArrows.push(this.vernalEquinoxVector); // Add to managed array
-
-        this.vernalEquinoxLabel = this.createLabel(
-            `${this.options.name} Vernal Equinox (World +X)`,
-            center.clone().add(vernalEquinoxDir.clone().multiplyScalar(this.arrowLength))
-        );
-        this.directionalLabels.push(this.vernalEquinoxLabel); // Add to managed array
+        // Parent label to orbitGroup as well
+        if (this.body.orbitGroup) {
+            this.body.orbitGroup.add(this.sunDirectionLabel);
+        } else {
+            this.group.add(this.sunDirectionLabel);
+        }
+        this.directionalLabels.push(this.sunDirectionLabel);
     }
 
     updateVectors() {
-        // update axis and prime meridian based on world transforms
-        const center = new THREE.Vector3();
-        if (!this.body || !this.body.getMesh || !this.body.getMesh() || !this.body.getOrbitGroup) { // Added check for getOrbitGroup
-            console.warn(`PlanetVectors (ID: ${this.instanceId}, Name: ${this.options.name || 'Unknown'}): body, getMesh(), or getOrbitGroup() is invalid. Skipping update.`);
-            return;
-        }
-        this.body.getMesh().getWorldPosition(center);
-
-        // --- BEGIN DIAGNOSTIC LOGGING ---
-        // Conditional logging to avoid flooding, remove or adjust as needed
-        if (this.options.name) { // Log for all bodies with names
-            let parentName = 'N/A';
-            const parentCenter = new THREE.Vector3();
-            let parentWorldPositionStr = 'N/A';
-            const planetOrbitGroup = this.body.getOrbitGroup();
-            const parentObject = planetOrbitGroup ? planetOrbitGroup.parent : null;
-
-            if (parentObject) {
-                parentName = parentObject.name || 'Unnamed Parent';
-                parentObject.getWorldPosition(parentCenter);
-                parentWorldPositionStr = `x=${parentCenter.x.toFixed(2)}, y=${parentCenter.y.toFixed(2)}, z=${parentCenter.z.toFixed(2)}`;
-            }
-            
-            const planetLocalPosition = planetOrbitGroup ? planetOrbitGroup.position : new THREE.Vector3();
-            const planetLocalPositionStr = `x=${planetLocalPosition.x.toFixed(2)}, y=${planetLocalPosition.y.toFixed(2)}, z=${planetLocalPosition.z.toFixed(2)}`;
-
-            console.log(
-                `PV_Update - ID: ${this.instanceId}, Planet: ${this.options.name}, ` +
-                `PlanetWorldCenter: [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}], ` +
-                `Parent: ${parentName}, ParentWorldCenter: [${parentWorldPositionStr}], ` +
-                `PlanetLocalPos: [${planetLocalPositionStr}], ` +
-                `GroupVisible: ${this.group.visible}`
-            );
-        }
-        // --- END DIAGNOSTIC LOGGING ---
-
-        if (this.northPoleVector) {
-            // recalc orientation along spin axis (planet's local Y axis)
-            const worldQuat = new THREE.Quaternion();
-            this.body.rotationGroup.getWorldQuaternion(worldQuat);
-            const northPoleDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(worldQuat).normalize();
-            this.northPoleVector.position.copy(center);
-            this.northPoleVector.setDirection(northPoleDirection);
-            this.northPoleLabel.position.copy(center.clone().add(northPoleDirection.clone().multiplyScalar(this.arrowLength)));
-        }
+        // All vectors/arrows should use (0,0,0) as their origin in local (ecliptic/orbital) space
+        const center = new THREE.Vector3(0, 0, 0);
         if (this.sunDirectionArrow) {
-            const sunPos = new THREE.Vector3();
-            if (this.sun && this.sun.getWorldPosition) {
+            // Compute the real sun direction every frame
+            let sunDirection = new THREE.Vector3(1, 0, 0); // fallback
+            if (this.sun && this.sun.getWorldPosition && this.body.getMesh) {
+                const sunPos = new THREE.Vector3();
+                const planetPos = new THREE.Vector3();
                 this.sun.getWorldPosition(sunPos);
-            } else {
-                sunPos.set(0, 0, 0);
+                this.body.getMesh().getWorldPosition(planetPos);
+                sunDirection = sunPos.clone().sub(planetPos).normalize();
             }
-            const sunDirection = sunPos.clone().sub(center).normalize();
             this.sunDirectionArrow.position.copy(center);
             this.sunDirectionArrow.setDirection(sunDirection);
             this.sunDirectionLabel.position.copy(center.clone().add(sunDirection.clone().multiplyScalar(this.arrowLength)));
-        }
-        if (this.greenwichVector) {
-            const worldQuat = new THREE.Quaternion();
-            this.body.rotationGroup.getWorldQuaternion(worldQuat);
-            const primeMeridianDirection = new THREE.Vector3(1, 0, 0).applyQuaternion(worldQuat).normalize();
-            this.greenwichVector.position.copy(center);
-            this.greenwichVector.setDirection(primeMeridianDirection);
-            this.greenwichLabel.position.copy(center.clone().add(primeMeridianDirection.clone().multiplyScalar(this.arrowLength)));
-        }
-        if (this.vernalEquinoxVector) {
-            const vernalEquinoxDir = new THREE.Vector3(1, 0, 0).normalize();
-            this.vernalEquinoxVector.position.copy(center);
-            this.vernalEquinoxVector.setDirection(vernalEquinoxDir);
-            this.vernalEquinoxLabel.position.copy(center.clone().add(vernalEquinoxDir.clone().multiplyScalar(this.arrowLength)));
         }
         if (this.axesHelper) {
             this.axesHelper.position.copy(center);
@@ -316,24 +226,9 @@ export class PlanetVectors {
         });
     }
 
-    toggleNorthPoleVectorVisibility(visible) {
-        if (this.northPoleVector) this.northPoleVector.visible = visible;
-        if (this.northPoleLabel) this.northPoleLabel.visible = visible;
-    }
-
     toggleSunDirectionArrowVisibility(visible) {
         if (this.sunDirectionArrow) this.sunDirectionArrow.visible = visible;
         if (this.sunDirectionLabel) this.sunDirectionLabel.visible = visible;
-    }
-
-    toggleGreenwichVectorVisibility(visible) {
-        if (this.greenwichVector) this.greenwichVector.visible = visible;
-        if (this.greenwichLabel) this.greenwichLabel.visible = visible;
-    }
-
-    toggleVernalEquinoxVectorVisibility(visible) {
-        if (this.vernalEquinoxVector) this.vernalEquinoxVector.visible = visible;
-        if (this.vernalEquinoxLabel) this.vernalEquinoxLabel.visible = visible;
     }
 
     // Fade labels based on camera distance: fully visible until fadeStart, then fade out to zero at fadeEnd
@@ -375,57 +270,42 @@ export class PlanetVectors {
     }
 
     setAxesVisible(visible) {
-        if (visible) {
-            // Always update axis size to match current planet radius
-            const size = this.radius * 2;
-            if (!this.axesHelper || this.axesHelper.size !== size) {
-                if (this.axesHelper && this.axesHelper.parent) {
-                    this.group.remove(this.axesHelper);
-                }
-                this.axesHelper = new THREE.AxesHelper(size);
-                this.axesHelper.size = size;
-                this.axesHelper.name = `${this.options.name}_AxesHelper`;
-                // Add labeled axis
-                const color = { X: '#ff0000', Y: '#00ff00', Z: '#0000ff' };
-                this.axisLabels = [];
-                const mkLabel = axis => {
-                    const div = document.createElement('div');
-                    div.className = 'axis-label';
-                    div.textContent = axis;
-                    div.style.color = color[axis];
-                    div.style.fontSize = '14px';
-                    return new CSS2DObject(div);
-                };
-                ['X', 'Y', 'Z'].forEach(axis => {
-                    const lbl = mkLabel(axis);
-                    lbl.position.set(axis === 'X' ? size : 0,
-                        axis === 'Y' ? size : 0,
-                        axis === 'Z' ? size : 0);
-                    this.axesHelper.add(lbl);
-                    this.axisLabels.push(lbl);
-                });
+        if (this.orbitAxesHelper) this.orbitAxesHelper.visible = visible;
+        if (this.rotationAxesHelper) this.rotationAxesHelper.visible = visible;
+        if (this.orbitAxesLabels) this.orbitAxesLabels.forEach(lbl => lbl.visible = visible);
+        if (this.rotationAxesLabels) this.rotationAxesLabels.forEach(lbl => lbl.visible = visible);
+    }
+
+    #createAxesLabels(size, axes = ['X', 'Y', 'Z'], context = '', name = '') {
+        // context: 'ecliptic' or 'body'
+        // name: planet's name
+        const color = { X: '#ff0000', Y: '#00ff00', Z: '#0000ff' };
+        const axisLabels = {
+            ecliptic: {
+                X: `${name} Ecliptic X (Vernal Equinox)`,
+                Y: `${name} Ecliptic Y`,
+                Z: `${name} Ecliptic Z`
+            },
+            body: {
+                X: `${name} Prime Meridian`,
+                Y: `${name} Rotation Axis`
             }
-            // Always update axis position to match planet center
-            let center = new THREE.Vector3();
-            this.body.getMesh().getWorldPosition(center);
-            this.axesHelper.position.copy(center);
-            if (!this.axesHelper.parent) {
-                this.group.add(this.axesHelper);
-            }
-            this.axesHelper.visible = true;
-            if (this.axisLabels) {
-                this.axisLabels.forEach(lbl => lbl.visible = true);
-            }
-        } else {
-            if (this.axesHelper) {
-                 this.axesHelper.visible = false; // Ensure it's hidden
-                 if (this.axisLabels) {
-                    this.axisLabels.forEach(lbl => lbl.visible = false);
-                }
-                // Optionally remove from group if it won't be toggled frequently,
-                // but keeping it and toggling visibility is generally fine.
-                // if (this.axesHelper.parent) this.group.remove(this.axesHelper);
-            }
-        }
+        };
+        return axes.map(axis => {
+            const div = document.createElement('div');
+            div.className = 'axis-label';
+            div.textContent = axisLabels[context]?.[axis] || `${name} ${axis}`;
+            div.style.color = color[axis];
+            div.style.fontSize = '14px';
+            div.style.fontWeight = 'bold';
+            div.style.textShadow = '0 0 2px #000, 0 0 4px #000';
+            const lbl = new CSS2DObject(div);
+            lbl.position.set(
+                axis === 'X' ? size : 0,
+                axis === 'Y' ? size : 0,
+                axis === 'Z' ? size : 0
+            );
+            return lbl;
+        });
     }
 } 

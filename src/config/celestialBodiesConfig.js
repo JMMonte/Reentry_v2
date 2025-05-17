@@ -606,6 +606,7 @@ const moons = {
         symbol: '⧫',
         lodLevels: generateLodLevelsForRadius(6.2),
         soiRadius: 4.18,
+        model: '/3d_models/24879_Deimos_1_1000.glb',
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -625,6 +626,7 @@ const moons = {
         symbol: '◉',
         lodLevels: generateLodLevelsForRadius(11.1),
         soiRadius: 2.44,
+        model: '/3d_models/24878_Phobos_1_1000.glb',
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
