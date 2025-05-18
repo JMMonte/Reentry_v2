@@ -74,6 +74,23 @@ export class OrbitManager {
         return this.scene;
     }
 
+    // Add a helper to centralize GM lookup
+    _getGM(barycenterKey) {
+        // Try runtime object first
+        const barycenterObj = this.app.bodiesByNaifId[celestialBodiesConfig[barycenterKey]?.naif_id];
+        if (barycenterObj && barycenterObj.GM) return barycenterObj.GM;
+        // Try config
+        if (celestialBodiesConfig[barycenterKey]?.GM) return celestialBodiesConfig[barycenterKey].GM;
+        // Sum GM of all children if missing
+        let sum = 0;
+        for (const cfg of Object.values(celestialBodiesConfig)) {
+            if (cfg.parent && cfg.parent.toLowerCase() === barycenterKey && cfg.GM) {
+                sum += cfg.GM;
+            }
+        }
+        return sum > 0 ? sum : undefined;
+    }
+
     /**
      * Render planetary orbits by propagating a 2-body canonical orbit from the current state vector.
      * Call this after planet positions are updated from the backend.
@@ -129,16 +146,7 @@ export class OrbitManager {
                 relPos = body.position.clone().sub(parentObj.position);
                 relVel = body.velocity.clone().sub(parentObj.velocity);
                 // Compute mu (GM) from parent or barycenter children
-                let mu = null;
-                if (parentObj && parentObj.GM) {
-                    mu = parentObj.GM;
-                } else if (parentCfg && parentCfg.type === 'barycenter') {
-                    // Sum GM of all children of this barycenter (planets/moons with this parent)
-                    mu = Object.values(this.app.bodiesByNaifId)
-                        .filter(child => child.parent && child.parent.toLowerCase() === parentKey && child.GM)
-                        .reduce((sum, child) => sum + child.GM, 0);
-                }
-                // Throttle warning to once per body/parent pair
+                mu = this._getGM(parentKey);
                 if (!mu) {
                     if (!window._orbitManagerWarned) window._orbitManagerWarned = new Set();
                     const warnKey = `${body.name}|${cfg.parent}`;
@@ -152,6 +160,8 @@ export class OrbitManager {
             const posObj = { x: relPos.x, y: relPos.y, z: relPos.z };
             const velObj = { x: relVel.x, y: relVel.y, z: relVel.z };
             const elements = stateToKeplerian(posObj, velObj, mu, 0);
+            // Debug: log Keplerian elements
+            // console.log('[LocalOrbit][Elements] Body:', body.name, 'elements:', elements);
             // Only draw orbits for valid elements
             if (!elements || !isFinite(elements.a) || elements.a === 0) continue;
             // Sample points along the orbit
@@ -159,7 +169,7 @@ export class OrbitManager {
             for (let i = 0; i <= numPoints; ++i) {
                 const f = (i / numPoints) * 2 * Math.PI;
                 const p = getPositionAtTrueAnomaly(elements, mu, f);
-                // Use km directly for scene units (no conversion)
+                if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) continue;
                 points.push(new THREE.Vector3(p.x, p.y, p.z));
             }
             // Create geometry and line
@@ -186,9 +196,7 @@ export class OrbitManager {
             });
             if (debugOrbits.length >= 20) break;
         }
-        if (shouldLog && debugOrbits.length) {
-            // console.log('[OrbitManager] Planets & barycenters debug sample:', debugOrbits);
-        }
+
 
         // --- Summary logging ---
 
@@ -198,9 +206,10 @@ export class OrbitManager {
                 const cfg = celestialBodiesConfig[group.name];
                 if (!cfg) continue;
                 // Use parent for mu if available
-                let mu = Constants.sunGravitationalParameter;
-                if (cfg.parent && celestialBodiesConfig[cfg.parent] && celestialBodiesConfig[cfg.parent].mass) {
-                    mu = Constants.G * celestialBodiesConfig[cfg.parent].mass;
+                let mu = this._getGM(group.name);
+                if (!mu) {
+                    console.warn(`[OrbitManager] Skipping orbit for ${group.name}: no GM defined or computable.`);
+                    continue;
                 }
                 // Convert to plain objects for KeplerianUtils
                 const posObj = { x: group.position.x, y: group.position.y, z: group.position.z };
@@ -211,6 +220,7 @@ export class OrbitManager {
                 for (let i = 0; i <= numPoints; ++i) {
                     const f = (i / numPoints) * 2 * Math.PI;
                     const p = getPositionAtTrueAnomaly(elements, mu, f);
+                    if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) continue;
                     points.push(new THREE.Vector3(p.x, p.y, p.z));
                 }
                 const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -224,6 +234,8 @@ export class OrbitManager {
         // Ensure orbit line visibility matches display setting
         const show = this.app.getDisplaySetting?.('showPlanetOrbits') ?? true;
         this.setVisible(show);
+        // Render local system orbits
+        this.renderLocalSystemOrbits();
     }
 
     /**
@@ -261,5 +273,99 @@ export class OrbitManager {
         this.orbitLineMap.forEach(line => {
             line.visible = visible;
         });
+    }
+
+    /**
+     * Render local system orbits: planets around barycenters, moons around system barycenters.
+     */
+    renderLocalSystemOrbits() {
+        const numPoints = 360;
+        // Remove old local system lines if any
+        if (!this.localOrbitLineMap) this.localOrbitLineMap = new Map();
+        this.localOrbitLineMap.forEach(line => {
+            if (line.parent) line.parent.remove(line);
+            line.geometry?.dispose();
+            line.material?.dispose();
+        });
+        this.localOrbitLineMap.clear();
+
+        const logBodies = this.app.celestialBodies;
+        for (const body of logBodies) {
+            const cfg = celestialBodiesConfig[body.nameLower];
+            if (!cfg || !cfg.parent) continue; // Skip bodies without a parent
+            // Remove noisy logs, keep only warnings for near-zero relPos/relVel
+            let parentKey = cfg.parent.toLowerCase();
+            let barycenterKey = null;
+            if (cfg.type === 'planet' && celestialBodiesConfig[parentKey]?.type === 'barycenter') {
+                barycenterKey = parentKey;
+            } else if (cfg.type === 'moon') {
+                barycenterKey = parentKey; // Use the moon's parent directly (planet's barycenter)
+            }
+
+            const barycenterObj = this.app.bodiesByNaifId[celestialBodiesConfig[barycenterKey]?.naif_id];
+            // Defensive: ensure barycenterObj and its position/velocity are defined
+            if (!barycenterKey || !barycenterObj || !barycenterObj.position || !barycenterObj.velocity) continue;
+
+            let referenceObj = barycenterObj;
+            let mu = this._getGM(barycenterKey);
+            // For moons, use the planet's SSB state vector as the reference
+            if (cfg.type === 'moon') {
+                const planetKey = Object.keys(celestialBodiesConfig).find(
+                    k => celestialBodiesConfig[k].naif_id && celestialBodiesConfig[k].naif_id !== undefined &&
+                        celestialBodiesConfig[k].parent && celestialBodiesConfig[k].parent.toLowerCase() === barycenterKey &&
+                        celestialBodiesConfig[k].type === 'planet' &&
+                        body.parent && body.parent.toLowerCase() === barycenterKey &&
+                        body.nameLower !== barycenterKey
+                );
+                if (planetKey && this.app.bodiesByNaifId[celestialBodiesConfig[planetKey].naif_id]) {
+                    referenceObj = this.app.bodiesByNaifId[celestialBodiesConfig[planetKey].naif_id];
+                    mu = this._getGM(planetKey);
+                }
+            }
+            // Defensive: ensure referenceObj and its position/velocity are defined
+            if (!barycenterKey || !referenceObj || !referenceObj.position || !referenceObj.velocity) continue;
+            // Debug: log velocities before computing relVel
+            // if (body && referenceObj) {
+            //     console.log('[LocalOrbit][Debug] Body:', body.name, 'velocity:', body.velocity?.toArray?.(), 'Reference:', referenceObj.name || barycenterKey, 'velocity:', referenceObj.velocity?.toArray?.());
+            // }
+            const relPos = body.position.clone().sub(referenceObj.position);
+            const relVel = body.velocity.clone().sub(referenceObj.velocity);
+            // Strict guard: skip if relPos or relVel are exactly zero (degenerate)
+            if (relPos.length() === 0 || relVel.length() === 0) continue;
+            // Check if barycenter has only one child (the current body)
+            const barycenterChildren = Object.values(celestialBodiesConfig).filter(cfg => cfg.parent && cfg.parent.toLowerCase() === barycenterKey);
+            const isSingleBodyBarycenter = barycenterChildren.length === 1;
+            // Silently skip if planet and barycenter are physically coincident
+            if ((relPos.length() < 1e-3 || relVel.length() < 1e-6) && cfg.type === 'planet' && referenceObj.type === 'barycenter') {
+                continue;
+            }
+            if ((relPos.length() < 1e-3 || relVel.length() < 1e-6) && isSingleBodyBarycenter) {
+                // Skip degenerate local orbit for single-body barycenter (e.g., Mercury)
+                continue;
+            }
+            if (!mu) continue;
+            const posObj = { x: relPos.x, y: relPos.y, z: relPos.z };
+            const velObj = { x: relVel.x, y: relVel.y, z: relVel.z };
+            const elements = stateToKeplerian(posObj, velObj, mu, 0);
+            // Strict guard: skip if elements is null or any element is not finite
+            if (!elements || !isFinite(elements.a) || !isFinite(elements.e) || !isFinite(elements.i) || !isFinite(elements.lan) || !isFinite(elements.arg_p) || !isFinite(elements.f) || elements.a === 0) continue;
+            const points = [];
+            for (let i = 0; i <= numPoints; ++i) {
+                const f = (i / numPoints) * 2 * Math.PI;
+                const p = getPositionAtTrueAnomaly(elements, mu, f);
+                if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) continue;
+                points.push(new THREE.Vector3(p.x, p.y, p.z).add(referenceObj.position));
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const color = cfg.type === 'planet' ? 0x00ff00 : 0x3399ff;
+            const material = new THREE.LineBasicMaterial({ color, transparent: false, opacity: 1, linewidth: 2 });
+            const line = new THREE.Line(geometry, material);
+            line.frustumCulled = false;
+            // Add to barycenter's orbit group if available, else to scene
+            const parentGroup = barycenterObj.getOrbitGroup ? barycenterObj.getOrbitGroup() : this.scene;
+            parentGroup.add(line);
+            this.localOrbitLineMap.set(body.nameLower, line);
+            
+        }
     }
 } 

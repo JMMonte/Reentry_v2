@@ -65,6 +65,35 @@ async function getSatelliteState(sessionId, satId) {
 }
 ```
 
+The response now includes detailed physical and orbital information:
+
+```json
+{
+  "sat_id": 12345,
+  "pos": [7000, 0, 0],
+  "vel": [0, 7.5, 0],
+  "frame": "J2000",
+  "central_body": 399,
+  "a_bodies": { "399": [0.0, -0.001, 0.0], "10": [0.0001, 0.0, 0.0] },
+  "a_j2": [0.0, 0.0, 0.0],
+  "a_drag": [0.0, 0.0, 0.0],
+  "a_total": [0.0, -0.001, 0.0],
+  "altitude_radial": 7000.0, // Distance from central body center (km)
+  "altitude_surface": 621.9, // Altitude above surface (km)
+  "ground_velocity": 7.5, // Speed relative to central body (km/s)
+  "orbital_velocity": 7.5 // (Same as ground_velocity for now)
+}
+```
+
+- `altitude_radial`: Distance from satellite to central body center (km)
+- `altitude_surface`: Altitude above the central body's surface (km, using equatorial radius)
+- `ground_velocity`: Magnitude of velocity relative to the central body (km/s)
+- `orbital_velocity`: (Currently same as ground velocity)
+- `a_bodies`: Dictionary of gravitational accelerations from all bodies (by NAIF ID)
+- `a_j2`: J2 perturbation acceleration vector (km/s²)
+- `a_drag`: Drag acceleration vector (km/s²)
+- `a_total`: Total acceleration vector (km/s²)
+
 ### Delete Satellite
 
 ```js
@@ -259,57 +288,126 @@ async function loadSnapshot(file) {
 ## 7. Rendering Orbits
 
 - Use Three.js or similar. Feed position arrays (trajectory) to draw lines.
+- You can use the `/planet/{naif_id}/trajectory` endpoint to fetch a full ephemeris for any planet or barycenter, with tunable time range and step size.
 - On each animation frame, update mesh positions based on WebSocket streaming or preview data.
+
+## Get Planet Trajectory (Ephemeris)
+
+The `/planet/{naif_id}/trajectory` endpoint allows you to request a propagated trajectory (ephemeris) for any planet or barycenter over a specified time interval. This is useful for rendering orbit lines or animating planetary motion in the frontend.
+
+- **Endpoint:** `POST /planet/{naif_id}/trajectory`
+- **Parameters (in request body):**
+  - `start_epoch` (string, required): Start UTC epoch (e.g., `"2025-01-01T00:00:00"`)
+  - `duration` (float, required): Total duration to propagate (seconds)
+  - `dt` (float, default 60.0): Timestep (seconds)
+  - `frame` (string, default `ECLIPJ2000`): Reference frame (`"J2000"` or `"ECLIPJ2000"`)
+  - `relative_to` (int, default 0): NAIF ID of reference body (default: 0 for SSB)
+  - `session_id` (string, required): Session ID
+
+**Example (axios):**
+
+```js
+async function getPlanetTrajectory(sessionId, naifId, startEpoch, duration, dt = 60, frame = "ECLIPJ2000", relativeTo = 0) {
+  const url = `http://localhost:8000/planet/${naifId}/trajectory`;
+  const body = {
+    start_epoch: startEpoch, // e.g. "2025-01-01T00:00:00"
+    duration: duration,     // seconds
+    dt: dt,                 // seconds per step
+    frame: frame,           // "ECLIPJ2000" or "J2000"
+    relative_to: relativeTo,
+    session_id: sessionId
+  };
+  const resp = await axios.post(url, body);
+  return resp.data.trajectory; // array of { epoch, pos, vel, quat, source }
+}
+```
+
+**Example request:**
+
+```json
+{
+  "start_epoch": "2025-01-01T00:00:00",
+  "duration": 3600,
+  "dt": 600,
+  "frame": "ECLIPJ2000",
+  "relative_to": 0,
+  "session_id": "..."
+}
+```
+
+**Example response:**
+
+```json
+{
+  "naif_id": 399,
+  "trajectory": [
+    {
+      "epoch": 788961669.1839275,
+      "pos": ["-2.7589903173651926e+07", "1.4392362125028765e+08", "1.9199204879015684e+04"],
+      "vel": ["-2.9776785619808795e+01", "-5.5362326391538339e+00", "-1.9452960755650395e-04"],
+      "quat": [0.6263, -0.1289, 0.1569, 0.7526],
+      "source": "spice"
+    },
+    // ... more steps ...
+  ]
+}
+```
+
+- `pos` and `vel` are arrays of strings (scientific notation, 16 decimal places) for maximum precision.
+- `epoch` is the ephemeris time (seconds past J2000).
+- `quat` is the orientation quaternion [w, x, y, z].
+- `source` indicates the data source (e.g., "spice", "kepler_fallback", "canonical").
+
+**Use this endpoint to generate orbit lines or time series for any planet or barycenter.**
 
 ## Planet Placement & Reference Frames
 
 _To render each planet in your scene consistently across different reference frames:_
 
 - Always request your planet state using the same `frame` as your simulation and WebSocket stream.
-- Note: by default, each body's state is returned relative to its natural parent. Main planets use the solar system barycenter (NAIF ID 0); moons (e.g. Jupiter's) use their planet's barycenter.
-- Check the `relative_to` field in the response to see which body the coordinates are relative to. To force a common origin for all bodies, explicitly set `relative_to=0` in your request.
+- By default, each body's state is returned **relative to the Solar System Barycenter (NAIF ID 0)**. You can override this by specifying `relative_to` in your request.
+- Check the `relative_to` and `frame_of_reference` fields in the response to see which body the coordinates are relative to.
 - Fetch planet state via:
 
   ```js
+  // Default: relative to SSB
   const resp = await axios.get(
-    `http://localhost:8000/planet/3?session_id=${sessionId}&frame=ECLIPJ2000`
+    `http://localhost:8000/planet/3?session_id=${sessionId}`
   );
-  const { pos, quat } = resp.data;
+  // Custom: relative to Earth barycenter
+  const resp2 = await axios.get(
+    `http://localhost:8000/planet/399?session_id=${sessionId}&relative_to=3`
+  );
   ```
 
   ```json
   // Example response payload:
   {
-    "naif_id": 3,
+    "naif_id": 399,
     "frame": "ECLIPJ2000",
-    "relative_to": 1,
-    "pos": [150000000.0, -20000000.0, 5000000.0],
-    "vel": [30.0, 20.0, -1.0],
+    "relative_to": 0,
+    "frame_of_reference": 0,
+    "pos": [
+      "-9.7388994600000000e+07",
+      "-1.1688487000000000e+08",
+      "3.2145925500000000e+04"
+    ],
+    "vel": [
+      "2.9780000000000000e+01",
+      "-6.0000000000000000e-01",
+      "1.0000000000000000e-02"
+    ],
     "quat": [0.707, 0.0, 0.707, 0.0],
-    "source": "spice"
+    "source": "spice",
+    "GM": 398600.4418
   }
   ```
 
-- `pos`: kilometers from the natural-parent's center. Convert to your scene's units (e.g., meters):
-
-  ```js
-  const METER_SCALE = 1000; // km -> m
-  mesh.position.set(...pos.map((c) => c * METER_SCALE));
-  ```
-
-- `quat`: orientation quaternion [w, x, y, z]. Apply to align the mesh:
-
-  ```js
-  mesh.setRotationFromQuaternion(
-    new THREE.Quaternion(quat[1], quat[2], quat[3], quat[0])
-  );
-  ```
-
-- Ensure your WebSocket connection uses the same frame:
-
-  ```plaintext
-  ws://localhost:8000/ws?session_id=${sessionId}&frame=ECLIPJ2000
-  ```
+- `pos`: kilometers from the reference body's center (default: SSB), as strings in scientific notation with 16 decimal places for maximum precision (e.g., ["1.2345678901234567e+08", ...]).
+- `vel`: velocity vector in km/s, also as strings in scientific notation.
+- **Note:** The frontend should parse these string values as floats for calculations and rendering.
+- `quat`: orientation quaternion [w, x, y, z].
+- `GM`: gravitational parameter (km³/s²).
 
 ## 8. Tips
 
@@ -351,16 +449,26 @@ _To render each planet in your scene consistently across different reference fra
   "vel": [0, 7.5, 0],
   "frame": "J2000",
   "central_body": 399,
-  "a_bodies": { "399": [0.0, -0.001, 0.0] },
+  "a_bodies": { "399": [0.0, -0.001, 0.0], "10": [0.0001, 0.0, 0.0] },
   "a_j2": [0.0, 0.0, 0.0],
   "a_drag": [0.0, 0.0, 0.0],
-  "a_total": [0.0, -0.001, 0.0]
+  "a_total": [0.0, -0.001, 0.0],
+  "altitude_radial": 7000.0, // Distance from central body center (km)
+  "altitude_surface": 621.9, // Altitude above surface (km)
+  "ground_velocity": 7.5, // Speed relative to central body (km/s)
+  "orbital_velocity": 7.5 // (Same as ground_velocity for now)
 }
 ```
 
 ### Get Planet State
 
 The `/planet/{naif_id}` endpoint provides robust state vector queries for any supported body and epoch:
+
+- **Reference Frame:**
+
+  - By default, all positions and velocities are returned **relative to the Solar System Barycenter (SSB, NAIF ID 0)**.
+  - You can override this by providing the `relative_to` query parameter with any valid NAIF ID (e.g., a planet barycenter or another body).
+  - The response includes a `frame_of_reference` field indicating the NAIF ID used as the reference.
 
 - **Within SPICE coverage:**
   - Returns high-precision state vectors from loaded SPICE kernels.
@@ -372,19 +480,73 @@ The `/planet/{naif_id}` endpoint provides robust state vector queries for any su
   - Returns canonical fallback orbits as defined in `solar_system.py`.
   - The response includes `"source": "canonical"`.
 
+**Example request (default, SSB):**
+
+```js
+const resp = await axios.get(
+  `http://localhost:8000/planet/399?session_id=${sessionId}`
+);
+```
+
 **Example response:**
 
 ```json
 {
-  "naif_id": 9999,
-  "frame": "J2000",
-  "relative_to": 5,
-  "pos": [...],
-  "vel": [...],
-  "quat": [...],
-  "source": "canonical"
+  "naif_id": 399,
+  "frame": "ECLIPJ2000",
+  "relative_to": 0,
+  "frame_of_reference": 0,
+  "pos": [
+    "-9.7388994600000000e+07",
+    "-1.1688487000000000e+08",
+    "3.2145925500000000e+04"
+  ],
+  "vel": [
+    "2.9780000000000000e+01",
+    "-6.0000000000000000e-01",
+    "1.0000000000000000e-02"
+  ],
+  "quat": [0.707, 0.0, 0.707, 0.0],
+  "source": "spice",
+  "GM": 398600.4418
 }
 ```
+
+**Example request (custom reference):**
+
+```js
+const resp = await axios.get(
+  `http://localhost:8000/planet/399?session_id=${sessionId}&relative_to=3`
+);
+```
+
+**Example response:**
+
+```json
+{
+  "naif_id": 399,
+  "frame": "ECLIPJ2000",
+  "relative_to": 3,
+  "frame_of_reference": 3,
+  "pos": [
+    "1.2345678901234567e+08",
+    "-2.3456789012345678e+07",
+    "5.6789012345678901e+06"
+  ],
+  "vel": [
+    "-1.2345678901234567e+01",
+    "2.3456789012345678e+00",
+    "-5.6789012345678901e-01"
+  ],
+  "quat": [0.707, 0.0, 0.707, 0.0],
+  "source": "spice",
+  "GM": 398600.4418
+}
+```
+
+- `pos`: kilometers from the specified reference body's center (default: SSB).
+- `frame_of_reference`: NAIF ID of the reference body used.
+- `GM`: Gravitational parameter of the body (if available).
 
 ### Ephemeris Coverage
 

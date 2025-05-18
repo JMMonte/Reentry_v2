@@ -79,7 +79,7 @@ export const textureDefinitions = [
  * 1) Barycenters & System Anchors
  * ===================================================================== */
 const barycenters = {
-    barycenter: { name: 'ss_barycenter', naif_id: 0, type: 'barycenter' },
+    ss_barycenter: { name: 'ss_barycenter', naif_id: 0, type: 'barycenter' },
     emb: { name: 'emb', naif_id: 3, parent: 'ss_barycenter', type: 'barycenter', GM: 4.035032e14 },
     mercury_barycenter: { name: 'mercury_barycenter', naif_id: 1, parent: 'ss_barycenter', type: 'barycenter', GM: 2.2032e13 },
     venus_barycenter: { name: 'venus_barycenter', naif_id: 2, parent: 'ss_barycenter', type: 'barycenter', GM: 3.24859e14 },
@@ -98,7 +98,7 @@ const planets = {
     /* -------- Earth -------- */
     earth: {
         name: 'earth', parent: 'emb', naif_id: 399, symbol: '♁',
-        radius: EARTH_RAD, rotationOffset: 4.89496121, oblateness: 0.0033528106647474805,
+        radius: EARTH_RAD, oblateness: 0.0033528106647474805,
         cloudThickness: 5,
         primaryGeojsonData: geojsonDataSovereignty,
         stateGeojsonData: geojsonDataStates,
@@ -153,6 +153,7 @@ const planets = {
             labelMarkerStep: 100000,
             radialLines: { count: 22 },
         },
+        type: 'planet',
     },
 
     /* -------- Mercury -------- */
@@ -185,6 +186,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0xcccccc, intensity: 2439.7, helper: false },
+        type: 'planet',
     },
 
     /* -------- Venus -------- */
@@ -231,6 +233,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0xffe066, intensity: 6051.8, helper: false },
+        type: 'planet',
     },
 
     /* -------- Mars -------- */
@@ -271,6 +274,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0xff9933, intensity: 3389.5, helper: false },
+        type: 'planet',
     },
 
     /* -------- Jupiter -------- */
@@ -311,6 +315,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0xffcc99, intensity: 69_911, helper: false },
+        type: 'planet',
     },
 
     /* -------- Saturn -------- */
@@ -358,6 +363,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0xfff2b2, intensity: 58_232, helper: false },
+        type: 'planet',
     },
 
     /* -------- Uranus -------- */
@@ -408,6 +414,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0x99ffff, intensity: 25_362, helper: false },
+        type: 'planet',
     },
 
     /* -------- Neptune -------- */
@@ -455,6 +462,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0x3366ff, intensity: 24_622, helper: false },
+        type: 'planet',
     },
 
     /* -------- Pluto -------- */
@@ -484,6 +492,7 @@ const planets = {
         },
         addLight: true,
         lightOptions: { color: 0xffffff, intensity: 1_188.3, helper: false },
+        type: 'planet',
     },
 
 };
@@ -524,6 +533,7 @@ const moons = {
             ],
             radialLines: { count: 22 },
         },
+        type: 'moon',
     },
 
     /* Jupiter (Galileans) */
@@ -543,6 +553,7 @@ const moons = {
                 params: { roughness: 0.7, metalness: 0.1 }
             },
         },
+        type: 'moon',
     },
     europa: {
         name: 'europa',
@@ -560,6 +571,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     ganymede: {
         name: 'ganymede',
@@ -577,6 +589,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     callisto: {
         name: 'callisto',
@@ -594,6 +607,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
 
     /* Mars */
@@ -616,6 +630,7 @@ const moons = {
                 }
             },
         },
+        type: 'moon',
     },
     phobos: {
         name: 'phobos',
@@ -636,6 +651,7 @@ const moons = {
                 }
             },
         },
+        type: 'moon',
     },
 
     /* Saturn (selection) */
@@ -654,6 +670,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     enceladus: {
         name: 'enceladus',
@@ -670,6 +687,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     tethys: {
         name: 'tethys',
@@ -686,6 +704,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     dione: {
         name: 'dione',
@@ -702,6 +721,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     rhea: {
         name: 'rhea',
@@ -718,6 +738,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     titan: {
         name: 'titan',
@@ -734,6 +755,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     iapetus: {
         name: 'iapetus',
@@ -750,6 +772,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
 
     /* Uranus (selection) */
@@ -768,6 +791,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     umbriel: {
         name: 'umbriel',
@@ -784,6 +808,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     titania: {
         name: 'titania',
@@ -800,6 +825,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     oberon: {
         name: 'oberon',
@@ -816,6 +842,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     miranda: {
         name: 'miranda',
@@ -832,6 +859,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
 
     /* Neptune (selection) */
@@ -850,6 +878,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     proteus: {
         name: 'proteus',
@@ -866,6 +895,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     nereid: {
         name: 'nereid',
@@ -882,6 +912,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
 
     /* Pluto */
@@ -900,6 +931,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     nix: {
         name: 'nix',
@@ -916,6 +948,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     hydra: {
         name: 'hydra',
@@ -932,6 +965,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     kerberos: {
         name: 'kerberos',
@@ -948,6 +982,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
     styx: {
         name: 'styx',
@@ -964,6 +999,7 @@ const moons = {
                 params: {}
             },
         },
+        type: 'moon',
     },
 };
 

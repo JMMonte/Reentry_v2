@@ -37,9 +37,18 @@ const KEPPLER_EPSILON = 1e-9; // Tolerance for Newton-Raphson iteration
 export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
     const r = VectorOps.magnitude(r_vec);
     const v_sq = VectorOps.dot(v_vec, v_vec);
+    const energy = v_sq / 2 - mu / r;
+    const a = -mu / (2 * energy);
+    // Debug log
+    // console.log('[KeplerianDebug] r:', r, 'v_sq:', v_sq, 'energy:', energy, 'a:', a, 'mu:', mu);
 
     const h_vec = VectorOps.cross(r_vec, v_vec); // Specific angular momentum vector
     const h = VectorOps.magnitude(h_vec);
+
+    // Defensive: skip degenerate orbits
+    if (r < 1e-3 || h < 1e-6) {
+        return null;
+    }
 
     const n_vec = VectorOps.cross({ x: 0, y: 0, z: 1 }, h_vec); // Node line vector (points to ascending node)
     const n = VectorOps.magnitude(n_vec);
@@ -50,23 +59,16 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
     const e_vec = VectorOps.sub(e_vec_term1, e_vec_term2);
     const e = VectorOps.magnitude(e_vec); // Eccentricity
 
-    // Specific mechanical energy
-    const energy = v_sq / 2 - mu / r;
+    // Clamp helper for acos
+    const safeAcos = (x) => Math.acos(Math.max(-1, Math.min(1, x)));
 
-    let a; // Semi-major axis
-    if (Math.abs(e - 1.0) < KEPPLER_EPSILON) { // Parabolic
-        a = Infinity; // Or q = h*h / (2*mu) (periapsis distance)
-    } else {
-        a = -mu / (2 * energy);
-    }
-
-    const i = Math.acos(h_vec.z / h); // Inclination
+    const i = safeAcos(h_vec.z / h); // Inclination
 
     let lan; // Longitude of Ascending Node (RAAN)
     if (Math.abs(i) < KEPPLER_EPSILON || Math.abs(i - Math.PI) < KEPPLER_EPSILON) { // Equatorial orbit
         lan = 0; // Conventionally, or undefined. Set to 0.
     } else {
-        lan = Math.acos(n_vec.x / n);
+        lan = safeAcos(n_vec.x / n);
         if (n_vec.y < 0) lan = 2 * Math.PI - lan;
     }
 
@@ -79,12 +81,12 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
         if (VectorOps.cross(r_vec, v_vec).z < 0) arg_p = 2 * Math.PI - arg_p; // Retrograde handling
     }
     else {
-        arg_p = Math.acos(VectorOps.dot(n_vec, e_vec) / (n * e));
+        arg_p = safeAcos(VectorOps.dot(n_vec, e_vec) / (n * e));
         if (e_vec.z < 0) arg_p = 2 * Math.PI - arg_p;
     }
 
     // True Anomaly (nu)
-    let nu = Math.acos(VectorOps.dot(e_vec, r_vec) / (e * r));
+    let nu = safeAcos(VectorOps.dot(e_vec, r_vec) / (e * r));
     if (VectorOps.dot(r_vec, v_vec) < 0) nu = 2 * Math.PI - nu; // If object is moving towards central body
 
     if (Math.abs(e) < KEPPLER_EPSILON) { // Circular orbit
@@ -96,7 +98,6 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
         }
         if (nu < 0) nu += 2 * Math.PI;
     }
-
 
     // Mean Anomaly at epoch (M0)
     let E0; // Eccentric Anomaly at epoch

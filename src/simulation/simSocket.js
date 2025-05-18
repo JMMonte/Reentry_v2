@@ -79,8 +79,20 @@ async function prefetchAllGM(app) {
                         return resp.json();
                     })
                     .then(data => {
+                        // Always use GM from backend if present
                         if (data && typeof data.GM === 'number') {
                             body.GM = data.GM;
+                        }
+                        // Patch: parse pos/vel as floats if present as string arrays
+                        if (data && Array.isArray(data.pos) && typeof data.pos[0] === 'string') {
+                            body.position = new THREE.Vector3(...data.pos.map(Number));
+                        } else if (data && Array.isArray(data.pos)) {
+                            body.position = new THREE.Vector3(...data.pos);
+                        }
+                        if (data && Array.isArray(data.vel) && typeof data.vel[0] === 'string') {
+                            body.velocity = new THREE.Vector3(...data.vel.map(Number));
+                        } else if (data && Array.isArray(data.vel)) {
+                            body.velocity = new THREE.Vector3(...data.vel);
                         }
                     })
                     .catch(err => {
@@ -101,6 +113,7 @@ let _barycenterPlanetPollInterval = null;
 // At the top of your file:
 const _lastSSBPositions = {}; // { naif_id: THREE.Vector3 }
 const _loggedBarycenterPlanetPairs = new Set();
+const _barycenterOffsetKm = {}; // { naif_id: distance }
 
 /**
  * Start live sim stream: msgType 10 = planetary updates, msgType 2 = sim time
@@ -268,11 +281,6 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     debugPosObject = body;
                 }
 
-                if (debugPosObject && debugPosObject.position && typeof debugPosObject.getWorldPosition === 'function') {
-                    // const local = debugPosObject.position.toArray();
-                    // const world = debugPosObject.getWorldPosition(new THREE.Vector3()).toArray();
-                    // console.log(`[SimSocket] NAIF ${naif_id} effective local:`, local, 'world:', world);
-                }
                 _planetaryUpdateNaifIds.add(naif_id);
                 if (Object.keys(_planetaryUpdateSamples).length < 5) {
                     _planetaryUpdateSamples[naif_id] = [posX, posY, posZ];
@@ -289,7 +297,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                         }).join('\n');
                         sampleStr = '\n' + sampleStr; */
                     }
-                    // console.log(`[SimStream] ${_planetaryUpdateCount} planetary updates in last 5 seconds (${naifArr.length} unique bodies)${sampleStr}`);
+
                     _lastPlanetaryLogTime = now;
                     // _planetaryUpdateCount = 0;
                     _planetaryUpdateNaifIds.clear();
@@ -308,8 +316,6 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 if (!currentBody) {
                     console.warn(`[simSocket] No body found for NAIF ID: ${naif_id}. Current keys:`, Object.keys(app.bodiesByNaifId || {}));
                 }
-                // Comment out noisy debug logs:
-                // console.log('[DEBUG] Received NAIF', naif_id, 'body:', currentBody);
 
                 if (currentBody && currentBody.parent && celestialBodiesConfig[currentBody.parent]?.type === 'barycenter') {
                     const barycenterCfg = celestialBodiesConfig[currentBody.parent];
@@ -321,7 +327,6 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                         const dist = planetPos.distanceTo(baryPos);
                         _loggedBarycenterPlanetPairs.add(logKey);
                         _barycenterOffsetKm[currentBody.naif_id] = dist;
-                        // console.log(`[DEBUG] SSB distance between ${currentBody.name} and its barycenter (${barycenterCfg.name}): ${dist.toExponential(3)} km`);
                     }
                 }
             }
