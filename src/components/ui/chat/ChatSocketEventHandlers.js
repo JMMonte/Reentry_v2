@@ -152,7 +152,7 @@ export function handleToolCallSent({ setMessages, socket, outstandingToolCalls, 
                         if (!parsedArgs || typeof parsedArgs !== 'object') {
                             throw new Error('Tool call arguments are missing or invalid');
                         }
-                    } catch (err) {
+                    } catch {
                         // console.error('[TOOL CALL ARGUMENTS ERROR]', { toolCallId, name, args, error: err });
                         socket.emit('tool_response', [{ call_id: toolCallId, output: { error: 'Invalid arguments JSON or missing arguments' } }]);
                         return;

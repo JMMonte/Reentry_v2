@@ -10,7 +10,7 @@
  * ----------------------------------------------------------- */
 
 import * as THREE from 'three';
-import { metersToKm, daysInYear, secondsInDay } from './constants-lite.js';
+import { metersToKm } from './constants-lite.js';
 import {
     earthTexture, earthRoughnessTexture, earthNormalTexture,
     cloudTexture, moonTexture, moonNormalTexture,

@@ -14,6 +14,7 @@ import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
 import { RotationComponent } from './RotationComponent.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RingComponent } from './RingComponent.js';
 
 // ---- General Render Order Constants ----
 export const RENDER_ORDER = {
@@ -107,6 +108,21 @@ export class Planet {
                     this.planetMesh = gltf.scene;
                     this.rotationGroup.add(this.planetMesh);
                     this.modelLoaded = true;
+                    // Add rings for mesh planets after model is loaded
+                    if (config.addRings && config.rings) {
+                        this.ringComponent = new RingComponent(this, config.rings);
+                        this.components.push(this.ringComponent);
+                    }
+                    // If you want to add surface features to mesh planets, do it here:
+                    // Example (uncomment if needed):
+                    // this.planetMesh.userData.planetName = this.name;
+                    // this.surface = new PlanetSurface(
+                    //     this.planetMesh,
+                    //     this.radius,
+                    //     config.primaryGeojsonData,
+                    //     config.stateGeojsonData,
+                    //     surfaceOpts
+                    // );
                     // Dispatch event for listeners (e.g., PlanetVectors)
                     if (typeof this.onMeshLoaded === 'function') this.onMeshLoaded();
                     if (typeof this.dispatchEvent === 'function') {
@@ -215,6 +231,11 @@ export class Planet {
             }
             if (config.radialGridConfig) {
                 this.radialGrid = new RadialGrid(this, config.radialGridConfig);
+            }
+            // Add rings for procedural planets
+            if (config.addRings && config.rings) {
+                this.ringComponent = new RingComponent(this, config.rings);
+                this.components.push(this.ringComponent);
             }
         }
 
