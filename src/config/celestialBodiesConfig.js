@@ -10,7 +10,7 @@
  * ----------------------------------------------------------- */
 
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants.js';
+import { metersToKm, daysInYear, secondsInDay } from './constants-lite.js';
 import {
     earthTexture, earthRoughnessTexture, earthNormalTexture,
     cloudTexture, moonTexture, moonNormalTexture,
@@ -34,7 +34,7 @@ import {
 } from './geojsonData.js';
 
 /* ---------- Constants ---------- */
-const KM_PER_M = Constants.metersToKm;
+const KM_PER_M = metersToKm;
 const EARTH_RAD = 6_378_136.6 * KM_PER_M;
 const MOON_RAD = 1_737_400 * KM_PER_M;
 
@@ -80,15 +80,15 @@ export const textureDefinitions = [
  * ===================================================================== */
 const barycenters = {
     barycenter: { name: 'ss_barycenter', naif_id: 0, type: 'barycenter' },
-    emb: { name: 'emb', naif_id: 3, parent: 'ss_barycenter', type: 'barycenter' },
-    mercury_barycenter: { name: 'mercury_barycenter', naif_id: 1, parent: 'ss_barycenter', type: 'barycenter' },
-    venus_barycenter: { name: 'venus_barycenter', naif_id: 2, parent: 'ss_barycenter', type: 'barycenter' },
-    mars_barycenter: { name: 'mars_barycenter', naif_id: 4, parent: 'ss_barycenter', type: 'barycenter' },
-    jupiter_barycenter: { name: 'jupiter_barycenter', naif_id: 5, parent: 'ss_barycenter', type: 'barycenter' },
-    saturn_barycenter: { name: 'saturn_barycenter', naif_id: 6, parent: 'ss_barycenter', type: 'barycenter' },
-    uranus_barycenter: { name: 'uranus_barycenter', naif_id: 7, parent: 'ss_barycenter', type: 'barycenter' },
-    neptune_barycenter: { name: 'neptune_barycenter', naif_id: 8, parent: 'ss_barycenter', type: 'barycenter' },
-    pluto_barycenter: { name: 'pluto_barycenter', naif_id: 9, parent: 'ss_barycenter', type: 'barycenter' },
+    emb: { name: 'emb', naif_id: 3, parent: 'ss_barycenter', type: 'barycenter', GM: 4.035032e14 },
+    mercury_barycenter: { name: 'mercury_barycenter', naif_id: 1, parent: 'ss_barycenter', type: 'barycenter', GM: 2.2032e13 },
+    venus_barycenter: { name: 'venus_barycenter', naif_id: 2, parent: 'ss_barycenter', type: 'barycenter', GM: 3.24859e14 },
+    mars_barycenter: { name: 'mars_barycenter', naif_id: 4, parent: 'ss_barycenter', type: 'barycenter', GM: 4.282837e13 },
+    jupiter_barycenter: { name: 'jupiter_barycenter', naif_id: 5, parent: 'ss_barycenter', type: 'barycenter', GM: 1.26686534e17 },
+    saturn_barycenter: { name: 'saturn_barycenter', naif_id: 6, parent: 'ss_barycenter', type: 'barycenter', GM: 3.7931187e16 },
+    uranus_barycenter: { name: 'uranus_barycenter', naif_id: 7, parent: 'ss_barycenter', type: 'barycenter', GM: 5.793939e15 },
+    neptune_barycenter: { name: 'neptune_barycenter', naif_id: 8, parent: 'ss_barycenter', type: 'barycenter', GM: 6.836529e15 },
+    pluto_barycenter: { name: 'pluto_barycenter', naif_id: 9, parent: 'ss_barycenter', type: 'barycenter', GM: 8.71e11 },
 };
 
 /* =======================================================================
@@ -461,7 +461,7 @@ const planets = {
     pluto: {
         name: 'pluto', parent: 'pluto_barycenter', naif_id: 999, symbol: '♇',
         mass: 1.303e22, radius: 1_188.3, tilt: 122.472,
-        rotationPeriod: 6.38723 * Constants.daysInYear, oblateness: 0.02488,
+        oblateness: 0.02488,
         lodLevels: generateLodLevelsForRadius(1_188.3),
         soiRadius: 1_200_000,
         materials: {
@@ -498,7 +498,7 @@ const moons = {
     /* Earth */
     moon: {
         name: 'moon', parent: 'emb', naif_id: 301, symbol: '☾',
-        radius: MOON_RAD, rotationPeriod: 29.53058867 * Constants.secondsInDay,
+        radius: MOON_RAD,
         lodLevels: generateLodLevelsForRadius(MOON_RAD),
         soiRadius: 66170,
         missionsData: geojsonDataMissions,

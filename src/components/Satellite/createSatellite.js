@@ -101,7 +101,6 @@ export async function createSatelliteFromLatLon(app, params, selectedBody) {
         throw new Error(`Failed to create satellite: ${error}`);
     }
     const backendSat = await response.json();
-    console.log('[createSatelliteFromLatLon] Backend response:', backendSat);
     // Add to frontend scene (convert km to meters)
     const sat = app.satellites.addSatellite({
         id: backendSat.sat_id,
@@ -113,7 +112,6 @@ export async function createSatelliteFromLatLon(app, params, selectedBody) {
         color: brightColors[Math.floor(Math.random() * brightColors.length)],
         ballisticCoefficient: params.ballisticCoefficient
     });
-    console.log('[createSatelliteFromLatLon] Added satellite:', sat);
     app.createDebugWindow?.(sat);
     app.updateSatelliteList?.();
     return sat;

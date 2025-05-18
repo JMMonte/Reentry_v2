@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { createSceneObjects } from '../setup/setupScene.js';
+import { planets, moons, stars, celestialBodiesConfig } from '../config/celestialBodiesConfig.js';
 
 export const PHYSICS_SERVER_URL = import.meta.env.VITE_PHYSICS_SERVER_URL || 'http://localhost:8000';
 export const PHYSICS_WS_URL = PHYSICS_SERVER_URL.replace(/^http/, 'ws') + '/ws';
@@ -40,6 +41,67 @@ function allPlanetsHavePositionAndVelocity(app) {
     );
 }
 
+// Helper: Build a whitelist of NAIF IDs for which GM can be fetched (real planets, moons, stars only)
+function getSupportedPhysicalNaifIds() {
+    const allConfigs = [
+        ...Object.values(planets),
+        ...Object.values(moons),
+        ...Object.values(stars)
+    ];
+    // Exclude Sun (NAIF 10) if backend does not support it
+    return new Set(
+        allConfigs
+            .filter(cfg =>
+                (cfg.type === 'planet' || cfg.type === 'moon' || cfg.type === 'star') &&
+                cfg.naif_id !== 10 // Exclude Sun if needed
+            )
+            .map(cfg => cfg.naif_id)
+    );
+}
+
+// Pre-fetch GM for all supported physical bodies (planets, moons, Sun) at startup
+// Never fetch GM for barycenters or synthetic objects
+async function prefetchAllGM(app) {
+    if (!app.bodiesByNaifId) return;
+    if (!window._gmFetchCache) window._gmFetchCache = {};
+    if (!window._gmFetchErrorLog) window._gmFetchErrorLog = new Set();
+    const fetches = [];
+    const supportedNaifIds = getSupportedPhysicalNaifIds();
+    for (const naif_id in app.bodiesByNaifId) {
+        const body = app.bodiesByNaifId[naif_id];
+        if (!body || body.GM || !supportedNaifIds.has(Number(naif_id))) continue;
+        if (!window._gmFetchCache[naif_id]) {
+            window._gmFetchCache[naif_id] = true;
+            fetches.push(
+                fetch(`${PHYSICS_SERVER_URL}/planet/${naif_id}`)
+                    .then(resp => {
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        return resp.json();
+                    })
+                    .then(data => {
+                        if (data && typeof data.GM === 'number') {
+                            body.GM = data.GM;
+                        }
+                    })
+                    .catch(err => {
+                        if (!window._gmFetchErrorLog.has(naif_id)) {
+                            window._gmFetchErrorLog.add(naif_id);
+                            console.warn(`[SimSocket] Failed to fetch GM for NAIF ${naif_id}:`, err);
+                        }
+                    })
+            );
+        }
+    }
+    await Promise.all(fetches);
+}
+
+// Start polling loop after scene objects are initialized
+let _barycenterPlanetPollInterval = null;
+
+// At the top of your file:
+const _lastSSBPositions = {}; // { naif_id: THREE.Vector3 }
+const _loggedBarycenterPlanetPairs = new Set();
+
 /**
  * Start live sim stream: msgType 10 = planetary updates, msgType 2 = sim time
  * @param {import('../App3D').default} app
@@ -54,18 +116,14 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
     const frameToUse = frame || 'ECLIPJ2000'; // Ensure frame has a default
     const rateToUse = 60; // Default rate, can be made configurable later
     const url = `${PHYSICS_WS_URL}?session_id=${sessionId}&frame=${frameToUse}&rate=${rateToUse}`;
-    console.log('[SimSocket] Connecting to WebSocket URL:', url); // Log the URL
+
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-        console.log('[SimSocket] WebSocket connection opened.');
         app._simStreamActive = true;
         window.dispatchEvent(new CustomEvent('sim-connection-restored'));
-        // Optional: Send a simple test ping message
-        // const testMsg = new Uint8Array([99]); // Example: byte value 99
-        // ws.send(testMsg.buffer);
-        // console.log('[SimSocket] Sent test ping message.');
+        // Do not prefetch GM here; wait for first planetary update and scene objects
     };
     ws.onerror = err => {
         console.error('[SimStream] WebSocket error:', err);
@@ -98,23 +156,23 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
             if (bytes.length === 85 && dv.getUint8(0) === 10) {
                 // Initialize scene objects if this is the first relevant message
                 if (!app.sceneObjectsInitialized) {
-                    console.log('[SimSocket] First planetary update received. Initializing scene objects...');
                     await createSceneObjects(app);
                     app.sceneObjectsInitialized = true;
-                    console.log('[SimSocket] Scene objects initialized.');
-
+                    // Only now, after all objects are created and bodiesByNaifId is populated:
+                    await prefetchAllGM(app);
                     // Now that objects are initialized, set the initial camera target
                     if (app.cameraControls && typeof app.cameraControls.follow === 'function') {
                         const initialTargetName = app.config?.initialCameraTarget || 'Earth'; // Default to Earth or use app config
-                        console.log(`[SimSocket] Setting initial camera target to: ${initialTargetName}`);
                         app.cameraControls.follow(initialTargetName, app, true); // suppressLog: true for initial setup
                     } else {
-                        console.warn('[SimSocket] app.cameraControls not found or follow method missing after scene init.');
+                        // console.warn('[SimSocket] app.cameraControls not found or follow method missing after scene init.');
                     }
 
                     // Dispatch an event to notify the UI that the scene is ready
                     window.dispatchEvent(new CustomEvent('sceneReadyFromBackend'));
-                    console.log('[SimSocket] Dispatched sceneReadyFromBackend event.');
+                } else {
+                    // If new bodies are added later, call prefetchAllGM again for any missing GM
+                    await prefetchAllGM(app);
                 }
 
                 let offset = 1; // Start offset after msgType
@@ -136,7 +194,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 if (!app.bodiesByNaifId) app.bodiesByNaifId = {};
                 const body = app.bodiesByNaifId[naif_id];
                 if (!body) {
-                    console.warn(`[SimSocket] No body found for NAIF ${naif_id}`);
+                    console.warn(`[simSocket] No body found for NAIF ID: ${naif_id}. Current keys:`, Object.keys(app.bodiesByNaifId || {}));
                     return;
                 }
 
@@ -237,6 +295,35 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     _planetaryUpdateNaifIds.clear();
                     _planetaryUpdateSamples = {};
                 }
+                // Always attempt to render orbits after every planetary update
+                if (app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
+                    app.orbitManager.renderPlanetaryOrbits();
+                }
+
+                // Store last SSB position for each body
+                _lastSSBPositions[naif_id] = new THREE.Vector3(posX, posY, posZ);
+
+                // Use bodiesByNaifId for all lookups:
+                const currentBody = app.bodiesByNaifId?.[naif_id];
+                if (!currentBody) {
+                    console.warn(`[simSocket] No body found for NAIF ID: ${naif_id}. Current keys:`, Object.keys(app.bodiesByNaifId || {}));
+                }
+                // Comment out noisy debug logs:
+                // console.log('[DEBUG] Received NAIF', naif_id, 'body:', currentBody);
+
+                if (currentBody && currentBody.parent && celestialBodiesConfig[currentBody.parent]?.type === 'barycenter') {
+                    const barycenterCfg = celestialBodiesConfig[currentBody.parent];
+                    const baryNaifId = barycenterCfg.naif_id;
+                    const logKey = `${currentBody.naif_id}|${baryNaifId}`;
+                    if (_lastSSBPositions[baryNaifId] && !_loggedBarycenterPlanetPairs.has(logKey)) {
+                        const planetPos = _lastSSBPositions[currentBody.naif_id];
+                        const baryPos = _lastSSBPositions[baryNaifId];
+                        const dist = planetPos.distanceTo(baryPos);
+                        _loggedBarycenterPlanetPairs.add(logKey);
+                        _barycenterOffsetKm[currentBody.naif_id] = dist;
+                        // console.log(`[DEBUG] SSB distance between ${currentBody.name} and its barycenter (${barycenterCfg.name}): ${dist.toExponential(3)} km`);
+                    }
+                }
             }
             // After all planet positions/velocities are updated, update orbit lines
             if (app.sceneObjectsInitialized && app.orbitManager && typeof app.orbitManager.renderPlanetaryOrbits === 'function') {
@@ -286,6 +373,8 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
     };
 
     app.simSocket = ws;
+
+    if (_barycenterPlanetPollInterval) clearInterval(_barycenterPlanetPollInterval);
 }
 
 let _lastPlanetaryLogTime = 0;

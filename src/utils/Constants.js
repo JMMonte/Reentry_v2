@@ -4,7 +4,7 @@ export class Constants {
     static threeJsCannon = 1e3; // Each unit in Three.js is km, each unit in Cannon.js is meters
     static metersToKm = 1e-3; // Conversion factor from meters to kilometers
     static kmToMeters = 1e3; // Conversion factor from kilometers to meters
-    static G = 6.67430e-11; // Updated gravitational constant in m^3 kg^-1 s^-2
+    static G = 6.67430e-20; // Gravitational constant in km^3 kg^-1 s^-2 (for orbital mechanics)
     // Time constants
     static milisecondsInDay = 86400000; // Milliseconds in a day
     static secondsInDay = 86400; // Seconds in a day
@@ -19,7 +19,7 @@ export class Constants {
     static earthPolarRadius = 6356752.314245; // Earth polar radius in meters
     static earthMass = 5.972e24; // Earth mass in kg
     static earthInclination = 23.5; // Earth's axial tilt in degrees
-    static earthGravitationalParameter = Constants.G * Constants.earthMass; // Earth gravitational parameter in m^3/s^2
+    static earthGravitationalParameter = Constants.G * Constants.earthMass; // km^3/s^2
     // Satellite constants
     static satelliteRadius = 2; // Satellite radius in meters
     // Solar system constants
@@ -27,7 +27,7 @@ export class Constants {
     static AU = 1.495978707e11; // Astronomical unit in meters
     // Sun constants
     static sunMass = 1.9885e30; // Sun mass in kg
-    static sunGravitationalParameter = Constants.G * Constants.sunMass; // Sun gravitational parameter m^3/s^2
+    static sunGravitationalParameter = Constants.G * Constants.sunMass; // km^3/s^2
     // Moon constants
     static moonRadius = 1737400; // Moon radius in meters
     static moonMass = 7.342e22; // Moon mass in kg
@@ -39,6 +39,7 @@ export class Constants {
         y: 0,
         z: 0
     };
+    static moonGravitationalParameter = Constants.G * Constants.moonMass; // km^3/s^2
     // Earth atmosphere constants
     static atmosphereScaleHeight = 8500; // Atmosphere scale height in meters
     static atmosphereSeaLevelDensity = 1.225; // Sea level air density in kg/m^3

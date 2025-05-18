@@ -126,7 +126,7 @@ export function handleToolCallSent({ setMessages, socket, outstandingToolCalls, 
     return (data) => {
         data.toolCalls.forEach(toolCall => {
             const { call_id: toolCallId, name, arguments: args } = toolCall;
-            console.log('[TOOL CALL RECEIVED]', { toolCallId, name, args });
+            // console.log('[TOOL CALL RECEIVED]', { toolCallId, name, args });
             setMessages(prev => [
                 ...prev,
                 {
@@ -148,12 +148,12 @@ export function handleToolCallSent({ setMessages, socket, outstandingToolCalls, 
                     let parsedArgs;
                     try {
                         parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
-                        console.log('[TOOL CALL PARSED ARGS]', { toolCallId, name, parsedArgs });
+                        // console.log('[TOOL CALL PARSED ARGS]', { toolCallId, name, parsedArgs });
                         if (!parsedArgs || typeof parsedArgs !== 'object') {
                             throw new Error('Tool call arguments are missing or invalid');
                         }
                     } catch (err) {
-                        console.error('[TOOL CALL ARGUMENTS ERROR]', { toolCallId, name, args, error: err });
+                        // console.error('[TOOL CALL ARGUMENTS ERROR]', { toolCallId, name, args, error: err });
                         socket.emit('tool_response', [{ call_id: toolCallId, output: { error: 'Invalid arguments JSON or missing arguments' } }]);
                         return;
                     }
@@ -212,7 +212,7 @@ export function handleToolCallSent({ setMessages, socket, outstandingToolCalls, 
                     socket.emit('tool_response', [{ call_id: toolCallId, name, output }]);
                     outstandingToolCalls.current.add(toolCallId);
                 } catch (err) {
-                    console.error('[TOOL CALL EXECUTION ERROR]', { toolCallId, name, error: err });
+                    // console.error('[TOOL CALL EXECUTION ERROR]', { toolCallId, name, error: err });
                     socket.emit('tool_response', [{ call_id: toolCallId, name, output: { error: err.message } }]);
                 }
             })();

@@ -220,87 +220,29 @@ export async function createSceneObjects(app) {
 
     // Instantiate OrbitManager for planetary orbits
     app.orbitManager = new OrbitManager({ scene, app });
-    console.log('[createSceneObjects] OrbitManager instantiated:', !!app.orbitManager);
-
-    // 3. Parent ALL bodies appropriately
-    for (const cfg of Object.values(celestialBodiesConfig)) {
-        if (!cfg.parent || typeof cfg.naif_id !== 'number') continue; // Skip if no parent or no ID
-        if (cfg.type === 'barycenter') continue; // Do not parent barycenters under each other
-        const childObject = app.bodiesByNaifId[cfg.naif_id];
-        if (!childObject) {
-            console.warn(`Child object not found for NAIF ID: ${cfg.naif_id} (${cfg.name})`);
-            continue;
-        }
-        // Find parent config and object
-        const parentCfg = celestialBodiesConfig[cfg.parent] || Object.values(celestialBodiesConfig).find(c => c.name === cfg.parent);
-        if (!parentCfg || typeof parentCfg.naif_id !== 'number') {
-            console.warn(`Parent config not found or invalid for child: ${cfg.name} (parent key: ${cfg.parent})`);
-            continue;
-        }
-        const parentObject = app.bodiesByNaifId[parentCfg.naif_id];
-        if (!parentObject) {
-            console.warn(`Parent object not found for NAIF ID: ${parentCfg.naif_id} (${parentCfg.name})`);
-            continue;
-        }
-        // Determine the actual THREE object to parent under
-        let parentAttachmentPoint = parentObject; // Default for Groups or Stars
-        if (parentObject instanceof Planet && parentObject.getOrbitGroup) {
-            parentAttachmentPoint = parentObject.getOrbitGroup(); // Planets have an orbit group
-        }
-        // Determine the actual THREE object to attach
-        let childAttachmentObject = childObject;
-        if (childObject instanceof Planet && childObject.getOrbitGroup) {
-            childAttachmentObject = childObject.getOrbitGroup(); // Planets attach their orbit group
-        } else if (childObject instanceof Sun && childObject.sun) {
-            // Attach BOTH the mesh and the light for Stars
-            console.log(`Parenting Sun (${childObject.name}, NAIF ${cfg.naif_id}) under Parent (${parentObject.name}, NAIF ${parentCfg.naif_id})`);
-            parentAttachmentPoint.add(childObject.sun);
-            parentAttachmentPoint.add(childObject.sunLight);
-            console.log(` - Sun mesh parented: ${!!childObject.sun.parent}`);
-            console.log(` - Sun light parented: ${!!childObject.sunLight.parent}`);
-            continue; // Skip default attachment below for stars
-        }
-        // Perform the parenting
-        if (childAttachmentObject instanceof THREE.Object3D) { // Ensure it's something addable
-            parentAttachmentPoint.add(childAttachmentObject);
-        } else {
-            console.warn(`Cannot parent child object for ${cfg.name}, it's not an Object3D?`, childObject);
-        }
-    }
 
     // Add top-level objects (those with no parent in the config, or whose parent wasn't found) to the scene
     for (const cfg of Object.values(celestialBodiesConfig)) {
         if (typeof cfg.naif_id !== 'number') continue;
-
         const bodyObject = app.bodiesByNaifId[cfg.naif_id];
         if (!bodyObject) continue;
-
         // Determine the actual THREE.Object3D to consider for scene addition
         let object3DForScene;
         if (bodyObject instanceof Planet && bodyObject.getOrbitGroup) {
             object3DForScene = bodyObject.getOrbitGroup();
         } else if (bodyObject instanceof Sun) {
-            // For Sun, we consider its mesh. The light is handled with the mesh.
-            // If sun mesh already has a parent (e.g. SSB), it's already handled.
             if (bodyObject.sun && !bodyObject.sun.parent) {
                 scene.add(bodyObject.sun);
-                if (bodyObject.sunLight && !bodyObject.sunLight.parent) { // Add light if also unparented
+                if (bodyObject.sunLight && !bodyObject.sunLight.parent) {
                     scene.add(bodyObject.sunLight);
                 }
             }
-            continue; // Sun handled, move to next body
+            continue;
         } else if (bodyObject instanceof THREE.Group) {
             object3DForScene = bodyObject;
-            // Debug log for barycenter
-            console.log('[DEBUG] Adding barycenter group to scene:', object3DForScene.name, object3DForScene.position);
         } else {
-            // Potentially other types or unhandled cases
-            console.warn(`Unhandled body type for scene addition: ${cfg.name}`, bodyObject);
             continue;
         }
-
-        // Add to scene if it's a valid Object3D and doesn't already have a parent
-        // (meaning it wasn't parented in the previous loop)
         if (object3DForScene instanceof THREE.Object3D && !object3DForScene.parent) {
             scene.add(object3DForScene);
         }
@@ -359,8 +301,6 @@ export async function createSceneObjects(app) {
 
     // 7. Display tuning
     if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
-
-    console.log('[createSceneObjects] Scene objects created and configured.');
 }
 
 

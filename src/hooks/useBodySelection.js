@@ -101,6 +101,13 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
             return planetObj ? { planet: planetObj, moons: children } : null;
         }).filter(Boolean)
     );
+    // --- PATCH: Add any bodies not already included ---
+    const includedValues = new Set(groupedPlanetOptions.flatMap(g => [g.planet.value, ...g.moons.map(m => m.value)]));
+    (planetOptions || []).forEach(opt => {
+        if (!includedValues.has(opt.value)) {
+            groupedPlanetOptions.push({ planet: opt, moons: [] });
+        }
+    });
 
     return { selectedBody, handleBodyChange, planetOptions, satelliteOptions, getDisplayValue, groupedPlanetOptions };
 } 

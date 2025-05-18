@@ -44,14 +44,13 @@ export class Planet {
             this.renderer = renderer;
             this.timeManager = timeManager;
             this.textureManager = textureManager;
-            this.name = config.name;
-            this.nameLower = (config.name || '').toLowerCase();
-            this.radius = config.radius;
+            Object.assign(this, config); // Copy all config properties, including GM
+            this.nameLower = (this.name || '').toLowerCase();
             this.type = 'barycenter';
             this.targetPosition = new THREE.Vector3();
             this.targetOrientation = new THREE.Quaternion();
             this.velocity = new THREE.Vector3(0, 0, 0);
-            this.meshRes = config.meshRes || 8;
+            this.meshRes = this.meshRes || 8;
             // Minimal group structure
             this.orbitGroup = new THREE.Group();
             this.orientationGroup = new THREE.Group();
@@ -76,8 +75,7 @@ export class Planet {
         this.radius = config.radius;
         this.orbitRadius = config.orbitRadius || 0;
         this.oblateness = config.oblateness || 0;
-        this.rotationPeriod = config.rotationPeriod || 86_400;
-        this.orbitalPeriod = config.orbitalPeriod || 365.25;
+        this.mass = config.mass || 0;
         this.targetPosition = new THREE.Vector3();
         this.targetOrientation = new THREE.Quaternion();
         this.hasBeenInitializedByServer = false;

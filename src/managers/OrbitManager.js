@@ -43,6 +43,11 @@ export class OrbitManager {
         this._parentGroupCache = null;
     }
 
+    getRootGroup() {
+        // Prefer rebaseGroup if available, else fall back to scene
+        return this.app.rebaseGroup || this.scene;
+    }
+
     /**
      * Helper to find the appropriate parent group for an orbit line.
      * Uses the 'parent' property from celestialBodiesConfig if present.
@@ -83,61 +88,109 @@ export class OrbitManager {
         this.orbitLineMap.clear();
 
         const numPoints = 360; // Number of points to sample along the orbit
-        const sceneUnit = 1000; // Convert km to meters for scene units if needed
+        // const sceneUnit = 1000; // Convert km to meters for scene units if needed (no longer used)
 
-        console.log('[OrbitManager] renderPlanetaryOrbits: processing', this.app.celestialBodies.length, 'bodies');
-
-        for (const body of this.app.celestialBodies) {
-            // Only process planets/moons with position and velocity
-            if (!body.getOrbitGroup || !body.position || !body.velocity) {
-                console.log(`[OrbitManager] Skipping ${body.name} (missing getOrbitGroup/position/velocity)`);
-                continue;
-            }
-            const group = this._getParentGroup(body.nameLower);
-            // Get state vector in km, km/s
-            const pos = body.position; // THREE.Vector3, km
-            const vel = body.velocity; // THREE.Vector3, km/s
-            if (!pos || !vel) {
-                console.log(`[OrbitManager] Skipping ${body.name} (no pos/vel)`);
-                continue;
-            }
-            console.log(`[OrbitManager] ${body.name}: pos=`, pos, 'vel=', vel);
-
-            // Convert to plain objects for KeplerianUtils
-            const posObj = { x: pos.x, y: pos.y, z: pos.z };
-            const velObj = { x: vel.x, y: vel.y, z: vel.z };
-            // Use GM of parent body if available, else fallback to sun
+        // --- Smart debug logging every 5 seconds ---
+        if (!this._lastOrbitDebugLog) this._lastOrbitDebugLog = 0;
+        const now = Date.now();
+        const shouldLog = now - this._lastOrbitDebugLog > 5000;
+        if (shouldLog) this._lastOrbitDebugLog = now;
+        let debugOrbits = [];
+        // Log all celestial bodies (planets, barycenters, moons, etc.)
+        const logBodies = this.app.celestialBodies;
+        for (const body of logBodies) {
+            if (!body.getOrbitGroup || !body.position || !body.velocity) continue;
             const cfg = celestialBodiesConfig[body.nameLower];
-            let mu = Constants.sunGravitationalParameter;
-            if (cfg && cfg.parent && celestialBodiesConfig[cfg.parent] && celestialBodiesConfig[cfg.parent].mass) {
-                mu = Constants.G * celestialBodiesConfig[cfg.parent].mass;
-            } else if (cfg && cfg.mass) {
-                mu = Constants.G * cfg.mass;
+            if (!cfg || !cfg.parent) continue; // Must have a parent defined in config
+            // --- Robust parent lookup: always use config.parent (barycenter for planets/moons) ---
+            const parentKey = cfg.parent.toLowerCase();
+            let relPos, relVel, mu;
+            let parentObj = null;
+            if (parentKey === 'ss_barycenter') {
+                // SSB is the inertial origin: position and velocity are (0,0,0)
+                relPos = body.position.clone();
+                relVel = body.velocity.clone();
+                // Use sun's mass for mu if no mass on SSB
+                if (celestialBodiesConfig[body.nameLower] && celestialBodiesConfig[body.nameLower].mass) {
+                    mu = Constants.G * celestialBodiesConfig[body.nameLower].mass;
+                } else if (celestialBodiesConfig.sun && celestialBodiesConfig.sun.mass) {
+                    mu = Constants.G * celestialBodiesConfig.sun.mass;
+                } else {
+                    console.warn(`[OrbitManager] Skipping orbit for ${body.name}: cannot determine mu for SSB parent.`);
+                    continue;
+                }
+            } else {
+                const parentCfg = celestialBodiesConfig[parentKey];
+                parentObj = parentCfg && typeof parentCfg.naif_id === 'number' ? this.app.bodiesByNaifId[parentCfg.naif_id] : undefined;
+                if (!parentObj || !parentObj.position || !parentObj.velocity) {
+                    console.warn(`[OrbitManager] Skipping orbit for ${body.name}: missing or invalid parent '${cfg.parent}'.`);
+                    continue; // Skip this orbit if parent is missing or invalid
+                }
+                relPos = body.position.clone().sub(parentObj.position);
+                relVel = body.velocity.clone().sub(parentObj.velocity);
+                // Compute mu (GM) from parent or barycenter children
+                let mu = null;
+                if (parentObj && parentObj.GM) {
+                    mu = parentObj.GM;
+                } else if (parentCfg && parentCfg.type === 'barycenter') {
+                    // Sum GM of all children of this barycenter (planets/moons with this parent)
+                    mu = Object.values(this.app.bodiesByNaifId)
+                        .filter(child => child.parent && child.parent.toLowerCase() === parentKey && child.GM)
+                        .reduce((sum, child) => sum + child.GM, 0);
+                }
+                // Throttle warning to once per body/parent pair
+                if (!mu) {
+                    if (!window._orbitManagerWarned) window._orbitManagerWarned = new Set();
+                    const warnKey = `${body.name}|${cfg.parent}`;
+                    if (!window._orbitManagerWarned.has(warnKey)) {
+                        window._orbitManagerWarned.add(warnKey);
+                        console.warn(`[OrbitManager] Skipping orbit for ${body.name}: parent '${cfg.parent}' has no GM defined or computable.`);
+                    }
+                    continue;
+                }
             }
-            // Get orbital elements
+            const posObj = { x: relPos.x, y: relPos.y, z: relPos.z };
+            const velObj = { x: relVel.x, y: relVel.y, z: relVel.z };
             const elements = stateToKeplerian(posObj, velObj, mu, 0);
-            if (!elements || !isFinite(elements.a) || elements.a === 0) {
-                console.log(`[OrbitManager] Skipping ${body.name} (invalid elements)`, elements);
-                continue;
-            }
+            // Only draw orbits for valid elements
+            if (!elements || !isFinite(elements.a) || elements.a === 0) continue;
             // Sample points along the orbit
             const points = [];
             for (let i = 0; i <= numPoints; ++i) {
                 const f = (i / numPoints) * 2 * Math.PI;
                 const p = getPositionAtTrueAnomaly(elements, mu, f);
-                // Convert km to meters for scene units
-                points.push(new THREE.Vector3(p.x * sceneUnit, p.y * sceneUnit, p.z * sceneUnit));
+                // Use km directly for scene units (no conversion)
+                points.push(new THREE.Vector3(p.x, p.y, p.z));
             }
             // Create geometry and line
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: false, opacity: 1 });
+            const material = new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: false, opacity: 1, linewidth: 10 });
             const line = new THREE.Line(geometry, material);
             line.frustumCulled = false;
             // Parent to correct group
-            group.add(line);
+            this._getParentGroup(body.nameLower).add(line);
             this.orbitLineMap.set(body.nameLower, line);
-            console.log(`[OrbitManager] Orbit line created for ${body.name}`);
+            debugOrbits.push({
+                name: body.name,
+                parent: parentObj ? parentObj.name || cfg.parent : cfg.parent,
+                relPos: relPos.toArray().map(x => +x.toFixed(2)),
+                relVel: relVel.toArray().map(x => +x.toFixed(5)),
+                elements: {
+                    a: +((elements?.a ?? NaN).toFixed(2)),
+                    e: +((elements?.e ?? NaN).toFixed(5)),
+                    i: +((elements?.i ?? NaN).toFixed(5)),
+                    lan: +((elements?.lan ?? NaN).toFixed(5)),
+                    arg_p: +((elements?.arg_p ?? NaN).toFixed(5)),
+                    f: +((elements?.f ?? NaN).toFixed(5))
+                }
+            });
+            if (debugOrbits.length >= 20) break;
         }
+        if (shouldLog && debugOrbits.length) {
+            // console.log('[OrbitManager] Planets & barycenters debug sample:', debugOrbits);
+        }
+
+        // --- Summary logging ---
 
         // Also render orbits for barycenters (THREE.Group with type === 'barycenter')
         for (const group of Object.values(this.app.bodiesByNaifId)) {
@@ -158,46 +211,19 @@ export class OrbitManager {
                 for (let i = 0; i <= numPoints; ++i) {
                     const f = (i / numPoints) * 2 * Math.PI;
                     const p = getPositionAtTrueAnomaly(elements, mu, f);
-                    points.push(new THREE.Vector3(p.x * sceneUnit, p.y * sceneUnit, p.z * sceneUnit));
+                    points.push(new THREE.Vector3(p.x, p.y, p.z));
                 }
                 const geometry = new THREE.BufferGeometry().setFromPoints(points);
                 const material = new THREE.LineBasicMaterial({ color: 0xffff00, transparent: false, opacity: 1 });
                 const line = new THREE.Line(geometry, material);
                 line.frustumCulled = false;
-                this.scene.add(line);
+                this.getRootGroup().add(line);
                 this.orbitLineMap.set(group.name, line);
             }
         }
         // Ensure orbit line visibility matches display setting
         const show = this.app.getDisplaySetting?.('showPlanetOrbits') ?? true;
         this.setVisible(show);
-
-        // --- TEST: Add a static visible line at the origin ---
-        const testRadius = 2e8; // 200,000,000 km (should be visible at solar system scale)
-        const testPoints = [];
-        for (let i = 0; i <= 100; ++i) {
-            const theta = (i / 100) * 2 * Math.PI;
-            testPoints.push(new THREE.Vector3(
-                testRadius * Math.cos(theta),
-                testRadius * Math.sin(theta),
-                0
-            ));
-        }
-        const testGeometry = new THREE.BufferGeometry().setFromPoints(testPoints);
-        const testMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 5 });
-        const testLine = new THREE.Line(testGeometry, testMaterial);
-        testLine.name = 'TEST_ORBIT_LINE';
-        testLine.visible = show;
-        this.scene.add(testLine);
-        this.orbitLineMap.set('TEST_ORBIT_LINE', testLine);
-    }
-
-    /**
-     * Sample orbits and build Line2 objects for each planet,
-     * adding them to their respective parent objects.
-     */
-    build() {
-        console.warn('[OrbitManager] build disabled; using sim stream for planet positions');
     }
 
     /**
@@ -235,12 +261,5 @@ export class OrbitManager {
         this.orbitLineMap.forEach(line => {
             line.visible = visible;
         });
-    }
-
-    /**
-     * Update all orbits (rebuilds all orbit lines). Call this once per simulation timestep.
-     */
-    update() {
-        console.warn('[OrbitManager] update disabled; using sim stream for planet positions');
     }
 } 

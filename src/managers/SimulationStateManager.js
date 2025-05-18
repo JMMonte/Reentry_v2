@@ -74,7 +74,7 @@ export class SimulationStateManager {
      * @param {Object} state
      */
     importState(state) {
-        console.log('Importing state:', state);
+        // console.log('Importing state:', state);
         this.satellites.dispose();
         this._restoreTimeState(state);
         this._restoreDisplaySettings(state.displaySettings);
