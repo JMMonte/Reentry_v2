@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
+import * as THREE from 'three';
 import { usePhysicsEngine } from '../../hooks/usePhysicsEngine.js';
 import { DraggableModal } from '../modal/DraggableModal.jsx';
 import { Button } from '../button.jsx';
@@ -259,6 +260,134 @@ export function PhysicsControl({ app, isOpen, onClose }) {
                         >
                             ⏰ Reset to Current UTC
                         </Button>
+
+                        <Button
+                            onClick={() => {
+                                // Force orbit regeneration
+                                if (app?.orbitManager?.forceUpdate) {
+                                    const before = app.orbitManager.orbitLineMap.size;
+                                    app.orbitManager.forceUpdate();
+                                    const after = app.orbitManager.orbitLineMap.size;
+                                    console.log(`[PhysicsControl] Forced orbit regeneration: ${before} → ${after} orbits`);
+                                } else if (app?.orbitManager?.renderPlanetaryOrbits) {
+                                    app.orbitManager.renderPlanetaryOrbits();
+                                    console.log('[PhysicsControl] Forced orbit regeneration (fallback method)');
+                                }
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-purple-300"
+                        >
+                            🔄 Force Orbit Regeneration
+                        </Button>
+
+                        <Button
+                            onClick={() => {
+                                // Test Moon orbit precision by checking orbital elements
+                                if (app?.physicsIntegration?.physicsEngine) {
+                                    const engine = app.physicsIntegration.physicsEngine;
+                                    const bodyStates = engine.getSimulationState().bodies;
+                                    
+                                    const moon = bodyStates[301];
+                                    const emb = bodyStates[3];
+                                    
+                                    if (moon && emb) {
+                                        const moonPos = new THREE.Vector3().fromArray(moon.position);
+                                        const embPos = new THREE.Vector3().fromArray(emb.position);
+                                        const distance = moonPos.distanceTo(embPos);
+                                        
+                                        console.log('🌙 Moon Orbit Diagnostics:');
+                                        console.log(`Distance from EMB: ${(distance/1000).toFixed(1)} km`);
+                                        console.log(`Expected range: 356,500 - 406,700 km`);
+                                        console.log(`Moon velocity: [${moon.velocity.map(v => v.toFixed(3)).join(', ')}] km/s`);
+                                        console.log(`EMB velocity: [${emb.velocity.map(v => v.toFixed(3)).join(', ')}] km/s`);
+                                        
+                                        // Check if distance is in reasonable range
+                                        const inRange = distance >= 356500000 && distance <= 406700000;
+                                        console.log(`✅ Distance check: ${inRange ? 'PASS' : 'FAIL'}`);
+                                    }
+                                }
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-yellow-300"
+                        >
+                            🌙 Test Moon Orbit
+                        </Button>
+
+                        <Button
+                            onClick={() => {
+                                // Test coordinate system transformations
+                                if (app?.physicsIntegration?.physicsEngine) {
+                                    const engine = app.physicsIntegration.physicsEngine;
+                                    
+                                    console.log('🔄 Coordinate System Transformation Test:');
+                                    
+                                    // Test the coordinate system verification
+                                    const coordTest = engine.verifyCoordinateSystem();
+                                    console.log('📐 ECLIPJ2000 Verification:', coordTest);
+                                    
+                                    // Test direct GeoMoon output vs transformed output
+                                    try {
+                                        const currentTime = engine.simulationTime;
+                                        console.log('⏰ Test time:', currentTime.toISOString());
+                                        
+                                        // Test Earth-Moon distance calculation
+                                        const bodyStates = engine.getSimulationState().bodies;
+                                        const earth = bodyStates[399];
+                                        const moon = bodyStates[301];
+                                        const emb = bodyStates[3];
+                                        
+                                        if (earth && moon && emb) {
+                                            const earthPos = new THREE.Vector3().fromArray(earth.position);
+                                            const moonPos = new THREE.Vector3().fromArray(moon.position);
+                                            const embPos = new THREE.Vector3().fromArray(emb.position);
+                                            
+                                            // Calculate distances
+                                            const earthMoonDist = earthPos.distanceTo(moonPos);
+                                            const earthEmbDist = earthPos.distanceTo(embPos);
+                                            const moonEmbDist = moonPos.distanceTo(embPos);
+                                            
+                                            console.log('📏 Distance Checks (ECLIPJ2000):');
+                                            console.log(`  Earth-Moon: ${(earthMoonDist/1000).toFixed(1)} km (expected ~384,400)`);
+                                            console.log(`  Earth-EMB: ${(earthEmbDist/1000).toFixed(1)} km (expected ~4,671)`);
+                                            console.log(`  Moon-EMB: ${(moonEmbDist/1000).toFixed(1)} km (expected ~379,729)`);
+                                            
+                                            // Validate expected ranges
+                                            const earthMoonValid = earthMoonDist >= 356500000 && earthMoonDist <= 406700000;
+                                            const earthEmbValid = earthEmbDist >= 3000000 && earthEmbDist <= 6000000;
+                                            const moonEmbValid = moonEmbDist >= 350000000 && moonEmbDist <= 410000000;
+                                            
+                                            console.log('✅ Validation Results:');
+                                            console.log(`  Earth-Moon range: ${earthMoonValid ? 'PASS' : 'FAIL'}`);
+                                            console.log(`  Earth-EMB range: ${earthEmbValid ? 'PASS' : 'FAIL'}`);
+                                            console.log(`  Moon-EMB range: ${moonEmbValid ? 'PASS' : 'FAIL'}`);
+                                            
+                                            // Check barycenter calculation
+                                            const EARTH_MASS = 5.972e24;
+                                            const MOON_MASS = 7.342e22;
+                                            const TOTAL_MASS = EARTH_MASS + MOON_MASS;
+                                            
+                                            const calculatedEMB = new THREE.Vector3()
+                                                .addScaledVector(earthPos, EARTH_MASS / TOTAL_MASS)
+                                                .addScaledVector(moonPos, MOON_MASS / TOTAL_MASS);
+                                            
+                                            const embError = calculatedEMB.distanceTo(embPos);
+                                            console.log(`🎯 EMB calculation error: ${(embError/1000).toFixed(3)} km`);
+                                            console.log(`   Barycenter check: ${embError < 1000 ? 'PASS' : 'FAIL'}`);
+                                        }
+                                        
+                                    } catch (error) {
+                                        console.error('❌ Coordinate test failed:', error);
+                                    }
+                                }
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-cyan-300"
+                        >
+                            🔄 Test Coordinate Transform
+                        </Button>
                     </div>
                 </div>
 
@@ -363,8 +492,38 @@ export function PhysicsControl({ app, isOpen, onClose }) {
                             <div className="font-mono text-[10px]">
                                 {bodyStates[499] ? `Z: ${(bodyStates[499].position[2]/1000).toFixed(1)}` : 'N/A'}
                             </div>
+                            <div className="text-yellow-200 mt-1">Moon Position (km):</div>
+                            <div className="font-mono text-[10px]">
+                                {bodyStates[301] ? `X: ${(bodyStates[301].position[0]/1000).toFixed(1)}` : 'N/A'}
+                            </div>
+                            <div className="font-mono text-[10px]">
+                                {bodyStates[301] ? `Y: ${(bodyStates[301].position[1]/1000).toFixed(1)}` : 'N/A'}
+                            </div>
+                            <div className="font-mono text-[10px]">
+                                {bodyStates[301] ? `Z: ${(bodyStates[301].position[2]/1000).toFixed(1)}` : 'N/A'}
+                            </div>
+                            <div className="text-yellow-200 mt-1">Earth-Moon Barycenter (km):</div>
+                            <div className="font-mono text-[10px]">
+                                {bodyStates[3] ? `X: ${(bodyStates[3].position[0]/1000).toFixed(1)}` : 'N/A'}
+                            </div>
+                            <div className="font-mono text-[10px]">
+                                {bodyStates[3] ? `Y: ${(bodyStates[3].position[1]/1000).toFixed(1)}` : 'N/A'}
+                            </div>
+                            <div className="font-mono text-[10px]">
+                                {bodyStates[3] ? `Z: ${(bodyStates[3].position[2]/1000).toFixed(1)}` : 'N/A'}
+                            </div>
+                            <div className="text-yellow-200 mt-1">Earth-Moon Distance:</div>
+                            <div className="font-mono text-[10px]">
+                                {bodyStates[399] && bodyStates[301] ? 
+                                    `${Math.sqrt(
+                                        Math.pow((bodyStates[399].position[0] - bodyStates[301].position[0])/1000, 2) +
+                                        Math.pow((bodyStates[399].position[1] - bodyStates[301].position[1])/1000, 2) +
+                                        Math.pow((bodyStates[399].position[2] - bodyStates[301].position[2])/1000, 2)
+                                    ).toFixed(1)} km` : 'N/A'
+                                }
+                            </div>
                             <div className="text-gray-400 text-[9px] mt-1">
-                                These positions should change immediately when time changes
+                                Expected: ~384,400 km
                             </div>
                         </div>
                     </div>
@@ -418,6 +577,36 @@ export function PhysicsControl({ app, isOpen, onClose }) {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+
+                {/* Orbital Relationships */}
+                <div className="space-y-1">
+                    <h4 className="text-blue-300 font-semibold">Orbital Relationships</h4>
+                    <div className="text-xs space-y-1 max-h-40 overflow-auto">
+                        <div className="text-yellow-200">Hierarchical Orbits:</div>
+                        {app?.orbitManager?.getOrbitalInfo?.().map((orbit, index) => (
+                            <div key={index} className="border border-gray-600 rounded p-1">
+                                <div className="text-white font-semibold">{orbit.child}</div>
+                                <div className="text-gray-300">orbits {orbit.parent}</div>
+                                <div className="text-[10px] text-gray-400">
+                                    {orbit.points} points • {orbit.visible ? '👁️ Visible' : '🚫 Hidden'}
+                                </div>
+                            </div>
+                        )) || <div className="text-gray-400">OrbitManager not available</div>}
+                        <div className="text-gray-400 text-[10px] mt-2">
+                            ⚪ White: Heliocentric orbits<br/>
+                            🟢 Green: Earth-Moon system<br/>
+                            🔵 Blue: Satellite orbits
+                        </div>
+                        {app?.orbitManager && (
+                            <div className="text-cyan-300 text-[10px] mt-2 border-t border-gray-600 pt-1">
+                                <div>Last Update: {app.orbitManager._lastOrbitUpdate ? 
+                                    new Date(app.orbitManager._lastOrbitUpdate).toLocaleTimeString() : 'Never'}</div>
+                                <div>Total Orbits: {app.orbitManager.orbitLineMap?.size || 0}</div>
+                                <div>Update Strategy: Time jumps {'>'}24h or 30s intervals</div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

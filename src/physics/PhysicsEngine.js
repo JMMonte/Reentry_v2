@@ -35,7 +35,7 @@ export class PhysicsEngine {
             console.warn('[PhysicsEngine] Invalid initial time provided, using current time');
             initialTime = new Date();
         }
-        
+
         this.simulationTime = new Date(initialTime.getTime());
         console.log('[PhysicsEngine] Initializing with time:', this.simulationTime.toISOString());
 
@@ -128,14 +128,14 @@ export class PhysicsEngine {
 
         // Update simulation time
         this.simulationTime = new Date(newTime.getTime());
-        
+
         // Immediately update all body positions and orientations for the new time
         // This ensures perfect synchronization between displayed time and orbital positions
         await this._updateSolarSystemBodies();
-        
+
         // Update barycenters for the new time
         this._updateBarycenters();
-        
+
         // console.log(`[PhysicsEngine] Time updated to ${this.simulationTime.toISOString()} with synchronized positions`);
     }
 
@@ -161,49 +161,41 @@ export class PhysicsEngine {
      * @private
      */
     _initializeSolarSystemBodies() {
-        // Define the solar system bodies we want to track
+        // Define the solar system bodies we want to track with proper NAIF hierarchy
         const solarSystemBodies = [
             { name: 'Sun', naif: 10, mass: 1.989e30 },
             { name: 'Mercury', naif: 199, mass: 3.301e23 },
             { name: 'Venus', naif: 299, mass: 4.867e24 },
+            { name: 'Earth-Moon Barycenter', naif: 3, mass: 5.972e24 + 7.342e22 }, // Earth + Moon mass
             { name: 'Earth', naif: 399, mass: 5.972e24 },
+            { name: 'Moon', naif: 301, mass: 7.342e22 },
             { name: 'Mars', naif: 499, mass: 6.417e23 },
             { name: 'Jupiter', naif: 599, mass: 1.898e27 },
             { name: 'Saturn', naif: 699, mass: 5.683e26 },
             { name: 'Uranus', naif: 799, mass: 8.681e25 },
-            { name: 'Neptune', naif: 899, mass: 1.024e26 },
-            { name: 'Moon', naif: 301, mass: 7.342e22 }
+            { name: 'Neptune', naif: 899, mass: 1.024e26 }
         ];
 
         for (const body of solarSystemBodies) {
             try {
                 let state = null;
 
-                // Try different methods for getting the state
-                if (body.name === 'Moon') {
-                    // Special handling for Moon - try geocentric first
-                    try {
-                        const moonGeo = GeoMoon(this.simulationTime);
-                        const earthState = this._getAstronomyEngineState('Earth', this.simulationTime);
+                // Special handling for Earth-Moon system
+                if (body.name === 'Earth-Moon Barycenter') {
+                    // Get EMB state directly from Astronomy Engine
+                    state = this._getBarycentricState('Earth', this.simulationTime) ||
+                        this._getAstronomyEngineState('Earth', this.simulationTime);
 
-                        if (earthState) {
-                            const AU_TO_KM = 149597870.7;
-                            state = {
-                                position: [
-                                    earthState.position[0] + moonGeo.x / AU_TO_KM * AU_TO_KM,
-                                    earthState.position[1] + moonGeo.y / AU_TO_KM * AU_TO_KM,
-                                    earthState.position[2] + moonGeo.z / AU_TO_KM * AU_TO_KM
-                                ],
-                                velocity: [0, 0, 0] // Will be calculated later
-                            };
-                        }
-                    } catch (moonError) {
-                        console.warn(`Failed to get Moon geocentric position:`, moonError);
-                    }
-                }
+                } else if (body.name === 'Earth') {
+                    // Calculate Earth position relative to EMB
+                    state = this._calculateEarthRelativeToEMB(this.simulationTime);
 
-                // If no specific handling or it failed, try standard methods
-                if (!state) {
+                } else if (body.name === 'Moon') {
+                    // Calculate Moon position relative to EMB
+                    state = this._calculateMoonRelativeToEMB(this.simulationTime);
+
+                } else {
+                    // Standard planetary bodies
                     // Try barycentric state first
                     state = this._getBarycentricState(body.name, this.simulationTime);
 
@@ -216,7 +208,7 @@ export class PhysicsEngine {
                 if (state) {
                     // Calculate orientation for this body
                     const orientation = this._calculateBodyOrientation(body.name, this.simulationTime);
-                    
+
                     this.bodies[body.naif] = {
                         naif: body.naif,
                         name: body.name,
@@ -233,12 +225,12 @@ export class PhysicsEngine {
                         spin: orientation.spin,
                         northPole: orientation.northPole
                     };
-                    console.log(`[PhysicsEngine] Initialized ${body.name} successfully with orientation`);
+                    console.log(`[PhysicsEngine] Initialized ${body.name} successfully`);
                 } else {
                     // Create with default/fallback data
                     console.warn(`[PhysicsEngine] Failed to get state for ${body.name}, using defaults`);
                     const fallbackOrientation = this._calculateBodyOrientation(body.name, this.simulationTime);
-                    
+
                     this.bodies[body.naif] = {
                         naif: body.naif,
                         name: body.name,
@@ -260,7 +252,7 @@ export class PhysicsEngine {
                 console.error(`Failed to initialize ${body.name}:`, error);
                 // Create placeholder body so the system doesn't break
                 const fallbackOrientation = this._calculateBodyOrientation(body.name, this.simulationTime);
-                
+
                 this.bodies[body.naif] = {
                     naif: body.naif,
                     name: body.name,
@@ -294,30 +286,22 @@ export class PhysicsEngine {
             try {
                 let state = null;
 
-                // Try different methods based on body type
-                if (body.name === 'Moon') {
-                    // Special Moon handling
-                    try {
-                        const moonGeo = GeoMoon(this.simulationTime);
-                        const earthBody = this.bodies[399]; // Earth's NAIF ID
-                        if (earthBody) {
-                            const AU_TO_KM = 149597870.7;
-                            state = {
-                                position: [
-                                    earthBody.position.x + moonGeo.x / AU_TO_KM * AU_TO_KM,
-                                    earthBody.position.y + moonGeo.y / AU_TO_KM * AU_TO_KM,
-                                    earthBody.position.z + moonGeo.z / AU_TO_KM * AU_TO_KM
-                                ],
-                                velocity: [0, 0, 0] // Simplified for now
-                            };
-                        }
-                    } catch (moonError) {
-                        console.warn(`Failed to update Moon position:`, moonError);
-                    }
-                }
+                // Special handling for Earth-Moon system
+                if (body.name === 'Earth-Moon Barycenter') {
+                    // Get EMB heliocentric state
+                    state = this._getBarycentricState('Earth', this.simulationTime) ||
+                        this._getAstronomyEngineState('Earth', this.simulationTime);
 
-                // If no special handling or it failed, try standard methods
-                if (!state) {
+                } else if (body.name === 'Earth') {
+                    // Calculate Earth position relative to EMB
+                    state = this._calculateEarthRelativeToEMB(this.simulationTime);
+
+                } else if (body.name === 'Moon') {
+                    // Calculate Moon position relative to EMB
+                    state = this._calculateMoonRelativeToEMB(this.simulationTime);
+
+                } else {
+                    // Standard planetary bodies
                     // Try barycentric first, then heliocentric
                     state = this._getBarycentricState(body.name, this.simulationTime) ||
                         this._getAstronomyEngineState(body.name, this.simulationTime);
@@ -326,7 +310,7 @@ export class PhysicsEngine {
                 if (state) {
                     body.position.set(state.position[0], state.position[1], state.position[2]);
                     body.velocity.set(state.velocity[0], state.velocity[1], state.velocity[2]);
-                    
+
                     // Update orientation for current time
                     const orientation = this._calculateBodyOrientation(body.name, this.simulationTime);
                     body.quaternion.copy(orientation.quaternion);
@@ -354,16 +338,16 @@ export class PhysicsEngine {
                 console.warn(`[PhysicsEngine] Invalid time for ${bodyName}, using current time`);
                 time = new Date();
             }
-            
+
             // Create AstroTime object for Astronomy Engine
             const astroTime = MakeTime(time);
-            
+
             // Use Body function for heliocentric positions
             const helioState = Body(bodyName, astroTime);
 
             // Convert from AU to km
             const AU_TO_KM = 149597870.7;
-            
+
             // Create position vector in J2000 equatorial coordinates
             const eqjPosition = {
                 x: helioState.x * AU_TO_KM,
@@ -387,10 +371,10 @@ export class PhysicsEngine {
 
             // Transform from J2000 equatorial (EQJ) to J2000 ecliptic (ECL)
             const rotationMatrix = Rotation_EQJ_ECL();
-            
+
             // Transform position vector
             const eclPosition = RotateVector(rotationMatrix, eqjPosition);
-            
+
             // Transform velocity vector
             const eclVelocity = RotateVector(rotationMatrix, eqjVelocity);
 
@@ -415,7 +399,7 @@ export class PhysicsEngine {
                 console.warn(`[PhysicsEngine] Invalid time for ${bodyName}, using current time`);
                 time = new Date();
             }
-            
+
             // Create AstroTime object and use direct BaryState import
             const astroTime = MakeTime(time);
             const baryState = BaryState(bodyName, astroTime);
@@ -441,10 +425,10 @@ export class PhysicsEngine {
 
             // Transform from J2000 equatorial (EQJ) to J2000 ecliptic (ECL)
             const rotationMatrix = Rotation_EQJ_ECL();
-            
+
             // Transform position vector
             const eclPosition = RotateVector(rotationMatrix, eqjPosition);
-            
+
             // Transform velocity vector
             const eclVelocity = RotateVector(rotationMatrix, eqjVelocity);
 
@@ -459,7 +443,8 @@ export class PhysicsEngine {
     }
 
     /**
-     * Private: Update barycenter positions
+     * Update barycenter positions based on current body states
+     * @private
      */
     _updateBarycenters() {
         // Solar System Barycenter (SSB) - always at origin
@@ -471,26 +456,39 @@ export class PhysicsEngine {
             mass: 0 // Computed dynamically
         });
 
-        // Earth-Moon Barycenter
+        // Earth-Moon Barycenter - verify calculated position matches our tracked EMB
         const earth = this.bodies[399];
         const moon = this.bodies[301];
+        const embBody = this.bodies[3];
+
         if (earth && moon) {
             const totalMass = earth.mass + moon.mass;
-            const baryPos = new THREE.Vector3()
+            const calculatedBaryPos = new THREE.Vector3()
                 .addScaledVector(earth.position, earth.mass / totalMass)
                 .addScaledVector(moon.position, moon.mass / totalMass);
-            const baryVel = new THREE.Vector3()
+            const calculatedBaryVel = new THREE.Vector3()
                 .addScaledVector(earth.velocity, earth.mass / totalMass)
                 .addScaledVector(moon.velocity, moon.mass / totalMass);
 
             this.barycenters.set(3, {
                 naif: 3,
                 name: 'Earth-Moon Barycenter',
-                position: baryPos,
-                velocity: baryVel,
+                position: calculatedBaryPos,
+                velocity: calculatedBaryVel,
                 mass: totalMass
             });
+
+            // Verify that our calculated barycenter matches the tracked EMB body
+            if (embBody) {
+                const positionDiff = calculatedBaryPos.distanceTo(embBody.position);
+                if (positionDiff > 1000) { // More than 1000 km difference
+                    console.warn(`[PhysicsEngine] EMB position mismatch: calculated vs tracked = ${positionDiff.toFixed(1)} km`);
+                }
+            }
         }
+
+        // Add other barycenter systems as needed (Jupiter system, etc.)
+        // For now, we focus on the Earth-Moon system
     }
 
     /**
@@ -623,6 +621,7 @@ export class PhysicsEngine {
      */
     _getBodyRadius(naifId) {
         const radii = {
+            3: 6371.0,    // Earth-Moon Barycenter (use Earth radius as reference)
             10: 696000,   // Sun
             199: 2439.7,  // Mercury
             299: 6051.8,  // Venus
@@ -788,7 +787,7 @@ export class PhysicsEngine {
     verifyCoordinateSystem(time = null) {
         const testTime = time || this.simulationTime;
         const astroTime = MakeTime(testTime);
-        
+
         try {
             // Test 1: Verify that the vernal equinox direction is indeed the X-axis
             // The vernal equinox is at RA=0h, Dec=0° in J2000 equatorial coordinates
@@ -798,35 +797,35 @@ export class PhysicsEngine {
                 z: 0, // sin(0°)
                 t: astroTime
             };
-            
+
             // Transform to ECLIPJ2000
             const rotationMatrix = Rotation_EQJ_ECL();
             const vernalEquinoxECL = RotateVector(rotationMatrix, vernalEquinoxEQJ);
-            
+
             console.log(`[PhysicsEngine] Vernal Equinox in ECLIPJ2000: (${vernalEquinoxECL.x.toFixed(6)}, ${vernalEquinoxECL.y.toFixed(6)}, ${vernalEquinoxECL.z.toFixed(6)})`);
             console.log(`[PhysicsEngine] Should be close to (1, 0, 0) for proper X-axis alignment`);
-            
+
             // Test 2: Check obliquity of ecliptic (should be ~23.4°)
             const celestialNorthPoleEQJ = {
                 x: 0,
-                y: 0, 
+                y: 0,
                 z: 1, // North celestial pole in equatorial coordinates
                 t: astroTime
             };
-            
+
             const celestialNorthPoleECL = RotateVector(rotationMatrix, celestialNorthPoleEQJ);
             const obliquity = Math.acos(celestialNorthPoleECL.z) * (180 / Math.PI);
-            
+
             console.log(`[PhysicsEngine] Obliquity of ecliptic: ${obliquity.toFixed(4)}° (expected ~23.4°)`);
-            
+
             return {
                 vernalEquinoxDirection: [vernalEquinoxECL.x, vernalEquinoxECL.y, vernalEquinoxECL.z],
                 obliquity: obliquity,
-                isValid: Math.abs(vernalEquinoxECL.x - 1.0) < 0.001 && 
-                        Math.abs(vernalEquinoxECL.y) < 0.001 && 
-                        Math.abs(vernalEquinoxECL.z) < 0.001
+                isValid: Math.abs(vernalEquinoxECL.x - 1.0) < 0.001 &&
+                    Math.abs(vernalEquinoxECL.y) < 0.001 &&
+                    Math.abs(vernalEquinoxECL.z) < 0.001
             };
-            
+
         } catch (error) {
             console.error('[PhysicsEngine] Coordinate system verification failed:', error);
             return { isValid: false, error: error.message };
@@ -844,30 +843,36 @@ export class PhysicsEngine {
                 console.warn(`[PhysicsEngine] Invalid time for ${bodyName} orientation, using current time`);
                 time = new Date();
             }
-            
+
+            // Special handling for Earth-Moon Barycenter - use Earth's orientation
+            let actualBodyName = bodyName;
+            if (bodyName === 'Earth-Moon Barycenter') {
+                actualBodyName = 'Earth';
+            }
+
             const astroTime = MakeTime(time);
-            const axisInfo = RotationAxis(bodyName, astroTime);
-            
+            const axisInfo = RotationAxis(actualBodyName, astroTime);
+
             // The axis info gives us (in J2000 equatorial coordinates):
             // - ra: right ascension of north pole (hours) - measured from vernal equinox
             // - dec: declination of north pole (degrees) - measured from celestial equator
             // - spin: rotation angle of prime meridian (degrees) - measured from ascending node of equator on fixed plane
-            
+
             // Convert RA from hours to radians (15° per hour)
             const raRad = axisInfo.ra * (Math.PI / 12);
-            
+
             // Convert declination from degrees to radians
             const decRad = axisInfo.dec * (Math.PI / 180);
-            
+
             // Convert spin from degrees to radians
             const spinRad = axisInfo.spin * (Math.PI / 180);
-            
+
             // Create the pole direction vector in J2000 equatorial coordinates
             // This is the planet's rotation axis (north pole direction)
             const poleX_eqj = Math.cos(decRad) * Math.cos(raRad);
             const poleY_eqj = Math.cos(decRad) * Math.sin(raRad);
             const poleZ_eqj = Math.sin(decRad);
-            
+
             // Transform pole vector from J2000 equatorial (EQJ) to J2000 ecliptic (ECL)
             const poleVector_eqj = {
                 x: poleX_eqj,
@@ -875,43 +880,43 @@ export class PhysicsEngine {
                 z: poleZ_eqj,
                 t: astroTime
             };
-            
+
             const rotationMatrix = Rotation_EQJ_ECL();
             const poleVector_ecl = RotateVector(rotationMatrix, poleVector_eqj);
-            
+
             // Create Three.js vector from transformed coordinates (now in ECLIPJ2000)
             const poleVector = new THREE.Vector3(poleVector_ecl.x, poleVector_ecl.y, poleVector_ecl.z);
-            
+
             // Now we need to construct the orientation properly
             // In ECLIPJ2000: X-axis points to vernal equinox, Z-axis points to north ecliptic pole
-            
+
             // Step 1: Find the prime meridian direction in the equatorial plane of the planet
             // The spin angle is measured from the ascending node of the planet's equator
             // We need to use the vernal equinox direction as the reference
-            
+
             // Start with the vernal equinox direction (ECLIPJ2000 X-axis)
             const vernalEquinox = new THREE.Vector3(1, 0, 0);
-            
+
             // Project the vernal equinox onto the planet's equatorial plane
             // by removing the component parallel to the pole
             const poleComponent = vernalEquinox.clone().projectOnVector(poleVector);
             const primeReference = vernalEquinox.clone().sub(poleComponent).normalize();
-            
+
             // If the result is too small (pole nearly parallel to vernal equinox), use Y-axis
             if (primeReference.length() < 0.1) {
                 const yAxis = new THREE.Vector3(0, 1, 0);
                 const poleComponentY = yAxis.clone().projectOnVector(poleVector);
                 primeReference.copy(yAxis).sub(poleComponentY).normalize();
             }
-            
+
             // Step 2: Apply the spin rotation to get the actual prime meridian direction
             const spinQuaternion = new THREE.Quaternion().setFromAxisAngle(poleVector, spinRad);
             const primeMeridianDirection = primeReference.clone().applyQuaternion(spinQuaternion);
-            
+
             // Apply 90° correction around the pole to fix surface orientation
             const correctionQuaternion = new THREE.Quaternion().setFromAxisAngle(poleVector, Math.PI / 2);
             primeMeridianDirection.applyQuaternion(correctionQuaternion);
-            
+
             // Step 3: Construct the planet's coordinate system
             // For a Z-up system (after base rotation):
             // Z-axis: pole direction (rotation axis)
@@ -920,12 +925,12 @@ export class PhysicsEngine {
             const planetZ = poleVector.clone().normalize();
             const planetX = primeMeridianDirection.clone().normalize();
             const planetY = new THREE.Vector3().crossVectors(planetX, planetZ).normalize(); // Fixed order
-            
+
             // Ensure right-handed system
             if (planetX.dot(new THREE.Vector3().crossVectors(planetY, planetZ)) < 0) {
                 planetY.negate();
             }
-            
+
             // Step 4: Create rotation matrix that transforms FROM planet frame TO ECLIPJ2000
             // In planet frame: X=prime meridian, Y=completes system, Z=north pole
             // In ECLIPJ2000: X=vernal equinox, Y=90° east ecliptic, Z=north ecliptic pole
@@ -935,12 +940,12 @@ export class PhysicsEngine {
                 planetX.y, planetY.y, planetZ.y,
                 planetX.z, planetY.z, planetZ.z
             );
-            
+
             // Convert rotation matrix to quaternion
             const quaternion = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().setFromMatrix3(rotMatrix));
-            
+
             // No base rotation compensation needed - coordinate transformation handled at orbital level
-            
+
             return {
                 quaternion: quaternion,
                 poleRA: axisInfo.ra,
@@ -958,6 +963,243 @@ export class PhysicsEngine {
                 spin: 0,
                 northPole: new THREE.Vector3(0, 0, 1)
             };
+        }
+    }
+
+    /**
+     * Calculate Earth position relative to Earth-Moon Barycenter
+     * @private
+     */
+    _calculateEarthRelativeToEMB(time) {
+        try {
+            // Get Moon's geocentric position from Astronomy Engine (returns J2000 equatorial)
+            const moonGeo = GeoMoon(time);
+
+            // Moon constants
+            const MOON_MASS = 7.342e22; // kg
+            const EARTH_MASS = 5.972e24; // kg
+            const TOTAL_MASS = EARTH_MASS + MOON_MASS;
+
+            // Convert Moon position from AU to km and transform to ECLIPJ2000
+            const AU_TO_KM = 149597870.7;
+
+            // Create position vector in J2000 equatorial coordinates
+            const moonGeoEQJ = {
+                x: moonGeo.x * AU_TO_KM,
+                y: moonGeo.y * AU_TO_KM,
+                z: moonGeo.z * AU_TO_KM,
+                t: MakeTime(time)
+            };
+
+            // Transform from J2000 equatorial (EQJ) to J2000 ecliptic (ECL)
+            const rotationMatrix = Rotation_EQJ_ECL();
+            const moonGeoECL = RotateVector(rotationMatrix, moonGeoEQJ);
+
+            const moonRelativePos = {
+                x: moonGeoECL.x,
+                y: moonGeoECL.y,
+                z: moonGeoECL.z
+            };
+
+            // Earth position is offset from EMB in opposite direction of Moon
+            // by the ratio of Moon mass to total mass
+            const earthOffset = MOON_MASS / TOTAL_MASS;
+
+            // Get EMB heliocentric state
+            const embState = this._getBarycentricState('Earth', time) ||
+                this._getAstronomyEngineState('Earth', time);
+
+            if (!embState) {
+                throw new Error('Could not get EMB state');
+            }
+
+            // Calculate Earth's position relative to EMB
+            const earthPos = [
+                embState.position[0] - moonRelativePos.x * earthOffset,
+                embState.position[1] - moonRelativePos.y * earthOffset,
+                embState.position[2] - moonRelativePos.z * earthOffset
+            ];
+
+            // Calculate accurate velocity using finite differences
+            const dt = 60; // seconds
+            const futureTime = new Date(time.getTime() + dt * 1000);
+            const pastTime = new Date(time.getTime() - dt * 1000);
+
+            // Get Moon positions at future and past times (in J2000 equatorial)
+            const futureGeo = GeoMoon(futureTime);
+            const pastGeo = GeoMoon(pastTime);
+
+            // Transform future and past positions to ECLIPJ2000
+            const futureGeoEQJ = {
+                x: futureGeo.x * AU_TO_KM,
+                y: futureGeo.y * AU_TO_KM,
+                z: futureGeo.z * AU_TO_KM,
+                t: MakeTime(futureTime)
+            };
+
+            const pastGeoEQJ = {
+                x: pastGeo.x * AU_TO_KM,
+                y: pastGeo.y * AU_TO_KM,
+                z: pastGeo.z * AU_TO_KM,
+                t: MakeTime(pastTime)
+            };
+
+            const futureGeoECL = RotateVector(rotationMatrix, futureGeoEQJ);
+            const pastGeoECL = RotateVector(rotationMatrix, pastGeoEQJ);
+
+            // Calculate Earth positions at future and past times
+            const futureEarthPos = [
+                embState.position[0] - futureGeoECL.x * earthOffset,
+                embState.position[1] - futureGeoECL.y * earthOffset,
+                embState.position[2] - futureGeoECL.z * earthOffset
+            ];
+
+            const pastEarthPos = [
+                embState.position[0] - pastGeoECL.x * earthOffset,
+                embState.position[1] - pastGeoECL.y * earthOffset,
+                embState.position[2] - pastGeoECL.z * earthOffset
+            ];
+
+            // Calculate velocity using central differences
+            const totalDt = 2 * dt;
+            const earthVel = [
+                (futureEarthPos[0] - pastEarthPos[0]) / totalDt,
+                (futureEarthPos[1] - pastEarthPos[1]) / totalDt,
+                (futureEarthPos[2] - pastEarthPos[2]) / totalDt
+            ];
+
+            // Add EMB's heliocentric velocity component
+            earthVel[0] += embState.velocity[0];
+            earthVel[1] += embState.velocity[1];
+            earthVel[2] += embState.velocity[2];
+
+            return {
+                position: earthPos,
+                velocity: earthVel
+            };
+        } catch (error) {
+            console.warn('[PhysicsEngine] Failed to calculate Earth relative to EMB:', error);
+            // Fallback to direct Earth state
+            return this._getAstronomyEngineState('Earth', time);
+        }
+    }
+
+    /**
+     * Calculate Moon position relative to Earth-Moon Barycenter
+     * @private
+     */
+    _calculateMoonRelativeToEMB(time) {
+        try {
+            // Get Moon's geocentric position from Astronomy Engine (returns J2000 equatorial)
+            const moonGeo = GeoMoon(time);
+
+            // Moon constants
+            const MOON_MASS = 7.342e22; // kg
+            const EARTH_MASS = 5.972e24; // kg
+            const TOTAL_MASS = EARTH_MASS + MOON_MASS;
+
+            // Convert Moon position from AU to km and transform to ECLIPJ2000
+            const AU_TO_KM = 149597870.7;
+            
+            // Create position vector in J2000 equatorial coordinates
+            const moonGeoEQJ = {
+                x: moonGeo.x * AU_TO_KM,
+                y: moonGeo.y * AU_TO_KM,
+                z: moonGeo.z * AU_TO_KM,
+                t: MakeTime(time)
+            };
+
+            // Transform from J2000 equatorial (EQJ) to J2000 ecliptic (ECL)
+            const rotationMatrix = Rotation_EQJ_ECL();
+            const moonGeoECL = RotateVector(rotationMatrix, moonGeoEQJ);
+
+            const moonRelativePos = {
+                x: moonGeoECL.x,
+                y: moonGeoECL.y,
+                z: moonGeoECL.z
+            };
+
+            // Moon position is offset from EMB in same direction as geocentric position
+            // but scaled by the ratio of Earth mass to total mass
+            const moonOffset = EARTH_MASS / TOTAL_MASS;
+
+            // Get EMB heliocentric state
+            const embState = this._getBarycentricState('Earth', time) ||
+                this._getAstronomyEngineState('Earth', time);
+
+            if (!embState) {
+                throw new Error('Could not get EMB state');
+            }
+
+            // Calculate Moon's position relative to EMB
+            const moonPos = [
+                embState.position[0] + moonRelativePos.x * moonOffset,
+                embState.position[1] + moonRelativePos.y * moonOffset,
+                embState.position[2] + moonRelativePos.z * moonOffset
+            ];
+
+            // Calculate accurate velocity using finite differences with Astronomy Engine
+            // Use a small time step to get precise velocity (1 minute = 60 seconds)
+            const dt = 60; // seconds
+            const futureTime = new Date(time.getTime() + dt * 1000);
+            const pastTime = new Date(time.getTime() - dt * 1000);
+
+            // Get Moon positions at future and past times (in J2000 equatorial)
+            const futureGeo = GeoMoon(futureTime);
+            const pastGeo = GeoMoon(pastTime);
+
+            // Transform future and past positions to ECLIPJ2000
+            const futureGeoEQJ = {
+                x: futureGeo.x * AU_TO_KM,
+                y: futureGeo.y * AU_TO_KM,
+                z: futureGeo.z * AU_TO_KM,
+                t: MakeTime(futureTime)
+            };
+
+            const pastGeoEQJ = {
+                x: pastGeo.x * AU_TO_KM,
+                y: pastGeo.y * AU_TO_KM,
+                z: pastGeo.z * AU_TO_KM,
+                t: MakeTime(pastTime)
+            };
+
+            const futureGeoECL = RotateVector(rotationMatrix, futureGeoEQJ);
+            const pastGeoECL = RotateVector(rotationMatrix, pastGeoEQJ);
+
+            // Convert to km and apply EMB offset
+            const futureMoonPos = [
+                embState.position[0] + futureGeoECL.x * moonOffset,
+                embState.position[1] + futureGeoECL.y * moonOffset,
+                embState.position[2] + futureGeoECL.z * moonOffset
+            ];
+
+            const pastMoonPos = [
+                embState.position[0] + pastGeoECL.x * moonOffset,
+                embState.position[1] + pastGeoECL.y * moonOffset,
+                embState.position[2] + pastGeoECL.z * moonOffset
+            ];
+
+            // Calculate velocity using central differences (more accurate than forward differences)
+            const totalDt = 2 * dt;
+            const moonVel = [
+                (futureMoonPos[0] - pastMoonPos[0]) / totalDt,
+                (futureMoonPos[1] - pastMoonPos[1]) / totalDt,
+                (futureMoonPos[2] - pastMoonPos[2]) / totalDt
+            ];
+
+            // Add EMB's heliocentric velocity component
+            moonVel[0] += embState.velocity[0];
+            moonVel[1] += embState.velocity[1];
+            moonVel[2] += embState.velocity[2];
+
+            return {
+                position: moonPos,
+                velocity: moonVel
+            };
+        } catch (error) {
+            console.warn('[PhysicsEngine] Failed to calculate Moon relative to EMB:', error);
+            // Fallback to direct Earth state
+            return this._getAstronomyEngineState('Earth', time);
         }
     }
 } 

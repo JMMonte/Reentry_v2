@@ -111,6 +111,9 @@ export class PhysicsIntegration {
         // Update satellite states in existing managers
         this._syncSatelliteStates(state);
 
+        // Update orbit visualizations with new physics state
+        this._updateOrbitVisualizations();
+
         return state;
     }
 
@@ -272,6 +275,8 @@ export class PhysicsIntegration {
 
         // If paused, don't advance time
         if (timeWarp === 0) {
+            // Still update orbit visualizations even when paused for real-time updates
+            this._updateOrbitVisualizations();
             return;
         }
 
@@ -293,11 +298,14 @@ export class PhysicsIntegration {
             // Update physics engine time (this now automatically updates all body positions)
             await this.physicsEngine.setTime(newTime);
 
-            // Step physics simulation
+            // Step physics simulation (this calls _updateOrbitVisualizations)
             this.stepSimulation(simulatedDeltaSeconds);
 
             // Update TimeUtils with new time (this will dispatch UI events)
             this.app.timeUtils.updateFromPhysics(newTime);
+        } else {
+            // Even if simulation time doesn't advance, update orbit visualizations for real-time display
+            this._updateOrbitVisualizations();
         }
     }
 
@@ -485,9 +493,9 @@ export class PhysicsIntegration {
     _updateOrbitVisualizations() {
         if (!this.app.orbitManager) return;
 
-        // Trigger orbit update in the existing orbit manager
+        // Use the new update method which checks if orbits need updating
         try {
-            this.app.orbitManager.renderPlanetaryOrbits();
+            this.app.orbitManager.update();
         } catch (error) {
             console.warn('[PhysicsIntegration] Failed to update orbit visualizations:', error);
         }

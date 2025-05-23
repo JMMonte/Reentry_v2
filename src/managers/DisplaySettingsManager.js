@@ -144,7 +144,21 @@ export class DisplaySettingsManager {
                 });
                 break;
             case 'showPlanetOrbits':
-                if (app3d.orbitManager) app3d.orbitManager.setVisible(value);
+                if (app3d.orbitManager) {
+                    app3d.orbitManager.setVisible(value);
+                    // Force regeneration if turning on orbits
+                    if (value) {
+                        app3d.orbitManager.forceUpdate();
+                    }
+                }
+                break;
+            case 'realTimePlanetOrbits':
+                // This setting controls the update frequency, no immediate action needed
+                // The OrbitManager checks this setting during its update cycle
+                if (app3d.orbitManager && value) {
+                    // Force an immediate update when enabling real-time updates
+                    app3d.orbitManager.forceUpdate();
+                }
                 break;
             case 'enableFXAA':
                 // Enable or disable the FXAA pass

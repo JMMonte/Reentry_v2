@@ -84,6 +84,7 @@ export const defaultSettings = {
   },
   showSOI: { value: false, name: 'SOI Sphere', icon: Circle, description: 'Show the sphere of influence rim glow around planets.' },
   showPlanetOrbits: { value: true, name: 'Planet Orbits', icon: Circle, description: 'Show planetary orbit paths.' },
+  realTimePlanetOrbits: { value: true, name: 'Real-time Planet Orbits', icon: Circle, description: 'Update planet orbits every frame for real-time visualization. Disable for better performance.' },
 };
 
 // Group settings by category
@@ -96,7 +97,8 @@ const categories = [
       'enableFXAA',
       'pixelRatio',
       'showSOI',
-      'showPlanetOrbits'
+      'showPlanetOrbits',
+      'realTimePlanetOrbits'
     ],
   },
   {
