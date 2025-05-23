@@ -7,7 +7,7 @@ THREE.Object3D.DEFAULT_UP.set(0, 0, 1);                   // use Z-up globally
 
 // Monkey-patch to debug NaN boundingSphere issues
 const origComputeBoundingSphere = THREE.BufferGeometry.prototype.computeBoundingSphere;
-THREE.BufferGeometry.prototype.computeBoundingSphere = function() {
+THREE.BufferGeometry.prototype.computeBoundingSphere = function () {
     origComputeBoundingSphere.apply(this, arguments);
     if (this.boundingSphere && isNaN(this.boundingSphere.radius)) {
         // Log stack and geometry for debugging
@@ -26,11 +26,16 @@ import { TextureManager } from './managers/textureManager.js';
 
 // Managers & engines
 import { SatelliteManager } from './managers/SatelliteManager.js';
+import { LocalPhysicsProvider } from './providers/LocalPhysicsProvider.js';
+import { RemotePhysicsProvider } from './providers/RemotePhysicsProvider.js';
 import { DisplaySettingsManager } from './managers/DisplaySettingsManager.js';
 import { SceneManager } from './managers/SceneManager.js';
 import { SimulationStateManager } from './managers/SimulationStateManager.js';
 import { SimulationLoop } from './simulation/SimulationLoop.js';
 import { SocketManager } from './managers/SocketManager.js';
+
+// New physics system
+import { PhysicsIntegration } from './physics/PhysicsIntegration.js';
 
 // Controls
 import { CameraControls } from './controls/CameraControls.js';
@@ -50,13 +55,7 @@ import { celestialBodiesConfig } from './config/celestialBodiesConfig.js';
 import { initSimStream } from './simulation/simSocket.js';
 
 // Domain helpers
-import {
-    createSatelliteFromLatLon,
-    createSatelliteFromOrbitalElements,
-    createSatelliteFromLatLonCircular,
-    getVisibleLocationsFromOrbitalElements as computeVisibleLocations
-}
-    from './components/Satellite/createSatellite.js';
+import { getVisibleLocationsFromOrbitalElements as computeVisibleLocations } from './components/Satellite/createSatellite.js';
 import { Planet } from './components/planet/Planet.js';
 import { PlanetVectors } from './components/planet/PlanetVectors.js';
 
@@ -78,8 +77,16 @@ const getDefaultDisplaySettings = src =>
  */
 class App3D extends EventTarget {
 
-    constructor({ simulatedTime } = {}) {
+    /**
+     * @param {Object} [options]
+     * @param {string} [options.simulatedTime] - Initial simulated time ISO string.
+     * @param {'local' | 'remote'} [options.satellitePhysicsSource='local'] - Source for satellite physics.
+     */
+    constructor({ simulatedTime, satellitePhysicsSource = 'local' } = {}) {
         super();
+
+        // Bootstrapping flag to prevent premature settings application
+        this._isBootstrapping = true;
 
         // — Canvas & DOM — -----------------------------------------------------
         this._canvas = document.getElementById('three-canvas');
@@ -102,12 +109,34 @@ class App3D extends EventTarget {
             this,
             getDefaultDisplaySettings(defaultSettings)
         );
-        this._satellites = new SatelliteManager(this);
+
+        // Initialize new physics system
+        this.physicsIntegration = new PhysicsIntegration(this);
+
+        // Instantiate the chosen physics provider for satellites
+        let physicsProviderInstance;
+        if (satellitePhysicsSource === 'remote') {
+            // Pass `this` (app3d). Provider constructor will get satelliteManager via app3d.satellites.
+            physicsProviderInstance = new RemotePhysicsProvider(this);
+            console.log("[App3D] Using RemotePhysicsProvider for satellites.");
+        } else {
+            physicsProviderInstance = new LocalPhysicsProvider(this);
+            console.log("[App3D] Using LocalPhysicsProvider for satellites.");
+        }
+
+        this._satellites = new SatelliteManager(this, { physicsProviderInstance });
+
+        // At this point, if physicsProviderInstance needs a direct reference to the satelliteManager,
+        // and if its constructor didn't set it up via app3d.satellites, SatelliteManager could call:
+        // physicsProviderInstance.setSatelliteManager(this._satellites); // (Requires a setter on providers)
+        // However, the cleaner way is for providers to use `this.app3d.satellites` in their methods.
+
         this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
         this.socketManager = new SocketManager(this);
 
         // — Misc util — --------------------------------------------------------
+        // Always use UTC time - new Date().toISOString() gives us UTC
         this._timeUtils = new TimeUtils({ simulatedTime: simulatedTime || new Date().toISOString() });
         this._stats = new Stats();
 
@@ -135,6 +164,28 @@ class App3D extends EventTarget {
         this._projScreenMatrix = new THREE.Matrix4();
         // Frame counter for throttling UI updates
         this._frameCount = 0;
+
+        // Listen for remote physics failure to implement fail-safe
+        this._handleRemotePhysicsFailure = () => {
+            // Check if the current active provider is remote before switching
+            if (this.satellites?.physicsProvider instanceof RemotePhysicsProvider) {
+                console.warn("[App3D] Remote physics failed. Switching to local physics as a fail-safe.");
+                this.setPhysicsSource('local');
+                // Optionally, inform the user via a toast or UI message that this automatic switch has occurred.
+                window.dispatchEvent(new CustomEvent('showToast', { detail: 'Remote physics failed. Switched to local simulation.' }));
+                // Update the UI switch to reflect the change
+                if (this.displaySettingsManager) {
+                    this.displaySettingsManager.updateSetting('useRemoteCompute', false);
+                    // This will also trigger the _applySetting in DisplaySettingsManager,
+                    // but setPhysicsSource will see the provider is already local (or becoming local)
+                    // and should ideally handle this gracefully (e.g. not re-switching if already the target type).
+                    // The current setPhysicsSource implementation should be fine.
+                }
+            } else {
+                console.log("[App3D] Remote physics failure event received, but current provider is not remote. No action taken.")
+            }
+        };
+        window.addEventListener('remotePhysicsFailed', this._handleRemotePhysicsFailure);
     }
 
     // ───── Properties (read-only public) ──────────────────────────────────────
@@ -150,6 +201,15 @@ class App3D extends EventTarget {
     get canvas() { return this._canvas; }
     get labelRenderer() { return this.sceneManager.labelRenderer; }
     get composers() { return this.sceneManager.composers; }
+    get physicsEngine() { return this.physicsIntegration; }
+    get physicsProviderType() {
+        if (this.satellites?.physicsProvider instanceof LocalPhysicsProvider) {
+            return 'local';
+        } else if (this.satellites?.physicsProvider instanceof RemotePhysicsProvider) {
+            return 'remote';
+        }
+        return 'unknown';
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 4. LIFE-CYCLE
@@ -171,23 +231,38 @@ class App3D extends EventTarget {
             this._initPOIPicking();
             this._setupControls();
 
+            // Initialize new physics system
+            try {
+                await this.physicsIntegration.initialize(this.timeUtils.getSimulatedTime());
+                console.log('[App3D] Physics integration initialized successfully');
+            } catch (physicsError) {
+                console.warn('[App3D] Physics integration failed to initialize:', physicsError);
+                // Continue without physics integration - fallback to existing systems
+            }
+
             // Physics worker (latency-hiding)
             this.satellites._initPhysicsWorker?.();
 
-            // Time controls
-
             this._injectStatsPanel();
             this._wireResizeListener();
-            // Live sim stream: planetary & simulation state from backend
-            await initSimStream(this, 'ECLIPJ2000');
+            
+            // Try to initialize live sim stream, but don't fail if backend is unavailable
+            try {
+                await initSimStream(this, 'ECLIPJ2000');
+                console.log('[App3D] Backend connection established');
+            } catch (streamError) {
+                console.warn('[App3D] Backend connection failed, using local physics only:', streamError);
+                // Initialize scene objects locally as fallback
+                await this._initializeLocalScene();
+            }
 
             // Enable axis and vector visualization for all planets
             this.planetVectors = [];
             if (this.celestialBodies) {
                 for (const planet of this.celestialBodies) {
                     // Only add vectors for planets with a mesh and rotationGroup
-                    if (planet && planet.getMesh && planet.rotationGroup && this._scene) {
-                        const vec = new PlanetVectors(planet, this._scene, { name: planet.name, scale: planet.radius * 2 });
+                    if (planet && planet.getMesh && planet.rotationGroup && this.sceneManager.scene) {
+                        const vec = new PlanetVectors(planet, this.sceneManager.scene, { name: planet.name, scale: planet.radius * 2 });
                         this.planetVectors.push(vec);
                     }
                 }
@@ -206,12 +281,42 @@ class App3D extends EventTarget {
             });
             this.simulationLoop.start();
 
+            // Now bootstrapping is done
+            this._isBootstrapping = false;
+            // Re-apply display settings to ensure all are set with simulationLoop present
+            this.displaySettingsManager?.applyAll?.();
+
             this._isInitialized = true;
             this._dispatchSceneReady();
         } catch (err) {
             console.error('App3D init failed:', err);
             this.dispose();
             throw err;
+        }
+    }
+
+    /**
+     * Initialize scene objects locally when backend is not available
+     * @private
+     */
+    async _initializeLocalScene() {
+        try {
+            const { createSceneObjects } = await import('./setup/setupScene.js');
+            await createSceneObjects(this);
+            this.sceneObjectsInitialized = true;
+            
+            // Set initial camera target
+            if (this.cameraControls && typeof this.cameraControls.follow === 'function') {
+                const initialTargetName = this.config?.initialCameraTarget || 'Earth';
+                this.cameraControls.follow(initialTargetName, this, true);
+            }
+            
+            // Dispatch scene ready event
+            window.dispatchEvent(new CustomEvent('sceneReadyFromBackend'));
+            console.log('[App3D] Scene initialized locally');
+        } catch (sceneError) {
+            console.error('[App3D] Failed to initialize local scene:', sceneError);
+            throw sceneError;
         }
     }
 
@@ -223,6 +328,12 @@ class App3D extends EventTarget {
         this._lineOfSightWorker?.terminate?.();
         this._lineOfSightWorker = null;
 
+        // Physics integration cleanup
+        this.physicsIntegration?.cleanup?.();
+
+        // Time utilities cleanup
+        this._timeUtils?.dispose?.();
+
         // Satellites & loops
         this._satellites?.dispose?.();
         this.simulationLoop?.dispose?.();
@@ -232,6 +343,7 @@ class App3D extends EventTarget {
 
         // Listeners
         this._removeWindowResizeListener();
+        window.removeEventListener('remotePhysicsFailed', this._handleRemotePhysicsFailure);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -335,7 +447,7 @@ class App3D extends EventTarget {
     }
 
     _syncConnectionsWorker() {
-        if (!this._lineOfSightWorker) return;
+        if (!this._lineOfSightWorker || !this.satellites) return;
         const sats = Object.values(this.satellites.getSatellites())
             .filter(s => s?.position && s.id != null)
             .map(s => ({
@@ -361,8 +473,8 @@ class App3D extends EventTarget {
             this._satelliteLinks.add(line);
         });
 
-        if (!this.scene.children.includes(this._satelliteLinks)) {
-            this.scene.add(this._satelliteLinks);
+        if (this.sceneManager.scene && !this.sceneManager.scene.children.includes(this._satelliteLinks)) {
+            this.sceneManager.scene.add(this._satelliteLinks);
         }
     }
 
@@ -465,7 +577,7 @@ class App3D extends EventTarget {
         this.labelRenderer?.setSize(window.innerWidth, window.innerHeight);
 
         // Update orbit lines resolution
-        this.orbitManager?.onResize();
+        this.sceneManager.orbitManager?.onResize();
 
         this._resizePOIs();
     }
@@ -478,11 +590,13 @@ class App3D extends EventTarget {
 
     // Satellite creation helpers
     createSatelliteFromLatLon(p) {
-        return createSatelliteFromLatLon(this, p, this.selectedBody || { naifId: 399 });
+        return this.satellites.createSatelliteFromLatLon(this, p, this.selectedBody || { naifId: 399 });
     }
-    createSatelliteFromOrbitalElements(p) { return createSatelliteFromOrbitalElements(this, p); }
+    createSatelliteFromOrbitalElements(p) {
+        return this.satellites.createSatelliteFromOrbitalElements(this, p);
+    }
     createSatelliteFromLatLonCircular(p) {
-        return createSatelliteFromLatLonCircular(this, p, this.selectedBody || { naifId: 399 });
+        return this.satellites.createSatelliteFromLatLonCircular(this, p, this.selectedBody || { naifId: 399 });
     }
 
     getVisibleLocationsFromOrbitalElements(p) {
@@ -507,11 +621,82 @@ class App3D extends EventTarget {
     }
 
     /**
+     * Switches the physics provider between 'local' and 'remote'.
+     * This will reset the current satellite simulation.
+     * @param {'local' | 'remote'} source
+     */
+    async setPhysicsSource(source) {
+        if (!source || (source !== 'local' && source !== 'remote')) {
+            console.error('[App3D] Invalid physics source specified:', source);
+            return;
+        }
+
+        // Check if we're already using the requested physics source
+        const currentSource = this.physicsProviderType;
+        if (currentSource === source) {
+            console.log(`[App3D] Physics source is already set to ${source}, skipping switch`);
+            return;
+        }
+
+        console.log(`[App3D] Attempting to switch physics source to: ${source}`);
+
+        // 1. Get current state from the existing provider (if any)
+        let handoverState = undefined;
+        if (this.satellites?.physicsProvider?.getCurrentState) {
+            handoverState = this.satellites.physicsProvider.getCurrentState();
+        }
+
+        // 2. Dispose current SatelliteManager and its provider
+        this.satellites?.dispose();
+        // this._satellites will be redefined below
+
+        // 3. Instantiate the new physics provider
+        let newPhysicsProviderInstance;
+        if (source === 'remote') {
+            newPhysicsProviderInstance = new RemotePhysicsProvider(this);
+            console.log("[App3D] Using RemotePhysicsProvider for satellites.");
+        } else {
+            newPhysicsProviderInstance = new LocalPhysicsProvider(this);
+            console.log("[App3D] Using LocalPhysicsProvider for satellites.");
+        }
+
+        // 4. If we have handover state, initialize the new provider with it
+        if (handoverState && newPhysicsProviderInstance.initializeWithState) {
+            newPhysicsProviderInstance.initializeWithState(handoverState);
+        }
+
+        // 5. Create a new SatelliteManager with the new provider
+        this._satellites = new SatelliteManager(this, { physicsProviderInstance: newPhysicsProviderInstance });
+
+        // 6. Update SimulationLoop with the new SatelliteManager
+        if (!this._isBootstrapping) {
+            if (this.simulationLoop) {
+                this.simulationLoop.setSatelliteManager(this._satellites);
+            } else {
+                console.warn("[App3D] SimulationLoop not found during physics source switch.");
+            }
+        }
+        // 7. Re-initialize physics worker if local provider is chosen and it needs it.
+        if (source === 'local' && this.satellites._initPhysicsWorker) { // Check if the method exists on SatelliteManager
+            this.satellites._initPhysicsWorker();
+        }
+
+        // Notify UI or other components that the simulation has effectively reset
+        // This could involve clearing UI satellite lists, etc.
+        this.updateSatelliteList(); // To clear the list if satellites are gone
+
+        console.log(`[App3D] Physics source switched to ${source}. Satellite simulation reset.`);
+        // Potentially dispatch an event or show a toast message to the user
+        window.dispatchEvent(new CustomEvent('showToast', { detail: `Physics switched to ${source}. Satellites reset.` }));
+    }
+
+    /**
      * Centralized per-frame update for animation loop.
      * @param {number} delta - Time since last frame in seconds
      */
     tick(delta) {
         this.stats?.begin();
+        
         this.sceneManager.updateFrame?.(delta);
 
         if (Array.isArray(this.celestialBodies)) {

@@ -7,8 +7,9 @@ import { setupExternalApi } from './externalApi.js';
  */
 export class App3DController {
     constructor(initialState) {
+        // Use browser's current UTC time if no initial state is provided
         const simTime = initialState?.simulatedTime || new Date().toISOString();
-        this.app3d = new App3D({ simulatedTime: simTime });
+        this.app3d = new App3D({ simulatedTime: simTime, satellitePhysicsSource: 'local' });
         // Ensure we clean up workers and resources on page refresh/unload
         window.addEventListener('beforeunload', () => {
             try {

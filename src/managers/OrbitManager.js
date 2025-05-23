@@ -324,6 +324,8 @@ export class OrbitManager {
             }
             // Defensive: ensure referenceObj and its position/velocity are defined
             if (!barycenterKey || !referenceObj || !referenceObj.position || !referenceObj.velocity) continue;
+            // ADDITIONAL GUARD: ensure body.position and body.velocity are defined
+            if (!body.position || !body.velocity) continue;
             // Debug: log velocities before computing relVel
             // if (body && referenceObj) {
             //     console.log('[LocalOrbit][Debug] Body:', body.name, 'velocity:', body.velocity?.toArray?.(), 'Reference:', referenceObj.name || barycenterKey, 'velocity:', referenceObj.velocity?.toArray?.());

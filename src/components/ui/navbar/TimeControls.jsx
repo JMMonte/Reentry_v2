@@ -7,7 +7,7 @@ import { Separator } from '../separator';
 import { DateTimePicker } from '../datetime/DateTimePicker';
 import PropTypes from 'prop-types';
 
-function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTimeChange, timeWarpOptions, getNextTimeWarp }) {
+function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTimeChange, timeWarpOptions, getNextTimeWarp, timeWarpLoading }) {
     return (
         <>
             <Separator orientation="vertical" className="h-8" />
@@ -46,7 +46,11 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
                 >
                     <SelectTrigger className="w-[100px]">
                         <SelectValue placeholder="Time Warp">
-                            {timeWarp}x
+                            {timeWarpLoading ? (
+                                <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #ccc', borderTop: '2px solid #333', borderRadius: '50%', animation: 'spin 1s linear infinite', verticalAlign: 'middle' }} />
+                            ) : (
+                                `${timeWarp}x`
+                            )}
                         </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -75,6 +79,7 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
                         <TooltipContent>Reset Time Warp to 1x</TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
         </>
     );
@@ -90,6 +95,7 @@ TimeControls.propTypes = {
     onSimulatedTimeChange: PropTypes.func.isRequired,
     timeWarpOptions: PropTypes.array.isRequired,
     getNextTimeWarp: PropTypes.func.isRequired,
+    timeWarpLoading: PropTypes.bool
 };
 
 export default TimeControls; 

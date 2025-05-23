@@ -12,7 +12,6 @@ import { DistantMeshComponent } from './DistantMeshComponent.js';
 import { SoiComponent } from './SoiComponent.js';
 import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
-import { RotationComponent } from './RotationComponent.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
 
@@ -265,7 +264,10 @@ export class Planet {
 
         this.update(); // initial build and initial per-frame updates
         if (this.rotationGroup) {
-            RotationComponent.applyBaseOrientation(this.rotationGroup);
+            // Apply base orientation to convert Three.js Y-up mesh to Z-up physics coordinates
+            // This 90° X-rotation aligns the mesh with the physics simulation coordinate system
+            this.rotationGroup.rotation.set(0, 0, 0); // Reset first
+            this.rotationGroup.rotateX(Math.PI / 2); // Y-up → Z-up conversion
         }
     }
 

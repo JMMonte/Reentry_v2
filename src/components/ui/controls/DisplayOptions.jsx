@@ -254,7 +254,7 @@ DisplayOptionRow.propTypes = {
   loading: PropTypes.bool
 };
 
-export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
+export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange, physicsProviderType }) {
   const [position, setPosition] = useState({ x: 40, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
   const [loadingKeys, setLoadingKeys] = useState({});
@@ -271,6 +271,25 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
       }
     });
   }, [settings]);
+
+  // Helper to render the provider label
+  function renderProviderLabel() {
+    let label = 'Unknown';
+    if (physicsProviderType === 'local') label = 'Local Physics';
+    else if (physicsProviderType === 'remote') label = 'Remote Physics';
+    return (
+      <span style={{
+        marginLeft: 8,
+        fontSize: '10px',
+        color: 'var(--muted-foreground, #888)',
+        fontWeight: 500,
+        background: 'var(--muted, #f3f3f3)',
+        borderRadius: 4,
+        padding: '2px 6px',
+        verticalAlign: 'middle',
+      }}>{label}</span>
+    );
+  }
 
   return (
     <TooltipProvider>
@@ -313,6 +332,39 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
               {categories[idx].keys.map(key => {
                 const setting = defaultSettings[key];
                 if (!setting) return null;
+                // For the remote/local toggle, add the provider label
+                if (key === 'useRemoteCompute') {
+                  return (
+                    <div key={key} className="flex items-center justify-between px-2 py-1 text-xs">
+                      <div className="flex items-center gap-1">
+                        {setting.icon && React.createElement(setting.icon, { className: "h-3 w-3" })}
+                        <span className="text-[11px] text-muted-foreground">{setting.name}</span>
+                        {setting.description && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent sideOffset={4} className="z-[9999]">
+                              {setting.description}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        {renderProviderLabel()}
+                      </div>
+                      <div className="pr-2">
+                        <Switch
+                          className="scale-[0.6]"
+                          checked={settings[key] !== undefined ? settings[key] : setting.value}
+                          onCheckedChange={checked => {
+                            setLoadingKeys(prev => ({ ...prev, [key]: checked }));
+                            onSettingChange(key, checked);
+                          }}
+                          disabled={setting.disabled}
+                        />
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <DisplayOptionRow
                     key={key}
@@ -339,5 +391,6 @@ DisplayOptions.propTypes = {
   settings: PropTypes.object.isRequired,
   onSettingChange: PropTypes.func.isRequired,
   isOpen: PropTypes.bool.isRequired,
-  onOpenChange: PropTypes.func.isRequired
+  onOpenChange: PropTypes.func.isRequired,
+  physicsProviderType: PropTypes.string,
 };

@@ -54,7 +54,8 @@ export function Navbar({
   setAuthMode,
   groupedPlanetOptions,
   satelliteOptions,
-  getDisplayValue
+  getDisplayValue,
+  timeWarpLoading
 }) {
   const [user, setUser] = useState(null);
 
@@ -174,6 +175,7 @@ export function Navbar({
             onSimulatedTimeChange={onSimulatedTimeChange}
             timeWarpOptions={timeWarpOptions}
             getNextTimeWarp={getNextTimeWarp}
+            timeWarpLoading={timeWarpLoading}
           />
         </div>
       </div>
@@ -231,6 +233,7 @@ export function Navbar({
                 onSimulatedTimeChange={onSimulatedTimeChange}
                 timeWarpOptions={timeWarpOptions}
                 getNextTimeWarp={getNextTimeWarp}
+                timeWarpLoading={timeWarpLoading}
               />
               <ActionButtons
                 onSatelliteCreatorToggle={onSatelliteCreatorToggle}
@@ -280,7 +283,8 @@ Navbar.propTypes = {
   setShareModalOpen: PropTypes.func.isRequired,
   setShareUrl: PropTypes.func.isRequired,
   setIsAuthOpen: PropTypes.func.isRequired,
-  setAuthMode: PropTypes.func.isRequired
+  setAuthMode: PropTypes.func.isRequired,
+  timeWarpLoading: PropTypes.bool
 };
 
 export default Navbar;

@@ -50,10 +50,7 @@ export class SimulationLoop {
         const delta = this.clock.getDelta();
         this.app.tick?.(delta);
 
-        // Update TimeUtils for smooth time progression
-        if (this.timeUtils && typeof this.timeUtils.update === 'function') {
-            this.timeUtils.update();
-        }
+        // TimeUtils now has independent time progression - no need to call update() here
 
         // Render scene
         if (this.sceneManager.composers.final) {
@@ -93,5 +90,13 @@ export class SimulationLoop {
                 this.satellites.setSensitivityScale(value);
                 break;
         }
+    }
+
+    /**
+     * Allows updating the satellites manager at runtime (for switching physics providers).
+     * @param {SatelliteManager} satellites
+     */
+    setSatelliteManager(satellites) {
+        this.satellites = satellites;
     }
 } 

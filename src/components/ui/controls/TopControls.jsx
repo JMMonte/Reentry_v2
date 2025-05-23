@@ -26,7 +26,8 @@ export function TopControls({
   timeWarp,
   onDecreaseTimeWarp,
   onIncreaseTimeWarp,
-  onResetTimeWarp
+  onResetTimeWarp,
+  timeWarpLoading
 }) {
   return (
     <div className="absolute top-0 left-0 p-4 flex items-center space-x-2">
@@ -66,7 +67,14 @@ export function TopControls({
         <Button variant="ghost" size="icon" onClick={onResetTimeWarp}>
           <RotateCcw className="h-4 w-4" />
         </Button>
-        <span className="text-sm">{timeWarp}x</span>
+        <span className="text-sm">
+          {timeWarpLoading ? (
+            <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #ccc', borderTop: '2px solid #333', borderRadius: '50%', animation: 'spin 1s linear infinite', verticalAlign: 'middle' }} />
+          ) : (
+            `${timeWarp}x`
+          )}
+        </span>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
   );
@@ -81,5 +89,6 @@ TopControls.propTypes = {
   timeWarp: PropTypes.number.isRequired,
   onDecreaseTimeWarp: PropTypes.func.isRequired,
   onIncreaseTimeWarp: PropTypes.func.isRequired,
-  onResetTimeWarp: PropTypes.func.isRequired
+  onResetTimeWarp: PropTypes.func.isRequired,
+  timeWarpLoading: PropTypes.bool
 };

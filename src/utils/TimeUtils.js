@@ -5,71 +5,95 @@ import { Constants } from './Constants.js';
 export class TimeUtils {
     constructor(settings) {
         this.simulatedTime = new Date(settings.simulatedTime);
-        this._targetSimulatedTime = new Date(settings.simulatedTime); // Initialize target time
         this.timeWarp = 1;
-        // this._lastTimeUpdate = performance.now(); // No longer needed for current interpolation
+        this._lastUpdateTime = performance.now();
+        
+        // Log initial time setup for verification
+        console.log('[TimeUtils] Initialized with UTC time:', this.simulatedTime.toISOString());
+        console.log('[TimeUtils] Browser local time for comparison:', new Date().toString());
+    }
+
+    /**
+     * Update time based on external physics stepping (called by physics engine)
+     * @param {Date} newTime - New simulation time from physics
+     */
+    updateFromPhysics(newTime) {
+        if (this.timeWarp === 0) return; // Don't update when paused
+        
+        this.simulatedTime = new Date(newTime.getTime());
+        this._lastUpdateTime = performance.now();
+        
+        // Dispatch timeUpdate event for UI synchronization
+        this._dispatchTimeUpdate();
+    }
+
+    /**
+     * Advance time manually (for when physics isn't running)
+     */
+    manualAdvance(deltaTimeSeconds) {
+        if (this.timeWarp === 0) return;
+        
+        const deltaMs = deltaTimeSeconds * 1000;
+        this.simulatedTime = new Date(this.simulatedTime.getTime() + deltaMs);
+        this._dispatchTimeUpdate();
     }
 
     setLocalTimeWarp(newWarp) {
         this.timeWarp = newWarp;
-        // Optionally, dispatch timeUpdate here as well if UI needs to react immediately
-        // without waiting for backend confirmation, though current structure might handle it.
-        document.dispatchEvent(new CustomEvent('timeUpdate', {
-            detail: {
-                simulatedTime: this.simulatedTime.toISOString(), // Keep current time
-                timeWarp: this.timeWarp,
-            }
-        }));
+        this._dispatchTimeUpdate();
     }
 
     setSimTimeFromServer(date, timeWarp) {
-        this._targetSimulatedTime = new Date(date);
-        this.timeWarp = timeWarp;
-        // Dispatch event with the TARGET time and current warp, so UI reflects backend state
+        // Validate the date parameter
+        if (!date || (typeof date === 'string' && date.trim() === '') || (date instanceof Date && isNaN(date.getTime()))) {
+            console.warn('[TimeUtils] Invalid date provided to setSimTimeFromServer, keeping current time');
+            return;
+        }
+        
+        try {
+            const newTime = new Date(date);
+            if (isNaN(newTime.getTime())) {
+                console.warn('[TimeUtils] Failed to create valid date from:', date);
+                return;
+            }
+            
+            this.simulatedTime = newTime;
+            this.timeWarp = timeWarp;
+            this._dispatchTimeUpdate();
+        } catch (error) {
+            console.error('[TimeUtils] Error in setSimTimeFromServer:', error, 'date:', date);
+        }
+    }
+
+    /**
+     * Set simulation time directly (for local operation)
+     */
+    setSimulatedTime(newTime) {
+        this.simulatedTime = new Date(newTime);
+        this._dispatchTimeUpdate();
+    }
+
+    /**
+     * Dispatch time update event
+     */
+    _dispatchTimeUpdate() {
         document.dispatchEvent(new CustomEvent('timeUpdate', {
             detail: {
-                simulatedTime: this._targetSimulatedTime.toISOString(),
+                simulatedTime: this.simulatedTime.toISOString(),
                 timeWarp: this.timeWarp,
             }
         }));
-    }
-
-    // Method to be called every frame from the simulation loop
-    update() {
-        // const now = performance.now();
-        // const deltaMs = now - this._lastTimeUpdate;
-        // this._lastTimeUpdate = now;
-
-        if (this.timeWarp === 0) {
-            return; // Time is paused, no interpolation needed
-        }
-
-        const currentTime = this.simulatedTime.getTime();
-        const targetTime = this._targetSimulatedTime.getTime();
-
-        if (currentTime === targetTime) {
-            return; // Already at target
-        }
-
-        // Simple interpolation: move a fraction of the difference each frame.
-        // Adjust interpolation factor as needed. A smaller factor means slower, smoother interpolation.
-        const interpolationFactor = 0.1; // Adjust this for desired smoothness
-        let newTime = currentTime + (targetTime - currentTime) * interpolationFactor;
-
-        // Ensure we don't overshoot if close
-        if (Math.abs(targetTime - currentTime) < 50) { // If less than 50ms difference, just snap
-            newTime = targetTime;
-        }
-        
-        this.simulatedTime = new Date(newTime);
-
-        // We do NOT dispatch 'timeUpdate' here for the interpolated time frequently,
-        // as that event is for UI sync to backend's target time.
-        // The visual simulation directly uses this.simulatedTime via getTimeSimulated().
     }
 
     getSimulatedTime() { return this.simulatedTime; }
     getTimeWarp() { return this.timeWarp; }
+
+    /**
+     * Cleanup method
+     */
+    dispose() {
+        // No intervals to clean up anymore
+    }
 
     static getDayOfYear(date) {
         const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0));
@@ -86,13 +110,11 @@ export class TimeUtils {
     }
 
     static getSunPosition(simulatedTime) {
-        // Use total days including fraction to move sun smoothly within each day
         const dayOfYear = TimeUtils.getDayOfYear(simulatedTime);
         const fractionOfDay = TimeUtils.getFractionOfDay(simulatedTime);
         const days = dayOfYear + fractionOfDay;
         const meanAnomaly = (357.5291 + 0.98560028 * days) % 360;
         const meanLongitude = (280.4665 + 0.98564736 * days) % 360;
-        // Sun's orbital eccentricity and equation of center for true longitude
         const eccentricity = 0.0167;
         const equationOfCenter = (
             1.9148 * Math.sin(meanAnomaly * Math.PI / 180) +
@@ -101,7 +123,6 @@ export class TimeUtils {
         );
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
         const distance = Constants.AU * Constants.metersToKm;
-        // compute using true longitude directly to point sun correctly
         const rad = trueLongitude * Math.PI / 180;
         const x = distance * Math.cos(rad);
         const y = distance * Math.sin(rad);
@@ -164,7 +185,6 @@ export class TimeUtils {
         const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(23.5));
         const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), earth.rotationGroup.rotation.y.toFixed(4));
         const combinedQuaternion = new THREE.Quaternion().multiplyQuaternions(tiltQuaternion, rotationQuaternion);
-        // rotate 1.5Pi to match earth surface orientation in ThreeJs
         position.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.5));
         position.applyQuaternion(combinedQuaternion);
         return position;

@@ -46,11 +46,23 @@ const DateTimePicker = ({ date, onDateTimeChange }) => {
 
   const formattedDateTime = useMemo(() => {
     try {
-      if (!date) return null;
-      const dateToFormat = typeof date === 'string' ? parseISO(date) : date;
-      return isValid(dateToFormat) ? formatDateTime(dateToFormat) : null;
+      // Always try to show some valid time
+      let dateToFormat = date;
+      
+      // If date is invalid, use current time
+      if (!dateToFormat) {
+        dateToFormat = new Date();
+      } else if (typeof dateToFormat === 'string') {
+        const parsed = parseISO(dateToFormat);
+        dateToFormat = isValid(parsed) ? parsed : new Date();
+      } else if (dateToFormat instanceof Date && isNaN(dateToFormat.getTime())) {
+        dateToFormat = new Date();
+      }
+      
+      return formatDateTime(dateToFormat);
     } catch {
-      return null;
+      // Always return current time as fallback
+      return formatDateTime(new Date());
     }
   }, [date]);
 
@@ -163,14 +175,10 @@ const DateTimePicker = ({ date, onDateTimeChange }) => {
           )}
         >
           <Calendar className="mr-2 h-4 w-4" />
-          {formattedDateTime ? (
-            <div className="flex items-center space-x-2">
-              <span className="text-muted-foreground">{formattedDateTime.date}</span>
-              <span>{formattedDateTime.time}</span>
-            </div>
-          ) : (
-            <span>Pick date and time</span>
-          )}
+          <div className="flex items-center space-x-2">
+            <span className="text-muted-foreground">{formattedDateTime.date}</span>
+            <span>{formattedDateTime.time}</span>
+          </div>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">

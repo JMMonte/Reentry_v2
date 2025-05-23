@@ -124,6 +124,7 @@ function App3DMain() {
   const [openPointModals, setOpenPointModals] = useState([]);
   const [isAssetsLoaded, setIsAssetsLoaded] = useState(false);
   const [isBackendReady, setIsBackendReady] = useState(false);
+  const [timeWarpLoading, setTimeWarpLoading] = useState(false);
 
   useEffect(() => { setCheckedInitialState(true); }, []);
   useEffect(() => {
@@ -170,28 +171,61 @@ function App3DMain() {
       setSimulationDate(app3d.sessionId, simTime.toISOString());
     }
   }, [app3d?.sessionId]);
+  // High-frequency UI updates for smooth time display
+  useEffect(() => {
+    if (!app3d?.timeUtils) return;
+    
+    // Update UI at 20Hz for smooth time display without affecting physics
+    const uiUpdateInterval = setInterval(() => {
+      const currentTime = app3d.timeUtils.getSimulatedTime();
+      setSimTime(new Date(currentTime));
+    }, 50); // 50ms = 20Hz
+    
+    return () => clearInterval(uiUpdateInterval);
+  }, [app3d]);
+  // Simplified UI updates - now just listen to physics-driven time events
   useEffect(() => {
     const handler = (e) => {
       if (e.detail?.simulatedTime) {
         setSimTime(new Date(e.detail.simulatedTime));
       }
+      // Also update timeWarp if provided in the event
+      if (e.detail?.timeWarp !== undefined) {
+        setTimeWarpLoading(false); // Clear loading state when we get an update
+      }
     };
     document.addEventListener('timeUpdate', handler);
+    
+    // Set initial state from app3d timeUtils
     if (app3d?.timeUtils?.getSimulatedTime) {
       setSimTime(app3d.timeUtils.getSimulatedTime());
     }
+    
     return () => document.removeEventListener('timeUpdate', handler);
   }, [app3d]);
   const handleSimulatedTimeChange = (newTime) => {
-    // console.log('[App.jsx] handleSimulatedTimeChange called with newTime:', newTime);
+    console.log('[App.jsx] handleSimulatedTimeChange called with newTime:', newTime);
     setSimTime(new Date(newTime));
+    
+    // Check if we're using local physics or have a backend session
     const sessionId = app3d?.sessionId || controller?.sessionId;
-    // console.log('[App.jsx] handleSimulatedTimeChange - sessionId:', sessionId);
-    if (sessionId) {
-      // console.log('[App.jsx] handleSimulatedTimeChange - Calling setSimulationDate for backend.');
+    const physicsProviderType = app3d?.physicsProviderType;
+    
+    if (sessionId && physicsProviderType === 'remote') {
+      // Backend/remote physics - use API call
+      console.log('[App.jsx] handleSimulatedTimeChange - Using backend API for remote physics');
       setSimulationDate(sessionId, new Date(newTime).toISOString());
+    } else if (app3d?.timeUtils) {
+      // Local physics - update time directly
+      console.log('[App.jsx] handleSimulatedTimeChange - Using local time management');
+      app3d.timeUtils.setSimulatedTime(newTime);
+      
+      // Also update physics integration if available
+      if (app3d.physicsIntegration) {
+        app3d.physicsIntegration.setSimulationTime(new Date(newTime));
+      }
     } else {
-      console.warn('[App.jsx] handleSimulatedTimeChange - No sessionId found, backend will not be updated.');
+      console.warn('[App.jsx] handleSimulatedTimeChange - No timeUtils found, cannot update simulation time');
     }
   };
   const {
@@ -385,33 +419,36 @@ ${shareUrl}`);
     satelliteOptions,
     getDisplayValue,
     timeWarp: app3d?.timeUtils?.getTimeWarp() ?? 1,
+    timeWarpLoading,
     onTimeWarpChange: async (newWarp) => {
+      console.log('[App.jsx] onTimeWarpChange called with newWarp:', newWarp);
+      
+      // Check if we're using local physics or have a backend session
       const sessionId = app3d?.sessionId || controller?.sessionId;
-      // console.log('[App.jsx] onTimeWarpChange (HTTP trigger):', { newWarp, sessionId });
-
-      // Optimistically update UI for immediate responsiveness
-      if (app3d?.timeUtils?.setLocalTimeWarp) {
-        app3d.timeUtils.setLocalTimeWarp(newWarp);
-      }
-
-      if (sessionId) {
+      const physicsProviderType = app3d?.physicsProviderType;
+      
+      if (sessionId && physicsProviderType === 'remote') {
+        // Backend/remote physics - use API call
+        console.log('[App.jsx] onTimeWarpChange - Using backend API for remote physics');
+        setTimeWarpLoading(true);
         const appliedFactor = await setTimewarp(sessionId, newWarp);
+        setTimeWarpLoading(false);
         if (appliedFactor !== null && app3d?.timeUtils?.setLocalTimeWarp) {
-          // Reconcile with backend's confirmed factor if different from optimistic update
-          // or if optimistic update didn't happen for some reason.
-          // This also ensures TimeUtils is updated with the true backend state.
-          if (app3d.timeUtils.getTimeWarp() !== appliedFactor) {
-            console.log(`[App.jsx] Reconciling timewarp. UI was ${app3d.timeUtils.getTimeWarp()}x, backend applied ${appliedFactor}x`);
-            app3d.timeUtils.setLocalTimeWarp(appliedFactor); // Update TimeUtils and dispatch event
-          }
+          app3d.timeUtils.setLocalTimeWarp(appliedFactor);
         } else if (appliedFactor === null) {
-          // Handle error case: backend call failed or returned invalid data
-          // Optionally, revert optimistic update or show error to user
           console.warn('[App.jsx] Timewarp HTTP call failed or returned invalid data. UI might be out of sync.');
-          // Example: Revert to old timewarp if you have it stored, or fetch current from backend if possible.
+        }
+      } else if (app3d?.timeUtils) {
+        // Local physics - update time warp directly
+        console.log('[App.jsx] onTimeWarpChange - Using local time management');
+        app3d.timeUtils.setLocalTimeWarp(newWarp);
+        
+        // Also notify physics provider if it supports time warp
+        if (app3d.satellites?.physicsProvider?.setTimeWarp) {
+          app3d.satellites.physicsProvider.setTimeWarp(newWarp);
         }
       } else {
-        console.warn('[App.jsx] onTimeWarpChange - No sessionId found. Timewarp command not sent.');
+        console.warn('[App.jsx] onTimeWarpChange - No timeUtils found, cannot update time warp');
       }
     },
     simulatedTime: simTime,
@@ -445,7 +482,8 @@ ${shareUrl}`);
     },
     isOpen: isDisplayOptionsOpen,
     onOpenChange: setIsDisplayOptionsOpen,
-    app3DRef: { current: app3d }
+    app3DRef: { current: app3d },
+    physicsProviderType: app3d?.physicsProviderType || 'unknown',
   };
   const satelliteListWindowProps = {
     satellites,
