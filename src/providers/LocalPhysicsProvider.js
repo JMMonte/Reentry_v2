@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
-import { SolarSystemManager } from '../managers/SolarSystemManager.js';
 
 /**
  * Provides satellite physics updates using a local Web Worker.
@@ -33,8 +32,6 @@ export class LocalPhysicsProvider {
 
         // For storing third body positions to send to worker
         this._thirdBodyPositions = [];
-
-        this.solarSystemManager = new SolarSystemManager();
     }
 
     initialize(initialSatellites) {
@@ -44,7 +41,7 @@ export class LocalPhysicsProvider {
             this.dispose();
         }
 
-        this._worker = new Worker(new URL('../workers/physicsWorker.js', import.meta.url), { type: 'module' });
+        this._worker = new Worker(new URL('../workers/modernPhysicsWorker.js', import.meta.url), { type: 'module' });
         this._workerReady = false;
 
         this._worker.onmessage = ({ data: { type, data } }) => {
@@ -54,6 +51,10 @@ export class LocalPhysicsProvider {
                     break;
                 case 'satellitesUpdate':
                     this._applyWorkerUpdates(data);
+                    break;
+                case 'simulationUpdate':
+                    // Handle simulation state updates from the worker
+                    this._handleSimulationUpdate(data);
                     break;
                 default:
                     console.warn('[LocalPhysicsProvider] unknown msg from worker:', type);
@@ -134,20 +135,30 @@ export class LocalPhysicsProvider {
             this.setTimeWarp(timeWarp);
         }
 
-        // Build thirdBodyPositions using SolarSystemManager
-        const simDate = this.app3d.timeUtils.getSimulatedTime?.() || new Date();
-        const relevantBodies = [10, 399, 301, 499, 401, 402, 599, 501, 502, 503, 504]; // Sun, Earth, Moon, Mars, Phobos, Deimos, Jupiter, Io, Europa, Ganymede, Callisto
-        this._thirdBodyPositions = relevantBodies.map(naifId => {
-            const state = this.solarSystemManager.getBodyState(naifId, simDate);
-            const name = this.app3d.celestialBodiesConfig?.[naifId]?.name || `NAIF${naifId}`;
-            const mass = Constants[`${name}Mass`] || 0;
-            return {
-                name,
-                position: new THREE.Vector3(state.position.x, state.position.y, state.position.z),
-                mass,
-                quaternion: state.quaternion
-            };
-        });
+        // Build thirdBodyPositions using PhysicsEngine only
+        const physicsEngine = this.app3d.physicsIntegration?.physicsEngine;
+        if (physicsEngine) {
+            const relevantBodies = [10, 399, 301, 499, 401, 402, 599, 501, 502, 503, 504]; // Sun, Earth, Moon, Mars, Phobos, Deimos, Jupiter, Io, Europa, Ganymede, Callisto
+            this._thirdBodyPositions = relevantBodies.map(naifId => {
+                const bodyState = physicsEngine.bodies[naifId];
+                if (bodyState) {
+                    return {
+                        name: `NAIF${naifId}`,
+                        position: new THREE.Vector3(
+                            bodyState.position[0],
+                            bodyState.position[1],
+                            bodyState.position[2]
+                        ),
+                        mass: bodyState.mass || Constants[`NAIF${naifId}Mass`] || 0,
+                        quaternion: bodyState.quaternion || new THREE.Quaternion()
+                    };
+                } else {
+                    // Fallback for bodies not in physics engine
+                    console.warn(`[LocalPhysicsProvider] No physics data for NAIF ${naifId}`);
+                    return null;
+                }
+            }).filter(body => body !== null);
+        }
 
         if (now - this._lastWorkerTick >= this._workerInterval) {
             this._syncBodiesToWorker();
@@ -178,7 +189,7 @@ export class LocalPhysicsProvider {
 
             // Worker sends position in METERS and velocity in M/S.
             // Satellite.updatePosition() expects position in METERS and velocity in M/S.
-            
+
             // Ensure temporary vectors exist on the satellite object or create them here if preferred.
             // Reusing vectors on `sat` (like `sat._tmpPos`) is fine if Satellite.js defines them for this purpose.
             // For clarity, let's create them here if they might not exist or are used differently by Satellite.js.
@@ -186,7 +197,17 @@ export class LocalPhysicsProvider {
             const newVelocity = new THREE.Vector3(u.velocity[0], u.velocity[1], u.velocity[2]);
 
             // Call the Satellite's method to update its physics state and visuals tied to that state.
-            sat.updatePosition(newPosition, newVelocity, u.debug); // u.debug is propagated if physicsWorker sends it
+            sat.updatePosition(newPosition, newVelocity, u.debug);
+        }
+    }
+
+    _handleSimulationUpdate(data) {
+        // Handle simulation state updates from the worker
+        // This can be used for debugging or synchronizing simulation state
+        // For now, just log that we received it to avoid warnings
+        if (data && data.state) {
+            // Optional: could expose this data for debugging or monitoring
+            // console.debug('[LocalPhysicsProvider] Simulation update received:', data);
         }
     }
 
@@ -272,12 +293,12 @@ export class LocalPhysicsProvider {
         } else {
             this.initialize();
         }
-        
+
         // For local physics, use setSimulatedTime instead of setSimTimeFromServer
         if (state?.simTime && this.app3d.timeUtils) {
             // Validate the time data first
             const timeToSet = state.simTime instanceof Date ? state.simTime : new Date(state.simTime);
-            
+
             if (!isNaN(timeToSet.getTime())) {
                 // Use setSimulatedTime for local physics (more appropriate than setSimTimeFromServer)
                 this.app3d.timeUtils.setSimulatedTime(timeToSet);

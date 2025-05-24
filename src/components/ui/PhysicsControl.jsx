@@ -80,15 +80,15 @@ export function PhysicsControl({ app, isOpen, onClose }) {
 
     const handleGenerateOrbit = () => {
         if (selectedBody) {
-            const orbitPath = generateOrbitPath(selectedBody, 360);
-            console.log(`Generated orbit path for ${selectedBody}:`, orbitPath);
+            generateOrbitPath(selectedBody, 360);
+            
         }
     };
 
     const handleGenerateTrajectory = () => {
         if (selectedSatellite) {
             generateSatelliteTrajectory(selectedSatellite, 3600, 60);
-            console.log(`Generated trajectory for satellite ${selectedSatellite}`);
+            
         }
     };
 
@@ -235,7 +235,6 @@ export function PhysicsControl({ app, isOpen, onClose }) {
                                 if (app?.timeUtils?.setSimulatedTime) {
                                     const j2000Epoch = new Date('2000-01-01T12:00:00Z');
                                     app.timeUtils.setSimulatedTime(j2000Epoch);
-                                    console.log('Set time to J2000 epoch for orientation verification');
                                 }
                             }}
                             variant="outline"
@@ -251,7 +250,6 @@ export function PhysicsControl({ app, isOpen, onClose }) {
                                 if (app?.timeUtils?.setSimulatedTime) {
                                     const nowUTC = new Date(); // Browser's current UTC time
                                     app.timeUtils.setSimulatedTime(nowUTC);
-                                    console.log('Reset to current browser UTC time:', nowUTC.toISOString());
                                 }
                             }}
                             variant="outline"

@@ -49,7 +49,7 @@ export class PhysicsIntegration {
                 }
             }
 
-            console.log('[PhysicsIntegration] Initializing with time:', currentTime.toISOString());
+            // console.log('[PhysicsIntegration] Initializing with time:', currentTime.toISOString());
 
             // Initialize the physics engine
             await this.physicsEngine.initialize(currentTime);
@@ -67,7 +67,7 @@ export class PhysicsIntegration {
             this._startUpdateLoop();
 
             this.isInitialized = true;
-            console.log('[PhysicsIntegration] Successfully initialized');
+            // console.log('[PhysicsIntegration] Successfully initialized');
 
             return this;
         } catch (error) {
@@ -335,7 +335,7 @@ export class PhysicsIntegration {
             return;
         }
 
-        let bodiesUpdated = 0;
+        // let bodiesUpdated = 0;
 
         for (const celestialBody of this.app.celestialBodies) {
             // Get the NAIF ID from the celestial body
@@ -405,7 +405,7 @@ export class PhysicsIntegration {
                     }
                 }
 
-                bodiesUpdated++;
+                // bodiesUpdated++;
 
             } catch (error) {
                 console.warn(`[PhysicsIntegration] Failed to update ${celestialBody.name}:`, error);
@@ -462,9 +462,9 @@ export class PhysicsIntegration {
             }
         }
 
-        if (bodiesUpdated > 0) {
-            // console.log(`[PhysicsIntegration] Updated ${bodiesUpdated} celestial bodies`);
-        }
+        // if (bodiesUpdated > 0) {
+        //     console.log(`[PhysicsIntegration] Updated ${bodiesUpdated} celestial bodies with correct positions`);
+        // }
     }
 
     /**
@@ -519,13 +519,21 @@ export class PhysicsIntegration {
     _findParentBody(bodies, body) {
         if (!body) return null;
 
-        // Use celestial bodies config to find parent relationship
-        const config = this.app.celestialBodiesConfig?.[body.name?.toLowerCase()];
-        if (config?.parent) {
-            return this._findBodyByName(bodies, config.parent);
+        // Use PlanetaryDataManager to find the parent NAIF ID
+        const planetaryDataManager = this.planetaryDataManager || (this.app?.planetaryDataManager);
+        let parentNaifId = null;
+        if (planetaryDataManager && body.naif_id !== undefined) {
+            const config = planetaryDataManager.getBodyByNaif(body.naif_id);
+            if (config && config.parent !== undefined && config.parent !== null) {
+                parentNaifId = config.parent;
+            }
+        } else if (body.parent !== undefined && body.parent !== null) {
+            parentNaifId = body.parent;
         }
-
-        // Default to Sun for planets
+        if (parentNaifId !== null && bodies[parentNaifId]) {
+            return bodies[parentNaifId];
+        }
+        // Fallback: Default to Sun for planets
         return this._findBodyByName(bodies, 'Sun');
     }
 

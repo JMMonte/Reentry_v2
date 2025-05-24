@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { Constants } from '../../utils/Constants.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
-import { celestialBodiesConfig } from '../../config/celestialBodiesConfig.js';
 import atmosphereMeshVertexShader from '../../shaders/atmosphereMesh.vert?raw';
 import atmosphereMeshFragmentShader from '../../shaders/atmosphereMesh.frag?raw';
 import { AtmosphereComponent } from './AtmosphereComponent.js';
@@ -17,10 +16,10 @@ import { RingComponent } from './RingComponent.js';
 
 // ---- General Render Order Constants ----
 export const RENDER_ORDER = {
-    SOI: -1,
+    SOI: 0,
     SURFACE: 0,
-    CLOUDS: 1,
-    ATMOSPHERE: 2,
+    CLOUDS: 0,
+    ATMOSPHERE: 1,
     POI: 3,
     RINGS: 4
 };
@@ -37,6 +36,25 @@ export class Planet {
     static camera = null;
     static setCamera(cam) { Planet.camera = cam; }
 
+    /**
+     * Centralized LOD levels generator for planets
+     * @param {number} radius
+     * @param {string} key
+     * @returns {Array<{meshRes: number, distance: number}>}
+     */
+    static generateLodLevelsForRadius(radius, key = 'default') {
+        // You can expand this switch for more keys if needed
+        let res, dist;
+        switch (key) {
+            case 'default':
+            default:
+                res = [16, 32, 64, 128];
+                dist = [150, 75, 30, 10];
+                break;
+        }
+        return res.map((meshRes, i) => ({ meshRes, distance: radius * dist[i] }));
+    }
+
     constructor(scene, renderer, timeManager, textureManager, config = {}) {
         // Barycenter minimal path
         if (config.type === 'barycenter') {
@@ -51,16 +69,23 @@ export class Planet {
             this.targetOrientation = new THREE.Quaternion();
             this.velocity = new THREE.Vector3(0, 0, 0);
             this.meshRes = this.meshRes || 8;
-            // Minimal group structure
+            // Minimal group structure with equatorial frame for moon positioning
             this.orbitGroup = new THREE.Group();
             this.orientationGroup = new THREE.Group();
+            this.equatorialGroup = new THREE.Group(); // For moon positioning relative to barycenter equatorial plane
             this.rotationGroup = new THREE.Group();
-            this.orientationGroup.add(this.rotationGroup);
+            
+            // Apply base orientation to equatorialGroup
+            this.equatorialGroup.rotation.set(Math.PI / 2, 0, 0); // Y-up → Z-up conversion
+            
+            this.orientationGroup.add(this.equatorialGroup);
+            this.equatorialGroup.add(this.rotationGroup);
             this.orbitGroup.add(this.orientationGroup);
             this.scene.add(this.orbitGroup);
             // No mesh for barycenters
             this.planetMesh = null;
             // No atmosphere, clouds, surface, or extra features
+            this.components = [];
             return;
         }
 
@@ -85,7 +110,12 @@ export class Planet {
         this.atmosphereThickness = (config.atmosphere && typeof config.atmosphere.thickness === 'number') ? config.atmosphere.thickness : 0;
         this.cloudThickness = config.cloudThickness || 0;
         this.orbitElements = config.orbitElements || null;
+        // LOD levels: resolve from key if present, else fallback
+        if (config.lodLevelsKey) {
+            this.lodLevels = Planet.generateLodLevelsForRadius(this.radius, config.lodLevelsKey);
+        } else {
         this.lodLevels = config.lodLevels || [];
+        }
         this.dotPixelSizeThreshold = 2;
         this.dotColor = config.dotColor || 0xffffff;
         this.soiRadius = config.soiRadius || 0;
@@ -110,6 +140,9 @@ export class Planet {
                     // Add rings for mesh planets after model is loaded
                     if (config.addRings && config.rings) {
                         this.ringComponent = new RingComponent(this, config.rings);
+                        if (this.ringComponent.mesh) {
+                            this.equatorialGroup.add(this.ringComponent.mesh);
+                        }
                         this.components.push(this.ringComponent);
                     }
                     // If you want to add surface features to mesh planets, do it here:
@@ -154,7 +187,7 @@ export class Planet {
                 if ('thicknessFraction' in atm) atm.thickness = atm.thicknessFraction * this.radius;
                 this.atmosphereThickness = atm.thickness;
                 if ('densityScaleHeightFraction' in atm) atm.densityScaleHeight = atm.densityScaleHeightFraction * this.radius;
-                const earthRef = celestialBodiesConfig.earth.radius;
+                const earthRef = 6371; // km (Earth mean radius, fallback)
                 if (Array.isArray(atm.rayleighScatteringCoeff)) atm.rayleighScatteringCoeff = atm.rayleighScatteringCoeff.map(v => v * (earthRef / this.radius));
                 if (typeof atm.mieScatteringCoeff === 'number') atm.mieScatteringCoeff *= (earthRef / this.radius);
                 const configWithComputedAtmo = { ...config, atmosphere: atm };
@@ -203,8 +236,11 @@ export class Planet {
             const polarScale = 1 - this.oblateness;
             const surfaceOpts = { ...defaultSurfaceOpts, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
             this.planetMesh.userData.planetName = this.name;
+            // Reparent planetMesh to rotationGroup (not equatorialGroup)
+            this.rotationGroup.add(this.planetMesh);
+            // Attach surface features, rings, and atmosphere to equatorialGroup
             this.surface = new PlanetSurface(
-                this.planetMesh,
+                this.equatorialGroup, // parent is now equatorialGroup
                 this.radius,
                 config.primaryGeojsonData,
                 config.stateGeojsonData,
@@ -228,12 +264,18 @@ export class Planet {
                     if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
                 }
             }
+            if (this.atmosphereMesh) {
+                this.equatorialGroup.add(this.atmosphereMesh);
+            }
             if (config.radialGridConfig) {
                 this.radialGrid = new RadialGrid(this, config.radialGridConfig);
             }
             // Add rings for procedural planets
             if (config.addRings && config.rings) {
                 this.ringComponent = new RingComponent(this, config.rings);
+                if (this.ringComponent.mesh) {
+                    this.equatorialGroup.add(this.ringComponent.mesh);
+                }
                 this.components.push(this.ringComponent);
             }
         }
@@ -263,12 +305,7 @@ export class Planet {
         }
 
         this.update(); // initial build and initial per-frame updates
-        if (this.rotationGroup) {
-            // Apply base orientation to convert Three.js Y-up mesh to Z-up physics coordinates
-            // This 90° X-rotation aligns the mesh with the physics simulation coordinate system
-            this.rotationGroup.rotation.set(0, 0, 0); // Reset first
-            this.rotationGroup.rotateX(Math.PI / 2); // Y-up → Z-up conversion
-        }
+        // No longer need to apply base rotation here since equatorialGroup handles Y-up to Z-up conversion
     }
 
     /* ===== private helpers ===== */
@@ -279,13 +316,18 @@ export class Planet {
 
         this.orbitGroup = new THREE.Group();
         this.orientationGroup = new THREE.Group();
+        this.equatorialGroup = new THREE.Group();
         this.rotationGroup = new THREE.Group();
 
         // Initialize positions from targets
         this.orbitGroup.position.copy(this.targetPosition);
         this.orientationGroup.quaternion.copy(this.targetOrientation);
 
-        this.orientationGroup.add(this.rotationGroup);
+        // Set equatorialGroup rotation to align Y-up (planet) with Z-up (world)
+        this.equatorialGroup.rotation.x = Math.PI / 2;
+
+        this.orientationGroup.add(this.equatorialGroup);
+        this.equatorialGroup.add(this.rotationGroup);
         this.orbitGroup.add(this.orientationGroup);
         this.scene.add(this.orbitGroup);
     }
@@ -410,6 +452,9 @@ export class Planet {
     getOrbitGroup() { return this.orbitGroup; }
     getUnrotatedGroup() {
         return this.unrotatedGroup;
+    }
+    getEquatorialGroup() { 
+        return this.equatorialGroup; 
     }
 
     getSurfaceTexture() {

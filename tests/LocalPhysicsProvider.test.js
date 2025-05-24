@@ -24,7 +24,7 @@ describe('LocalPhysicsProvider', () => {
                 timeWarp: 1,
             },
             getDisplaySetting: () => 1,
-            celestialBodiesConfig: {
+            // celestialBodiesConfig: { // No longer needed
                 10: { name: 'Sun' },
                 399: { name: 'Earth' },
                 301: { name: 'Moon' },
@@ -36,7 +36,7 @@ describe('LocalPhysicsProvider', () => {
                 502: { name: 'Europa' },
                 503: { name: 'Ganymede' },
                 504: { name: 'Callisto' },
-            },
+            // },
             satellites: { getSatellitesMap: () => new Map() },
         };
         provider = new LocalPhysicsProvider(mockApp3D);

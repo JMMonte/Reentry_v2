@@ -50,7 +50,7 @@ import { setupEventListeners as setupGlobalListeners }
     from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 
-import { celestialBodiesConfig } from './config/celestialBodiesConfig.js';
+// import { celestialBodiesConfig } from './config/celestialBodiesConfig.js';
 // import { setupSocketListeners } from './setup/setupListeners.js'; // removed socket.io listener setup
 import { initSimStream } from './simulation/simSocket.js';
 
@@ -155,7 +155,7 @@ class App3D extends EventTarget {
         this.Constants = Constants;
         this.Planet = Planet;
         this.THREE = THREE;
-        this.celestialBodiesConfig = celestialBodiesConfig;
+        // this.celestialBodiesConfig = celestialBodiesConfig; // No longer needed
 
         // For animation loop optimization
         this._lastCameraPos = new THREE.Vector3();
@@ -247,13 +247,21 @@ class App3D extends EventTarget {
             this._wireResizeListener();
             
             // Try to initialize live sim stream, but don't fail if backend is unavailable
-            try {
-                await initSimStream(this, 'ECLIPJ2000');
-                console.log('[App3D] Backend connection established');
-            } catch (streamError) {
-                console.warn('[App3D] Backend connection failed, using local physics only:', streamError);
-                // Initialize scene objects locally as fallback
+            // Skip server connection when using LocalPhysicsProvider to avoid overriding local physics
+            const usingLocalPhysics = this._satellites.physicsProvider instanceof LocalPhysicsProvider;
+            if (usingLocalPhysics) {
+                console.log('[App3D] Using local physics, skipping server connection');
+                // Initialize scene objects locally
                 await this._initializeLocalScene();
+            } else {
+                try {
+                    await initSimStream(this, 'ECLIPJ2000');
+                    console.log('[App3D] Backend connection established');
+                } catch (streamError) {
+                    console.warn('[App3D] Backend connection failed, using local physics only:', streamError);
+                    // Initialize scene objects locally as fallback
+                    await this._initializeLocalScene();
+                }
             }
 
             // Enable axis and vector visualization for all planets

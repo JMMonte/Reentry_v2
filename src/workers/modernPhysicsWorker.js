@@ -71,6 +71,10 @@ self.onmessage = async function (event) {
             case 'cleanup':
                 cleanup();
                 break;
+            case 'updateBodies':
+                // Store the received bodies for use in physics calculations
+                self.bodies = data.bodies;
+                break;
             default:
                 console.error('[ModernPhysicsWorker] Unknown message type:', type);
         }

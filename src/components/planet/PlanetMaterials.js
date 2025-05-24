@@ -13,7 +13,6 @@ function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
         bumpMapKey,
         params = {}, // extra material params (roughness, metalness, shininess, etc)
     } = config;
-    // Separate roughness/metalness for standard, and remove for others
     const { roughness, metalness, ...matParams } = params;
     // Main color map
     if (textureKey) {
@@ -39,18 +38,16 @@ function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
             roughnessMap.encoding = THREE.LinearEncoding;
         }
     }
-    // Specular map (Phong only, or as metalnessMap/roughnessMap for Standard on Earth)
+    // Specular map
     if (specularMapKey) {
         const specularMap = textureManager.getTexture(specularMapKey);
         if (specularMap) {
             if (materialType === 'phong') {
                 matParams.specularMap = specularMap;
             } else if (materialType === 'standard' && textureKey === 'earthTexture') {
-                // For Earth, use specular map as metalnessMap for water reflection only
                 matParams.metalnessMap = specularMap;
                 matParams.metalness = 1.0;
                 matParams.roughness = 0.1;
-                // Do NOT set as roughnessMap
             }
         }
     }
@@ -58,14 +55,14 @@ function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
     if (bumpMapKey) {
         const bumpMap = textureManager.getTexture(bumpMapKey);
         if (bumpMap) {
+            bumpMap.anisotropy = anisotropy;
             matParams.bumpMap = bumpMap;
         }
     }
-    // Material selection
+    // Material selection (no fallback logic)
     if (materialType === 'standard') {
         let finalRoughness = typeof roughness === 'number' ? roughness : 1.0;
         let finalMetalness = typeof metalness === 'number' ? metalness : 0.0;
-        // Special handling for Earth: use metalnessMap for water reflection
         if (textureKey === 'earthTexture' && specularMapKey) {
             const specularMap = textureManager.getTexture(specularMapKey);
             if (specularMap) {
@@ -77,7 +74,6 @@ function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
         return new THREE.MeshStandardMaterial({ ...matParams, roughness: finalRoughness, metalness: finalMetalness });
     } else if (materialType === 'phong') {
         const mat = new THREE.MeshPhongMaterial(matParams);
-        // Optionally set as custom properties for future use
         if (typeof roughness !== 'undefined') mat.roughness = roughness;
         if (typeof metalness !== 'undefined') mat.metalness = metalness;
         return mat;
@@ -87,7 +83,6 @@ function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
         if (typeof metalness !== 'undefined') mat.metalness = metalness;
         return mat;
     } else {
-        // fallback to standard
         return new THREE.MeshStandardMaterial({ ...matParams, roughness, metalness });
     }
 }

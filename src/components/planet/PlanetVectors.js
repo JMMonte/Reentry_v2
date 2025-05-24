@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helveticaRegular from '../../assets/fonts/helvetiker_regular.typeface.json';
-import { celestialBodiesConfig } from '../../config/celestialBodiesConfig.js';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 const ARROW_COLORS = {
@@ -24,7 +23,7 @@ export class PlanetVectors {
         // Detect barycenter: use type property if available, else fallback to old logic
         const isBarycenter = body.type === 'barycenter' || !body.radius || !body.rotationGroup;
         // Use Mercury's radius for barycenter axes
-        this.radius = isBarycenter ? celestialBodiesConfig.mercury.radius : body.radius || 1;
+        this.radius = isBarycenter ? 2439.7 : body.radius || 1; // Mercury mean radius in km
         this.arrowLength = this.radius * 2;
         this.arrowHeadLength = this.radius * 0.15;
         this.arrowHeadWidth = this.radius * 0.07;

@@ -5,7 +5,7 @@ export class RadialGrid {
     /**
      * Create a radial grid attached to a specific planet based on its configuration.
      * @param {Planet} planet - The planet instance this grid belongs to.
-     * @param {object} config - The radialGridConfig object from celestialBodiesConfig.js.
+     * @param {object} config - The radialGridConfig object for rendering.
      */
     constructor(planet, config) {
         this.planet = planet;
@@ -205,11 +205,11 @@ export class RadialGrid {
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         const material = new THREE.SpriteMaterial({
-             map: texture,
-             transparent: true,
-             sizeAttenuation: false,
-             // depthTest: false // Optionally try disabling depth test here too
-         });
+            map: texture,
+            transparent: true,
+            sizeAttenuation: false,
+            // depthTest: false // Optionally try disabling depth test here too
+        });
         const sprite = new THREE.Sprite(material);
         const pixelScale = 0.0002;
         sprite.scale.set(textWidth * pixelScale, textHeight * pixelScale, 1);

@@ -2,7 +2,6 @@
 
 import * as THREE from 'three';
 import { createSceneObjects } from '../setup/setupScene.js';
-import { planets, moons, stars, celestialBodiesConfig } from '../config/celestialBodiesConfig.js';
 
 export const PHYSICS_SERVER_URL = import.meta.env.VITE_PHYSICS_SERVER_URL || 'http://localhost:8000';
 export const PHYSICS_WS_URL = PHYSICS_SERVER_URL.replace(/^http/, 'ws') + '/ws';
@@ -122,8 +121,6 @@ let _barycenterPlanetPollInterval = null;
 
 // At the top of your file:
 const _lastSSBPositions = {}; // { naif_id: THREE.Vector3 }
-const _loggedBarycenterPlanetPairs = new Set();
-const _barycenterOffsetKm = {}; // { naif_id: distance }
 
 /**
  * Start live sim stream: msgType 10 = planetary updates, msgType 2 = sim time
@@ -252,44 +249,26 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     const serverOrientation = new THREE.Quaternion(quatX, quatY, quatZ, quatW);
 
                     // Handle initial state snap for Planets, otherwise interpolate or set directly
-                    if (body instanceof app.Planet && !body.hasBeenInitializedByServer) {
-                        body.applyInitialServerState(serverPosition, serverOrientation);
-                    } else {
-                        // Use new target methods if available (for Planets primarily after init)
-                        if (typeof body.setTargetPosition === 'function') {
-                            body.setTargetPosition(serverPosition);
-                            // Ensure .position is always up-to-date for orbit rendering
-                            body.position = serverPosition.clone();
+                    // Only set position/orientation from server for barycenters (type === 'barycenter')
+                    if (body.type === 'barycenter') {
+                        if (!body.hasBeenInitializedByServer && typeof body.applyInitialServerState === 'function') {
+                            body.applyInitialServerState(serverPosition, serverOrientation);
                         } else {
-                            // Fallback for non-Planet objects
-                            let directPosTarget = (body instanceof app.Planet && body.getOrbitGroup()) ? body.getOrbitGroup() : body;
-                            if (directPosTarget && directPosTarget.position) {
-                                directPosTarget.position.copy(serverPosition);
-                                // Also update .position property if present
+                            if (typeof body.setTargetPosition === 'function') {
+                                body.setTargetPosition(serverPosition);
+                                body.position = serverPosition.clone();
+                            } else {
+                                if (body.position) body.position.copy(serverPosition);
                                 if ('position' in body) body.position = serverPosition.clone();
-                            } else if (body.constructor.name === 'Sun' && typeof body.setPosition === 'function') {
-                                body.setPosition(serverPosition);
                             }
-                        }
-
-                        if (typeof body.setTargetOrientation === 'function') {
-                            body.setTargetOrientation(serverOrientation);
-                        } else {
-                            // Fallback for non-Planet objects
-                            let directOrientTarget;
-                            if (body instanceof app.Planet && body.orientationGroup) {
-                                directOrientTarget = body.orientationGroup;
-                            } else if (body.constructor.name === 'Sun' && body.sun && body.sun.quaternion) {
-                                directOrientTarget = body.sun; // The mesh object
-                            } else if (body instanceof THREE.Group) {
-                                directOrientTarget = body; // The group itself
-                            }
-
-                            if (directOrientTarget && directOrientTarget.quaternion) {
-                                directOrientTarget.quaternion.copy(serverOrientation);
+                            if (typeof body.setTargetOrientation === 'function') {
+                                body.setTargetOrientation(serverOrientation);
+                            } else if (body.orientationGroup && body.orientationGroup.quaternion) {
+                                body.orientationGroup.quaternion.copy(serverOrientation);
                             }
                         }
                     }
+                    // For all other bodies (planets, moons), do NOT set position/orientation from server
 
                     // Update velocity (no interpolation for now)
                     if (body) {
@@ -344,19 +323,6 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                     const currentBody = app.bodiesByNaifId?.[naif_id];
                     if (!currentBody) {
                         console.warn(`[simSocket] No body found for NAIF ID: ${naif_id}. Current keys:`, Object.keys(app.bodiesByNaifId || {}));
-                    }
-
-                    if (currentBody && currentBody.parent && celestialBodiesConfig[currentBody.parent]?.type === 'barycenter') {
-                        const barycenterCfg = celestialBodiesConfig[currentBody.parent];
-                        const baryNaifId = barycenterCfg.naif_id;
-                        const logKey = `${currentBody.naif_id}|${baryNaifId}`;
-                        if (_lastSSBPositions[baryNaifId] && !_loggedBarycenterPlanetPairs.has(logKey)) {
-                            const planetPos = _lastSSBPositions[currentBody.naif_id];
-                            const baryPos = _lastSSBPositions[baryNaifId];
-                            const dist = planetPos.distanceTo(baryPos);
-                            _loggedBarycenterPlanetPairs.add(logKey);
-                            _barycenterOffsetKm[currentBody.naif_id] = dist;
-                        }
                     }
                 }
                 // After all planet positions/velocities are updated, update orbit lines

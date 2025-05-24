@@ -2,14 +2,156 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 
+// Julian date utilities
+export const J2000_EPOCH_JD = 2451545.0;
+export function dateToJd(date) {
+    return (date.getTime() / 86400000) + 2440587.5;
+}
+
+const DEG_TO_RAD = Math.PI / 180.0;
+
 /**
  * Specialized orbit propagator for rendering orbital paths
  * Supports Keplerian orbits, numerical integration, and trajectory prediction
+ * 
+ * Now includes consolidated orbital mechanics functions from OrbitalMechanics.js
  */
 export class OrbitPropagator {
     constructor() {
         this.cache = new Map(); // Cache orbital elements and trajectories
         this.maxCacheSize = 1000;
+    }
+
+    /**
+     * Solve Kepler's equation for eccentric anomaly
+     * @param {number} M - Mean anomaly (radians)
+     * @param {number} e - Eccentricity
+     * @param {number} tolerance - Convergence tolerance
+     * @returns {number} Eccentric anomaly (radians)
+     */
+    solveKeplersEquation(M, e, tolerance = 1e-10) {
+        let E = M; // Initial guess
+        let deltaE = 1.0;
+        let iterations = 0;
+        const maxIterations = 100;
+
+        while (Math.abs(deltaE) > tolerance && iterations < maxIterations) {
+            const f = E - e * Math.sin(E) - M;
+            const fp = 1.0 - e * Math.cos(E);
+            deltaE = f / fp;
+            E -= deltaE;
+            iterations++;
+        }
+
+        return E;
+    }
+
+    /**
+     * Convert orbital elements to Cartesian state vector
+     * @param {Object} elements - Orbital elements {a, e, i, Omega, omega, M0, epoch}
+     * @param {number} julianDate - Current Julian date
+     * @param {number} GM - Gravitational parameter (km³/s²)
+     * @returns {Object} {position: Vector3, velocity: Vector3} in km and km/s
+     */
+    orbitalElementsToStateVector(elements, julianDate, GM) {
+        const { a, e, i, Omega, omega, M0, epoch } = elements;
+
+        // Convert to radians
+        const i_rad = i * DEG_TO_RAD;
+        const Omega_rad = Omega * DEG_TO_RAD;
+        const omega_rad = omega * DEG_TO_RAD;
+        const M0_rad = M0 * DEG_TO_RAD;
+
+        // Time since epoch (days)
+        const deltaT = julianDate - epoch;
+
+        // Mean motion (rad/day)
+        const n = Math.sqrt(GM / (a * a * a)) * 86400; // rad/s to rad/day by multiplying by seconds per day
+
+        // Current mean anomaly
+        const M = M0_rad + n * deltaT;
+
+        // Solve Kepler's equation for eccentric anomaly
+        const E = this.solveKeplersEquation(M, e);
+
+        // True anomaly
+        const cosnu = (Math.cos(E) - e) / (1 - e * Math.cos(E));
+        const sinnu = Math.sqrt(1 - e * e) * Math.sin(E) / (1 - e * Math.cos(E));
+        const nu = Math.atan2(sinnu, cosnu);
+
+        // Distance from central body
+        const r = a * (1 - e * Math.cos(E));
+
+        // Position in orbital plane
+        const x_orb = r * Math.cos(nu);
+        const y_orb = r * Math.sin(nu);
+        const z_orb = 0;
+
+        // Velocity in orbital plane
+        const p = a * (1 - e * e);
+        const h = Math.sqrt(GM * p); // angular momentum, GM already in km³/s²
+        const vx_orb = -(h / r) * Math.sin(nu);
+        const vy_orb = (h / r) * (e + Math.cos(nu));
+        const vz_orb = 0;
+
+        // Rotation matrices for 3D transformation
+        const cosOmega = Math.cos(Omega_rad);
+        const sinOmega = Math.sin(Omega_rad);
+        const cosomega = Math.cos(omega_rad);
+        const sinomega = Math.sin(omega_rad);
+        const cosi = Math.cos(i_rad);
+        const sini = Math.sin(i_rad);
+
+        // Transform to 3D coordinates (ECLIPJ2000)
+        const P11 = cosOmega * cosomega - sinOmega * sinomega * cosi;
+        const P12 = -cosOmega * sinomega - sinOmega * cosomega * cosi;
+        const P13 = sinOmega * sini;
+
+        const P21 = sinOmega * cosomega + cosOmega * sinomega * cosi;
+        const P22 = -sinOmega * sinomega + cosOmega * cosomega * cosi;
+        const P23 = -cosOmega * sini;
+
+        const P31 = sinomega * sini;
+        const P32 = cosomega * sini;
+        const P33 = cosi;
+
+        // Apply rotation
+        const x = P11 * x_orb + P12 * y_orb + P13 * z_orb;
+        const y = P21 * x_orb + P22 * y_orb + P23 * z_orb;
+        const z = P31 * x_orb + P32 * y_orb + P33 * z_orb;
+
+        const vx = P11 * vx_orb + P12 * vy_orb + P13 * vz_orb;
+        const vy = P21 * vx_orb + P22 * vy_orb + P23 * vz_orb;
+        const vz = P31 * vx_orb + P32 * vy_orb + P33 * vz_orb;
+
+        const result = {
+            position: new THREE.Vector3(x, y, z),
+            velocity: new THREE.Vector3(vx, vy, vz)
+        };
+
+        return result;
+    }
+
+    /**
+     * Compute mean motion from semi-major axis and GM
+     * @param {number} a - Semi-major axis (km)
+     * @param {number} GM - Gravitational parameter (km³/s²)
+     * @returns {number} Mean motion (rad/day)
+     */
+    computeMeanMotion(a, GM) {
+        // n = sqrt(GM/a³) in rad/s, convert to rad/day by multiplying by seconds per day
+        return Math.sqrt(GM / (a * a * a)) * 86400;
+    }
+
+    /**
+     * Compute orbital period from semi-major axis and GM
+     * @param {number} a - Semi-major axis (km)
+     * @param {number} GM - Gravitational parameter (km³/s²)
+     * @returns {number} Orbital period (days)
+     */
+    computeOrbitalPeriod(a, GM) {
+        const n = this.computeMeanMotion(a, GM);
+        return (2 * Math.PI) / n;
     }
 
     /**
@@ -29,8 +171,9 @@ export class OrbitPropagator {
             return [];
         }
 
-        // Use provided timeSpan or calculate orbital period
-        const period = timeSpan || this.calculateOrbitalPeriod(elements, parent.mu || parent.mass);
+        // Use provided timeSpan or calculate orbital period (convert from days to seconds)
+        const parentMu = parent.mu || (Constants.G * parent.mass);
+        const period = timeSpan || (this.computeOrbitalPeriod(elements.semiMajorAxis, parentMu) * 86400);
 
         const points = [];
         const dt = period / numPoints;
@@ -176,20 +319,6 @@ export class OrbitPropagator {
     }
 
     /**
-     * Calculate orbital period from elements
-     * @param {Object} elements - Orbital elements
-     * @param {number} mu - Standard gravitational parameter
-     * @returns {number} Period in seconds
-     */
-    calculateOrbitalPeriod(elements, mu) {
-        if (!elements || !isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
-            return 86400; // Default to 1 day
-        }
-
-        return 2 * Math.PI * Math.sqrt(Math.pow(elements.semiMajorAxis, 3) / mu);
-    }
-
-    /**
      * Get position at a specific time using Keplerian motion
      * @param {Object} elements - Orbital elements
      * @param {Object} parent - Parent body
@@ -206,7 +335,7 @@ export class OrbitPropagator {
         const M = (elements.trueAnomaly + n * time) % (2 * Math.PI);
 
         // Solve Kepler's equation for eccentric anomaly
-        const E = this._solveKeplersEquation(M, elements.eccentricity);
+        const E = this.solveKeplersEquation(M, elements.eccentricity);
 
         // True anomaly
         const nu = 2 * Math.atan2(
@@ -278,30 +407,6 @@ export class OrbitPropagator {
         }
 
         return primaryOrbit;
-    }
-
-    /**
-     * Private: Solve Kepler's equation using Newton-Raphson method
-     * @param {number} M - Mean anomaly
-     * @param {number} e - Eccentricity
-     * @returns {number} Eccentric anomaly
-     */
-    _solveKeplersEquation(M, e) {
-        let E = M; // Initial guess
-
-        for (let i = 0; i < 10; i++) { // Max 10 iterations
-            const f = E - e * Math.sin(E) - M;
-            const fp = 1 - e * Math.cos(E);
-
-            if (Math.abs(fp) < 1e-12) break;
-
-            const deltaE = f / fp;
-            E -= deltaE;
-
-            if (Math.abs(deltaE) < 1e-12) break;
-        }
-
-        return E;
     }
 
     /**
@@ -421,4 +526,19 @@ export class OrbitPropagator {
             maxSize: this.maxCacheSize
         };
     }
-} 
+}
+
+// ============================================================================
+// Standalone functions for compatibility with existing code
+// These replace the functions from OrbitalMechanics.js
+// ============================================================================
+
+/**
+ * Get scaled position for visualization (convert km to scene units)
+ * @param {THREE.Vector3} position - Position in km
+ * @param {number} scaleFactor - Scale factor for visualization
+ * @returns {THREE.Vector3} Scaled position
+ */
+export function getScaledPosition(position, scaleFactor = 1e-6) {
+    return position.clone().multiplyScalar(scaleFactor);
+}

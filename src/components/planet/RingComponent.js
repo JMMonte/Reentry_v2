@@ -71,8 +71,6 @@ export class RingComponent {
         const planetQuat = new THREE.Quaternion();
         planet.rotationGroup.getWorldQuaternion(planetQuat);
         this.mesh.quaternion.copy(planetQuat);
-        // Rotate the ring so its normal matches the planet's Y axis
-        this.mesh.rotateX(Math.PI / 2);
         this.mesh.renderOrder = planet.renderOrderOverrides.RINGS ?? RENDER_ORDER.RINGS;
         planet.rotationGroup.add(this.mesh);
         // Store base emissive intensity for correct modulation
