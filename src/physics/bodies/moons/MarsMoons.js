@@ -14,17 +14,18 @@ export default [
         rotationPeriod: 27554, // seconds (0.3189 Earth days - synchronous with orbit)
         soiRadius: 0.020, // km - very small, Mars dominates
         orbitalPeriod: 27554, // seconds
-        materials: {
-            surfaceConfig: {
-                materialType: 'standard',
-                textureKey: 'phobosTexture',
-                // normalMapKey: 'phobosNormalTexture', // If available
-                params: {
-                    roughness: 0.9,
-                    metalness: 0.1,
-                }
-            },
-        },
+        // materials: {
+        //     surfaceConfig: {
+        //         materialType: 'standard',
+        //         textureKey: 'phobosTexture',
+        //         // normalMapKey: 'phobosNormalTexture', // If available
+        //         params: {
+        //             roughness: 0.9,
+        //             metalness: 0.1,
+        //         }
+        //     },
+        // },
+        model: '/3d_models/24878_Phobos_1_1000.glb',
         lodLevelsKey: 'default', // Uses default LOD scheme
         orbitalElements: { // ECLIPJ2000, J2000.0 epoch
             semiMajorAxis: 9376.0, // km
@@ -58,17 +59,18 @@ export default [
         rotationPeriod: 109605, // seconds (1.268 Earth days - synchronous with orbit)
         soiRadius: 0.010, // km - very small
         orbitalPeriod: 109605, // seconds
-        materials: {
-            surfaceConfig: {
-                materialType: 'standard',
-                textureKey: 'deimosTexture',
-                // normalMapKey: 'deimosNormalTexture', // If available
-                params: {
-                    roughness: 0.9,
-                    metalness: 0.1,
-                }
-            },
-        },
+        // materials: {
+        //     surfaceConfig: {
+        //         materialType: 'standard',
+        //         textureKey: 'deimosTexture',
+        //         // normalMapKey: 'deimosNormalTexture', // If available
+        //         params: {
+        //             roughness: 0.9,
+        //             metalness: 0.1,
+        //         }
+        //     },
+        // },
+        model: '/3d_models/24879_Deimos_1_1000.glb',
         lodLevelsKey: 'default',
         orbitalElements: { // ECLIPJ2000, J2000.0 epoch
             semiMajorAxis: 23463.2, // km

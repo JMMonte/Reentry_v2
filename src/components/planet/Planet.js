@@ -598,6 +598,9 @@ export class Planet {
                 this.modelLoaded = true;
                 // Add rings for mesh planets after model is loaded
                 this.#addRings(config);
+                // Add distant rendering for mesh planets
+                this.distantComponent = new DistantMeshComponent(this);
+                this.components.push(this.distantComponent);
                 // Dispatch event for listeners (e.g., PlanetVectors)
                 if (typeof this.onMeshLoaded === 'function') this.onMeshLoaded();
                 if (typeof this.dispatchEvent === 'function') {

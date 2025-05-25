@@ -64,11 +64,7 @@ export class StateVectorCalculator {
     calculateStateVector(naifId, time) {
         const bodyInfo = this.hierarchy.getBodyInfo(naifId);
         // DEBUG: Log every call to calculateStateVector
-        if (bodyInfo) {
-            const parentId = this.hierarchy.getParent(naifId);
-            const parentInfo = this.hierarchy.getBodyInfo(parentId);
-            console.log(`[STATEVECTOR DEBUG] naifId=${naifId}, name=${bodyInfo.name}, type=${bodyInfo.type}, parentId=${parentId}, parentName=${parentInfo?.name}, parentType=${parentInfo?.type}`);
-        }
+
         if (!bodyInfo) {
             console.warn(`No hierarchy info found for NAIF ID ${naifId}`);
             return null;
