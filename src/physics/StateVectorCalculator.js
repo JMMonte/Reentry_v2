@@ -1,9 +1,19 @@
 import * as Astronomy from 'astronomy-engine';
 import { OrbitPropagator, dateToJd } from './OrbitPropagator.js';
 import { planetaryDataManager } from './bodies/PlanetaryDataManager.js';
+import * as THREE from 'three';
+import { PhysicsEngine } from './PhysicsEngine.js';
+import { Constants } from '../utils/Constants.js';
 
 // Extract the functions we need from the Astronomy module
 const { Body, BaryState, MakeTime, Rotation_EQJ_ECL, RotateVector, GeoMoon } = Astronomy;
+
+// NAIF ID constants
+const NAIF_EARTH = 399;
+const NAIF_MOON = 301;
+const NAIF_EMB = 3;
+const NAIF_PLUTO_BARY = 9;
+const NAIF_GALILEAN_MOONS = [501, 502, 503, 504];
 
 /**
  * State Vector Calculator - Simplified Version
@@ -15,12 +25,8 @@ export class StateVectorCalculator {
     constructor(hierarchy, bodiesConfigMap = null) {
         this.hierarchy = hierarchy;
         this.bodiesConfigMap = bodiesConfigMap;
-        this.AU_TO_KM = 149597870.7;
-        this.DAYS_TO_SEC = 86400;
-
-        // Constants for Earth-Moon mass calculations
-        this.MOON_MASS = 7.342e22; // kg
-        this.EARTH_MASS = 5.972e24; // kg
+        this.AU_TO_KM = Constants.AU * Constants.metersToKm; // Astronomical unit in km
+        this.DAYS_TO_SEC = Constants.secondsInDay; // Seconds in a day
 
         // Initialize planetary data manager
         this._initializePlanetaryData();
@@ -93,11 +99,11 @@ export class StateVectorCalculator {
         }
 
         // Special handling for Earth and Moon: always use Astronomy Engine for highest accuracy
-        if (naifId === 399) return this._calculateEarthState(time);
-        if (naifId === 301) return this._calculateMoonState(time);
+        if (naifId === NAIF_EARTH) return this._calculateEarthState(time);
+        if (naifId === NAIF_MOON) return this._calculateMoonState(time);
 
         // Special handling for Galilean moons: always use Astronomy Engine for highest accuracy
-        if ([501, 502, 503, 504].includes(naifId)) {
+        if (NAIF_GALILEAN_MOONS.includes(naifId)) {
             return this._calculateGalileanMoonState(naifId, time);
         }
 
@@ -115,21 +121,28 @@ export class StateVectorCalculator {
         if (bodyInfo.type === 'planet' || bodyInfo.type === 'dwarf_planet') {
             if (parentInfo.type === 'barycenter') {
                 // Check if this is a multi-body system (like Earth-Moon or Pluto-Charon)
-                if (this._isMultiBodySystem(naifId, parentId)) {
-                    // Multi-body system: planet has orbital elements relative to barycenter
-                    const fullBodyConfig = this._getFullBodyConfig(naifId);
-                    const orbitalElements = fullBodyConfig?.orbitalElements || fullBodyConfig?.canonical_orbit;
-                    if (orbitalElements) {
-
-                        return this._calculateFromOrbitalElements(naifId, time, orbitalElements);
-                    } else {
-                        console.warn(`No orbital elements for multi-body planet ${bodyInfo.name} (NAIF ${naifId})`);
-                        return { position: [0, 0, 0], velocity: [0, 0, 0] };
-                    }
-                } else {
+                const barycenterChildren = Array.from(this.bodiesConfigMap?.values?.() || []).filter(cfg => cfg.parent === parentInfo.name && (cfg.type === 'planet' || cfg.type === 'dwarf_planet'));
+                if (barycenterChildren.length === 1) {
                     // Single-planet system: planet is at barycenter center (0,0,0 relative to barycenter)
-
-                    return { position: [0, 0, 0], velocity: [0, 0, 0] };
+                    return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+                }
+                if (this._isMultiBodySystem(naifId, parentId)) {
+                    // For true multi-body barycenter systems (like Pluto-Charon), always use barycenter calculation
+                    const barycenterMotion = this._calculateBarycenterFromSiblings(naifId, time);
+                    if (barycenterMotion && (barycenterMotion.position.some(v => v !== 0) || barycenterMotion.velocity.some(v => v !== 0))) {
+                        return barycenterMotion;
+                    }
+                    // Fallback: use orbital elements if barycenter calculation fails
+                    const fullBodyConfig = this._getFullBodyConfig(naifId);
+                    const orbitalElements = fullBodyConfig?.orbitalElements ?? fullBodyConfig?.canonical_orbit;
+                    if (orbitalElements) {
+                        return this._calculateFromOrbitalElements(naifId, time, orbitalElements);
+                    }
+                    console.warn(`No barycenter or orbital elements for multi-body planet ${bodyInfo.name} (NAIF ${naifId})`);
+                    return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+                } else {
+                    // Fallback: planet is at barycenter center
+                    return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
                 }
             } else {
                 console.warn(`Planet ${bodyInfo.name} has non-barycenter parent ${parentInfo.name} - this is unusual`);
@@ -142,11 +155,10 @@ export class StateVectorCalculator {
             const fullBodyConfig = this._getFullBodyConfig(naifId);
             const orbitalElements = fullBodyConfig?.orbitalElements || fullBodyConfig?.canonical_orbit;
             if (orbitalElements) {
-
                 return this._calculateFromOrbitalElements(naifId, time, orbitalElements);
             } else {
                 console.warn(`No orbital elements for ${bodyInfo.type} ${bodyInfo.name} (NAIF ${naifId})`);
-                return { position: [0, 0, 0], velocity: [0, 0, 0] };
+                return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
             }
         }
 
@@ -181,17 +193,32 @@ export class StateVectorCalculator {
 
             // Prepare orbital elements with proper epoch
             const elementsWithEpoch = {
-                a: orbitalElements.semiMajorAxis || orbitalElements.a,
-                e: orbitalElements.eccentricity || orbitalElements.e,
-                i: orbitalElements.inclination || orbitalElements.i,
-                Omega: orbitalElements.longitudeOfAscendingNode || orbitalElements.Omega,
-                omega: orbitalElements.argumentOfPeriapsis || orbitalElements.omega,
-                M0: orbitalElements.meanAnomalyAtEpoch || orbitalElements.M0,
-                epoch: orbitalElements.epoch || 2451545.0 // J2000.0 as default
+                a: orbitalElements.semiMajorAxis ?? orbitalElements.a,
+                e: orbitalElements.eccentricity ?? orbitalElements.e,
+                i: orbitalElements.inclination ?? orbitalElements.i,
+                Omega: orbitalElements.longitudeOfAscendingNode ?? orbitalElements.Omega,
+                omega: orbitalElements.argumentOfPeriapsis ?? orbitalElements.omega,
+                M0: orbitalElements.meanAnomalyAtEpoch ?? orbitalElements.M0,
+                epoch: orbitalElements.epoch ?? 2451545.0 // J2000.0 as default
             };
 
             // Calculate state vector
             const state = propagator.orbitalElementsToStateVector(elementsWithEpoch, jd, GM);
+
+            // DIAGNOSTIC: Check for NaN/Inf in Neptune system moons
+            if (parentFullConfig && parentFullConfig.name === 'neptune_barycenter') {
+                const isBad = (v) => !isFinite(v) || isNaN(v);
+                const badPos = state && (isBad(state.position.x) || isBad(state.position.y) || isBad(state.position.z));
+                const badVel = state && (isBad(state.velocity.x) || isBad(state.velocity.y) || isBad(state.velocity.z));
+                if (badPos || badVel) {
+                    const moonConfig = this._getFullBodyConfig(naifId);
+                    console.warn('[NeptuneMoonBug] Bad state vector for', moonConfig?.name || naifId, {
+                        naifId,
+                        elementsWithEpoch,
+                        state
+                    });
+                }
+            }
 
             // Check if coordinate transformation is needed
             const bodyConfig = this._getFullBodyConfig(naifId);
@@ -199,7 +226,35 @@ export class StateVectorCalculator {
 
             // Handle coordinate frame transformations
             if (referenceFrame) {
-                if (referenceFrame.toLowerCase().includes('equatorial')) {
+                // If referenceFrame is like 'jupiter_equatorial', 'saturn_equatorial', etc
+                if (/^[a-z_]+_equatorial$/i.test(referenceFrame)) {
+                    // If parent is a barycenter, rotate by planet orientation
+                    if (this.hierarchy.isBarycenter(parentId)) {
+                        // Find the planet with this barycenter as parent
+                        const planetNaif = Array.from(this.bodiesConfigMap?.entries() || []).find(([, cfg]) => cfg.parent && this.hierarchy._findNaifIdByName(this.bodiesConfigMap, cfg.parent) === parentId && (cfg.type === 'planet' || cfg.type === 'dwarf_planet'))?.[0];
+                        if (planetNaif) {
+                            // Compute planet orientation quaternion for this epoch
+                            const planetConfig = this._getFullBodyConfig(planetNaif);
+                            const physicsEngine = new PhysicsEngine();
+                            const orientation = physicsEngine._calculateOrientationFromConfig(planetConfig, time);
+                            const planetQuat = orientation.quaternion;
+                            // Rotate position and velocity
+                            const pos = new THREE.Vector3(state.position.x, state.position.y, state.position.z);
+                            const vel = new THREE.Vector3(state.velocity.x, state.velocity.y, state.velocity.z);
+                            pos.applyQuaternion(planetQuat);
+                            vel.applyQuaternion(planetQuat);
+                            return {
+                                position: [pos.x, pos.y, pos.z],
+                                velocity: [vel.x, vel.y, vel.z]
+                            };
+                        }
+                    }
+                    // Otherwise, do NOT rotate: leave in planet's equatorial frame
+                    return {
+                        position: [state.position.x, state.position.y, state.position.z],
+                        velocity: [state.velocity.x, state.velocity.y, state.velocity.z]
+                    };
+                } else if (referenceFrame.toLowerCase().includes('equatorial')) {
                     // DO NOT transform! Just return the state as-is.
                     return {
                         position: [state.position.x, state.position.y, state.position.z],
@@ -207,7 +262,6 @@ export class StateVectorCalculator {
                     };
                 }
                 // For 'equatorial_J2000' and other standard frames, no transformation needed
-                // These are already in the coordinate system expected by Three.js equatorialGroup
             }
 
             // Default: assume elements are already in the correct coordinate system
@@ -220,6 +274,43 @@ export class StateVectorCalculator {
             console.warn(`Failed to calculate state from orbital elements for NAIF ${naifId}:`, error);
             return null;
         }
+    }
+
+    /**
+     * Helper: Compute rotation matrix from planet equatorial to ecliptic frame
+     * @param {number} poleRA - Right ascension of planet's north pole (deg)
+     * @param {number} poleDec - Declination of planet's north pole (deg)
+     * Returns a 3x3 rotation matrix (array of arrays)
+     */
+    _planetEquatorialToEclipticMatrix(poleRA, poleDec) {
+        // Convert to radians
+        const ra = poleRA * Math.PI / 180;
+        const dec = poleDec * Math.PI / 180;
+        // Planet's north pole unit vector in ecliptic frame
+        const nx = Math.cos(dec) * Math.cos(ra);
+        const ny = Math.cos(dec) * Math.sin(ra);
+        const nz = Math.sin(dec);
+        // Z axis: planet's north pole
+        const z = [nx, ny, nz];
+        // X axis: intersection of planet equator and ecliptic (node)
+        // For simplicity, pick a vector perpendicular to z and ecliptic north (0,0,1)
+        let x = [-ny, nx, 0];
+        const norm = Math.hypot(x[0], x[1], x[2]);
+        if (norm > 0) x = x.map(v => v / norm); else x = [1, 0, 0];
+        // Y axis: y = z cross x
+        const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+        return [x, y, z];
+    }
+
+    /**
+     * Helper: Apply 3x3 matrix to vector
+     */
+    _applyMatrix3(mat, vec) {
+        return [
+            mat[0][0] * vec[0] + mat[0][1] * vec[1] + mat[0][2] * vec[2],
+            mat[1][0] * vec[0] + mat[1][1] * vec[1] + mat[1][2] * vec[2],
+            mat[2][0] * vec[0] + mat[2][1] * vec[1] + mat[2][2] * vec[2],
+        ];
     }
 
     /**
@@ -274,6 +365,14 @@ export class StateVectorCalculator {
      */
     _calculateEarthState(time) {
         try {
+            const earthConfig = this._getFullBodyConfig(NAIF_EARTH);
+            const moonConfig = this._getFullBodyConfig(NAIF_MOON);
+            const EARTH_MASS = earthConfig?.mass;
+            const MOON_MASS = moonConfig?.mass;
+            if (!EARTH_MASS || !MOON_MASS) {
+                console.warn('Earth or Moon mass not found in config');
+                return null;
+            }
             const moonGeo = GeoMoon(MakeTime(time));
             if (!moonGeo) return null;
 
@@ -288,10 +387,10 @@ export class StateVectorCalculator {
             const moonGeoECL = RotateVector(rotMatrix, moonGeoEQJ);
 
             // Calculate mass ratio
-            const MOON_MASS_RATIO = this.MOON_MASS / (this.EARTH_MASS + this.MOON_MASS);
+            const MOON_MASS_RATIO = MOON_MASS / (EARTH_MASS + MOON_MASS);
 
             // Calculate velocity using finite differences
-            const dt = 60; // seconds
+            const dt = StateVectorCalculator.FINITE_DIFF_DT; // seconds
             const futureTime = new Date(time.getTime() + dt * 1000);
             const futureMoonGeo = GeoMoon(MakeTime(futureTime));
 
@@ -330,6 +429,14 @@ export class StateVectorCalculator {
      */
     _calculateMoonState(time) {
         try {
+            const earthConfig = this._getFullBodyConfig(NAIF_EARTH);
+            const moonConfig = this._getFullBodyConfig(NAIF_MOON);
+            const EARTH_MASS = earthConfig?.mass;
+            const MOON_MASS = moonConfig?.mass;
+            if (!EARTH_MASS || !MOON_MASS) {
+                console.warn('Earth or Moon mass not found in config');
+                return null;
+            }
             const moonGeo = GeoMoon(MakeTime(time));
             if (!moonGeo) return null;
 
@@ -344,10 +451,10 @@ export class StateVectorCalculator {
             const moonGeoECL = RotateVector(rotMatrix, moonGeoEQJ);
 
             // Calculate mass ratio
-            const EARTH_MASS_RATIO = this.EARTH_MASS / (this.EARTH_MASS + this.MOON_MASS);
+            const EARTH_MASS_RATIO = EARTH_MASS / (EARTH_MASS + MOON_MASS);
 
             // Calculate velocity using finite differences
-            const dt = 60; // seconds
+            const dt = StateVectorCalculator.FINITE_DIFF_DT; // seconds
             const futureTime = new Date(time.getTime() + dt * 1000);
             const futureMoonGeo = GeoMoon(MakeTime(futureTime));
 
@@ -566,8 +673,8 @@ export class StateVectorCalculator {
         // Special cases for known multi-body systems
         // These are systems where the barycenter is significantly displaced from the primary body
         const knownMultiBodySystems = [
-            3, // Earth-Moon Barycenter (EMB)
-            9  // Pluto System Barycenter (Pluto-Charon)
+            NAIF_EMB, // Earth-Moon Barycenter (EMB)
+            NAIF_PLUTO_BARY  // Pluto System Barycenter (Pluto-Charon)
         ];
 
         if (knownMultiBodySystems.includes(parentId)) {
@@ -583,4 +690,57 @@ export class StateVectorCalculator {
         // because the planet is so much more massive than the moons
         return false;
     }
-} 
+
+    /**
+     * Compute planet's motion around barycenter from sibling masses and positions
+     * Used when no ephemeris or orbital elements are available
+     */
+    _calculateBarycenterFromSiblings(naifId, time) {
+        // Get this body's config
+        const bodyConfig = this._getFullBodyConfig(naifId);
+        if (!bodyConfig || !bodyConfig.mass) return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+        const parentId = this.hierarchy.getParent(naifId);
+        const parentInfo = this.hierarchy.getBodyInfo(parentId);
+        if (!parentInfo) return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+        // Get all siblings (moons/planets) sharing the same barycenter
+        const barycenterChildren = Array.from(this.bodiesConfigMap?.values?.() || [])
+            .filter(cfg => cfg.parent === parentInfo.name && cfg.naif_id !== bodyConfig.naif_id && cfg.mass && (cfg.type === 'planet' || cfg.type === 'dwarf_planet' || cfg.type === 'moon'));
+        // DEBUG: Log sibling info for barycenter calculation
+        if (bodyConfig && barycenterChildren.length > 0) {
+            console.log(`[BARYCENTER DEBUG] ${bodyConfig.name} barycenter siblings:`,
+                barycenterChildren.map(sib => ({
+                    name: sib.name,
+                    naif_id: sib.naif_id,
+                    mass: sib.mass,
+                    type: sib.type
+                }))
+            );
+        }
+        let totalMass = 0;
+        let weightedPos = [0, 0, 0];
+        let weightedVel = [0, 0, 0];
+        for (const sibling of barycenterChildren) {
+            const state = this.calculateStateVector(sibling.naif_id, time);
+            if (!state || !Array.isArray(state.position) || !Array.isArray(state.velocity)) continue;
+            // DEBUG: Log each sibling's state vector
+            console.log(`[BARYCENTER DEBUG] Sibling ${sibling.name} (naif_id ${sibling.naif_id}) state:`, state);
+            const m = sibling.mass;
+            totalMass += m;
+            weightedPos[0] += m * state.position[0];
+            weightedPos[1] += m * state.position[1];
+            weightedPos[2] += m * state.position[2];
+            weightedVel[0] += m * state.velocity[0];
+            weightedVel[1] += m * state.velocity[1];
+            weightedVel[2] += m * state.velocity[2];
+        }
+        if (totalMass === 0) return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+        // The planet's position is minus the mass-weighted sum of siblings, divided by its own mass
+        return {
+            position: weightedPos.map(x => -x / bodyConfig.mass),
+            velocity: weightedVel.map(x => -x / bodyConfig.mass)
+        };
+    }
+}
+
+StateVectorCalculator.FINITE_DIFF_DT = 60; // seconds
+StateVectorCalculator.ZERO_VECTOR = [0, 0, 0]; 

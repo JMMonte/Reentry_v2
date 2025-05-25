@@ -187,8 +187,14 @@ export class MoonManager {
                 }
                 // Position is now relative to the parent's equatorialGroup
                 let equatorialPosition = relativePosition.clone();
-                // StateVectorCalculator now handles all coordinate transformations properly
-                // No additional transformation needed here
+                // If moon's referenceFrame is 'xxx_equatorial', apply planet's orientation quaternion
+                const referenceFrame = moonData.orbitalElements?.referenceFrame || moonData.referenceFrame;
+                if (referenceFrame && /_equatorial$/i.test(referenceFrame)) {
+                    // Apply the parent planet's orientation quaternion
+                    if (parentPlanet.orientationGroup?.quaternion) {
+                        equatorialPosition.applyQuaternion(parentPlanet.orientationGroup.quaternion);
+                    }
+                }
                 moonMesh.position.copy(equatorialPosition);
             } else {
                 console.warn(`Moon ${naifId}: Parent planet or equatorial group not found for relative positioning.`);

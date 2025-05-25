@@ -25,7 +25,9 @@ export default [
         GM: 4.035032e5, // km³/s² - Combined Earth-Moon system
         mass: 6.0458e24, // kg - Earth + Moon combined mass
         description: 'Earth-Moon Barycenter',
-        radius: 0
+        radius: 0,
+        poleRA: 0,
+        poleDec: 90
     },
     {
         name: 'mercury_barycenter',
@@ -77,6 +79,8 @@ export default [
         mass: 6.417e23, // kg - Mars + moons combined mass
         description: 'Mars System Barycenter',
         radius: 0,
+        poleRA: 317.68143,
+        poleDec: 52.88650,
         orbitalElements: {
             semiMajorAxis: 227939200.0,
             eccentricity: 0.0935,
@@ -97,6 +101,8 @@ export default [
         mass: 1.898e27, // kg - Jupiter + moons combined mass
         description: 'Jupiter System Barycenter',
         radius: 0,
+        poleRA: 268.057,
+        poleDec: 64.495,
         orbitalElements: {
             semiMajorAxis: 778500000.0,
             eccentricity: 0.0489,
@@ -117,6 +123,8 @@ export default [
         mass: 5.683e26, // kg - Saturn + moons combined mass
         description: 'Saturn System Barycenter',
         radius: 0,
+        poleRA: 40.589,
+        poleDec: 83.537,
         orbitalElements: {
             semiMajorAxis: 1433530000.0,
             eccentricity: 0.0565,
@@ -137,6 +145,8 @@ export default [
         mass: 8.681e25, // kg - Uranus + moons combined mass
         description: 'Uranus System Barycenter',
         radius: 0,
+        poleRA: 257.311,
+        poleDec: -15.175,
         orbitalElements: {
             semiMajorAxis: 2875040000.0,
             eccentricity: 0.0463,
@@ -157,6 +167,8 @@ export default [
         mass: 1.024e26, // kg - Neptune + moons combined mass
         description: 'Neptune System Barycenter',
         radius: 0,
+        poleRA: 299.36,
+        poleDec: 43.46,
         orbitalElements: {
             semiMajorAxis: 4504450000.0,
             eccentricity: 0.0097,
@@ -177,6 +189,8 @@ export default [
         mass: 1.471e22, // kg - Pluto + moons combined mass
         description: 'Pluto System Barycenter',
         radius: 0,
+        poleRA: 132.993,
+        poleDec: -6.163,
         orbitalElements: {
             semiMajorAxis: 5906440628.0,
             eccentricity: 0.2488,

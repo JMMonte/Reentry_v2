@@ -14,7 +14,6 @@ export default [
         rotationPeriod: 27554, // seconds (0.3189 Earth days - synchronous with orbit)
         soiRadius: 0.020, // km - very small, Mars dominates
         orbitalPeriod: 27554, // seconds
-        semiMajorAxis: 9376, // km from Mars center
         materials: {
             surfaceConfig: {
                 materialType: 'standard',
@@ -59,7 +58,6 @@ export default [
         rotationPeriod: 109605, // seconds (1.268 Earth days - synchronous with orbit)
         soiRadius: 0.010, // km - very small
         orbitalPeriod: 109605, // seconds
-        semiMajorAxis: 23463.2, // km from Mars center
         materials: {
             surfaceConfig: {
                 materialType: 'standard',

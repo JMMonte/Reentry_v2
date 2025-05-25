@@ -260,6 +260,17 @@ export async function createSceneObjects(app) {
         camera
     });
 
+    // --- Parent moons to their planet's equatorialGroup ---
+    for (const [, config] of planetaryDataManager.naifToBody.entries()) {
+        if (config.type === 'moon') {
+            const moonObj = app.bodiesByNaifId[config.naif_id];
+            const parentPlanet = app.bodiesByNaifId[config.parent];
+            if (moonObj && parentPlanet && parentPlanet.getEquatorialGroup) {
+                parentPlanet.getEquatorialGroup().add(moonObj.getOrbitGroup());
+            }
+        }
+    }
+
     // 7. Display tuning
     if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
 }

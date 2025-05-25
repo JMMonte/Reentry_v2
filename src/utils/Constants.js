@@ -60,4 +60,6 @@ export class Constants {
     static ascendingNode = -11.26064 * (Math.PI / 180); // Longitude of ascending node in radians
     static argumentOfPeriapsis = 318.15 * (Math.PI / 180); // Argument of periapsis in radians
 
+    static AU_KM = Constants.AU * Constants.metersToKm; // Astronomical unit in kilometers
+
 }

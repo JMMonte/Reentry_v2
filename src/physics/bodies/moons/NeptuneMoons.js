@@ -11,7 +11,6 @@ export default [
         density: 2061, // kg/m³
         rotationPeriod: -5.877 * 24 * 3600, // Synchronous, retrograde
         orbitalPeriod: -5.877 * 24 * 3600, // Retrograde orbit
-        semiMajorAxis: 354800, // km
         orbitalElements: {
             semiMajorAxis: 354800.0,
             eccentricity: 0.000,
@@ -54,7 +53,6 @@ export default [
         density: 1300, // kg/m³
         rotationPeriod: 1.122315 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.122315 * 24 * 3600,
-        semiMajorAxis: 117647, // km
         orbitalElements: {
             semiMajorAxis: 117600.0,
             eccentricity: 0.000,
@@ -95,7 +93,6 @@ export default [
         density: 1500, // kg/m³ (estimated)
         rotationPeriod: 11.52 * 3600, // seconds (11.52 hours, not synchronous)
         orbitalPeriod: 360.14 * 24 * 3600, // Highly eccentric orbit
-        semiMajorAxis: 5513400, // km
         orbitalElements: {
             semiMajorAxis: 5513900.0,
             eccentricity: 0.751,

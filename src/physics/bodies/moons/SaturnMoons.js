@@ -11,7 +11,6 @@ export default [
         density: 1148, // kg/m³
         rotationPeriod: 0.942422 * 24 * 3600, // Synchronous
         orbitalPeriod: 0.942422 * 24 * 3600, // days to seconds
-        semiMajorAxis: 185539, // km
         orbitalElements: {
             semiMajorAxis: 185539.0,
             eccentricity: 0.0196,
@@ -52,7 +51,6 @@ export default [
         density: 1609, // kg/m³
         rotationPeriod: 1.370218 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.370218 * 24 * 3600,
-        semiMajorAxis: 237948, // km
         orbitalElements: {
             semiMajorAxis: 238042.0,
             eccentricity: 0.0047,
@@ -95,7 +93,6 @@ export default [
         density: 973, // kg/m³ (low density - mostly ice)
         rotationPeriod: 1.887802 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.887802 * 24 * 3600,
-        semiMajorAxis: 294619, // km
         orbitalElements: {
             semiMajorAxis: 294672.0,
             eccentricity: 0.0001,
@@ -137,7 +134,6 @@ export default [
         density: 1476, // kg/m³
         rotationPeriod: 2.736915 * 24 * 3600, // Synchronous
         orbitalPeriod: 2.736915 * 24 * 3600,
-        semiMajorAxis: 377396, // km
         orbitalElements: {
             semiMajorAxis: 377415.0,
             eccentricity: 0.0022,
@@ -178,7 +174,6 @@ export default [
         density: 1236, // kg/m³
         rotationPeriod: 4.518212 * 24 * 3600, // Synchronous
         orbitalPeriod: 4.518212 * 24 * 3600,
-        semiMajorAxis: 527108, // km
         orbitalElements: {
             semiMajorAxis: 527108.0,
             eccentricity: 0.001,
@@ -219,7 +214,6 @@ export default [
         density: 1882, // kg/m³
         rotationPeriod: 15.945 * 24 * 3600, // Synchronous
         orbitalPeriod: 15.945 * 24 * 3600,
-        semiMajorAxis: 1221870, // km
         orbitalElements: {
             semiMajorAxis: 1221870.0,
             eccentricity: 0.0288,
@@ -280,7 +274,6 @@ export default [
         density: 1083, // kg/m³
         rotationPeriod: 79.3215 * 24 * 3600, // Synchronous
         orbitalPeriod: 79.3215 * 24 * 3600,
-        semiMajorAxis: 3560820, // km (distant and inclined orbit)
         orbitalElements: {
             semiMajorAxis: 3560820.0,
             eccentricity: 0.0283,

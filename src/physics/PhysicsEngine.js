@@ -252,12 +252,16 @@ export class PhysicsEngine {
         const decRad = poleDec * (Math.PI / 180);
         const spinRad = spin * (Math.PI / 180);
 
-        // Create pole vector in ECLIPJ2000 (simplified, assuming already in ecliptic)
-        const poleVector = new THREE.Vector3(
+        // Create pole vector in J2000 equatorial coordinates
+        let poleVector = new THREE.Vector3(
             Math.cos(decRad) * Math.cos(raRad),
             Math.cos(decRad) * Math.sin(raRad),
             Math.sin(decRad)
         );
+        // Rotate from equatorial to ecliptic (J2000) by -23.43928 deg about X
+        const obliquity = THREE.MathUtils.degToRad(23.43928);
+        const eqToEclQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -obliquity);
+        poleVector.applyQuaternion(eqToEclQ);
 
         const quaternion = this._calculateQuaternionFromPole(poleVector, spinRad);
 

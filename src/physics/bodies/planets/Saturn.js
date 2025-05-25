@@ -25,7 +25,18 @@ export default {
     // Orbital properties
     soiRadius: 65500000, // km - Sphere of Influence radius
     orbitalPeriod: 29.457 * 365.25 * 86400, // seconds (29.457 Earth years)
-    semiMajorAxis: 1433.53e6, // km (9.58 AU)
+    // Saturn orbital elements (J2000, VSOP87, IAU 2025, NASA Horizons)
+    // Source: NASA Horizons, JPL, IAU 2023/2025, VSOP87, https://ssd.jpl.nasa.gov/horizons/
+    orbitalElements: {
+        semiMajorAxis: 1429400000, // km (9.53707032 AU)
+        eccentricity: 0.055723219,
+        inclination: 2.485240, // deg to ecliptic J2000
+        longitudeOfAscendingNode: 113.662424, // deg
+        argumentOfPeriapsis: 339.392263, // deg
+        meanAnomalyAtEpoch: 317.020705, // deg at J2000.0 (JD 2451545.0)
+        epoch: 2451545.0, // J2000.0
+        referenceFrame: 'ECLIPJ2000'
+    },
 
     // Atmospheric properties
     atmosphere: {
@@ -110,16 +121,6 @@ export default {
         dipoleMoment: 4.6e25, // A⋅m²
         tilt: 0, // degrees - closely aligned with rotation axis
         standoffDistance: 20 * 60268, // km - magnetopause distance
-    },
-
-    // Orbital mechanics from orbitalBodiesData.js
-    orbitalElements: {
-        semiMajorAxis: 1433530000.0,
-        eccentricity: 0.0565,
-        inclination: 2.485,
-        longitudeOfAscendingNode: 113.665,
-        argumentOfPeriapsis: 339.392,
-        meanAnomalyAtEpoch: 317.020
     },
 
     // Orientation (IAU 2023/2025)

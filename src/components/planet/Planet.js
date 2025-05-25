@@ -14,6 +14,46 @@ import { RadialGrid } from './RadialGrid.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
 
+/*
+ * Planet.js
+ *
+ * Orientation and Rotation System Documentation
+ * --------------------------------------------
+ *
+ * The planet's orientation is managed through a hierarchy of THREE.Group objects:
+ *
+ *   scene
+ *    └─ orbitGroup         // Handles planet's position in the world
+ *        └─ orientationGroup // Handles planet's orientation (axial tilt, rotation from server)
+ *            └─ equatorialGroup // Rotates planet's local Y-up to world Z-up (Three.js is Y-up, server/world is Z-up)
+ *                └─ rotationGroup // Contains the planet mesh and rotates for axial spin, rings, etc.
+ *
+ * Key conventions:
+ * - The server sends planet orientation as a quaternion in Z-up reference frame.
+ * - To match Three.js (Y-up), we rotate equatorialGroup by +90° about X (Math.PI/2).
+ * - All server quaternions should be used as-is (no further conversion needed) if this rotation is present.
+ * - Do NOT apply both a quaternion conversion and the equatorialGroup rotation, or the planet will be over-rotated.
+ *
+ * Group responsibilities:
+ * - orbitGroup:      World position of the planet (orbital motion, barycenter, etc.)
+ * - orientationGroup: Axial tilt and orientation from server (slerped per frame)
+ * - equatorialGroup:  Fixed +90° X rotation to convert Y-up (local) to Z-up (world)
+ * - rotationGroup:    Contains the planet mesh, rotates for axial spin, rings, etc.
+ *
+ * Methods:
+ * - setOrientationFromServerQuaternion(qServer):
+ *     Sets the target orientation for slerping. qServer must be in Y-up (Three.js) frame.
+ *     If using the default group hierarchy, pass the server quaternion as-is.
+ * - zUpToYUpQuaternion(qServer):
+ *     Converts a Z-up quaternion to Y-up. Only use if you remove the equatorialGroup rotation.
+ *
+ * Per-frame update:
+ * - The orientationGroup's quaternion is slerped toward targetOrientation each frame.
+ * - The equatorialGroup's rotation is fixed at +90° X.
+ *
+ * This design ensures that all planet orientation and rotation logic is centralized and avoids accidental double-rotation.
+ */
+
 // ---- General Render Order Constants ----
 export const RENDER_ORDER = {
     SOI: 0,
@@ -56,6 +96,8 @@ export class Planet {
     }
 
     constructor(scene, renderer, timeManager, textureManager, config = {}) {
+        // Step 1: Validate config
+        this.#validateConfig(config);
         // Barycenter minimal path
         if (config.type === 'barycenter') {
             this.scene = scene;
@@ -74,10 +116,10 @@ export class Planet {
             this.orientationGroup = new THREE.Group();
             this.equatorialGroup = new THREE.Group(); // For moon positioning relative to barycenter equatorial plane
             this.rotationGroup = new THREE.Group();
-            
+
             // Apply base orientation to equatorialGroup
             this.equatorialGroup.rotation.set(Math.PI / 2, 0, 0); // Y-up → Z-up conversion
-            
+
             this.orientationGroup.add(this.equatorialGroup);
             this.equatorialGroup.add(this.rotationGroup);
             this.orbitGroup.add(this.orientationGroup);
@@ -114,7 +156,7 @@ export class Planet {
         if (config.lodLevelsKey) {
             this.lodLevels = Planet.generateLodLevelsForRadius(this.radius, config.lodLevelsKey);
         } else {
-        this.lodLevels = config.lodLevels || [];
+            this.lodLevels = config.lodLevels || [];
         }
         this.dotPixelSizeThreshold = 2;
         this.dotColor = config.dotColor || 0xffffff;
@@ -126,158 +168,11 @@ export class Planet {
         this.planetLight = null;
         this.#initGroups();
 
-        // If model, load it and skip mesh/atmosphere/surface lines, but DO NOT return early
+        // Step 2: Model or Mesh/Component Initialization
         if (this.modelUrl) {
-            this.planetMesh = null;
-            this.modelLoaded = false;
-            const loader = new GLTFLoader();
-            loader.load(
-                this.modelUrl,
-                (gltf) => {
-                    this.planetMesh = gltf.scene;
-                    this.rotationGroup.add(this.planetMesh);
-                    this.modelLoaded = true;
-                    // Add rings for mesh planets after model is loaded
-                    if (config.addRings && config.rings) {
-                        this.ringComponent = new RingComponent(this, config.rings);
-                        if (this.ringComponent.mesh) {
-                            this.equatorialGroup.add(this.ringComponent.mesh);
-                        }
-                        this.components.push(this.ringComponent);
-                    }
-                    // If you want to add surface features to mesh planets, do it here:
-                    // Example (uncomment if needed):
-                    // this.planetMesh.userData.planetName = this.name;
-                    // this.surface = new PlanetSurface(
-                    //     this.planetMesh,
-                    //     this.radius,
-                    //     config.primaryGeojsonData,
-                    //     config.stateGeojsonData,
-                    //     surfaceOpts
-                    // );
-                    // Dispatch event for listeners (e.g., PlanetVectors)
-                    if (typeof this.onMeshLoaded === 'function') this.onMeshLoaded();
-                    if (typeof this.dispatchEvent === 'function') {
-                        this.dispatchEvent({ type: 'planetMeshLoaded' });
-                    }
-                },
-                undefined,
-                (error) => {
-                    console.error('Error loading 3D model for', this.name, error);
-                }
-            );
+            this.#initModel(config);
         } else {
-            // --- Standard mesh/atmosphere/surface lines logic ---
-            const materialOverrides = config.materials || {};
-            this.materials = new PlanetMaterials(
-                this.textureManager,
-                this.renderer.capabilities,
-                materialOverrides
-            );
-            this.renderOrderOverrides = (config.materials && config.materials.renderOrderOverrides) || {};
-            const planetIndex = Planet.instances.length - 1;
-            const blockSize = 10;
-            this.renderOrderOverrides.SURFACE = planetIndex * blockSize + RENDER_ORDER.SURFACE;
-            this.renderOrderOverrides.CLOUDS = planetIndex * blockSize + RENDER_ORDER.CLOUDS;
-            this.renderOrderOverrides.ATMOSPHERE = planetIndex * blockSize + RENDER_ORDER.ATMOSPHERE;
-            this.#initMaterials();
-            this.#initMeshes();
-            if (config.atmosphere) {
-                const atm = { ...config.atmosphere };
-                if ('thicknessFraction' in atm) atm.thickness = atm.thicknessFraction * this.radius;
-                this.atmosphereThickness = atm.thickness;
-                if ('densityScaleHeightFraction' in atm) atm.densityScaleHeight = atm.densityScaleHeightFraction * this.radius;
-                const earthRef = 6371; // km (Earth mean radius, fallback)
-                if (Array.isArray(atm.rayleighScatteringCoeff)) atm.rayleighScatteringCoeff = atm.rayleighScatteringCoeff.map(v => v * (earthRef / this.radius));
-                if (typeof atm.mieScatteringCoeff === 'number') atm.mieScatteringCoeff *= (earthRef / this.radius);
-                const configWithComputedAtmo = { ...config, atmosphere: atm };
-                this.atmosphereComponent = new AtmosphereComponent(
-                    this,
-                    configWithComputedAtmo,
-                    {
-                        vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
-                        fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
-                    }
-                );
-                this.components.push(this.atmosphereComponent);
-                this.atmosphereMesh = this.atmosphereComponent.mesh;
-                if (this.atmosphereMesh) {
-                    this.atmosphereMesh.renderOrder = this.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
-                }
-            }
-            this.distantComponent = new DistantMeshComponent(this);
-            this.components.push(this.distantComponent);
-            this.unrotatedGroup = new THREE.Group();
-            this.scene.add(this.unrotatedGroup);
-            if (this.cloudMaterial) {
-                this.cloudComponent = new CloudComponent(this);
-                this.components.push(this.cloudComponent);
-            }
-            const defaultSurfaceOpts = {
-                addLatitudeLines: true,
-                latitudeStep: 10,
-                addLongitudeLines: true,
-                longitudeStep: 10,
-                addCountryBorders: true,
-                addStates: true,
-                addCities: true,
-                addAirports: true,
-                addSpaceports: true,
-                addGroundStations: true,
-                addObservatories: true,
-                markerSize: 0.7,
-                circleSegments: 8,
-                circleTextureSize: 32,
-                fadeStartPixelSize: 320,
-                fadeEndPixelSize: 240,
-                heightOffset: 0,
-                ...config.surfaceOptions // allow config to override if needed
-            };
-            const polarScale = 1 - this.oblateness;
-            const surfaceOpts = { ...defaultSurfaceOpts, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
-            this.planetMesh.userData.planetName = this.name;
-            // Reparent planetMesh to rotationGroup (not equatorialGroup)
-            this.rotationGroup.add(this.planetMesh);
-            // Attach surface features, rings, and atmosphere to equatorialGroup
-            this.surface = new PlanetSurface(
-                this.equatorialGroup, // parent is now equatorialGroup
-                this.radius,
-                config.primaryGeojsonData,
-                config.stateGeojsonData,
-                surfaceOpts
-            );
-            if (this.surface) {
-                const o = surfaceOpts;
-                if (o.addLatitudeLines) this.surface.addLatitudeLines(o.latitudeStep);
-                if (o.addLongitudeLines) this.surface.addLongitudeLines(o.longitudeStep);
-                if (o.addCountryBorders) this.surface.addCountryBorders();
-                if (o.addStates) this.surface.addStates();
-                const layers = [
-                    [o.addCities, config.cityData, 'cityPoint', 'cities'],
-                    [o.addAirports, config.airportsData, 'airportPoint', 'airports'],
-                    [o.addSpaceports, config.spaceportsData, 'spaceportPoint', 'spaceports'],
-                    [o.addGroundStations, config.groundStationsData, 'groundStationPoint', 'groundStations'],
-                    [o.addObservatories, config.observatoriesData, 'observatoryPoint', 'observatories'],
-                    [o.addMissions, config.missionsData, 'missionPoint', 'missions']
-                ];
-                for (const [flag, data, matKey, layer] of layers) {
-                    if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
-                }
-            }
-            if (this.atmosphereMesh) {
-                this.equatorialGroup.add(this.atmosphereMesh);
-            }
-            if (config.radialGridConfig) {
-                this.radialGrid = new RadialGrid(this, config.radialGridConfig);
-            }
-            // Add rings for procedural planets
-            if (config.addRings && config.rings) {
-                this.ringComponent = new RingComponent(this, config.rings);
-                if (this.ringComponent.mesh) {
-                    this.equatorialGroup.add(this.ringComponent.mesh);
-                }
-                this.components.push(this.ringComponent);
-            }
+            this.#initComponents(config);
         }
 
         // --- SOI (Sphere of Influence) ---
@@ -323,7 +218,7 @@ export class Planet {
         this.orbitGroup.position.copy(this.targetPosition);
         this.orientationGroup.quaternion.copy(this.targetOrientation);
 
-        // Set equatorialGroup rotation to align Y-up (planet) with Z-up (world)
+        // Restore: set equatorialGroup rotation to align Y-up (planet) with Z-up (world)
         this.equatorialGroup.rotation.x = Math.PI / 2;
 
         this.orientationGroup.add(this.equatorialGroup);
@@ -389,7 +284,9 @@ export class Planet {
         }
     }
 
-    /* ===== per-frame ===== */
+    /**
+     * Update the planet's position, orientation, and all components. Called per-frame.
+     */
     update() {
         if (this.type === 'barycenter') {
             // Only interpolate position/orientation for barycenters
@@ -400,6 +297,7 @@ export class Planet {
             if (this.orientationGroup) {
                 this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
             }
+            // Do NOT set equatorialGroup quaternion for barycenters
             return;
         }
         // Always update distantComponent so it can toggle dot visibility
@@ -415,6 +313,7 @@ export class Planet {
         if (this.orientationGroup) {
             this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
         }
+        // Do NOT set equatorialGroup quaternion here
 
         // Remove the old conditional distantComponent update and return
         // If not distant, update all other detailed components as usual
@@ -426,57 +325,141 @@ export class Planet {
         });
     }
 
-    // New method to be called from App3D.tick() after main camera update
+    /**
+     * Update atmosphere shader uniforms. Call after camera/sun update.
+     * @param {THREE.Camera} camera
+     * @param {THREE.Object3D} sun
+     */
     updateAtmosphereUniforms(camera, sun) {
         if (this.atmosphereComponent && typeof this.atmosphereComponent.updateUniforms === 'function') {
             this.atmosphereComponent.updateUniforms(camera, sun);
         }
     }
 
-    // New method for updating surface (lines/POIs) fading, called from App3D.tick() after camera update
+    /**
+     * Update surface feature fading based on camera. Call after camera update.
+     * @param {THREE.Camera} camera
+     */
     updateSurfaceFading(camera) {
         if (this.surface && typeof this.surface.updateFade === 'function') {
             this.surface.updateFade(camera);
         }
     }
 
-    // New method for updating radial grid fading, called from App3D.tick() after camera update
+    /**
+     * Update radial grid fading based on camera. Call after camera update.
+     * @param {THREE.Camera} camera
+     */
     updateRadialGridFading(camera) {
         if (this.radialGrid && typeof this.radialGrid.updateFading === 'function') {
             this.radialGrid.updateFading(camera);
         }
     }
 
-    /* ===== public ===== */
+    /**
+     * Get the main mesh (or LOD) for this planet.
+     * @returns {THREE.Object3D|null}
+     */
     getMesh() { return this.planetMesh; }
+
+    /**
+     * Get the orbit group (top-level transform for this planet).
+     * @returns {THREE.Group}
+     */
     getOrbitGroup() { return this.orbitGroup; }
+
+    /**
+     * Get the unrotated group (for special overlays).
+     * @returns {THREE.Group}
+     */
     getUnrotatedGroup() {
         return this.unrotatedGroup;
     }
-    getEquatorialGroup() { 
-        return this.equatorialGroup; 
+
+    /**
+     * Get the equatorial group (handles Y-up to Z-up conversion).
+     * @returns {THREE.Group}
+     */
+    getEquatorialGroup() {
+        return this.equatorialGroup;
     }
 
+    /**
+     * Get the surface texture image, if available.
+     * @returns {HTMLImageElement|null}
+     */
     getSurfaceTexture() {
         if (!this.planetMesh) return null;
         const mat = (o) => o instanceof THREE.LOD ? o.levels[0]?.object?.material : o.material;
         return mat(this.planetMesh)?.map?.image;
     }
 
+    /**
+     * Set visibility of surface lines.
+     * @param {boolean} v
+     */
     setSurfaceLinesVisible(v) { this.surface?.setSurfaceLinesVisible(v); }
+    /**
+     * Set visibility of country borders.
+     * @param {boolean} v
+     */
     setCountryBordersVisible(v) { this.surface?.setCountryBordersVisible(v); }
+    /**
+     * Set visibility of states.
+     * @param {boolean} v
+     */
     setStatesVisible(v) { this.surface?.setStatesVisible(v); }
+    /**
+     * Set visibility of cities.
+     * @param {boolean} v
+     */
     setCitiesVisible(v) { this.surface?.setCitiesVisible(v); }
+    /**
+     * Set visibility of airports.
+     * @param {boolean} v
+     */
     setAirportsVisible(v) { this.surface?.setAirportsVisible(v); }
+    /**
+     * Set visibility of spaceports.
+     * @param {boolean} v
+     */
     setSpaceportsVisible(v) { this.surface?.setSpaceportsVisible(v); }
+    /**
+     * Set visibility of ground stations.
+     * @param {boolean} v
+     */
     setGroundStationsVisible(v) { this.surface?.setGroundStationsVisible(v); }
+    /**
+     * Set visibility of observatories.
+     * @param {boolean} v
+     */
     setObservatoriesVisible(v) { this.surface?.setObservatoriesVisible(v); }
+    /**
+     * Set visibility of missions.
+     * @param {boolean} v
+     */
     setMissionsVisible(v) { this.surface?.setMissionsVisible(v); }
+    /**
+     * Set visibility of the sphere of influence (SOI).
+     * @param {boolean} v
+     */
     setSOIVisible(v) { this.soiComponent && (this.soiComponent.mesh.visible = v); }
+    /**
+     * Set visibility of the radial grid.
+     * @param {boolean} v
+     */
     setRadialGridVisible(v) { this.radialGrid?.setVisible(v); }
+    /**
+     * Set visibility of rings.
+     * @param {boolean} v
+     */
     setRingsVisible(v) { if (this.ringComponent?.mesh) this.ringComponent.mesh.visible = v; }
 
-    // Method to apply the very first server state directly, bypassing interpolation
+    /**
+     * Apply the initial server state directly (no interpolation).
+     * @param {THREE.Vector3} position
+     * @param {THREE.Quaternion} orientation
+     */
     applyInitialServerState(position, orientation) {
         if (this.orbitGroup) {
             this.orbitGroup.position.copy(position);
@@ -489,26 +472,48 @@ export class Planet {
         this.hasBeenInitializedByServer = true;
     }
 
-    // Methods to set target state for interpolation for subsequent updates
+    /**
+     * Set the target position for interpolation.
+     * @param {THREE.Vector3} worldPositionVector
+     */
     setTargetPosition(worldPositionVector) {
         this.targetPosition.copy(worldPositionVector);
     }
 
+    /**
+     * Set the target orientation for interpolation.
+     * @param {THREE.Quaternion} worldOrientationQuaternion
+     */
     setTargetOrientation(worldOrientationQuaternion) {
         this.targetOrientation.copy(worldOrientationQuaternion);
     }
 
+    /**
+     * Convert ECI coordinates to ground intersection (lat/lon/alt).
+     * @param {THREE.Vector3} posEci
+     * @returns {object} Intersection result
+     */
     convertEciToGround(posEci) {
         const gmst = PhysicsUtils.calculateGMST(Date.now());
         const ecef = PhysicsUtils.eciToEcef(posEci, gmst);
         return PhysicsUtils.calculateIntersectionWithEarth(ecef);
     }
 
+    /**
+     * Get the rotation angle at a given Julian date.
+     * @param {number} JD - Julian date
+     * @param {number} rotPeriod - Rotation period (seconds)
+     * @param {number} [rotOffset=0] - Rotation offset (radians)
+     * @returns {number} Rotation angle in radians
+     */
     static getRotationAngleAtTime(JD, rotPeriod, rotOffset = 0) {
         const secs = (JD - 2451545.0) * Constants.secondsInDay;
         return (2 * Math.PI * (secs / rotPeriod % 1)) + rotOffset;
     }
 
+    /**
+     * Dispose of all resources and remove from scene.
+     */
     dispose() {
         this.orbitGroup.parent?.remove(this.orbitGroup);
         this.orbitLine?.parent?.remove(this.orbitLine);
@@ -542,9 +547,9 @@ export class Planet {
     }
 
     /**
-     * Converts a quaternion from Z-up (server) to Y-up (Three.js) reference frame.
+     * Convert a quaternion from Z-up (server) to Y-up (Three.js) reference frame.
      * @param {THREE.Quaternion} qServer - Quaternion from server (Z-up)
-     * @returns {THREE.Quaternion} - Quaternion for Three.js (Y-up)
+     * @returns {THREE.Quaternion} Quaternion for Three.js (Y-up)
      */
     static zUpToYUpQuaternion(qServer) {
         const zUpToYUp = new THREE.Quaternion();
@@ -557,20 +562,167 @@ export class Planet {
      * @param {THREE.Quaternion} qServer - Quaternion from server (Z-up)
      */
     setOrientationFromServerQuaternion(qServer) {
-        // Centralized in RotationComponent
-        // RotationComponent.applyServerQuaternion(this.orientationGroup, qServer);
-        // Now, this method will set the TARGET orientation for slerping.
-        // qServer is assumed to be the final Y-up Three.js quaternion.
         this.targetOrientation.copy(qServer);
     }
 
     /**
-     * TEST: Set a 90-degree rotation about Z (server frame) to verify orientation effect.
-     * Call this from the console or a test button.
+     * Test: Set a 90-degree rotation about Z (server frame) to verify orientation effect.
+     * @param {Planet} planetInstance
      */
     static testOrientation(planetInstance) {
-        // 90 degrees about Z in server (Z-up) frame
         const qServer = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
         planetInstance.setOrientationFromServerQuaternion(qServer);
+    }
+
+    // --- Private helpers extracted from constructor ---
+    #validateConfig(config) {
+        if (typeof config.name !== 'string' || !config.name.trim()) {
+            console.error('[Planet] Missing or invalid required config field: name', config);
+        }
+        if (config.type !== 'barycenter') {
+            if (typeof config.radius !== 'number' || !isFinite(config.radius) || config.radius <= 0) {
+                console.error('[Planet] Missing or invalid required config field: radius', config);
+            }
+        }
+    }
+
+    #initModel(config) {
+        this.planetMesh = null;
+        this.modelLoaded = false;
+        const loader = new GLTFLoader();
+        loader.load(
+            this.modelUrl,
+            (gltf) => {
+                this.planetMesh = gltf.scene;
+                this.rotationGroup.add(this.planetMesh);
+                this.modelLoaded = true;
+                // Add rings for mesh planets after model is loaded
+                this.#addRings(config);
+                // Dispatch event for listeners (e.g., PlanetVectors)
+                if (typeof this.onMeshLoaded === 'function') this.onMeshLoaded();
+                if (typeof this.dispatchEvent === 'function') {
+                    this.dispatchEvent({ type: 'planetMeshLoaded' });
+                }
+            },
+            undefined,
+            (error) => {
+                console.error('Error loading 3D model for', this.name, error);
+            }
+        );
+    }
+
+    #initComponents(config) {
+        const materialOverrides = config.materials || {};
+        this.materials = new PlanetMaterials(
+            this.textureManager,
+            this.renderer.capabilities,
+            materialOverrides
+        );
+        this.renderOrderOverrides = (config.materials && config.materials.renderOrderOverrides) || {};
+        const planetIndex = Planet.instances.length - 1;
+        const blockSize = 10;
+        this.renderOrderOverrides.SURFACE = planetIndex * blockSize + RENDER_ORDER.SURFACE;
+        this.renderOrderOverrides.CLOUDS = planetIndex * blockSize + RENDER_ORDER.CLOUDS;
+        this.renderOrderOverrides.ATMOSPHERE = planetIndex * blockSize + RENDER_ORDER.ATMOSPHERE;
+        this.#initMaterials();
+        this.#initMeshes();
+        if (config.atmosphere) {
+            const atm = { ...config.atmosphere };
+            if ('thicknessFraction' in atm) atm.thickness = atm.thicknessFraction * this.radius;
+            this.atmosphereThickness = atm.thickness;
+            if ('densityScaleHeightFraction' in atm) atm.densityScaleHeight = atm.densityScaleHeightFraction * this.radius;
+            const earthRef = 6371; // km (Earth mean radius, fallback)
+            if (Array.isArray(atm.rayleighScatteringCoeff)) atm.rayleighScatteringCoeff = atm.rayleighScatteringCoeff.map(v => v * (earthRef / this.radius));
+            if (typeof atm.mieScatteringCoeff === 'number') atm.mieScatteringCoeff *= (earthRef / this.radius);
+            const configWithComputedAtmo = { ...config, atmosphere: atm };
+            this.atmosphereComponent = new AtmosphereComponent(
+                this,
+                configWithComputedAtmo,
+                {
+                    vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
+                    fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
+                }
+            );
+            this.components.push(this.atmosphereComponent);
+            this.atmosphereMesh = this.atmosphereComponent.mesh;
+            if (this.atmosphereMesh) {
+                this.atmosphereMesh.renderOrder = this.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
+            }
+        }
+        this.distantComponent = new DistantMeshComponent(this);
+        this.components.push(this.distantComponent);
+        if (this.cloudMaterial) {
+            this.cloudComponent = new CloudComponent(this);
+            this.components.push(this.cloudComponent);
+        }
+        const defaultSurfaceOpts = {
+            addLatitudeLines: true,
+            latitudeStep: 10,
+            addLongitudeLines: true,
+            longitudeStep: 10,
+            addCountryBorders: true,
+            addStates: true,
+            addCities: true,
+            addAirports: true,
+            addSpaceports: true,
+            addGroundStations: true,
+            addObservatories: true,
+            markerSize: 0.7,
+            circleSegments: 8,
+            circleTextureSize: 32,
+            fadeStartPixelSize: 320,
+            fadeEndPixelSize: 240,
+            heightOffset: 0,
+            ...config.surfaceOptions // allow config to override if needed
+        };
+        const polarScale = 1 - this.oblateness;
+        const surfaceOpts = { ...defaultSurfaceOpts, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
+        this.planetMesh.userData.planetName = this.name;
+        // Reparent planetMesh to rotationGroup (not equatorialGroup)
+        this.rotationGroup.add(this.planetMesh);
+        // Attach surface features, rings, and atmosphere to equatorialGroup
+        this.surface = new PlanetSurface(
+            this.equatorialGroup, // parent is now equatorialGroup
+            this.radius,
+            config.primaryGeojsonData,
+            config.stateGeojsonData,
+            surfaceOpts
+        );
+        if (this.surface) {
+            const o = surfaceOpts;
+            if (o.addLatitudeLines) this.surface.addLatitudeLines(o.latitudeStep);
+            if (o.addLongitudeLines) this.surface.addLongitudeLines(o.longitudeStep);
+            if (o.addCountryBorders) this.surface.addCountryBorders();
+            if (o.addStates) this.surface.addStates();
+            const layers = [
+                [o.addCities, config.cityData, 'cityPoint', 'cities'],
+                [o.addAirports, config.airportsData, 'airportPoint', 'airports'],
+                [o.addSpaceports, config.spaceportsData, 'spaceportPoint', 'spaceports'],
+                [o.addGroundStations, config.groundStationsData, 'groundStationPoint', 'groundStations'],
+                [o.addObservatories, config.observatoriesData, 'observatoryPoint', 'observatories'],
+                [o.addMissions, config.missionsData, 'missionPoint', 'missions']
+            ];
+            for (const [flag, data, matKey, layer] of layers) {
+                if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
+            }
+        }
+        if (this.atmosphereMesh) {
+            this.equatorialGroup.add(this.atmosphereMesh);
+        }
+        if (config.radialGridConfig) {
+            this.radialGrid = new RadialGrid(this, config.radialGridConfig);
+        }
+        // Add rings for procedural planets
+        this.#addRings(config);
+    }
+
+    #addRings(config) {
+        if (config.addRings && config.rings) {
+            this.ringComponent = new RingComponent(this, config.rings);
+            if (this.ringComponent.mesh) {
+                this.equatorialGroup.add(this.ringComponent.mesh);
+            }
+            this.components.push(this.ringComponent);
+        }
     }
 }

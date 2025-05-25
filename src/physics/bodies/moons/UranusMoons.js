@@ -12,7 +12,6 @@ export default [
         density: 1353, // kg/m³
         rotationPeriod: 2.52 * 24 * 3600, // Synchronous
         orbitalPeriod: 2.52 * 24 * 3600,
-        semiMajorAxis: 190900, // km
         orbitalElements: {
             semiMajorAxis: 190900.0,
             eccentricity: 0.001,
@@ -55,7 +54,6 @@ export default [
         density: 1399, // kg/m³
         rotationPeriod: 4.14 * 24 * 3600, // Synchronous
         orbitalPeriod: 4.14 * 24 * 3600,
-        semiMajorAxis: 266000, // km
         orbitalElements: {
             semiMajorAxis: 266000.0,
             eccentricity: 0.004,
@@ -97,7 +95,6 @@ export default [
         density: 1711, // kg/m³
         rotationPeriod: 8.71 * 24 * 3600, // Synchronous
         orbitalPeriod: 8.71 * 24 * 3600,
-        semiMajorAxis: 436300, // km
         orbitalElements: {
             semiMajorAxis: 436300.0,
             eccentricity: 0.001,
@@ -139,7 +136,6 @@ export default [
         density: 1563, // kg/m³
         rotationPeriod: 13.46 * 24 * 3600, // Synchronous
         orbitalPeriod: 13.46 * 24 * 3600,
-        semiMajorAxis: 583500, // km
         orbitalElements: {
             semiMajorAxis: 583400.0,
             eccentricity: 0.001,
@@ -181,7 +177,6 @@ export default [
         density: 1200, // kg/m³
         rotationPeriod: 1.413479 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.413479 * 24 * 3600,
-        semiMajorAxis: 129900, // km
         materials: {
             surfaceConfig: {
                 materialType: 'standard',

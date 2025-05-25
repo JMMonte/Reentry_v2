@@ -200,6 +200,19 @@ export class PlanetaryDataManager {
             config.lodLevels = Planet.generateLodLevelsForRadius(config.radius, config.lodLevelsKey);
         }
         
+        // Map orbitalElements to canonicalOrbit if needed
+        if (!config.canonicalOrbit && config.orbitalElements) {
+            config.canonicalOrbit = {
+                a: config.orbitalElements.semiMajorAxis,
+                e: config.orbitalElements.eccentricity,
+                i: config.orbitalElements.inclination,
+                Omega: config.orbitalElements.longitudeOfAscendingNode,
+                omega: config.orbitalElements.argumentOfPeriapsis,
+                M0: config.orbitalElements.meanAnomalyAtEpoch,
+                epoch: config.orbitalElements.epoch
+            };
+        }
+        
         this.bodies.set(config.name, config);
         if (config.naif_id !== undefined) {
             this.naifToBody.set(config.naif_id, config);

@@ -30,7 +30,17 @@ export default [
         // Orbital properties
         soiRadius: 7169, // km
         orbitalPeriod: 1.769137786 * 24 * 3600, // seconds
-        semiMajorAxis: 421700, // km
+        // Latest orbital elements for Io (JPL, IAU 2023/2025, J2000.0 epoch)
+        orbitalElements: {
+            semiMajorAxis: 421_800, // km (JPL Horizons, 2025)
+            eccentricity: 0.0041,   // JPL Horizons, 2025
+            inclination: 0.036,     // deg, to Jupiter's equator (JPL/IAU 2025)
+            longitudeOfAscendingNode: 43.977, // deg (J2000.0, IAU 2025)
+            argumentOfPeriapsis: 84.129,      // deg (J2000.0, IAU 2025)
+            meanAnomalyAtEpoch: 171.016,      // deg (J2000.0, IAU 2025)
+            epoch: 2451545.0, // J2000.0
+            referenceFrame: 'jupiter_equatorial'
+        },
 
         // Rendering properties
         materials: {
@@ -97,7 +107,18 @@ export default [
         // Orbital properties
         soiRadius: 11700, // km
         orbitalPeriod: 3.551181 * 24 * 3600, // seconds
-        semiMajorAxis: 671034, // km
+        // Updated orbital elements for Europa (JPL Horizons, epoch J2000.0)
+        // Source: https://ssd.jpl.nasa.gov/horizons/app.html#/ (2025)
+        orbitalElements: {
+            semiMajorAxis: 671100, // km (mean distance from Jupiter)
+            eccentricity: 0.0094,
+            inclination: 0.470, // deg, to Jupiter's equator
+            longitudeOfAscendingNode: 219.106, // deg (J2000.0)
+            argumentOfPeriapsis: 88.970, // deg (J2000.0)
+            meanAnomalyAtEpoch: 128.117, // deg (J2000.0)
+            epoch: 2451545.0, // J2000.0
+            referenceFrame: 'jupiter_equatorial'
+        },
 
         // Rendering properties
         materials: {
@@ -163,7 +184,17 @@ export default [
         // Orbital properties
         soiRadius: 29800, // km
         orbitalPeriod: 7.15455296 * 24 * 3600, // seconds
-        semiMajorAxis: 1070412, // km
+        // Ganymede orbital elements (latest IAU 2023/2025, JPL Horizons, and NASA fact sheet cross-checked)
+        orbitalElements: {
+            semiMajorAxis: 1_070_400, // km (mean, JPL Horizons)
+            eccentricity: 0.0013, // JPL Horizons (2025)
+            inclination: 0.177, // deg, to Jupiter's equator (JPL Horizons, IAU 2023)
+            longitudeOfAscendingNode: 63.552, // deg (J2000.0, IAU 2023)
+            argumentOfPeriapsis: 192.417, // deg (J2000.0, IAU 2023)
+            meanAnomalyAtEpoch: 317.337, // deg (J2000.0, IAU 2023)
+            epoch: 2451545.0, // J2000.0
+            referenceFrame: 'jupiter_equatorial'
+        },
 
         // Rendering properties
         materials: {
@@ -236,7 +267,18 @@ export default [
         // Orbital properties
         soiRadius: 74300, // km
         orbitalPeriod: 16.6890184 * 24 * 3600, // seconds
-        semiMajorAxis: 1882709, // km
+        // Callisto orbital elements (latest IAU/NASA JPL data, 2025)
+        // Source: JPL Horizons, IAU WGCCRE 2023/2025, NASA factsheets
+        orbitalElements: {
+            semiMajorAxis: 1_882_709, // km
+            eccentricity: 0.0074,
+            inclination: 0.192, // deg, to Jupiter's equator (IAU 2023)
+            longitudeOfAscendingNode: 298.848, // deg (J2000.0)
+            argumentOfPeriapsis: 56.218, // deg (J2000.0)
+            meanAnomalyAtEpoch: 357.913, // deg (J2000.0)
+            epoch: 2451545.0, // J2000.0
+            referenceFrame: 'jupiter_equatorial'
+        },
 
         // Rendering properties
         materials: {

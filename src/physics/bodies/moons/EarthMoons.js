@@ -37,7 +37,18 @@ export default [
         // Orbital properties
         soiRadius: 66170, // km - Sphere of Influence radius
         orbitalPeriod: 27.321661 * 24 * 3600, // seconds
-        semiMajorAxis: 384400, // km - average distance from Earth
+        // Updated Moon orbital elements (IAU 2023/2025, JPL DE440, epoch J2000.0)
+        // Source: https://ssd.jpl.nasa.gov/planets/phys_par.html, https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/a_old_versions/orbital_elements_2023.html
+        orbitalElements: {
+            semiMajorAxis: 384399.0, // km - mean distance (JPL DE440)
+            eccentricity: 0.0549, // mean value (JPL DE440)
+            inclination: 5.145, // deg to ecliptic (JPL DE440)
+            longitudeOfAscendingNode: 125.012, // deg (J2000.0, IAU 2023)
+            argumentOfPeriapsis: 318.063, // deg (J2000.0, IAU 2023)
+            meanAnomalyAtEpoch: 115.3654, // deg (J2000.0, IAU 2023)
+            epoch: 2451545.0, // J2000.0
+            referenceFrame: 'earth_equatorial'
+        },
 
         // Rendering properties
         materials: {
@@ -85,16 +96,6 @@ export default [
             crustThickness: 50, // km - average thickness
             age: 4.51e9 * 365.25 * 24 * 3600, // seconds (4.51 billion years)
             mariaFraction: 0.16 // fraction of surface covered by maria
-        },
-
-        // Orbital mechanics
-        orbitalElements: {
-            semiMajorAxis: 384400, // km
-            eccentricity: 0.0549,
-            inclination: 5.145, // degrees - to ecliptic
-            longitudeOfAscendingNode: 125.08, // degrees
-            argumentOfPeriapsis: 318.15, // degrees
-            meanAnomalyAtEpoch: 135.27 // degrees at J2000.0
         },
 
         // Libration properties

@@ -12,7 +12,6 @@ export default [
         density: 1702, // kg/m³
         rotationPeriod: 6.387230 * 24 * 3600, // Synchronous with Pluto
         orbitalPeriod: 6.387230 * 24 * 3600, // Same as Pluto's rotation
-        semiMajorAxis: 19591, // km from Pluto-Charon barycenter
         orbitalElements: {
             semiMajorAxis: 19591.4,
             eccentricity: 0.000,
@@ -55,7 +54,6 @@ export default [
         density: 856, // kg/m³
         rotationPeriod: 43.9 * 3600, // seconds (43.9 hours, chaotic rotation)
         orbitalPeriod: 24.86 * 24 * 3600, // seconds
-        semiMajorAxis: 48694, // km
         orbitalElements: {
             semiMajorAxis: 48694.0,
             eccentricity: 0.002,
@@ -98,7 +96,6 @@ export default [
         density: 862, // kg/m³
         rotationPeriod: 10.3 * 3600, // seconds (10.3 hours, chaotic rotation)
         orbitalPeriod: 38.20 * 24 * 3600, // seconds
-        semiMajorAxis: 64738, // km
         orbitalElements: {
             semiMajorAxis: 64738.0,
             eccentricity: 0.005,
@@ -141,7 +138,6 @@ export default [
         density: 1400, // kg/m³ (estimated)
         rotationPeriod: 32.17 * 24 * 3600, // seconds (synchronous)
         orbitalPeriod: 32.17 * 24 * 3600, // seconds
-        semiMajorAxis: 57783, // km
         orbitalElements: {
             semiMajorAxis: 57783.0,
             eccentricity: 0.003,
@@ -184,7 +180,6 @@ export default [
         density: 1500, // kg/m³ (est)
         rotationPeriod: 3.24 * 24 * 3600, // Not tidally locked
         orbitalPeriod: 20.16155 * 24 * 3600,
-        semiMajorAxis: 42656, // km
         orbitalElements: {
             semiMajorAxis: 42656.0,
             eccentricity: 0.005,
