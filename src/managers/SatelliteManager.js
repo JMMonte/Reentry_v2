@@ -46,16 +46,6 @@ export class SatelliteManager {
 
         // Pre-computed factors & bodies (for orbit drawing)
         this._kmToM = 1 / Constants.metersToKm; // Used by local provider, but also if SM does any conversions
-        this._moonPos = new THREE.Vector3();    // For orbit drawing context
-        this._sunPos = new THREE.Vector3();     // For orbit drawing context
-
-        // Dummy body objects reused in orbit sampling (for orbit drawing)
-        this._earth = { position: new THREE.Vector3(), mass: Constants.earthMass };
-        this._moon = { position: this._moonPos, mass: Constants.moonMass };
-        this._sun = { position: this._sunPos, mass: Constants.sunMass };
-
-        // Orbit-drawing throttle
-        this._lastOrbitUpdate = 0;
 
         // micro-task flag for UI list updates
         this._needsListFlush = false;
@@ -181,13 +171,10 @@ export class SatelliteManager {
         for (const body of allPlanetaryBodies.filter(b => b)) {
             const mesh = body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
             if (!mesh) continue;
-
-            // Use a temporary Vector3 to avoid modifying _moonPos or _sunPos if they are used elsewhere directly
             const tempWorldPos = new THREE.Vector3();
             mesh.getWorldPosition(tempWorldPos); // Positions are in km (simulation units)
-
-            const massKey = `${body.name}Mass`;
-            const mass = Constants[massKey] ?? 0;
+            // Use mass from body config directly
+            const mass = body.mass ?? 0;
             bodies.push({ name: body.name, position: tempWorldPos.clone(), mass });
         }
         return bodies;
@@ -245,41 +232,30 @@ export class SatelliteManager {
         const orbitRateHz = this.app3d.getDisplaySetting('orbitUpdateInterval');
         const orbitMs = 1000 / orbitRateHz;
         const shouldUpdatePaths = nowPerf - this._lastOrbitUpdate >= orbitMs;
-
-        // Use the collected thirdBodyPositions for orbit calculations.
-        // Ensure positions are in km for OrbitPath.update if that's what it expects.
-        // The _collectThirdBodyPositions already returns them in km.
-
         const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
         const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
         const nonKeplFallbackDay = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 30;
         const epochMs = this.app3d.timeUtils.getSimulatedTime().getTime?.() ?? nowSim;
-
         let pathsUpdated = false;
-
         for (const sat of this._satellites.values()) {
             try {
-                // The call to sat.updateVisuals?.(...) is removed as primary visual updates
-                // tied to new physics state are handled within Satellite.updatePosition().
-
                 if (sat.orbitPath) sat.orbitPath.visible = showOrbits;
                 if (!shouldUpdatePaths) continue;
-
                 const els = sat.getOrbitalElements?.();
                 if (!els) continue;
-
                 const ecc = els.eccentricity ?? 0;
                 const apol = ecc >= 1;
                 const nearP = !apol && ecc >= 0.99;
                 const effP = (predPeriods > 0) ? predPeriods : 1;
                 let periodS, pts;
                 const r = sat.position.length() * Constants.metersToKm; // sat.position is in meters, convert to km for logic here
-
+                // Use the satellite's planet config for SOI if available
+                const soi = sat.planetConfig?.soiRadius ?? 1e12; // fallback to huge if not set
                 if (apol || nearP) {
                     const fbDays = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 1;
                     periodS = fbDays * Constants.secondsInDay;
                     let rawPts = pointsPerPeriod * fbDays;
-                    if (r <= Constants.earthSOI) {
+                    if (r <= soi) {
                         rawPts *= this.app3d.getDisplaySetting('hyperbolicPointsMultiplier') ?? 1;
                     }
                     pts = Math.ceil(rawPts);
@@ -292,36 +268,16 @@ export class SatelliteManager {
                         ? Math.ceil(pointsPerPeriod * effP)
                         : sat.orbitPath?._maxOrbitPoints ?? 180;
                 }
-
-                if (r > Constants.earthSOI) pts = Math.max(10, Math.ceil(pts * 0.2));
+                if (r > soi) pts = Math.max(10, Math.ceil(pts * 0.2));
                 pts = Math.min(pts, OrbitPath.CAPACITY - 1);
-
-                // OrbitPath and GroundtrackPath expect positions in km and velocities in m/s (or km/s - check their API)
-                // sat.position is in meters, sat.velocity is in m/s.
-                // thirdBodyPositionsForOrbits has positions in km.
-                // We need to ensure consistent units for OrbitPath.update and GroundtrackPath.update
                 const satPosKm = sat.position.clone().multiplyScalar(Constants.metersToKm);
-                // Assuming OrbitPath/GroundtrackPath expect satellite velocity in km/s if positions are in km.
-                // If they expect m/s, then sat.velocity can be used directly.
-                // Let's assume they are flexible or expect km & km/s to match position scale.
-                // For now, convert velocity to km/s for consistency IF positions are strictly km.
-                // const satVelKms = sat.velocity.clone().multiplyScalar(Constants.metersToKm);
-                // However, orbital elements are usually derived from position (km) and velocity (km/s).
-                // Let's assume OrbitPath and GroundtrackPath take pos (km) and vel (m/s) as before,
-                // and handle internal conversions if necessary, or that their math works with mixed units if specific.
-                // The original call passed sat.position (meters) and sat.velocity (m/s) to OrbitPath along with third bodies in km.
-                // This might be okay if OrbitPath's internal two-body math correctly scales or assumes units.
-                // For clarity, let's pass satPosKm and sat.velocity (m/s)
-
                 sat.orbitPath?.update(satPosKm, sat.velocity, sat.id, thirdBodyPositionsForOrbits, periodS, pts, true);
                 sat.groundTrackPath?.update(epochMs, satPosKm, sat.velocity, sat.id, thirdBodyPositionsForOrbits, periodS, pts);
-
                 pathsUpdated = true;
             } catch (err) {
                 console.error(`Satellite ${sat.id} visual/path update failed:`, err);
             }
         }
-
         if (pathsUpdated && shouldUpdatePaths) this._lastOrbitUpdate = nowPerf;
     }
 
@@ -382,10 +338,8 @@ export class SatelliteManager {
      * @param {object} selectedBody - The selected celestial body for context (e.g., { naifId: 399 } for Earth)
      */
     createSatelliteFromLatLon(app3dInstance, p, selectedBody) {
-        // `app3dInstance` is passed because `createSatFromLatLonInternal` expects the App3D instance.
-        // `this.app3d` refers to the App3D instance SatelliteManager belongs to.
-        // `selectedBody` would typically be `this.app3d.selectedBody` or similar.
-        return createSatFromLatLonInternal(app3dInstance, p, selectedBody || { naifId: 399 });
+        if (!selectedBody) throw new Error('Planet/moon config must be provided');
+        return createSatFromLatLonInternal(app3dInstance, p, selectedBody);
     }
 
     /**
@@ -393,6 +347,7 @@ export class SatelliteManager {
      * @param {object} p
      */
     createSatelliteFromOrbitalElements(app3dInstance, p) {
+        if (!p.planet) throw new Error('Planet/moon config must be provided in params');
         return createSatFromOEInternal(app3dInstance, p);
     }
 
@@ -402,7 +357,8 @@ export class SatelliteManager {
      * @param {object} selectedBody
      */
     createSatelliteFromLatLonCircular(app3dInstance, p, selectedBody) {
-        return createSatFromLatLonCircularInternal(app3dInstance, p, selectedBody || { naifId: 399 });
+        if (!selectedBody) throw new Error('Planet/moon config must be provided');
+        return createSatFromLatLonCircularInternal(app3dInstance, p, selectedBody);
     }
 
     // --- END SATELLITE CREATION HELPERS ---

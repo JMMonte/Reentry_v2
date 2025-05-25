@@ -3,6 +3,8 @@
 import * as THREE from 'three';
 import { Constants } from './Constants.js';
 import { PhysicsUtils } from './PhysicsUtils.js';
+import { planetaryDataManager } from '../physics/bodies/PlanetaryDataManager.js';
+import { ballisticCoefficient } from '../physics/bodies/planets/Earth.js'; // fallback default only
 
 /* ───────────────────────────── Utilities ────────────────────────────── */
 
@@ -57,6 +59,29 @@ export function computeAccel(p, bodies, perturbationScale = 1) {
 }
 
 /**
+ * Find the host planet (deepest SOI) for a given position.
+ * Returns the config object for the host planet, or null if none.
+ */
+function findHostPlanet(position, configs) {
+    // Flatten all bodies with soiRadius and a position (planets, moons, etc)
+    const bodies = Array.from(configs.values ? configs.values() : Object.values(configs))
+        .filter(cfg => cfg.soiRadius && cfg.radius && (cfg.type === 'planet' || cfg.type === 'dwarf_planet' || cfg.type === 'moon'));
+    // Sort by decreasing soiRadius (outermost first)
+    bodies.sort((a, b) => b.soiRadius - a.soiRadius);
+    let host = null;
+    let minDepth = Infinity;
+    for (const body of bodies) {
+        // Assume body is at origin for now (heliocentric); for moons, you could add their parent position recursively if needed
+        const r = Math.sqrt(position[0] ** 2 + position[1] ** 2 + position[2] ** 2);
+        if (r < body.soiRadius && body.soiRadius < minDepth) {
+            host = body;
+            minDepth = body.soiRadius;
+        }
+    }
+    return host;
+}
+
+/**
  * Atmospheric drag acceleration (km s⁻²).
  * Uses the 1976 US Std Atmosphere exponential model.
  * @param {number[]}  p  – ECI kilometers
@@ -65,23 +90,25 @@ export function computeAccel(p, bodies, perturbationScale = 1) {
  */
 export function computeDragAcceleration(
     p, v,
-    Bc = Constants.ballisticCoefficient,
+    Bc = ballisticCoefficient,
 ) {
+    // Find host planet for this position
+    const host = findHostPlanet(p, planetaryDataManager.naifToBody);
+    if (!host || !host.atmosphere || !host.radius) return [0, 0, 0];
     const [x, y, z] = p;
     const r = Math.sqrt(x * x + y * y + z * z);
-    const alt = r - Constants.earthRadius;
-
-    if (alt <= 0 || alt > Constants.atmosphereCutoffAltitude) return [0, 0, 0];
-
-    const rho = Constants.atmosphereSeaLevelDensity *
-        Math.exp(-alt / Constants.atmosphereScaleHeight);
-
-    // rigid-body atmosphere rotation
-    const vAtm = [-OMEGA_EARTH * y, OMEGA_EARTH * x, 0];
+    const alt = r - host.radius;
+    const cutoff = host.atmosphere.thickness || 0;
+    const scaleHeight = host.atmosphere.densityScaleHeight || 8.5; // km, fallback
+    const seaLevelDensity = host.atmosphere.rho0 || host.atmosphere.density || 1.225e-3; // kg/km^3, fallback
+    if (alt <= 0 || alt > cutoff) return [0, 0, 0];
+    const rho = seaLevelDensity * Math.exp(-alt / scaleHeight);
+    // Use planet's rotation rate if available, else fallback to Earth
+    const omega = host.rotationPeriod ? (2 * Math.PI / host.rotationPeriod) : OMEGA_EARTH;
+    const vAtm = [-omega * y, omega * x, 0];
     const vr = [v[0] - vAtm[0], v[1] - vAtm[1], v[2] - vAtm[2]];
     const vrMag = Math.hypot(...vr);
     if (vrMag === 0) return [0, 0, 0];
-
     const aMag = 0.5 * rho * vrMag * vrMag / Bc;
     const f = -aMag / vrMag;
     return [f * vr[0], f * vr[1], f * vr[2]];
@@ -211,19 +238,21 @@ export async function propagateOrbit(
         pos = p; vel = v;
 
         const r = Math.hypot(...pos);
-        if (!allowFullEllipse && !hyperbolic &&
-            r <= Constants.earthRadius + Constants.atmosphereCutoffAltitude) {
-
-            // re-entry handling
-            const atmPts = await propagateAtmosphere(
-                pos, vel, bodies, 300, 1,
-            );
-            atmPts.forEach(pt => points.push({
-                position: pt.position,
-                timeOffset: dt * i + pt.timeOffset,
-            }));
-            onProgress?.(1);
-            break;
+        if (!allowFullEllipse && !hyperbolic) {
+            const host = findHostPlanet(pos, planetaryDataManager.naifToBody);
+            const cutoff = host && host.atmosphere ? (host.radius + (host.atmosphere.thickness || 0)) : 0;
+            if (cutoff && r <= cutoff) {
+                // re-entry handling
+                const atmPts = await propagateAtmosphere(
+                    pos, vel, bodies, 300, 1,
+                );
+                atmPts.forEach(pt => points.push({
+                    position: pt.position,
+                    timeOffset: dt * i + pt.timeOffset,
+                }));
+                onProgress?.(1);
+                break;
+            }
         }
 
         points.push({ position: pos.slice(), timeOffset: dt * (i + 1) });
@@ -244,11 +273,13 @@ export async function propagateAtmosphere(
     pos0, vel0,
     bodies,
     maxSeconds = 300, dt = 1,
-    Bc = Constants.ballisticCoefficient,
+    Bc = ballisticCoefficient,
 ) {
     const pts = [];
     const steps = Math.ceil(maxSeconds / dt);
-    const SATURATE = Constants.earthRadius;
+    // Use host planet's radius for saturation
+    const host = findHostPlanet(pos0, planetaryDataManager.naifToBody);
+    const SATURATE = host && host.radius ? host.radius : 0;
 
     const p = pos0.slice();
     const v = vel0.slice();
@@ -270,7 +301,7 @@ export async function propagateAtmosphere(
         p[2] += v[2] * dt;
 
         const r = Math.hypot(...p);
-        if (r <= SATURATE) break;
+        if (SATURATE && r <= SATURATE) break;
 
         pts.push({ position: p.slice(), timeOffset: dt * (i + 1) });
     }

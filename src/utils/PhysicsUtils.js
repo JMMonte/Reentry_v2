@@ -20,20 +20,24 @@ import * as THREE from 'three';
 
 const UP = new THREE.Vector3(0, 0, 1);
 const NORTH_AXIS = new THREE.Vector3(1, 0, 0);
-const tiltQuaternion = new THREE.Quaternion()
-    .setFromAxisAngle(NORTH_AXIS, THREE.MathUtils.degToRad(Constants.earthInclination));
-const invTiltQuaternion = tiltQuaternion.clone().invert();
 
+// Utility to create tilt quaternion for any inclination
+function createTiltQuaternion(inclinationDeg) {
+    return new THREE.Quaternion().setFromAxisAngle(NORTH_AXIS, THREE.MathUtils.degToRad(inclinationDeg));
+}
 
 /*─────────────────────────────────────────────────────────────────────┐
 │  1.  CLASS                                                          │
 └─────────────────────────────────────────────────────────────────────*/
 export class PhysicsUtils {
 
-    /*—— expose tilt quaternions exactly like the old file ————————*/
-    static tiltQuaternion = tiltQuaternion;
-    static invTiltQuaternion = invTiltQuaternion;
-
+    // Utility: get tilt quaternion for a given inclination
+    static getTiltQuaternion(inclinationDeg) {
+        return createTiltQuaternion(inclinationDeg);
+    }
+    static getInvTiltQuaternion(inclinationDeg) {
+        return createTiltQuaternion(inclinationDeg).clone().invert();
+    }
 
     /*───────────────────────── 1.1  Newtonian helpers ───────────────────*/
     static calculateGravitationalForce(m1, m2, r) {
@@ -45,10 +49,10 @@ export class PhysicsUtils {
     static calculateAcceleration(force, mass) { return force / mass; }
 
     /*───────────────────────── 1.2  Lat/Lon ↔ ECEF  ─────────────────────*/
-    static latLonAltToECEF(latDeg, lonDeg, alt = 0, out = new THREE.Vector3()) {
+    static latLonAltToECEF(latDeg, lonDeg, alt = 0, radius, out = new THREE.Vector3()) {
         const φ = THREE.MathUtils.degToRad(latDeg);
         const λ = THREE.MathUtils.degToRad(lonDeg);
-        const r = Constants.earthRadius + alt;
+        const r = radius + alt;
         return out.set(
             r * Math.cos(φ) * Math.cos(λ),   // X
             r * Math.cos(φ) * Math.sin(λ),   // Y
@@ -56,9 +60,7 @@ export class PhysicsUtils {
         );
     }
 
-    static ecefToGeodetic(x, y, z) {
-        const a = Constants.earthRadius;
-        const b = Constants.earthPolarRadius;
+    static ecefToGeodetic(x, y, z, a, b) {
         const e2 = 1 - (b * b) / (a * a);
 
         const p = Math.hypot(x, y);
@@ -80,7 +82,7 @@ export class PhysicsUtils {
 
     static convertLatLonToCartesian(
         lat, lon,
-        radius = Constants.earthRadius * Constants.metersToKm
+        radius
     ) {
         const φ = THREE.MathUtils.degToRad(lat);
         const λ = THREE.MathUtils.degToRad(lon);
@@ -127,24 +129,25 @@ export class PhysicsUtils {
     }
 
     /** Add Earth-tilt: equatorial-ECI → ecliptic-ECI                      */
-    static eciEquatorialToEcliptic(vec) { return vec.clone().applyQuaternion(tiltQuaternion); }
+    static eciEquatorialToEcliptic(vec, inclinationDeg) { return vec.clone().applyQuaternion(this.getTiltQuaternion(inclinationDeg)); }
     /** Remove tilt: ecliptic-ECI → equatorial-ECI                         */
-    static eciEclipticToEquatorial(vec) { return vec.clone().applyQuaternion(invTiltQuaternion); }
+    static eciEclipticToEquatorial(vec, inclinationDeg) { return vec.clone().applyQuaternion(this.getInvTiltQuaternion(inclinationDeg)); }
 
 
     /*───────────────────────── 2.  LAUNCH CONVERTERS ────────────────────*/
     static calculatePositionAndVelocity(
         latitude, longitude, altitude,
         velocity, azimuth, angleOfAttack,
-        tiltQ = tiltQuaternion,
+        radius, polarRadius,
+        tiltQ,
         earthQuaternion = new THREE.Quaternion()
     ) {
         /* position in ECEF */
         const latRad = THREE.MathUtils.degToRad(latitude);
         const lonRad = THREE.MathUtils.degToRad(longitude);
 
-        const a = Constants.earthRadius;
-        const b = Constants.earthPolarRadius;
+        const a = radius;
+        const b = polarRadius;
         const e2 = 1 - (b * b) / (a * a);
         const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
 
@@ -189,13 +192,15 @@ export class PhysicsUtils {
     static calculatePositionAndVelocityCircular(
         latitude, longitude, altitude,
         azimuth, angleOfAttack,
+        radius, polarRadius, GM,
         tiltQ, earthQuaternion
     ) {
-        const r = Constants.earthRadius + altitude;
-        const vCirc = Math.sqrt(Constants.earthGravitationalParameter / r);
+        const r = radius + altitude;
+        const vCirc = Math.sqrt(GM / r);
         return PhysicsUtils.calculatePositionAndVelocity(
             latitude, longitude, altitude,
             vCirc, azimuth, angleOfAttack,
+            radius, polarRadius,
             tiltQ, earthQuaternion
         );
     }
@@ -204,7 +209,7 @@ export class PhysicsUtils {
     static calculatePositionAndVelocityFromOrbitalElements(
         semiMajorAxis, eccentricity, inclination,
         argumentOfPeriapsis, raan, trueAnomaly,
-        mu = Constants.earthGravitationalParameter
+        mu
     ) {
         const a = semiMajorAxis;
         const e = eccentricity;
@@ -327,10 +332,8 @@ export class PhysicsUtils {
 
     static calculateDragForce(v, Cd, A, rho) { return 0.5 * Cd * A * rho * v * v; }
 
-    static calculateAtmosphericDensity(alt) {
-        const ρ0 = Constants.atmosphereSeaLevelDensity;
-        const H = Constants.atmosphereScaleHeight;
-        return ρ0 * Math.exp(-alt / H);
+    static calculateAtmosphericDensity(alt, seaLevelDensity, scaleHeight) {
+        return seaLevelDensity * Math.exp(-alt / scaleHeight);
     }
 
     static calculateAzimuthFromInclination(lat, inc, raan) {
@@ -517,7 +520,7 @@ export class PhysicsUtils {
         return { rPeriapsis: rp, rApoapsis: ra };
     }
 
-    static calculateApsis(pos, vel, mu) {
+    static calculateApsis(pos, vel, mu, radius) {
         const els = PhysicsUtils.calculateOrbitalElements(pos, vel, mu);
         if (!els) return null;
         const aps = PhysicsUtils.calculateApsidesFromElements(els, mu);
@@ -527,12 +530,12 @@ export class PhysicsUtils {
             orbitalElements: els,
             rPeriapsis: rp,
             rApoapsis: ra,
-            periapsisAltitude: (rp - Constants.earthRadius) * Constants.metersToKm,
-            apoapsisAltitude: ra !== null ? (ra - Constants.earthRadius) * Constants.metersToKm : null
+            periapsisAltitude: (rp - radius) * Constants.metersToKm,
+            apoapsisAltitude: ra !== null ? (ra - radius) * Constants.metersToKm : null
         };
     }
 
-    static calculateDetailedOrbitalElements(pos, vel, mu) {
+    static calculateDetailedOrbitalElements(pos, vel, mu, radius) {
         const r = pos.length();
         const v2 = vel.lengthSq();
         const ε = v2 / 2 - mu / r;
@@ -571,8 +574,8 @@ export class PhysicsUtils {
             period,
             specificAngularMomentum: h,
             specificOrbitalEnergy: ε,
-            periapsisAltitude: (rp - Constants.earthRadius) * Constants.metersToKm,
-            apoapsisAltitude: (ra - Constants.earthRadius) * Constants.metersToKm,
+            periapsisAltitude: (rp - radius) * Constants.metersToKm,
+            apoapsisAltitude: (ra - radius) * Constants.metersToKm,
             periapsisRadial: rp * Constants.metersToKm,
             apoapsisRadial: ra * Constants.metersToKm
         };
@@ -621,10 +624,10 @@ export class PhysicsUtils {
     }
 
     /*───────────────────────── 5.  DEBUG helper ─────────────────────────*/
-    static eciTiltToLatLon(positionECI, gmst) {
+    static eciTiltToLatLon(positionECI, gmst, inclinationDeg) {
         const v = positionECI.clone()
-            .applyQuaternion(invTiltQuaternion)   // undo axial tilt
-            .applyAxisAngle(UP, gmst);            // apply Earth rotation
+            .applyQuaternion(this.getInvTiltQuaternion(inclinationDeg))   // undo axial tilt
+            .applyAxisAngle(UP, gmst);            // apply planet rotation
 
         const r = v.length();
         const lat = THREE.MathUtils.radToDeg(Math.asin(v.z / r));

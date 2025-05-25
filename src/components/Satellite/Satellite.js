@@ -27,13 +27,13 @@ export class Satellite {
      * @param {number}  [opts.size=1]    – purely visual scale
      * @param {App3D}   opts.app3d
      * @param {string}  [opts.name]
-     * @param {'earth'|'moon'|'sun'} [opts.referenceBody='earth']
+     * @param {Object}  opts.planetConfig
      */
     constructor({
         scene, position, velocity, id,
         color, mass = 100, size = 1,
         app3d, name,
-        referenceBody = 'earth',
+        planetConfig,
     }) {
         /* ── meta ── */
         this.app3d = app3d;
@@ -43,7 +43,7 @@ export class Satellite {
         this.mass = mass;
         this.size = size;
         this.color = color;
-        this.referenceBody = referenceBody;
+        this.planetConfig = planetConfig;
         this.timeWarp = 1;                    // synced externally
 
         /* ── state vectors ── */
@@ -171,7 +171,10 @@ export class Satellite {
 
     getSpeed() { return this.velocity.length(); }
     getRadialAltitude() { return this.position.length() * Constants.metersToKm; }
-    getSurfaceAltitude() { return (this.position.length() - Constants.earthRadius) * Constants.metersToKm; }
+    getSurfaceAltitude() {
+        if (!this.planetConfig || !this.planetConfig.radius) return NaN;
+        return (this.position.length() - this.planetConfig.radius) * Constants.metersToKm;
+    }
     getOrbitalElements() { return this.debug?.apsisData ?? null; }
     getMesh() { return this.visualizer?.mesh ?? null; }
 

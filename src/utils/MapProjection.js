@@ -20,13 +20,13 @@ export function projectToGeodetic(eciWorldPos, planet, epochMillis) {
     // 1. Convert simulation units (1 unit = 1 km) to kilometers
     const posKm = tempVec.copy(eciWorldPos).multiplyScalar(1);
     // 2. Ecliptic ECI → Equatorial ECI
-    const equatorialECI = PhysicsUtils.eciEclipticToEquatorial(posKm);
+    const equatorialECI = PhysicsUtils.eciEclipticToEquatorial(posKm, planet.inclination);
     // 3. Equatorial ECI → ECEF (in km) via GMST rotation
     const gmst = PhysicsUtils.calculateGMST(epochMillis);
     const ecefKm = PhysicsUtils.eciToEcef(equatorialECI, gmst, new THREE.Vector3());
     // 4. Convert to meters for ellipsoidal geodetic calculation
     const ecefM = ecefKm.clone().multiplyScalar(1000);
-    const geodetic = PhysicsUtils.ecefToGeodetic(ecefM.x, ecefM.y, ecefM.z);
+    const geodetic = PhysicsUtils.ecefToGeodetic(ecefM.x, ecefM.y, ecefM.z, planet.radius, planet.polarRadius);
     // Altitude returned in meters → convert to kilometers
     const altitudeKm = geodetic.altitude * Constants.metersToKm;
     return {

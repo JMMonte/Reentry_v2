@@ -5,10 +5,16 @@
  */
 
 import * as THREE from 'three';
-import { metersToKm } from '../../../config/constants-lite.js';
+import { Constants } from '../../../utils/Constants.js';
 import { geojsonDataMissions } from '../../../config/geojsonData.js';
 
-const MOON_RAD = 1_737_400 * metersToKm;
+// Moon physical and orbital constants (all in km, kg, or km/s)
+export const moonRadius = 1737.4; // km
+export const moonMass = 7.342e22; // kg
+export const moonOrbitRadius = 384400; // km
+export const moonGravitationalParameter = Constants.G * moonMass; // km^3/s^2
+
+const MOON_RAD = moonRadius; // already in km
 
 export default [
     {
@@ -21,13 +27,13 @@ export default [
         symbol: '☾',
 
         // Physical properties
-        mass: 7.342e22, // kg
+        mass: moonMass, // kg
         radius: MOON_RAD, // km
-        GM: 4.9048695e3, // km³/s² - Standard gravitational parameter
-        
+        GM: moonGravitationalParameter, // km³/s²
+
         // Shape properties
         oblateness: 0.0012, // Very small oblateness
-        equatorialRadius: 1738.1, // km
+        equatorialRadius: moonRadius, // km
         polarRadius: 1736.0, // km
 
         // Rotation properties (tidally locked)
@@ -37,12 +43,10 @@ export default [
         // Orbital properties
         soiRadius: 66170, // km - Sphere of Influence radius
         orbitalPeriod: 27.321661 * 24 * 3600, // seconds
-        // Updated Moon orbital elements (IAU 2023/2025, JPL DE440, epoch J2000.0)
-        // Source: https://ssd.jpl.nasa.gov/planets/phys_par.html, https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/a_old_versions/orbital_elements_2023.html
         orbitalElements: {
-            semiMajorAxis: 384399.0, // km - mean distance (JPL DE440)
-            eccentricity: 0.0549, // mean value (JPL DE440)
-            inclination: 5.145, // deg to ecliptic (JPL DE440)
+            semiMajorAxis: moonOrbitRadius, // km - mean distance
+            eccentricity: 0.0549, // mean value
+            inclination: 5.145, // deg to ecliptic
             longitudeOfAscendingNode: 125.012, // deg (J2000.0, IAU 2023)
             argumentOfPeriapsis: 318.063, // deg (J2000.0, IAU 2023)
             meanAnomalyAtEpoch: 115.3654, // deg (J2000.0, IAU 2023)
@@ -94,7 +98,7 @@ export default [
             coreRadius: 240, // km - small iron core
             mantleThickness: 1330, // km
             crustThickness: 50, // km - average thickness
-            age: 4.51e9 * 365.25 * 24 * 3600, // seconds (4.51 billion years)
+            age: 4.51e9 * Constants.daysInYear * Constants.secondsInDay, // seconds (4.51 billion years)
             mariaFraction: 0.16 // fraction of surface covered by maria
         },
 
@@ -113,15 +117,15 @@ export default [
                 night: 40, // K - minimum nighttime temperature
                 average: 218 // K - average temperature
             },
-            regolithDepth: 4, // meters - average regolith thickness
+            regolithDepth: 0.004, // km - average regolith thickness
             craterDensity: 'high' // relative crater density
         },
 
         // Phases (for rendering and astronomical calculations)
         phases: {
             synodicPeriod: 29.530589 * 24 * 3600, // seconds - lunar month
-            phaseNames: ['New', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous', 
-                        'Full', 'Waning Gibbous', 'Third Quarter', 'Waning Crescent']
+            phaseNames: ['New', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous',
+                'Full', 'Waning Gibbous', 'Third Quarter', 'Waning Crescent']
         }
     }
 ]; 
