@@ -169,7 +169,7 @@ export class RemotePhysicsProvider {
         // which matches the original `updateSatelliteFromBackend` in SatelliteManager.
         // If backend sends in different units (e.g., meters for position), conversion is needed here.
 
-        sat.updateFromBackend(positionArray, velocityArray, debugData);
+        sat._updateFromBackend(positionArray, velocityArray, debugData);
     }
 
     /**

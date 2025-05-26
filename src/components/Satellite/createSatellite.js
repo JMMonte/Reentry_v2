@@ -22,15 +22,21 @@ const brightColors = [
 export async function createSatellite(app, params) {
     const id = nextSatelliteId++;
     const color = brightColors[Math.floor(Math.random() * brightColors.length)];
+    // Compute cross-sectional area if not provided (assume circular: π * r^2, where r = size)
+    const size = params.size ?? 1;
+    const crossSectionalArea = params.crossSectionalArea ?? (Math.PI * size * size);
+    const dragCoefficient = params.dragCoefficient ?? 2.2;
     const satParams = {
         ...params,
         id,
         color,
         mass: params.mass ?? 100,
-        size: params.size ?? 1,
+        size,
         name: params.name,
         ballisticCoefficient: params.ballisticCoefficient,
-        planetConfig: params.planetConfig || params.planet // ensure planetConfig is always set
+        planetConfig: params.planetConfig || params.planet, // ensure planetConfig is always set
+        crossSectionalArea,
+        dragCoefficient
     };
     const sat = app.satellites.addSatellite(satParams);
 
@@ -77,6 +83,9 @@ let nextSatId = 1;
 // Refactored: createSatelliteFromLatLon now builds backend payload and adds to scene
 export async function createSatelliteFromLatLon(app, params, planet) {
     const { pos, vel } = latLonAltToECI(params, planet);
+    const size = params.size ?? 1;
+    const crossSectionalArea = params.crossSectionalArea ?? (Math.PI * size * size);
+    const dragCoefficient = params.dragCoefficient ?? 2.2;
     const satPayload = {
         sat_id: nextSatId++,
         mass: params.mass,
@@ -108,7 +117,9 @@ export async function createSatelliteFromLatLon(app, params, planet) {
         name: params.name,
         color: brightColors[Math.floor(Math.random() * brightColors.length)],
         ballisticCoefficient: params.ballisticCoefficient,
-        planetConfig: planet
+        planetConfig: planet,
+        crossSectionalArea,
+        dragCoefficient
     });
     app.createDebugWindow?.(sat);
     app.updateSatelliteList?.();
@@ -126,7 +137,9 @@ export function createSatelliteFromOrbitalElements(app, {
     raan, argumentOfPeriapsis, trueAnomaly,
     referenceFrame = 'inertial',
     mass, size, name,
-    planet
+    planet,
+    crossSectionalArea,
+    dragCoefficient
 }) {
     const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
         semiMajorAxis * Constants.kmToMeters,
@@ -143,18 +156,21 @@ export function createSatelliteFromOrbitalElements(app, {
         velocityECI,
         { referenceFrame }
     );
+    const computedSize = size ?? 1;
+    const area = crossSectionalArea ?? (Math.PI * computedSize * computedSize);
+    const drag = dragCoefficient ?? 2.2;
     if (referenceFrame === 'ecliptic') {
         const pos = positionECI.clone().multiplyScalar(Constants.metersToKm);
         const vel = velocityECI.clone().multiplyScalar(Constants.metersToKm);
-        return createSatellite(app, { position: pos, velocity: vel, mass, size, name, planetConfig: planet });
+        return createSatellite(app, { position: pos, velocity: vel, mass, size: computedSize, name, planetConfig: planet, crossSectionalArea: area, dragCoefficient: drag });
     }
     if (referenceFrame === 'equatorial') {
         const invTiltQ = PhysicsUtils.getInvTiltQuaternion(planet.inclination);
         const pos = positionECI.clone().applyQuaternion(invTiltQ).multiplyScalar(Constants.metersToKm);
         const vel = velocityECI.clone().applyQuaternion(invTiltQ).multiplyScalar(Constants.metersToKm);
-        return createSatellite(app, { position: pos, velocity: vel, mass, size, name, planetConfig: planet });
+        return createSatellite(app, { position: pos, velocity: vel, mass, size: computedSize, name, planetConfig: planet, crossSectionalArea: area, dragCoefficient: drag });
     }
-    return createSatellite(app, { position, velocity, mass, size, name, planetConfig: planet });
+    return createSatellite(app, { position, velocity, mass, size: computedSize, name, planetConfig: planet, crossSectionalArea: area, dragCoefficient: drag });
 }
 
 /*────────── ground-track helper (unchanged except frame) ──────*/

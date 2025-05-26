@@ -100,10 +100,8 @@ export class SatelliteManager {
     updateSatelliteFromBackend(satId, pos, vel, debug) {
         const sat = this._satellites.get(satId);
         if (!sat) return;
-        // This was the original direct update method on Satellite.
-        // It's kept for compatibility with RemotePhysicsProvider,
-        // assuming RemotePhysicsProvider gets data in this format.
-        sat.updateFromBackend(pos, vel, debug);
+        // Use the new internal method
+        sat._updateFromBackend(pos, vel, debug);
     }
 
 

@@ -50,8 +50,6 @@ import { setupEventListeners as setupGlobalListeners }
     from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 
-// import { celestialBodiesConfig } from './config/celestialBodiesConfig.js';
-// import { setupSocketListeners } from './setup/setupListeners.js'; // removed socket.io listener setup
 import { initSimStream } from './simulation/simSocket.js';
 
 // Domain helpers
@@ -155,7 +153,6 @@ class App3D extends EventTarget {
         this.Constants = Constants;
         this.Planet = Planet;
         this.THREE = THREE;
-        // this.celestialBodiesConfig = celestialBodiesConfig; // No longer needed
 
         // For animation loop optimization
         this._lastCameraPos = new THREE.Vector3();
@@ -313,10 +310,8 @@ class App3D extends EventTarget {
             await createSceneObjects(this);
             this.sceneObjectsInitialized = true;
             
-            // Set initial camera target
             if (this.cameraControls && typeof this.cameraControls.follow === 'function') {
-                const initialTargetName = this.config?.initialCameraTarget || 'Earth';
-                this.cameraControls.follow(initialTargetName, this, true);
+                this.cameraControls.follow('Earth', this, true);
             }
             
             // Dispatch scene ready event

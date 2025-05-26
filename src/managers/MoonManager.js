@@ -4,7 +4,6 @@
  * ----------------------------------------------------------- */
 
 import * as THREE from 'three';
-import { getBodyData, getBodiesByType } from '../../config/orbitalBodiesData.js';
 import {
     computeOrientationQuaternion
 } from '../../physics/OrbitPropagator.js';
@@ -28,7 +27,7 @@ export class MoonManager {
         if (this.initialized) return;
 
         // Get all moon bodies from the centralized data
-        const moonBodies = getBodiesByType('moon');
+        const moonBodies = planetaryDataManager.getBodiesByType('moon');
 
         console.log(`MoonManager: Initializing ${moonBodies.length} moons`);
 
@@ -44,7 +43,7 @@ export class MoonManager {
 
         // Create moon objects and groups
         moonsByParent.forEach((moons, parentId) => {
-            const parentData = getBodyData(parentId);
+            const parentData = planetaryDataManager.getBodyByNaif(parentId);
             const parentName = parentData ? parentData.name : `Parent ${parentId}`;
 
             console.log(`Creating ${moons.length} moons for ${parentName}`);
@@ -161,7 +160,7 @@ export class MoonManager {
      * @param {Object} planetPositions - Map of planet positions
      */
     updateMoonPosition(moonMesh, naifId, currentTime, planetPositions) {
-        const moonData = getBodyData(naifId);
+        const moonData = planetaryDataManager.getBodyByNaif(naifId);
         if (!moonData || !moonData.canonicalOrbit) {
             console.warn(`Moon ${naifId}: No moon data or orbital elements`);
             return;
@@ -209,7 +208,7 @@ export class MoonManager {
 
     // Helper for absolute positioning (extracted for clarity)
     _positionMoonAbsolutely(moonMesh, naifId, currentTime, planetPositions, relativePositionIfKnown) {
-        const moonData = getBodyData(naifId);
+        const moonData = planetaryDataManager.getBodyByNaif(naifId);
         const parentId = moonData.parent;
         const parentPosition = planetPositions[parentId];
 
@@ -280,7 +279,7 @@ export class MoonManager {
 
         // Update existing moon sizes
         this.moons.forEach((moonMesh, naifId) => {
-            const moonData = getBodyData(naifId);
+            const moonData = planetaryDataManager.getBodyByNaif(naifId);
             if (moonData) {
                 const visualRadius = Math.max(moonData.radius * scaleFactor, 0.01);
                 moonMesh.geometry.dispose();
@@ -308,13 +307,13 @@ export class MoonManager {
     getMoonOrbitalInfo() {
         const info = [];
         this.moons.forEach((moonMesh, naifId) => {
-            const moonData = getBodyData(naifId);
+            const moonData = planetaryDataManager.getBodyByNaif(naifId);
             if (moonData && moonData.canonicalOrbit) {
                 info.push({
                     id: naifId,
                     name: moonData.name,
                     parent: moonData.parent,
-                    parentName: getBodyData(moonData.parent)?.name,
+                    parentName: planetaryDataManager.getBodyByNaif(moonData.parent)?.name,
                     elements: moonData.canonicalOrbit,
                     radius: moonData.radius,
                     mass: moonData.mass,

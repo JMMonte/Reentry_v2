@@ -66,8 +66,6 @@ export const RENDER_ORDER = {
 //
 // Render order system:
 //  - General constants above are used for all planet sub-meshes.
-//  - If a planet needs a specific override, set it in celestialBodiesConfig.js under materials.renderOrderOverrides.
-//  - Planet.js will check for and apply these overrides when constructing meshes.
 //
 
 export class Planet {

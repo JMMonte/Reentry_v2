@@ -143,10 +143,8 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 await createSceneObjects(app);
                 app.sceneObjectsInitialized = true;
                 
-                // Set initial camera target
                 if (app.cameraControls && typeof app.cameraControls.follow === 'function') {
-                    const initialTargetName = app.config?.initialCameraTarget || 'Earth';
-                    app.cameraControls.follow(initialTargetName, app, true);
+                    app.cameraControls.follow('Earth', app, true);
                 }
                 
                 // Dispatch scene ready event
@@ -208,10 +206,7 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                         await prefetchAllGM(app);
                         // Now that objects are initialized, set the initial camera target
                         if (app.cameraControls && typeof app.cameraControls.follow === 'function') {
-                            const initialTargetName = app.config?.initialCameraTarget || 'Earth'; // Default to Earth or use app config
-                            app.cameraControls.follow(initialTargetName, app, true); // suppressLog: true for initial setup
-                        } else {
-                            // console.warn('[SimSocket] app.cameraControls not found or follow method missing after scene init.');
+                            app.cameraControls.follow('Earth', app, true);
                         }
 
                         // Dispatch an event to notify the UI that the scene is ready
@@ -384,10 +379,8 @@ export async function initSimStream(app, frame = 'ECLIPJ2000', options = {}) {
                 await createSceneObjects(app);
                 app.sceneObjectsInitialized = true;
                 
-                // Set initial camera target
                 if (app.cameraControls && typeof app.cameraControls.follow === 'function') {
-                    const initialTargetName = app.config?.initialCameraTarget || 'Earth';
-                    app.cameraControls.follow(initialTargetName, app, true);
+                    app.cameraControls.follow('Earth', app, true);
                 }
                 
                 window.dispatchEvent(new CustomEvent('sceneReadyFromBackend'));

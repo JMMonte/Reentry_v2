@@ -101,12 +101,14 @@ export class Satellite {
     /* ───────────────────── Physics state ingestion ─────────────────────── */
 
     /**
-     * Update authoritative physics state (invoked by worker handler).
+     * @internal
+     * Update authoritative physics state (invoked ONLY by provider/engine).
+     * Do not call from UI or other code.
      * @param {THREE.Vector3} pos – metres
      * @param {THREE.Vector3} vel – m/s
      * @param {Object} [debug]
      */
-    updatePosition(pos, vel, debug) {
+    _updatePosition(pos, vel, debug) {
         if (debug) {
             this.debug = debug;
             // compute net acceleration from gravitational and drag components
@@ -127,25 +129,22 @@ export class Satellite {
             this.debugWindow?.onPositionUpdate?.();
         }
 
-        /* copy into internal vectors (no new allocations) */
+        // Only provider/engine should update these:
         this.position.copy(pos);
         this.velocity.copy(vel);
 
-        /* convert to scaled-km for rendering */
+        // convert to scaled-km for rendering
         this._scaledKm.set(pos.x * this._k, pos.y * this._k, pos.z * this._k);
-
-        /* smooth to reduce visual jitter */
         this._smoothedKm.lerpVectors(this._smoothedKm, this._scaledKm, this._alpha);
 
-        /* push to visual actors */
+        // push to visual actors
         this.visualizer.updatePosition(this._smoothedKm);
         this.visualizer.updateOrientation(this.orientation);
         this.apsisVisualizer.update(pos, vel, this.debug?.apsisData);
 
-        /* maneuver nodes */
         for (const node of this.maneuverNodes) node.update?.();
 
-        /* throttle CustomEvent to browser */
+        // throttle CustomEvent to browser
         const now = Date.now();
         if (now - this._lastSimEvt >= this._evtInterval) {
             this._dispatchSimData();
@@ -154,17 +153,18 @@ export class Satellite {
     }
 
     /**
+     * @internal
      * Process any pending worker frames queued by SatelliteManager.
-     * Only the newest buffered frame is applied.
+     * Only the newest buffered frame is applied. Do not call from UI.
      */
-    updateSatellite() {
+    _updateSatellite() {
         if (!this._updateBuffer.length) return;
         const u = this._updateBuffer.pop();
         this._updateBuffer.length = 0;
 
         this._tmpPos.set(u.position[0], u.position[1], u.position[2]);
         const vel = new THREE.Vector3(u.velocity[0], u.velocity[1], u.velocity[2]);
-        this.updatePosition(this._tmpPos, vel);
+        this._updatePosition(this._tmpPos, vel);
     }
 
     /* ─────────────────────────── Accessors ─────────────────────────────── */
@@ -268,15 +268,17 @@ export class Satellite {
     }
 
     /**
-     * Update satellite state from backend data (arrays in meters and m/s).
+     * @internal
+     * Update satellite state from backend/provider data (arrays in meters and m/s).
+     * Do not call from UI.
      * @param {Array} pos - [x, y, z] in meters
      * @param {Array} vel - [vx, vy, vz] in m/s
      * @param {Object} backendFields - optional extra backend fields
      */
-    updateFromBackend(pos, vel, backendFields = {}) {
+    _updateFromBackend(pos, vel, backendFields = {}) {
         const p = new THREE.Vector3(pos[0], pos[1], pos[2]);
         const v = new THREE.Vector3(vel[0], vel[1], vel[2]);
-        this.updatePosition(p, v, backendFields.debug);
+        this._updatePosition(p, v, backendFields.debug);
         // Store new backend fields for UI
         this.altitude_surface = backendFields.altitude_surface;
         this.altitude_radial = backendFields.altitude_radial;
