@@ -13,6 +13,8 @@ import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
+import { OrbitPropagator } from '../../physics/OrbitPropagator.js';
+import SunConfig from '../../physics/bodies/planets/Sun.js';
 
 /*
  * Planet.js
@@ -300,21 +302,47 @@ export class Planet {
         }
         // Always update distantComponent so it can toggle dot visibility
         this.distantComponent?.update();
-        const LERP_ALPHA = 0.15; // Smoothing factor (0.1 to 0.2 is usually good)
 
-        // ALWAYS Interpolate position of the orbitGroup towards the targetPosition
-        if (this.orbitGroup) {
-            this.orbitGroup.position.lerp(this.targetPosition, LERP_ALPHA);
+        // --- Orbital interpolation ---
+        if (this.orbitElements && this.timeManager && typeof this.timeManager.getJulianDate === 'function') {
+            // Use OrbitPropagator to get the correct position along the orbit
+            if (!this._orbitPropagator) {
+                this._orbitPropagator = new OrbitPropagator();
+            }
+            // Use Sun as parent for planets (could be improved for moons, etc)
+            const parent = SunConfig;
+            // Get current Julian date from timeManager
+            const jd = this.timeManager.getJulianDate();
+            // Prepare elements in expected format
+            const els = {
+                a: this.orbitElements.semiMajorAxis || this.orbitElements.a,
+                e: this.orbitElements.eccentricity || this.orbitElements.e,
+                i: this.orbitElements.inclination || this.orbitElements.i,
+                Omega: this.orbitElements.longitudeOfAscendingNode || this.orbitElements.Omega,
+                omega: this.orbitElements.argumentOfPeriapsis || this.orbitElements.omega,
+                M0: this.orbitElements.meanAnomalyAtEpoch || this.orbitElements.M0,
+                epoch: this.orbitElements.epoch || 2451545.0 // J2000 default
+            };
+            // Compute position
+            const state = this._orbitPropagator.orbitalElementsToStateVector(els, jd, parent.GM);
+            if (state && state.position && this.orbitGroup) {
+                this.orbitGroup.position.copy(state.position);
+            }
+        } else {
+            // Fallback: linear lerp as before
+            const LERP_ALPHA = 0.15;
+            if (this.orbitGroup) {
+                this.orbitGroup.position.lerp(this.targetPosition, LERP_ALPHA);
+            }
         }
 
-        // ALWAYS Interpolate orientation of the orientationGroup towards the targetOrientation
+        // Orientation interpolation (unchanged)
         if (this.orientationGroup) {
-            this.orientationGroup.quaternion.slerp(this.targetOrientation, LERP_ALPHA);
+            this.orientationGroup.quaternion.slerp(this.targetOrientation, 0.15);
         }
         // Do NOT set equatorialGroup quaternion here
 
-        // Remove the old conditional distantComponent update and return
-        // If not distant, update all other detailed components as usual
+        // Update all other detailed components as usual
         this.components.forEach(c => {
             if (c && typeof c.update === 'function') {
                 if (c === this.distantComponent) return; // Already updated above

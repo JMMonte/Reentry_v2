@@ -593,8 +593,14 @@ class App3D extends EventTarget {
 
     // Satellite creation helpers
     createSatelliteFromLatLon(p) {
-        // Step 1: Use selectedBody or fallback
-        const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
+        // Use planetNaifId from p if present, otherwise fallback
+        let selectedBody = this.selectedBody || { naifId: 399 };
+        const naifIdKey = String(p.planetNaifId);
+        // Debug log for lookup
+        console.log('[App3D.createSatelliteFromLatLon] Looking up planetNaifId', p.planetNaifId, 'in', Object.keys(this.bodiesByNaifId));
+        if (p.planetNaifId && this.bodiesByNaifId?.[naifIdKey]) {
+            selectedBody = this.bodiesByNaifId[naifIdKey];
+        }
         console.log('[App3D.createSatelliteFromLatLon] called with selectedBody:', selectedBody, 'params:', p);
         // Step 2: Call SatelliteManager
         return this.satellites.createSatelliteFromLatLon(this, p, selectedBody);

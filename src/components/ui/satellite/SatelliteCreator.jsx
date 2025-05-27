@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle, useEffect } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import { Button } from '../button';
 import { Label } from '../label';
 import { Input } from '../input';
@@ -8,6 +8,7 @@ import PropTypes from 'prop-types';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 import { Constants } from '../../../utils/Constants';
 import { PhysicsUtils } from '../../../utils/PhysicsUtils';
+import { Popover, PopoverTrigger, PopoverContent } from '../popover';
 
 const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ name: 'Earth', naifId: 399 }], selectedBody: initialSelectedBody }, ref) => {
     const [mode, setMode] = useState('latlon');
@@ -32,6 +33,10 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
         circular: false
     });
     const [selectedBody, setSelectedBody] = useState(initialSelectedBody || availableBodies[0]);
+    // Search state for central body dropdown
+    const [searchTerm, setSearchTerm] = useState("");
+    const [popoverOpen, setPopoverOpen] = useState(false);
+    const searchInputRef = useRef(null);
 
     // auto-calc circular velocity on altitude or circular flag change
     useEffect(() => {
@@ -41,6 +46,12 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
             setFormData(prev => ({ ...prev, velocity: vCirc }));
         }
     }, [mode, formData.circular, formData.altitude]);
+
+    useEffect(() => {
+        if (popoverOpen && searchInputRef.current) {
+            searchInputRef.current.focus();
+        }
+    }, [popoverOpen]);
 
     const handlePresetBC = (value) => {
         setFormData(prev => ({ ...prev, ballisticCoefficient: value }));
@@ -223,25 +234,58 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
     // Label for central body dropdown
     const centralBodyLabel = selectedBody ? selectedBody.name : 'Select Body';
 
+    // Filter out barycenters from availableBodies
+    const filteredBodies = availableBodies.filter(b =>
+        b.type !== 'barycenter' &&
+        !(typeof b.name === 'string' && (
+            b.name.endsWith('_barycenter') ||
+            b.name === 'ss_barycenter' ||
+            b.name === 'emb'
+        )) &&
+        (searchTerm.trim() === '' || b.name.toLowerCase().includes(searchTerm.trim().toLowerCase()))
+    );
+
     return (
         <div className="text-xs p-4">
             {/* Central body selector */}
             <div className="flex items-center gap-2 mb-2">
                 <Label htmlFor="central-body" className="text-xs text-muted-foreground text-right pr-1">Central Body:</Label>
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                    <PopoverTrigger asChild>
                         <Button variant="ghost" size="sm" className="justify-start">
                             {centralBodyLabel}
                         </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                        {availableBodies.map(b => (
-                            <DropdownMenuItem key={b.naifId} onSelect={() => setSelectedBody(b)}>
-                                {b.name}
-                            </DropdownMenuItem>
-                        ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="max-h-80 min-w-[10rem] p-0 w-48 overflow-y-auto" style={{ zIndex: 11000 }}>
+                        <div className="sticky top-0 z-10 bg-popover p-1 border-b flex items-center">
+                            <input
+                                type="text"
+                                ref={searchInputRef}
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                placeholder="Search..."
+                                className="w-full px-2 py-1 text-xs rounded bg-background border focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                        </div>
+                        {filteredBodies.length === 0 ? (
+                            <div className="text-xs text-muted-foreground px-3 py-2">No results</div>
+                        ) : (
+                            filteredBodies.map(b => (
+                                <button
+                                    key={b.naifId}
+                                    type="button"
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-accent focus:bg-accent focus:outline-none"
+                                    onClick={() => {
+                                        setSelectedBody(b);
+                                        setPopoverOpen(false);
+                                    }}
+                                >
+                                    {b.name}
+                                </button>
+                            ))
+                        )}
+                    </PopoverContent>
+                </Popover>
             </div>
             {/* General satellite properties */}
             <div className="flex flex-col gap-y-2 mb-4">

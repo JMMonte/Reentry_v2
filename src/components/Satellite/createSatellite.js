@@ -125,11 +125,11 @@ export async function createSatelliteFromLatLon(app, params) {
     console.log('[createSatelliteFromLatLon] resolved naifId:', naifId);
     // Step 3: Lookup Planet instance
     const planet = (app.bodiesByNaifId && app.bodiesByNaifId[naifId]) || (app.planetsByNaifId && app.planetsByNaifId[naifId]);
-    console.log('[createSatelliteFromLatLon] resolved planet:', planet);
     if (!planet) {
-        console.error(`[createSatelliteFromLatLon] No Planet instance found for naif_id ${naifId}`);
+        console.error(`[createSatelliteFromLatLon] No Planet instance found for naif_id ${naifId}. app.bodiesByNaifId:`, app.bodiesByNaifId);
         throw new Error(`No Planet instance found for naif_id ${naifId}`);
     }
+    console.log('[createSatelliteFromLatLon] resolved planet:', planet);
     // Step 4: Convert geodetic to ECI (planet-centric inertial, in km)
     const { pos, vel } = latLonAltToECI(params, planet);
     console.log('[createSatelliteFromLatLon] ECI pos, vel (planet-centric, km):', pos, vel);
