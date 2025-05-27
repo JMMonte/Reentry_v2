@@ -78,7 +78,13 @@ export class SatelliteManager {
      * @returns {Satellite}
      */
     addSatellite(params) {
-        const sat = new Satellite({ ...params, scene: this.app3d.scene, app3d: this.app3d });
+        // Convert position/velocity arrays (km) to THREE.Vector3 (km)
+        let position = params.position;
+        let velocity = params.velocity;
+        if (Array.isArray(position)) position = new THREE.Vector3(position[0], position[1], position[2]);
+        if (Array.isArray(velocity)) velocity = new THREE.Vector3(velocity[0], velocity[1], velocity[2]);
+
+        const sat = new Satellite({ ...params, position, velocity, scene: this.app3d.scene, app3d: this.app3d });
         this._applyDisplaySettings(sat); // Apply visual settings
         sat.timeWarp = this.app3d.timeUtils?.timeWarp ?? 1; // Satellites still need to know timeWarp for local animations/effects
         this._satellites.set(sat.id, sat);
@@ -336,8 +342,11 @@ export class SatelliteManager {
      * @param {object} selectedBody - The selected celestial body for context (e.g., { naifId: 399 } for Earth)
      */
     createSatelliteFromLatLon(app3dInstance, p, selectedBody) {
-        if (!selectedBody) throw new Error('Planet/moon config must be provided');
-        return createSatFromLatLonInternal(app3dInstance, p, selectedBody);
+        // Step 1: Extract naifId from selectedBody or fallback
+        const naifId = selectedBody?.naifId || 10; // orbit sun if no naifId
+        console.log('[SatelliteManager.createSatelliteFromLatLon] called with naifId:', naifId, 'params:', p);
+        // Step 2: Call internal creation function with naifId in params
+        return createSatFromLatLonInternal(app3dInstance, { ...p, planetNaifId: naifId });
     }
 
     /**
@@ -345,8 +354,11 @@ export class SatelliteManager {
      * @param {object} p
      */
     createSatelliteFromOrbitalElements(app3dInstance, p) {
-        if (!p.planet) throw new Error('Planet/moon config must be provided in params');
-        return createSatFromOEInternal(app3dInstance, p);
+        // Step 1: Extract naifId from p.planet or p.selectedBody or fallback
+        const naifId = p.planet?.naifId || p.selectedBody?.naifId || 399;
+        console.log('[SatelliteManager.createSatelliteFromOrbitalElements] called with naifId:', naifId, 'params:', p);
+        // Step 2: Call internal creation function with naifId in params
+        return createSatFromOEInternal(app3dInstance, { ...p, planetNaifId: naifId });
     }
 
     /**
@@ -355,8 +367,11 @@ export class SatelliteManager {
      * @param {object} selectedBody
      */
     createSatelliteFromLatLonCircular(app3dInstance, p, selectedBody) {
-        if (!selectedBody) throw new Error('Planet/moon config must be provided');
-        return createSatFromLatLonCircularInternal(app3dInstance, p, selectedBody);
+        // Step 1: Extract naifId from selectedBody or fallback
+        const naifId = selectedBody?.naifId || 399;
+        console.log('[SatelliteManager.createSatelliteFromLatLonCircular] called with naifId:', naifId, 'params:', p);
+        // Step 2: Call internal creation function with naifId in params
+        return createSatFromLatLonCircularInternal(app3dInstance, { ...p, planetNaifId: naifId });
     }
 
     // --- END SATELLITE CREATION HELPERS ---

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useRef, useContext } from 'react';
+import React, { useState, useEffect, createContext, useRef, useContext, useCallback } from 'react';
 import { ThemeProvider } from './components/ui/theme-provider';
 import { Layout } from './components/ui/Layout';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
@@ -144,20 +144,25 @@ function App3DMain() {
       setDisplaySettings(getInitialDisplaySettings(importedState));
     }
   }, [importedState]);
+
+  const handleSatelliteListUpdate = useCallback(() => {
+    if (app3d && app3d.satellites) {
+      const satsMap = app3d.satellites.getSatellites();
+      setSatellites({ ...satsMap });
+      setDebugWindows(prev =>
+        prev.map(w => satsMap[w.id] ? { ...w, satellite: satsMap[w.id] } : null).filter(Boolean)
+      );
+    }
+  }, [app3d, setSatellites, setDebugWindows]);
+
   useEffect(() => {
-    const handleSatelliteListUpdate = () => {
-      if (app3d && app3d.satellites) {
-        const satsMap = app3d.satellites.getSatellites();
-        setSatellites({ ...satsMap });
-        setDebugWindows(prev =>
-          prev.map(w => satsMap[w.id] ? { ...w, satellite: satsMap[w.id] } : null).filter(Boolean)
-        );
-      }
-    };
     document.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
-    handleSatelliteListUpdate();
-    return () => document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
-  }, [app3d]);
+    handleSatelliteListUpdate(); // Initial sync
+    return () => {
+        document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
+    };
+  }, [handleSatelliteListUpdate]);
+
   useEffect(() => {
     if (app3d && app3d.displaySettingsManager && typeof app3d.displaySettingsManager.applyAll === 'function') {
       app3d.displaySettingsManager.applyAll();
@@ -241,6 +246,7 @@ function App3DMain() {
     importedState,
     ready
   });
+
   useEffect(() => {
     if (
       controller?.app3d?.updateSelectedBody &&
@@ -251,6 +257,7 @@ function App3DMain() {
       controller.app3d.updateSelectedBody(selectedBody, false);
     }
   }, [selectedBody, controller, ready]);
+
   const onCreateSatellite = async (params) => {
     try {
       let satellite;
@@ -265,6 +272,7 @@ function App3DMain() {
         setIsSatelliteModalOpen(false);
         // Focus on the new satellite in the navbar body selector
         handleBodyChange(satellite);
+        app3d?.createDebugWindow?.(satellite); // <-- Add this line
       }
     } catch (error) {
       console.error('Error creating satellite:', error);
@@ -378,11 +386,13 @@ ${shareUrl}`);
     return () => window.removeEventListener('assetsLoaded', handleAssetsLoaded);
   }, []);
 
-  // Build availableBodies from app3d.celestialBodies
-  const availableBodies = app3d?.celestialBodies?.map(b => ({
-    name: b.name,
-    naifId: b.naif_id
-  })) || [{ name: 'Earth', naifId: 399 }];
+  // Build availableBodies from app3d.celestialBodies (use raw planetary configs for full data)
+  const availableBodies = app3d?.celestialBodies?.map(b => {
+    const cfg = app3d.planetaryDataManager?.naifToBody.get(b.naif_id);
+    return cfg
+      ? { ...cfg, naifId: cfg.naif_id, name: cfg.name }
+      : { name: b.name, naifId: b.naif_id };
+  }) || [{ name: 'Earth', naifId: 399 }];
 
   const { showToast } = useToast();
   React.useEffect(() => {
@@ -401,6 +411,39 @@ ${shareUrl}`);
   }, [showToast]);
 
   const isLoadingInitialData = !isAssetsLoaded || !isBackendReady;
+
+  useEffect(() => {
+    if (!app3d) return;
+    app3d.createDebugWindow = (satellite) => {
+      if (!satellite || satellite.id === undefined || satellite.id === null) {
+        console.error("createDebugWindow called with invalid satellite or satellite.id", satellite);
+        return;
+      }
+      setDebugWindows(prev => {
+        if (prev.some(w => w.id === satellite.id)) return prev;
+        console.log(`Creating debug window for satellite ${satellite.id}`);
+        return [
+          ...prev,
+          {
+            id: satellite.id,
+            satellite,
+            earth: app3d.earth,
+            onBodySelect: handleBodyChange,
+            onClose: () => app3d.removeDebugWindow(satellite.id),
+            sessionId: app3d.sessionId,
+            app3d
+          }
+        ];
+      });
+    };
+    app3d.removeDebugWindow = (id) => {
+      setDebugWindows(prev => prev.filter(w => w.id !== id));
+    };
+    return () => {
+      delete app3d.createDebugWindow;
+      delete app3d.removeDebugWindow;
+    };
+  }, [app3d, handleBodyChange]);
 
   if (!checkedInitialState) return null;
   // Build props for Layout

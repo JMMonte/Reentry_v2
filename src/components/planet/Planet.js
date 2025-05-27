@@ -383,6 +383,14 @@ export class Planet {
     }
 
     /**
+     * Get the rotation group (contains the planet mesh, axial spin, rings, etc.).
+     * @returns {THREE.Group}
+     */
+    getRotationGroup() {
+        return this.rotationGroup;
+    }
+
+    /**
      * Get the surface texture image, if available.
      * @returns {HTMLImageElement|null}
      */

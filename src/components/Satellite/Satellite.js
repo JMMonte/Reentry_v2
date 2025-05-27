@@ -69,9 +69,6 @@ export class Satellite {
         /* ── visuals ── */
         this._initVisuals();
 
-        /* debug window on demand */
-        app3d.createDebugWindow?.(this);
-
         /* maneuvers container */
         this.maneuverNodes = [];
         this.maneuverGroup = new THREE.Group();
@@ -83,7 +80,13 @@ export class Satellite {
     _initVisuals() {
         /* body mesh & axes */
         this.visualizer = new SatelliteVisualizer(this.color, this.orientation, this.app3d);
-        this.visualizer.addToScene(this.scene);
+        // Parent the mesh to the planet's mesh group (not the scene root)
+        if (this.planetConfig && typeof this.planetConfig.getRotationGroup === 'function') {
+            this.planetConfig.getRotationGroup().add(this.visualizer.mesh);
+        } else {
+            // fallback: add to scene root if no planet group
+            this.visualizer.addToScene(this.scene);
+        }
 
         /* orbit line */
         this.orbitPath = new OrbitPath(this.color);

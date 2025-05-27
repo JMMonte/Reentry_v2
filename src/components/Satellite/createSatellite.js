@@ -48,82 +48,130 @@ export async function createSatellite(app, params) {
 
     if (sat.orbitLine?.visible) sat.updateOrbitLine(params.position, params.velocity);
 
-    app.createDebugWindow?.(sat);
-    app.updateSatelliteList?.();
-    // Parent under its central body immediately in the scene
     sat.setCentralBody(satParams.planetConfig.naifId);
-    sat.central_body = satParams.planetConfig.naifId;
-    return sat;
+
+    // Always expect planet-centric position/velocity and centralBodyNaifId
+    const planet = params.planetConfig;
+    const planetGroup = planet.getRotationGroup();
+    // Convert position to meters if your scene uses meters (assume input is km)
+    const posVec = new THREE.Vector3(params.position[0], params.position[1], params.position[2]).multiplyScalar(1000); // km -> m
+    // Create a simple sphere mesh for the satellite (customize as needed)
+    const geometry = new THREE.SphereGeometry(params.size ?? 1, 16, 16);
+    const material = new THREE.MeshStandardMaterial({ color: params.color ?? 0xff0000 });
+    const satMesh = new THREE.Mesh(geometry, material);
+    // Set mesh position (planet-centric, in meters)
+    satMesh.position.copy(posVec);
+    // Parent to planet's mesh group
+    planetGroup.add(satMesh);
+
+    // Store mesh reference, etc.
+    // Return satellite object
+    return {
+        ...params,
+        object3D: satMesh
+    };
 }
 
 /*────────── public wrappers — lat/lon launch (free or circular) ──────────*/
 
 // Utility: Convert lat/lon/alt/velocity/azimuth/angleOfAttack to ECI pos/vel (in km, km/s)
 function latLonAltToECI(params, planet) {
-    // All angles in degrees, altitude in km, velocity in km/s
     const {
         latitude, longitude, altitude, velocity, azimuth = 0, angleOfAttack = 0
     } = params;
-    // PhysicsUtils expects altitude in meters, velocity in m/s
-    const altM = altitude * 1000;
-    const velMS = velocity * 1000;
-    const tiltQ = PhysicsUtils.getTiltQuaternion(planet.inclination);
-    // No planet rotation for ECI by default
-    const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocity(
-        latitude, longitude, altM, velMS, azimuth, angleOfAttack,
-        planet.radius, planet.polarRadius, tiltQ, new THREE.Quaternion()
-    );
-    // Convert to km and km/s arrays
+    // Convert angles to radians
+    const latRad = THREE.MathUtils.degToRad(latitude);
+    const lonRad = THREE.MathUtils.degToRad(longitude);
+    // Use planet's equatorial and polar radii (km)
+    const a = planet.radius;
+    const b = planet.polarRadius ?? planet.radius; // fallback to sphere
+    // WGS84-like flattening
+    const e2 = 1 - (b * b) / (a * a);
+    const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
+    // ECEF position (km)
+    const X = (N + altitude) * Math.cos(latRad) * Math.cos(lonRad);
+    const Y = (N + altitude) * Math.cos(latRad) * Math.sin(lonRad);
+    const Z = ((1 - e2) * N + altitude) * Math.sin(latRad);
+    // Local ENU basis
+    const up = new THREE.Vector3(X, Y, Z).normalize();
+    const north = new THREE.Vector3(
+        -Math.sin(latRad) * Math.cos(lonRad),
+        -Math.sin(latRad) * Math.sin(lonRad),
+        Math.cos(latRad)
+    ).normalize();
+    const east = new THREE.Vector3().crossVectors(up, north);
+    // Velocity in ENU
+    const azRad = THREE.MathUtils.degToRad(azimuth);
+    const aoaRad = THREE.MathUtils.degToRad(angleOfAttack);
+    const horizontal = east.clone().multiplyScalar(Math.cos(azRad + Math.PI))
+        .add(north.clone().multiplyScalar(Math.sin(azRad + Math.PI)));
+    const velENU = horizontal.multiplyScalar(velocity * Math.cos(aoaRad))
+        .add(up.clone().multiplyScalar(velocity * Math.sin(aoaRad)));
+    // For now, treat ECEF = ECI (no planet rotation, no GMST)
+    // If you want to add planet rotation, you can rotate by GMST here.
+    console.log('[latLonAltToECI] ECEF pos:', [X, Y, Z], 'vel:', [velENU.x, velENU.y, velENU.z]);
     return {
-        pos: [positionECI.x * 0.001, positionECI.y * 0.001, positionECI.z * 0.001],
-        vel: [velocityECI.x * 0.001, velocityECI.y * 0.001, velocityECI.z * 0.001]
+        pos: [X, Y, Z],
+        vel: [velENU.x, velENU.y, velENU.z]
     };
 }
 
-// Add a local satellite ID counter for backend integer IDs
-let nextSatId = 1;
-
 // Refactored: createSatelliteFromLatLon now builds backend payload and adds to scene
-export async function createSatelliteFromLatLon(app, params, planet) {
+export async function createSatelliteFromLatLon(app, params) {
+    // Step 1: Log input params
+    console.log('[createSatelliteFromLatLon] called with params:', params);
+    // Step 2: Resolve planet NAIF ID
+    const naifId = params.planetNaifId || params.central_body || params.naifId || 399;
+    console.log('[createSatelliteFromLatLon] resolved naifId:', naifId);
+    // Step 3: Lookup Planet instance
+    const planet = (app.bodiesByNaifId && app.bodiesByNaifId[naifId]) || (app.planetsByNaifId && app.planetsByNaifId[naifId]);
+    console.log('[createSatelliteFromLatLon] resolved planet:', planet);
+    if (!planet) {
+        console.error(`[createSatelliteFromLatLon] No Planet instance found for naif_id ${naifId}`);
+        throw new Error(`No Planet instance found for naif_id ${naifId}`);
+    }
+    // Step 4: Convert geodetic to ECI (planet-centric inertial, in km)
     const { pos, vel } = latLonAltToECI(params, planet);
+    console.log('[createSatelliteFromLatLon] ECI pos, vel (planet-centric, km):', pos, vel);
+    // Step 5: Pass planet-centric position/velocity to SatelliteManager
     const size = params.size ?? 1;
     const crossSectionalArea = params.crossSectionalArea ?? (Math.PI * size * size);
     const dragCoefficient = params.dragCoefficient ?? 2.2;
-    const satPayload = {
-        sat_id: nextSatId++,
+    // Always assign a color for visuals (never for physics/backend)
+    const color = params.color ?? brightColors[Math.floor(Math.random() * brightColors.length)];
+    const satParams = {
+        id: params.sat_id || params.id || Date.now(),
+        position: pos, // planet-centric, km
+        velocity: vel, // planet-centric, km/s
         mass: params.mass,
-        pos,
-        vel,
-        frame: 'ECLIPJ2000',
-        central_body: planet?.naifId || 399,
+        size: params.size,
+        name: params.name,
+        planetConfig: planet,
+        ballisticCoefficient: params.ballisticCoefficient,
+        crossSectionalArea,
+        dragCoefficient,
+        centralBodyNaifId: naifId, // required for planet-centric
+        color // for visuals only
+    };
+    // If no backend session, fall back to local physics provider
+    if (!app.sessionId) {
+        const sat = app.satellites.addSatellite(satParams);
+        console.log('[createSatelliteFromLatLon] created local satellite:', sat);
+        return sat;
+    }
+    // Backend payload (planet-centric)
+    const satPayload = {
+        sat_id: satParams.id,
+        mass: satParams.mass,
+        pos: satParams.position,
+        vel: satParams.velocity,
+        frame: 'PLANETCENTRIC',
+        central_body: naifId,
         bc: params.ballisticCoefficient,
         size: params.size,
         name: params.name
     };
-    // If no backend session, fall back to local physics provider
-    if (!app.sessionId) {
-        const sat = await createSatellite(app, {
-            id: satPayload.sat_id,
-            position: new THREE.Vector3(
-                pos[0] * Constants.kmToMeters,
-                pos[1] * Constants.kmToMeters,
-                pos[2] * Constants.kmToMeters
-            ),
-            velocity: new THREE.Vector3(
-                vel[0] * Constants.kmToMeters,
-                vel[1] * Constants.kmToMeters,
-                vel[2] * Constants.kmToMeters
-            ),
-            mass: params.mass,
-            size: params.size,
-            name: params.name,
-            planetConfig: planet,
-            ballisticCoefficient: params.ballisticCoefficient,
-            crossSectionalArea,
-            dragCoefficient
-        });
-        return sat;
-    }
+    console.log('[createSatelliteFromLatLon] satPayload:', satPayload);
     const url = `${PHYSICS_SERVER_URL}/satellite?session_id=${app.sessionId}`;
     const response = await fetch(url, {
         method: 'POST',
@@ -134,27 +182,10 @@ export async function createSatelliteFromLatLon(app, params, planet) {
         const error = await response.text();
         throw new Error(`Failed to create satellite: ${error}`);
     }
-    const backendSat = await response.json();
-    return createSatellite(app, {
-        id: backendSat.sat_id,
-        position: new THREE.Vector3(
-            pos[0] * Constants.kmToMeters,
-            pos[1] * Constants.kmToMeters,
-            pos[2] * Constants.kmToMeters
-        ),
-        velocity: new THREE.Vector3(
-            vel[0] * Constants.kmToMeters,
-            vel[1] * Constants.kmToMeters,
-            vel[2] * Constants.kmToMeters
-        ),
-        mass: params.mass,
-        size: params.size,
-        name: params.name,
-        planetConfig: planet,
-        ballisticCoefficient: params.ballisticCoefficient,
-        crossSectionalArea,
-        dragCoefficient
-    });
+    // Always create and return a Satellite instance
+    const sat = app.satellites.addSatellite(satParams);
+    console.log('[createSatelliteFromLatLon] created backend satellite:', sat);
+    return sat;
 }
 
 // Backward-compatible alias for circular launches
@@ -163,45 +194,47 @@ export async function createSatelliteFromLatLonCircular(sessionId, params, selec
 }
 
 /*────────── orbital-element creator ───────────────*/
-export function createSatelliteFromOrbitalElements(app, {
-    semiMajorAxis, eccentricity, inclination,
-    raan, argumentOfPeriapsis, trueAnomaly,
-    referenceFrame = 'inertial',
-    mass, size, name,
-    planet,
-    crossSectionalArea,
-    dragCoefficient
-}) {
+export function createSatelliteFromOrbitalElements(app, params) {
+    // Step 1: Log input params
+    console.log('[createSatelliteFromOrbitalElements] called with params:', params);
+    // Step 2: Resolve planet NAIF ID
+    const naifId = params.planetNaifId || params.central_body || params.naifId || (params.planet && params.planet.naifId) || 399;
+    console.log('[createSatelliteFromOrbitalElements] resolved naifId:', naifId);
+    // Step 3: Lookup Planet instance
+    const planet = (app.bodiesByNaifId && app.bodiesByNaifId[naifId]) || (app.planetsByNaifId && app.planetsByNaifId[naifId]);
+    console.log('[createSatelliteFromOrbitalElements] resolved planet:', planet);
+    if (!planet) {
+        console.error(`[createSatelliteFromOrbitalElements] No Planet instance found for naif_id ${naifId}`);
+        throw new Error(`No Planet instance found for naif_id ${naifId}`);
+    }
+    // Step 4: Compute inertial state vector in planet-centric frame
     const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
-        semiMajorAxis * Constants.kmToMeters,
-        eccentricity,
-        inclination,
-        argumentOfPeriapsis,
-        raan,
-        trueAnomaly,
+        params.semiMajorAxis * Constants.kmToMeters,
+        params.eccentricity,
+        params.inclination,
+        params.argumentOfPeriapsis,
+        params.raan,
+        params.trueAnomaly,
         planet.GM
     );
+    console.log('[createSatelliteFromOrbitalElements] ECI position, velocity:', positionECI, velocityECI);
+    // Step 5: Convert to planet mesh Z-up frame (Three.js world)
     const { position, velocity } = inertialToWorld(
-        app.earth,
+        planet,
         positionECI,
         velocityECI,
-        { referenceFrame }
+        { referenceFrame: 'equatorial' }
     );
-    const computedSize = size ?? 1;
-    const area = crossSectionalArea ?? (Math.PI * computedSize * computedSize);
-    const drag = dragCoefficient ?? 2.2;
-    if (referenceFrame === 'ecliptic') {
-        const pos = positionECI.clone().multiplyScalar(Constants.metersToKm);
-        const vel = velocityECI.clone().multiplyScalar(Constants.metersToKm);
-        return createSatellite(app, { position: pos, velocity: vel, mass, size: computedSize, name, planetConfig: planet, crossSectionalArea: area, dragCoefficient: drag });
-    }
-    if (referenceFrame === 'equatorial') {
-        const invTiltQ = PhysicsUtils.getInvTiltQuaternion(planet.inclination);
-        const pos = positionECI.clone().applyQuaternion(invTiltQ).multiplyScalar(Constants.metersToKm);
-        const vel = velocityECI.clone().applyQuaternion(invTiltQ).multiplyScalar(Constants.metersToKm);
-        return createSatellite(app, { position: pos, velocity: vel, mass, size: computedSize, name, planetConfig: planet, crossSectionalArea: area, dragCoefficient: drag });
-    }
-    return createSatellite(app, { position, velocity, mass, size: computedSize, name, planetConfig: planet, crossSectionalArea: area, dragCoefficient: drag });
+    console.log('[createSatelliteFromOrbitalElements] mesh/world position, velocity:', position, velocity);
+    // Step 6: Continue as before, but use transformed position/velocity
+    const computedSize = params.size ?? 1;
+    const area = params.crossSectionalArea ?? (Math.PI * computedSize * computedSize);
+    const drag = params.dragCoefficient ?? 2.2;
+    // Always assign a color for visuals (never for physics/backend)
+    const color = params.color ?? brightColors[Math.floor(Math.random() * brightColors.length)];
+    const sat = app.satellites.addSatellite({ position, velocity, mass: params.mass, size: computedSize, name: params.name, planetConfig: planet, crossSectionalArea: area, dragCoefficient: drag, color });
+    console.log('[createSatelliteFromOrbitalElements] created satellite:', sat);
+    return sat;
 }
 
 /*────────── ground-track helper (unchanged except frame) ──────*/

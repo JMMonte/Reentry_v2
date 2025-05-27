@@ -357,18 +357,24 @@ export class PhysicsEngine {
     }
 
     /**
-     * Add satellite (unchanged from original)
+     * Add satellite (planet-centric version)
+     * @param {Object} satellite - Must include centralBodyNaifId (the NAIF ID of the central body)
      */
     addSatellite(satellite) {
+        if (!satellite.centralBodyNaifId) {
+            throw new Error('Satellite must specify centralBodyNaifId (NAIF ID of central body)');
+        }
         this.satellites.set(satellite.id, {
             ...satellite,
+            // All positions/velocities are planet-centric (relative to central body)
             position: new THREE.Vector3().fromArray(satellite.position),
             velocity: new THREE.Vector3().fromArray(satellite.velocity),
             acceleration: new THREE.Vector3(),
             mass: satellite.mass || 1000,
             dragCoefficient: satellite.dragCoefficient || 2.2,
             crossSectionalArea: satellite.crossSectionalArea || 10,
-            lastUpdate: this.simulationTime
+            lastUpdate: this.simulationTime,
+            centralBodyNaifId: satellite.centralBodyNaifId
         });
     }
 
@@ -391,9 +397,19 @@ export class PhysicsEngine {
     _computeSatelliteAcceleration(satellite) {
         const totalAccel = new THREE.Vector3();
 
-        // Gravitational forces from all bodies
+        // Get the central body's global position
+        const centralBody = this.bodies[satellite.centralBodyNaifId];
+        if (!centralBody) {
+            console.warn(`[PhysicsEngine] Central body ${satellite.centralBodyNaifId} not found for satellite ${satellite.id}`);
+            return totalAccel;
+        }
+        // Satellite's global position = planet-centric position + central body's global position
+        const satGlobalPos = satellite.position.clone().add(centralBody.position);
+
+        // Gravitational forces from all bodies (in global frame)
         for (const body of Object.values(this.bodies)) {
-            const r = new THREE.Vector3().subVectors(body.position, satellite.position);
+            // Vector from satellite to body (in global frame)
+            const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
             const distance = r.length();
 
             if (distance > 0) {
@@ -407,7 +423,12 @@ export class PhysicsEngine {
     }
 
     _integrateRK4(satellite, acceleration, dt) {
-        const pos0 = satellite.position.clone();
+        // All integration is done in planet-centric frame
+        // But force calculations use global positions
+        const centralBody = this.bodies[satellite.centralBodyNaifId];
+        if (!centralBody) return;
+
+        const pos0 = satellite.position.clone(); // planet-centric
         const vel0 = satellite.velocity.clone();
         const acc0 = acceleration;
 
@@ -418,31 +439,26 @@ export class PhysicsEngine {
         // k2
         const pos1 = pos0.clone().addScaledVector(k1p, 0.5);
         const vel1 = vel0.clone().addScaledVector(k1v, 0.5);
-        satellite.position.copy(pos1);
-        satellite.velocity.copy(vel1);
-        const acc1 = this._computeSatelliteAcceleration(satellite);
+        // Compute acceleration at pos1 (convert to global)
+        const acc1 = this._computeSatelliteAcceleration({ ...satellite, position: pos1 });
         const k2v = acc1.clone().multiplyScalar(dt);
         const k2p = vel1.clone().multiplyScalar(dt);
 
         // k3
         const pos2 = pos0.clone().addScaledVector(k2p, 0.5);
         const vel2 = vel0.clone().addScaledVector(k2v, 0.5);
-        satellite.position.copy(pos2);
-        satellite.velocity.copy(vel2);
-        const acc2 = this._computeSatelliteAcceleration(satellite);
+        const acc2 = this._computeSatelliteAcceleration({ ...satellite, position: pos2 });
         const k3v = acc2.clone().multiplyScalar(dt);
         const k3p = vel2.clone().multiplyScalar(dt);
 
         // k4
         const pos3 = pos0.clone().add(k3p);
         const vel3 = vel0.clone().add(k3v);
-        satellite.position.copy(pos3);
-        satellite.velocity.copy(vel3);
-        const acc3 = this._computeSatelliteAcceleration(satellite);
+        const acc3 = this._computeSatelliteAcceleration({ ...satellite, position: pos3 });
         const k4v = acc3.clone().multiplyScalar(dt);
         const k4p = vel3.clone().multiplyScalar(dt);
 
-        // Final update
+        // Final update (planet-centric)
         satellite.position.copy(pos0)
             .addScaledVector(k1p, 1 / 6)
             .addScaledVector(k2p, 1 / 3)

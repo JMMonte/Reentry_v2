@@ -96,10 +96,9 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
         e.preventDefault();
         try {
             const params = { ...formData };
-
             // Map the parameters based on the mode
             if (mode === 'latlon') {
-                await onCreateSatellite({
+                const outParams = {
                     mode,
                     latitude: params.latitude,
                     longitude: params.longitude,
@@ -112,10 +111,12 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined,
-                    selectedBody
-                });
+                    planetNaifId: selectedBody?.naifId
+                };
+                console.log('[SatelliteCreator] Submitting latlon satellite with:', outParams);
+                await onCreateSatellite(outParams);
             } else if (mode === 'orbital') {
-                await onCreateSatellite({
+                const outParams = {
                     mode,
                     semiMajorAxis: params.semiMajorAxis,
                     eccentricity: params.eccentricity,
@@ -128,10 +129,11 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined,
-                    selectedBody
-                });
+                    planetNaifId: selectedBody?.naifId
+                };
+                console.log('[SatelliteCreator] Submitting orbital satellite with:', outParams);
+                await onCreateSatellite(outParams);
             }
-
             setFormData(prev => ({
                 ...prev,
                 name: ''  // Reset only the name field after successful creation

@@ -593,13 +593,25 @@ class App3D extends EventTarget {
 
     // Satellite creation helpers
     createSatelliteFromLatLon(p) {
-        return this.satellites.createSatelliteFromLatLon(this, p, this.selectedBody || { naifId: 399 });
+        // Step 1: Use selectedBody or fallback
+        const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
+        console.log('[App3D.createSatelliteFromLatLon] called with selectedBody:', selectedBody, 'params:', p);
+        // Step 2: Call SatelliteManager
+        return this.satellites.createSatelliteFromLatLon(this, p, selectedBody);
     }
     createSatelliteFromOrbitalElements(p) {
-        return this.satellites.createSatelliteFromOrbitalElements(this, p);
+        // Step 1: Use selectedBody or fallback
+        const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
+        console.log('[App3D.createSatelliteFromOrbitalElements] called with selectedBody:', selectedBody, 'params:', p);
+        // Step 2: Call SatelliteManager
+        return this.satellites.createSatelliteFromOrbitalElements(this, { ...p, selectedBody });
     }
     createSatelliteFromLatLonCircular(p) {
-        return this.satellites.createSatelliteFromLatLonCircular(this, p, this.selectedBody || { naifId: 399 });
+        // Step 1: Use selectedBody or fallback
+        const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
+        console.log('[App3D.createSatelliteFromLatLonCircular] called with selectedBody:', selectedBody, 'params:', p);
+        // Step 2: Call SatelliteManager
+        return this.satellites.createSatelliteFromLatLonCircular(this, p, selectedBody);
     }
 
     getVisibleLocationsFromOrbitalElements(p) {
@@ -698,6 +710,10 @@ class App3D extends EventTarget {
      * @param {number} delta - Time since last frame in seconds
      */
     tick(delta) {
+        // Step physics and sync satellites every frame
+        if (this.physicsIntegration?.stepSimulation) {
+            this.physicsIntegration.stepSimulation(delta);
+        }
         this.stats?.begin();
         
         this.sceneManager.updateFrame?.(delta);
