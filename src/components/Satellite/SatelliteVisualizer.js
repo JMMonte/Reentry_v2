@@ -24,9 +24,29 @@ export class SatelliteVisualizer {
         const targetSize = 0.005;
         this.mesh.onBeforeRender = (renderer, scene, camera) => {
             if (this.mesh.visible) {
-                const distance = camera.position.distanceTo(this.mesh.position);
+                // Get world position of mesh and camera
+                const meshWorldPos = new THREE.Vector3();
+                this.mesh.getWorldPosition(meshWorldPos);
+                const cameraWorldPos = new THREE.Vector3();
+                camera.getWorldPosition(cameraWorldPos);
+
+                // Calculate distance
+                const distance = cameraWorldPos.distanceTo(meshWorldPos);
+
+                // Compensate for parent scale
+                const parentWorldScale = new THREE.Vector3(1, 1, 1);
+                if (this.mesh.parent) {
+                    this.mesh.parent.getWorldScale(parentWorldScale);
+                }
+
+                // Set scale so apparent size is constant
                 const scale = distance * targetSize;
-                this.mesh.scale.set(scale, scale, scale);
+                this.mesh.scale.set(
+                    scale / (parentWorldScale.x || 1),
+                    scale / (parentWorldScale.y || 1),
+                    scale / (parentWorldScale.z || 1)
+                );
+
                 this.mesh.quaternion.copy(this.orientation);
             }
         };
