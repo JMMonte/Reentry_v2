@@ -50,6 +50,9 @@ export async function createSatellite(app, params) {
 
     app.createDebugWindow?.(sat);
     app.updateSatelliteList?.();
+    // Parent under its central body immediately in the scene
+    sat.setCentralBody(satParams.planetConfig.naifId);
+    sat.central_body = satParams.planetConfig.naifId;
     return sat;
 }
 
@@ -97,6 +100,30 @@ export async function createSatelliteFromLatLon(app, params, planet) {
         size: params.size,
         name: params.name
     };
+    // If no backend session, fall back to local physics provider
+    if (!app.sessionId) {
+        const sat = await createSatellite(app, {
+            id: satPayload.sat_id,
+            position: new THREE.Vector3(
+                pos[0] * Constants.kmToMeters,
+                pos[1] * Constants.kmToMeters,
+                pos[2] * Constants.kmToMeters
+            ),
+            velocity: new THREE.Vector3(
+                vel[0] * Constants.kmToMeters,
+                vel[1] * Constants.kmToMeters,
+                vel[2] * Constants.kmToMeters
+            ),
+            mass: params.mass,
+            size: params.size,
+            name: params.name,
+            planetConfig: planet,
+            ballisticCoefficient: params.ballisticCoefficient,
+            crossSectionalArea,
+            dragCoefficient
+        });
+        return sat;
+    }
     const url = `${PHYSICS_SERVER_URL}/satellite?session_id=${app.sessionId}`;
     const response = await fetch(url, {
         method: 'POST',
@@ -108,22 +135,26 @@ export async function createSatelliteFromLatLon(app, params, planet) {
         throw new Error(`Failed to create satellite: ${error}`);
     }
     const backendSat = await response.json();
-    const sat = app.satellites.addSatellite({
+    return createSatellite(app, {
         id: backendSat.sat_id,
-        position: new THREE.Vector3(pos[0] * 1000, pos[1] * 1000, pos[2] * 1000),
-        velocity: new THREE.Vector3(vel[0] * 1000, vel[1] * 1000, vel[2] * 1000),
+        position: new THREE.Vector3(
+            pos[0] * Constants.kmToMeters,
+            pos[1] * Constants.kmToMeters,
+            pos[2] * Constants.kmToMeters
+        ),
+        velocity: new THREE.Vector3(
+            vel[0] * Constants.kmToMeters,
+            vel[1] * Constants.kmToMeters,
+            vel[2] * Constants.kmToMeters
+        ),
         mass: params.mass,
         size: params.size,
         name: params.name,
-        color: brightColors[Math.floor(Math.random() * brightColors.length)],
-        ballisticCoefficient: params.ballisticCoefficient,
         planetConfig: planet,
+        ballisticCoefficient: params.ballisticCoefficient,
         crossSectionalArea,
         dragCoefficient
     });
-    app.createDebugWindow?.(sat);
-    app.updateSatelliteList?.();
-    return sat;
 }
 
 // Backward-compatible alias for circular launches

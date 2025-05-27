@@ -263,6 +263,8 @@ function App3DMain() {
       }
       if (satellite) {
         setIsSatelliteModalOpen(false);
+        // Focus on the new satellite in the navbar body selector
+        handleBodyChange(satellite);
       }
     } catch (error) {
       console.error('Error creating satellite:', error);

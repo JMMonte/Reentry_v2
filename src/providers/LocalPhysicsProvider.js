@@ -187,17 +187,8 @@ export class LocalPhysicsProvider {
                 continue;
             }
 
-            // Worker sends position in METERS and velocity in M/S.
-            // Satellite._updatePosition() expects position in METERS and velocity in M/S.
-
-            // Ensure temporary vectors exist on the satellite object or create them here if preferred.
-            // Reusing vectors on `sat` (like `sat._tmpPos`) is fine if Satellite.js defines them for this purpose.
-            // For clarity, let's create them here if they might not exist or are used differently by Satellite.js.
-            const newPosition = new THREE.Vector3(u.position[0], u.position[1], u.position[2]);
-            const newVelocity = new THREE.Vector3(u.velocity[0], u.velocity[1], u.velocity[2]);
-
-            // Call the Satellite's method to update its physics state and visuals tied to that state.
-            sat._updatePosition(newPosition, newVelocity, u.debug);
+            // Delegate full backend update (including parenting, position, debug data) to Satellite.
+            sat._updateFromBackend(u.position, u.velocity, u);
         }
     }
 
