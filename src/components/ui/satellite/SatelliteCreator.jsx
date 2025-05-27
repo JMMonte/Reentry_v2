@@ -6,7 +6,6 @@ import { Slider } from '../slider';
 import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import PropTypes from 'prop-types';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
-import { Constants } from '../../../utils/Constants';
 import { PhysicsUtils } from '../../../utils/PhysicsUtils';
 import { Popover, PopoverTrigger, PopoverContent } from '../popover';
 
@@ -40,12 +39,26 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
 
     // auto-calc circular velocity on altitude or circular flag change
     useEffect(() => {
-        if (mode === 'latlon' && formData.circular) {
-            const r = Constants.earthRadius + formData.altitude * Constants.kmToMeters;
-            const vCirc = PhysicsUtils.calculateOrbitalVelocity(Constants.earthMass, r) * Constants.metersToKm;
-            setFormData(prev => ({ ...prev, velocity: vCirc }));
+        if (mode === 'latlon' && formData.circular && selectedBody) {
+            // Use selected body's radius (km) and mass (kg)
+            const radiusKm = Number(selectedBody.radius);
+            const massKg = Number(selectedBody.mass);
+            const altitudeKm = Number(formData.altitude);
+            if (
+                !isNaN(radiusKm) && isFinite(radiusKm) &&
+                !isNaN(massKg) && isFinite(massKg) &&
+                !isNaN(altitudeKm) && isFinite(altitudeKm)
+            ) {
+                // Convert to meters for PhysicsUtils if needed, or use km if that's the expected unit
+                // Here, PhysicsUtils.calculateOrbitalVelocity expects mass in kg, radius in kilometers
+                const rKm = (radiusKm + altitudeKm);
+                const vCirc = PhysicsUtils.calculateOrbitalVelocity(massKg, rKm);
+                if (!isNaN(vCirc) && isFinite(vCirc)) {
+                    setFormData(prev => ({ ...prev, velocity: vCirc }));
+                }
+            }
         }
-    }, [mode, formData.circular, formData.altitude]);
+    }, [mode, formData.circular, formData.altitude, selectedBody]);
 
     useEffect(() => {
         if (popoverOpen && searchInputRef.current) {
@@ -272,7 +285,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                         ) : (
                             filteredBodies.map(b => (
                                 <button
-                                    key={b.naifId}
+                                    key={b.naifId || b.name}
                                     type="button"
                                     className="w-full text-left px-3 py-2 text-xs hover:bg-accent focus:bg-accent focus:outline-none"
                                     onClick={() => {

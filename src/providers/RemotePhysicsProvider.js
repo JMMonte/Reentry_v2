@@ -2,7 +2,6 @@
  * Provides satellite physics updates received from a remote backend.
  */
 // import * as THREE from 'three'; // Keep for potential future use with Vector3 etc.
-import { Constants } from '../utils/Constants.js'; // Keep for potential future use
 import axios from 'axios'; // For making HTTP requests
 
 const MAX_CONSECUTIVE_FAILURES = 3; // Number of failures before triggering fail-safe
@@ -83,14 +82,14 @@ export class RemotePhysicsProvider {
         // Satellite.js uses meters internally for its position and m/s for velocity.
         // So we need to convert.
         const posKm = [
-            satellite.position.x * Constants.metersToKm,
-            satellite.position.y * Constants.metersToKm,
-            satellite.position.z * Constants.metersToKm
+            satellite.position.x,
+            satellite.position.y,
+            satellite.position.z
         ];
         const velKms = [
-            satellite.velocity.x * Constants.metersToKm,
-            satellite.velocity.y * Constants.metersToKm,
-            satellite.velocity.z * Constants.metersToKm
+            satellite.velocity.x,
+            satellite.velocity.y,
+            satellite.velocity.z
         ];
 
         const payload = {
@@ -177,14 +176,6 @@ export class RemotePhysicsProvider {
      * For the remote provider, this is likely a no-op as updates are pushed from the backend.
      * It could be used for requesting updates if the backend uses a pull model, but typically it's push.
      */
-    // eslint-disable-next-line no-unused-vars
-    update(satellites, currentTime, realDelta, warpedDelta, thirdBodyPositions) {
-        // No specific action needed here if updates are purely event-driven from backend.
-        // If backend requires periodic "keep-alive" or state sync requests for satellites,
-        // this would be the place to do it.
-    }
-
-    // eslint-disable-next-line no-unused-vars
     async setTimeWarp(value) {
         if (!this.isInitialized) {
             console.warn("[RemotePhysicsProvider] Not initialized. Cannot set timewarp.");

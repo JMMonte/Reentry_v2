@@ -151,9 +151,9 @@ export async function createSceneObjects(app) {
         } else {
             bodyObj = new Planet(scene, renderer, timeUtils, textureManager, config);
         }
-        bodyObj.naif_id = config.naif_id;
+        bodyObj.naifId = config.naifId;
         app.celestialBodies.push(bodyObj);
-        app.bodiesByNaifId[config.naif_id] = bodyObj;
+        app.bodiesByNaifId[config.naifId] = bodyObj;
     }
 
     // --- Establish Parent-Child Relationships for Hierarchical Orbit Rendering ---
@@ -222,8 +222,8 @@ export async function createSceneObjects(app) {
     // 4. Populate mapping for planets/moons needed by simSocket
     app.planetsByNaifId = {};
     app.celestialBodies.forEach(planet => {
-        if (planet instanceof Planet && typeof planet.naif_id === 'number') {
-            app.planetsByNaifId[planet.naif_id] = planet;
+        if (planet instanceof Planet && typeof planet.naifId === 'number') {
+            app.planetsByNaifId[planet.naifId] = planet;
         }
     });
 
@@ -263,7 +263,7 @@ export async function createSceneObjects(app) {
     // --- Parent moons to their planet's equatorialGroup ---
     for (const [, config] of planetaryDataManager.naifToBody.entries()) {
         if (config.type === 'moon') {
-            const moonObj = app.bodiesByNaifId[config.naif_id];
+            const moonObj = app.bodiesByNaifId[config.naifId];
             const parentPlanet = app.bodiesByNaifId[config.parent];
             if (moonObj && parentPlanet && parentPlanet.getEquatorialGroup) {
                 parentPlanet.getEquatorialGroup().add(moonObj.getOrbitGroup());

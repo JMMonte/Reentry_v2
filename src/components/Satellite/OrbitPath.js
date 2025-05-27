@@ -1,7 +1,6 @@
 // OrbitPath.js
 
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
 
 /**
  * Predictive orbit trail for a single satellite.
@@ -39,7 +38,6 @@ export class OrbitPath {
 
         /* scratch vars */
         this._originKm = new THREE.Vector3();
-        this._k = Constants.metersToKm;
 
         /* once-only loader overlay */
         OrbitPath._ensureLoader();
@@ -76,7 +74,7 @@ export class OrbitPath {
         this._currentId = id;
         this._period = period;
         this._numPoints = numPoints;
-        this._originKm.copy(position).multiplyScalar(this._k);
+        this._originKm.copy(position);
 
         /* Structured-clone-ready bodies array */
         const bodiesMsg = bodies.map(b => ({

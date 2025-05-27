@@ -539,6 +539,6 @@ export class OrbitPropagator {
  * @param {number} scaleFactor - Scale factor for visualization
  * @returns {THREE.Vector3} Scaled position
  */
-export function getScaledPosition(position, scaleFactor = 1e-6) {
+export function getScaledPosition(position, scaleFactor = 1) {
     return position.clone().multiplyScalar(scaleFactor);
 }

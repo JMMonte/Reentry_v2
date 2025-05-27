@@ -4,7 +4,6 @@ import { DraggableModal } from "../modal/DraggableModal";
 import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
-import { Constants } from '../../../utils/Constants';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import { listenToSatelliteState } from '../../../components/Satellite/createSatellite.js';
 
@@ -71,16 +70,15 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
 
   const renderVector = (vector, label, isVelocity = false) => {
     if (!vector) return null;
-    // Position is in meters and needs to be converted to km
+    // Position is in km and needs to be converted to meters
     // Velocity is in m/s and should be displayed as is
-    const scale = isVelocity ? 1 : Constants.metersToKm;
     const unit = isVelocity ? 'm/s' : 'km';
     return (
       <div className="grid grid-cols-4 gap-0.5">
         <span className="text-[10px] font-mono text-muted-foreground">{label}:</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.x * scale)} {unit}</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.y * scale)} {unit}</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.z * scale)} {unit}</span>
+        <span className="text-[10px] font-mono">{formatNumber(vector.x)} {unit}</span>
+        <span className="text-[10px] font-mono">{formatNumber(vector.y)} {unit}</span>
+        <span className="text-[10px] font-mono">{formatNumber(vector.z)} {unit}</span>
       </div>
     );
   };
@@ -93,7 +91,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         <div className="text-[10px] font-semibold">Atmospheric Drag</div>
         <div className="grid grid-cols-4 gap-0.5 text-[9px]">
           <span className="text-muted-foreground">Altitude:</span>
-          <span className="col-span-3 text-[10px] font-mono">{formatNumber(dragData.altitude * Constants.metersToKm)} km</span>
+          <span className="col-span-3 text-[10px] font-mono">{formatNumber(dragData.altitude)} km</span>
         </div>
         <div className="grid grid-cols-4 gap-0.5 text-[9px]">
           <span className="text-muted-foreground">Density:</span>

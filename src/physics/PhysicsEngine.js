@@ -4,6 +4,7 @@ import { SolarSystemHierarchy } from './SolarSystemHierarchy.js';
 import { StateVectorCalculator } from './StateVectorCalculator.js';
 import { PositionManager } from './PositionManager.js';
 import { planetaryDataManager } from './bodies/PlanetaryDataManager.js';
+import { Constants } from '../utils/Constants.js';
 
 // Extract the functions we need from the Astronomy module
 const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector } = Astronomy;
@@ -324,7 +325,7 @@ export class PhysicsEngine {
      * Update barycenters (simplified version)
      */
     _updateBarycenters() {
-        // Solar System Barycenter (SSB) - always at origin
+        // Always set SSB (naif 0) at origin
         this.barycenters.set(0, {
             naif: 0,
             name: 'Solar System Barycenter',
@@ -333,10 +334,9 @@ export class PhysicsEngine {
             mass: 0
         });
 
-        // Earth-Moon Barycenter calculation
+        // Special EMB calculation if both Earth and Moon are present
         const earth = this.bodies[399];
         const moon = this.bodies[301];
-
         if (earth && moon) {
             const totalMass = earth.mass + moon.mass;
             const calculatedBaryPos = new THREE.Vector3()
@@ -345,13 +345,35 @@ export class PhysicsEngine {
             const calculatedBaryVel = new THREE.Vector3()
                 .addScaledVector(earth.velocity, earth.mass / totalMass)
                 .addScaledVector(moon.velocity, moon.mass / totalMass);
-
             this.barycenters.set(3, {
                 naif: 3,
                 name: 'Earth-Moon Barycenter',
                 position: calculatedBaryPos,
                 velocity: calculatedBaryVel,
                 mass: totalMass
+            });
+        } else if (this.bodies[3]) {
+            // Fallback: use body[3] if present
+            const emb = this.bodies[3];
+            this.barycenters.set(3, {
+                naif: 3,
+                name: emb.name,
+                position: emb.position.clone(),
+                velocity: emb.velocity.clone(),
+                mass: emb.mass
+            });
+        }
+
+        // Add all other barycenters from bodies (skip 0 and 3, already handled)
+        for (const [naifId, body] of Object.entries(this.bodies)) {
+            const numId = Number(naifId);
+            if ((numId === 0 || numId === 3) || !body || body.type !== 'barycenter') continue;
+            this.barycenters.set(numId, {
+                naif: numId,
+                name: body.name,
+                position: body.position.clone(),
+                velocity: body.velocity.clone(),
+                mass: body.mass
             });
         }
     }
@@ -413,8 +435,7 @@ export class PhysicsEngine {
             const distance = r.length();
 
             if (distance > 0) {
-                const G = 6.67430e-11; // m³/kg/s²
-                const gravAccel = (G * body.mass) / (distance * distance * distance);
+                const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
                 totalAccel.addScaledVector(r, gravAccel);
             }
         }

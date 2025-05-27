@@ -1,6 +1,5 @@
 import { PhysicsUtils } from './PhysicsUtils.js';
 import * as THREE from 'three';
-import { Constants } from './Constants.js';
 
 const tempVec = new THREE.Vector3();
 
@@ -28,7 +27,7 @@ export function projectToGeodetic(eciWorldPos, planet, epochMillis) {
     const ecefM = ecefKm.clone().multiplyScalar(1000);
     const geodetic = PhysicsUtils.ecefToGeodetic(ecefM.x, ecefM.y, ecefM.z, planet.radius, planet.polarRadius);
     // Altitude returned in meters → convert to kilometers
-    const altitudeKm = geodetic.altitude * Constants.metersToKm;
+    const altitudeKm = geodetic.altitude;
     return {
         latitude: geodetic.latitude,
         longitude: geodetic.longitude,

@@ -27,9 +27,6 @@ export class LocalPhysicsProvider {
         this._lastTimeWarp = undefined;
         this._workerInterval = LocalPhysicsProvider.WORKER_THROTTLE_MS;
 
-        // Pre-computed factors
-        this._kmToM = 1 / Constants.metersToKm;
-
         // For storing third body positions to send to worker
         this._thirdBodyPositions = [];
     }
@@ -45,6 +42,7 @@ export class LocalPhysicsProvider {
         this._workerReady = false;
 
         this._worker.onmessage = ({ data: { type, data } }) => {
+            console.log('[LocalPhysicsProvider] Received from worker:', { type, data });
             switch (type) {
                 case 'initialized':
                     this._handleWorkerInit(initialSatellites);
@@ -55,6 +53,10 @@ export class LocalPhysicsProvider {
                 case 'simulationUpdate':
                     // Handle simulation state updates from the worker
                     this._handleSimulationUpdate(data);
+                    // Also update satellites for robustness
+                    if (data && data.state && data.state.satellites) {
+                        this._applyWorkerUpdates(Object.values(data.state.satellites));
+                    }
                     break;
                 default:
                     console.warn('[LocalPhysicsProvider] unknown msg from worker:', type);
@@ -69,10 +71,17 @@ export class LocalPhysicsProvider {
             earthMass: Constants.earthMass,
             moonMass: Constants.moonMass,
             G: Constants.G,
-            scale: 1, // Assuming scale is handled elsewhere or not needed by worker directly
+            scale: 1,
             timeStep: this.app3d.getDisplaySetting?.('physicsTimeStep') || 1,
             perturbationScale: this.app3d.getDisplaySetting?.('perturbationScale') || 1,
-            // sensitivityScale: this.satelliteManager.sensitivityScale, // If sensitivity is still a concept
+            satellites: Array.from((this.app3d.satellites?.getSatellitesMap?.() || new Map()).values()).map(sat => ({
+                id: sat.id,
+                mass: sat.mass,
+                size: sat.size,
+                position: [sat.position.x, sat.position.y, sat.position.z],
+                velocity: [sat.velocity.x, sat.velocity.y, sat.velocity.z],
+                centralBodyNaifId: sat.centralBodyNaifId,
+            }))
         });
     }
 
@@ -97,13 +106,14 @@ export class LocalPhysicsProvider {
             console.warn("[LocalPhysicsProvider] Worker not ready, cannot add satellite:", satellite.id);
             return;
         }
-        const f = this._kmToM;
+        // Send position and velocity as arrays (not objects) to the worker
         this._postToWorker('addSatellite', {
             id: satellite.id,
             mass: satellite.mass,
             size: satellite.size, // Assuming size is relevant for worker
-            position: { x: satellite.position.x * f, y: satellite.position.y * f, z: satellite.position.z * f },
-            velocity: { x: satellite.velocity.x * f, y: satellite.velocity.y * f, z: satellite.velocity.z * f },
+            position: [satellite.position.x, satellite.position.y, satellite.position.z],
+            velocity: [satellite.velocity.x, satellite.velocity.y, satellite.velocity.z],
+            centralBodyNaifId: satellite.centralBodyNaifId,
         });
     }
 
@@ -183,11 +193,10 @@ export class LocalPhysicsProvider {
             // Get the satellite instance from SatelliteManager
             const sat = satelliteManager.getSatellitesMap().get(u.id);
             if (!sat) {
-                // console.warn(`[LocalPhysicsProvider] Satellite not found for ID: ${u.id}`);
                 continue;
             }
 
-            // Delegate full backend update (including parenting, position, debug data) to Satellite.
+            // Pass arrays directly as expected by Satellite._updateFromBackend
             sat._updateFromBackend(u.position, u.velocity, u);
         }
     }
@@ -205,13 +214,13 @@ export class LocalPhysicsProvider {
     _syncBodiesToWorker() {
         if (!this._workerReady) return;
 
+        // Send positions in km as-is
         const bodiesForWorker = this._thirdBodyPositions.map(body => ({
             name: body.name,
-            // Convert positions to meters for the worker (assuming _thirdBodyPositions are in km from SatelliteManager)
             position: {
-                x: body.position.x * this._kmToM, // km to m
-                y: body.position.y * this._kmToM, // km to m
-                z: body.position.z * this._kmToM, // km to m
+                x: body.position.x, // km
+                y: body.position.y, // km
+                z: body.position.z, // km
             },
             mass: body.mass,
         }));
@@ -234,6 +243,7 @@ export class LocalPhysicsProvider {
     // }
 
     _postToWorker(type, data = {}) {
+        console.log('[LocalPhysicsProvider] Sending to worker:', { type, data });
         this._worker?.postMessage({ type, data });
     }
 

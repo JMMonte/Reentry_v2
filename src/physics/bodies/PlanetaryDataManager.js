@@ -195,6 +195,12 @@ export class PlanetaryDataManager {
         // Clone the configuration to avoid modifying the original
         const config = { ...bodyConfig };
         
+        // Normalize NAIF ID: always use naifId (camelCase)
+        if (config.naif_id !== undefined) {
+            config.naifId = config.naif_id;
+            delete config.naif_id;
+        }
+        
         // Resolve LOD levels if lodLevelsKey is present but lodLevels is not
         if (config.lodLevelsKey && !config.lodLevels && config.radius) {
             config.lodLevels = Planet.generateLodLevelsForRadius(config.radius, config.lodLevelsKey);
@@ -214,8 +220,8 @@ export class PlanetaryDataManager {
         }
         
         this.bodies.set(config.name, config);
-        if (config.naif_id !== undefined) {
-            this.naifToBody.set(config.naif_id, config);
+        if (config.naifId !== undefined) {
+            this.naifToBody.set(config.naifId, config);
         }
     }
 

@@ -64,12 +64,12 @@ export function useManeuverWindow(satellite) {
     // Generate Hohmann preview data helper (no node creation)
     const getHohmannPreviewData = useCallback(() => {
         // Convert classical elements to periapsis/apoapsis altitudes (km above surface)
-        const a_m = (parseFloat(targetSmaKm) || 0) * Constants.kmToMeters;
+        const a_m = (parseFloat(targetSmaKm) || 0);
         const e_val = parseFloat(targetEcc) || 0;
         const r_pe = a_m * (1 - e_val);
         const r_ap = a_m * (1 + e_val);
-        const ellPeriKm = ((r_pe - Constants.earthRadius) * Constants.metersToKm).toString();
-        const ellApoKm = ((r_ap - Constants.earthRadius) * Constants.metersToKm).toString();
+        const ellPeriKm = ((r_pe - Constants.earthRadius)).toString();
+        const ellApoKm = ((r_ap - Constants.earthRadius)).toString();
         // Compute full plane-change angle from current to target orbit (inclination + RAAN)
         const details = PhysicsUtils.calculateDetailedOrbitalElements(
             satellite.position,
@@ -285,12 +285,12 @@ export function useManeuverWindow(satellite) {
     // Generate Hohmann transfer nodes via ManeuverManager
     const generateHohmann = useCallback(() => {
         // Convert classical elements to periapsis/apoapsis altitudes
-        const a_m = (parseFloat(targetSmaKm) || 0) * Constants.kmToMeters;
+        const a_m = (parseFloat(targetSmaKm) || 0);
         const e_val = parseFloat(targetEcc) || 0;
         const r_pe = a_m * (1 - e_val);
         const r_ap = a_m * (1 + e_val);
-        const ellPeriKm = ((r_pe - Constants.earthRadius) * Constants.metersToKm).toString();
-        const ellApoKm = ((r_ap - Constants.earthRadius) * Constants.metersToKm).toString();
+        const ellPeriKm = ((r_pe - Constants.earthRadius)).toString();
+        const ellApoKm = ((r_ap - Constants.earthRadius)).toString();
         // Compute full plane-change angle from current to target orbit (inclination + RAAN)
         const details = PhysicsUtils.calculateDetailedOrbitalElements(
             satellite.position,

@@ -12,7 +12,6 @@ import { usePlanetList } from './hooks';
 import GroundTrackCanvas from './GroundTrackCanvas.jsx';
 import GroundTrackControls from './GroundTrackControls.jsx';
 import { projectToGeodetic } from '../../../utils/MapProjection';
-import { Constants } from '../../../utils/Constants';
 import * as THREE from 'three';
 
 // ---------------------------------------------------------------------------
@@ -166,14 +165,14 @@ export function GroundTrackWindow({
     // CSV download: convert raw ECI positions to lat/lon per selected planet
     const downloadCsv = () => {
         const rows = [['satelliteId', 'time', 'lat', 'lon']];
-        const k = Constants.metersToKm;
+
         for (const [id, pts] of Object.entries(tracks)) {
             pts.forEach(pt => {
                 const { time, position } = pt;
                 const scratch = new THREE.Vector3(
-                    position.x * k,
-                    position.y * k,
-                    position.z * k
+                    position.x,
+                    position.y,
+                    position.z
                 );
                 const { latitude, longitude } = projectToGeodetic(scratch, planet);
                 rows.push([id, time, latitude, longitude]);

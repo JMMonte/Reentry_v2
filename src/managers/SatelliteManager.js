@@ -44,9 +44,6 @@ export class SatelliteManager {
         // Time-sync related properties might still be relevant for orbit drawing logic
         // this._lastTimeWarp = undefined; // Provider will handle its own timeWarp sync if needed
 
-        // Pre-computed factors & bodies (for orbit drawing)
-        this._kmToM = 1 / Constants.metersToKm; // Used by local provider, but also if SM does any conversions
-
         // micro-task flag for UI list updates
         this._needsListFlush = false;
 
@@ -84,13 +81,22 @@ export class SatelliteManager {
         if (Array.isArray(position)) position = new THREE.Vector3(position[0], position[1], position[2]);
         if (Array.isArray(velocity)) velocity = new THREE.Vector3(velocity[0], velocity[1], velocity[2]);
 
+        // --- NO conversion: keep in km and km/s ---
+
         // --- FIX: Look up planetConfig using planetNaifId ---
         let planetConfig = params.planetConfig;
         if (!planetConfig && params.planetNaifId) {
             planetConfig = this.app3d.bodiesByNaifId?.[params.planetNaifId];
         }
 
-        const sat = new Satellite({ ...params, position, velocity, scene: this.app3d.scene, app3d: this.app3d, planetConfig });
+        // Ensure centralBodyNaifId is always set
+        let centralBodyNaifId = params.centralBodyNaifId ?? params.planetNaifId ?? planetConfig?.naifId;
+        if (!centralBodyNaifId) {
+            console.warn('[SatelliteManager] No centralBodyNaifId found for satellite, defaulting to 399 (Earth)');
+            centralBodyNaifId = 399;
+        }
+
+        const sat = new Satellite({ ...params, position, velocity, scene: this.app3d.scene, app3d: this.app3d, planetConfig, centralBodyNaifId });
         this._applyDisplaySettings(sat); // Apply visual settings
         sat.timeWarp = this.app3d.timeUtils?.timeWarp ?? 1; // Satellites still need to know timeWarp for local animations/effects
         this._satellites.set(sat.id, sat);
@@ -258,7 +264,7 @@ export class SatelliteManager {
                 const nearP = !apol && ecc >= 0.99;
                 const effP = (predPeriods > 0) ? predPeriods : 1;
                 let periodS, pts;
-                const r = sat.position.length() * Constants.metersToKm; // sat.position is in meters, convert to km for logic here
+                const r = sat.position.length(); // sat.position is in km
                 // Use the satellite's planet config for SOI if available
                 const soi = sat.planetConfig?.soiRadius ?? 1e12; // fallback to huge if not set
                 if (apol || nearP) {
@@ -280,7 +286,7 @@ export class SatelliteManager {
                 }
                 if (r > soi) pts = Math.max(10, Math.ceil(pts * 0.2));
                 pts = Math.min(pts, OrbitPath.CAPACITY - 1);
-                const satPosKm = sat.position.clone().multiplyScalar(Constants.metersToKm);
+                const satPosKm = sat.position.clone();
                 sat.orbitPath?.update(satPosKm, sat.velocity, sat.id, thirdBodyPositionsForOrbits, periodS, pts, true);
                 sat.groundTrackPath?.update(epochMs, satPosKm, sat.velocity, sat.id, thirdBodyPositionsForOrbits, periodS, pts);
                 pathsUpdated = true;
@@ -349,7 +355,7 @@ export class SatelliteManager {
      */
     createSatelliteFromLatLon(app3dInstance, p, selectedBody) {
         // Step 1: Extract naifId from selectedBody or fallback
-        const naifId = selectedBody?.naifId ?? selectedBody?.naif_id ?? 10; // orbit sun if no naifId
+        const naifId = selectedBody?.naifId ?? p.planetNaifId ?? 10; // orbit sun if no naifId
         console.log('[SatelliteManager.createSatelliteFromLatLon] called with naifId:', naifId, 'params:', p);
         // Step 2: Call internal creation function with naifId in params
         return createSatFromLatLonInternal(app3dInstance, { ...p, planetNaifId: naifId });

@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { drawGrid, drawPOI, rasteriseCoverage } from './utils';
 import { projectWorldPosToCanvas, latLonToCanvas } from '../../../utils/MapProjection';
-import { Constants } from '../../../utils/Constants';
 import * as THREE from 'three';
 
 const SAT_DOT_RADIUS = 4;
@@ -30,7 +29,6 @@ export default function GroundTrackCanvas({
         const ctx = canvas.getContext('2d');
         const w = width;
         const h = height;
-        const k = Constants.metersToKm;
         // Get current simulation time once per frame (fallback to real time)
         const currentEpochMillis = planet && planet.timeManager
             ? planet.timeManager.getSimulatedTime().getTime()
@@ -72,9 +70,9 @@ export default function GroundTrackCanvas({
             // Project last position to canvas (worker outputs ECI in meters)
             const { x, y } = projectWorldPosToCanvas(
                 new THREE.Vector3(
-                    last.position.x * k,
-                    last.position.y * k,
-                    last.position.z * k
+                    last.position.x,
+                    last.position.y,
+                    last.position.z
                 ),
                 planet,
                 w,
@@ -107,9 +105,9 @@ export default function GroundTrackCanvas({
                 // Project position to canvas at point time (worker outputs ECI in meters)
                 const { x: xpt, y: ypt, longitude: lon } = projectWorldPosToCanvas(
                     new THREE.Vector3(
-                        position.x * k,
-                        position.y * k,
-                        position.z * k
+                        position.x,
+                        position.y,
+                        position.z
                     ),
                     planet,
                     w,

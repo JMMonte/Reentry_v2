@@ -1,6 +1,5 @@
 // Satellite.js
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
 import { OrbitPath } from './OrbitPath.js';
@@ -28,12 +27,14 @@ export class Satellite {
      * @param {App3D}   opts.app3d
      * @param {string}  [opts.name]
      * @param {Object}  opts.planetConfig
+     * @param {number}  opts.centralBodyNaifId
      */
     constructor({
         scene, position, velocity, id,
         color, mass = 100, size = 1,
         app3d, name,
         planetConfig,
+        centralBodyNaifId,
     }) {
         /* ── meta ── */
         this.app3d = app3d;
@@ -45,19 +46,18 @@ export class Satellite {
         this.color = color;
         this.planetConfig = planetConfig;
         this.timeWarp = 1;                    // synced externally
+        this.centralBodyNaifId = centralBodyNaifId;
 
         /* ── state vectors ── */
-        this.position = position.clone();     // metres
-        this.velocity = velocity.clone();     // m/s
+        this.position = position.clone();     // km
+        this.velocity = velocity.clone();     // km/s
         this.orientation = new THREE.Quaternion();
-        this.acceleration = new THREE.Vector3(); // add acceleration vector for debug window
+        this.acceleration = new THREE.Vector3(); // km/s^2
 
         /* ── scratch & caches ── */
-        this._scaledKm = new THREE.Vector3();     // km·scale
-        this._smoothedKm = this._scaledKm.clone();  // for viz smoothing
+        this._smoothedKm = position.clone();  // for viz smoothing, in km
         this._tmpPos = new THREE.Vector3();     // helper
         this._alpha = 0.7;                     // smoothing factor
-        this._k = Constants.metersToKm;
 
         /* ── throttling ── */
         this._lastSimEvt = 0;
@@ -133,15 +133,16 @@ export class Satellite {
         }
 
         // Only provider/engine should update these:
-        this.position.copy(pos);
-        this.velocity.copy(vel);
+        this.position.copy(pos); // km
+        this.velocity.copy(vel); // km/s
 
-        // convert to scaled-km for rendering
-        this._scaledKm.set(pos.x * this._k, pos.y * this._k, pos.z * this._k);
-        this._smoothedKm.lerpVectors(this._smoothedKm, this._scaledKm, this._alpha);
+        // convert to smoothed km for rendering
+        this._smoothedKm.lerpVectors(this._smoothedKm, pos, this._alpha);
 
-        // push to visual actors
-        this.visualizer.updatePosition(this._smoothedKm);
+        // push to visual actors (use km for mesh position)
+        if (this.visualizer?.mesh) {
+            this.visualizer.updatePosition(this._smoothedKm); // km
+        }
         this.visualizer.updateOrientation(this.orientation);
         this.apsisVisualizer.update(pos, vel, this.debug?.apsisData);
 
@@ -173,10 +174,10 @@ export class Satellite {
     /* ─────────────────────────── Accessors ─────────────────────────────── */
 
     getSpeed() { return this.velocity.length(); }
-    getRadialAltitude() { return this.position.length() * Constants.metersToKm; }
+    getRadialAltitude() { return this.position.length(); }
     getSurfaceAltitude() {
         if (!this.planetConfig || !this.planetConfig.radius) return NaN;
-        return (this.position.length() - this.planetConfig.radius) * Constants.metersToKm;
+        return (this.position.length() - this.planetConfig.radius);
     }
     getOrbitalElements() { return this.debug?.apsisData ?? null; }
     getMesh() { return this.visualizer?.mesh ?? null; }
@@ -279,6 +280,7 @@ export class Satellite {
      * @param {Object} backendFields - optional extra backend fields
      */
     _updateFromBackend(pos, vel, backendFields = {}) {
+        // pos and vel are in km and km/s
         const p = new THREE.Vector3(pos[0], pos[1], pos[2]);
         const v = new THREE.Vector3(vel[0], vel[1], vel[2]);
         this._updatePosition(p, v, backendFields.debug);
@@ -296,9 +298,9 @@ export class Satellite {
             this.setCentralBody(backendFields.central_body);
             this.central_body = backendFields.central_body;
         }
-        // Set mesh position relative to parent (central body) in meters
+        // Set mesh position relative to parent (central body) in km
         if (this.visualizer?.mesh) {
-            this.visualizer.mesh.position.set(pos[0] * 1000, pos[1] * 1000, pos[2] * 1000);
+            this.visualizer.mesh.position.set(pos[0], pos[1], pos[2]);
         }
     }
 

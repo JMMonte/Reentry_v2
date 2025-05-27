@@ -304,9 +304,9 @@ export class PhysicsUtils {
 
             pts.push(
                 new THREE.Vector3(
-                    x * Constants.metersToKm,
-                    y * Constants.metersToKm,
-                    z * Constants.metersToKm
+                    x,
+                    y,
+                    z
                 )
             );
         }
@@ -450,8 +450,7 @@ export class PhysicsUtils {
         const pos = new THREE.Vector3(r * Math.cos(f), r * Math.sin(f), 0)
             .applyAxisAngle(new THREE.Vector3(0, 0, 1), ω)
             .applyAxisAngle(new THREE.Vector3(1, 0, 0), i)
-            .applyAxisAngle(new THREE.Vector3(0, 0, 1), Ω)
-            .multiplyScalar(Constants.metersToKm);
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), Ω);
 
         return pos;
     }
@@ -501,13 +500,13 @@ export class PhysicsUtils {
             const k4v = a3.clone().multiplyScalar(dt);
 
             pos.add(
-                k1p.clone().addScaledVector(k2p, 2).addScaledVector(k3p, 2).add(k4p).multiplyScalar(1 / 6)
+                k1p.clone().addScaledVector(k2p, 2).addScaledVector(k3p, 2).add(k4p)
             );
             vel.add(
-                k1v.clone().addScaledVector(k2v, 2).addScaledVector(k3v, 2).add(k4v).multiplyScalar(1 / 6)
+                k1v.clone().addScaledVector(k2v, 2).addScaledVector(k3v, 2).add(k4v)
             );
 
-            pts.push(pos.clone().multiplyScalar(Constants.metersToKm));
+            pts.push(pos.clone());
         }
         return pts;
     }
@@ -530,8 +529,8 @@ export class PhysicsUtils {
             orbitalElements: els,
             rPeriapsis: rp,
             rApoapsis: ra,
-            periapsisAltitude: (rp - radius) * Constants.metersToKm,
-            apoapsisAltitude: ra !== null ? (ra - radius) * Constants.metersToKm : null
+            periapsisAltitude: (rp - radius),
+            apoapsisAltitude: ra !== null ? (ra - radius) : null
         };
     }
 
@@ -565,7 +564,7 @@ export class PhysicsUtils {
         const ra = sma * (1 + ecc);
 
         return {
-            semiMajorAxis: sma * Constants.metersToKm,
+            semiMajorAxis: sma,
             eccentricity: ecc,
             inclination: inc,
             longitudeOfAscendingNode: Ω,
@@ -574,10 +573,10 @@ export class PhysicsUtils {
             period,
             specificAngularMomentum: h,
             specificOrbitalEnergy: ε,
-            periapsisAltitude: (rp - radius) * Constants.metersToKm,
-            apoapsisAltitude: (ra - radius) * Constants.metersToKm,
-            periapsisRadial: rp * Constants.metersToKm,
-            apoapsisRadial: ra * Constants.metersToKm
+            periapsisAltitude: (rp - radius),
+            apoapsisAltitude: (ra - radius),
+            periapsisRadial: rp,
+            apoapsisRadial: ra
         };
     }
 

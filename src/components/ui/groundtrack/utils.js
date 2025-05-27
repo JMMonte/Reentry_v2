@@ -1,6 +1,5 @@
 import { Constants } from '../../../utils/Constants';
 
-const KM_TO_M = Constants.kmToMeters;
 const R_EARTH = Constants.earthRadius;
 const GRID_MAJOR = 10;
 const GRID_MINOR = 5;
@@ -66,7 +65,7 @@ export function drawPOI(ctx, data, w, h, color, r) {
 export function rasteriseCoverage(ctx, w, h, { lat, lon, altitude }, colorRGB) {
     const cov = ctx.createImageData(w, h);
     const [sr, sg, sb] = colorRGB;
-    const altM = altitude * KM_TO_M;
+    const altM = altitude;
     const cosThresh = Math.cos(
         Math.acos(R_EARTH / (R_EARTH + altM))
     );

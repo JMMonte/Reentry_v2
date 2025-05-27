@@ -21,7 +21,7 @@ export class Sun {
             { url: '/assets/texture/lensflare/lensflare3.png', size: 120, distance: 1.0 }
         ];
         // Define a reference distance (e.g., Earth's average orbit radius) for 1x scale
-        this.referenceDistance = Constants.AU * Constants.metersToKm; // Earth's average orbital radius
+        this.referenceDistance = Constants.AU; // Earth's average orbital radius
 
 
         const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down

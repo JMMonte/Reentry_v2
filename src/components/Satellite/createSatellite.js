@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
-import { Constants } from '../../utils/Constants.js';
 import { inertialToWorld } from '../../utils/FrameTransforms.js';
 import { PHYSICS_SERVER_URL } from '../../utils/simApi.js';
 import { PHYSICS_WS_URL } from '../../simulation/simSocket.js';
@@ -53,13 +52,13 @@ export async function createSatellite(app, params) {
     // Always expect planet-centric position/velocity and centralBodyNaifId
     const planet = params.planetConfig;
     const planetGroup = planet.getRotationGroup();
-    // Convert position to meters if your scene uses meters (assume input is km)
-    const posVec = new THREE.Vector3(params.position[0], params.position[1], params.position[2]).multiplyScalar(1000); // km -> m
+    // Use km directly for mesh position
+    const posVec = new THREE.Vector3(params.position[0], params.position[1], params.position[2]); // km
     // Create a simple sphere mesh for the satellite (customize as needed)
     const geometry = new THREE.SphereGeometry(params.size ?? 1, 16, 16);
     const material = new THREE.MeshStandardMaterial({ color: params.color ?? 0xff0000 });
     const satMesh = new THREE.Mesh(geometry, material);
-    // Set mesh position (planet-centric, in meters)
+    // Set mesh position (planet-centric, in km)
     satMesh.position.copy(posVec);
     // Parent to planet's mesh group
     planetGroup.add(satMesh);
@@ -126,13 +125,16 @@ export async function createSatelliteFromLatLon(app, params) {
     // Step 3: Lookup Planet instance
     const planet = (app.bodiesByNaifId && app.bodiesByNaifId[naifId]) || (app.planetsByNaifId && app.planetsByNaifId[naifId]);
     if (!planet) {
-        console.error(`[createSatelliteFromLatLon] No Planet instance found for naif_id ${naifId}. app.bodiesByNaifId:`, app.bodiesByNaifId);
-        throw new Error(`No Planet instance found for naif_id ${naifId}`);
+        console.error(`[createSatelliteFromLatLon] No Planet instance found for naifId ${naifId}. app.bodiesByNaifId:`, app.bodiesByNaifId);
+        throw new Error(`No Planet instance found for naifId ${naifId}`);
     }
     console.log('[createSatelliteFromLatLon] resolved planet:', planet);
     // Step 4: Convert geodetic to ECI (planet-centric inertial, in km)
     const { pos, vel } = latLonAltToECI(params, planet);
     console.log('[createSatelliteFromLatLon] ECI pos, vel (planet-centric, km):', pos, vel);
+    // Use km directly for physics engine and Satellite class
+    // const posMeters = pos.map(x => x * 1000);
+    // const velMeters = vel.map(x => x * 1000);
     // Step 5: Pass planet-centric position/velocity to SatelliteManager
     const size = params.size ?? 1;
     const crossSectionalArea = params.crossSectionalArea ?? (Math.PI * size * size);
@@ -204,12 +206,12 @@ export function createSatelliteFromOrbitalElements(app, params) {
     const planet = (app.bodiesByNaifId && app.bodiesByNaifId[naifId]) || (app.planetsByNaifId && app.planetsByNaifId[naifId]);
     console.log('[createSatelliteFromOrbitalElements] resolved planet:', planet);
     if (!planet) {
-        console.error(`[createSatelliteFromOrbitalElements] No Planet instance found for naif_id ${naifId}`);
-        throw new Error(`No Planet instance found for naif_id ${naifId}`);
+        console.error(`[createSatelliteFromOrbitalElements] No Planet instance found for naifId ${naifId}`);
+        throw new Error(`No Planet instance found for naifId ${naifId}`);
     }
     // Step 4: Compute inertial state vector in planet-centric frame
     const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
-        params.semiMajorAxis * Constants.kmToMeters,
+        params.semiMajorAxis,
         params.eccentricity,
         params.inclination,
         params.argumentOfPeriapsis,
@@ -244,11 +246,11 @@ export async function getVisibleLocationsFromOrbitalElements(
     const { semiMajorAxis } = orbitParams;
     /* use the world-space satellite produced above */
     const sat = createSatelliteFromOrbitalElements(app, { ...orbitParams, mass: 1, size: 0.1, name: 'tmp', planet });
-    const startPos = sat.position.clone().multiplyScalar(Constants.kmToMeters);
-    const startVel = sat.velocity.clone().multiplyScalar(Constants.kmToMeters);
+    const startPos = sat.position.clone();
+    const startVel = sat.velocity.clone();
 
     const mu = planet.GM;
-    const baseT = 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis * Constants.kmToMeters, 3) / mu);
+    const baseT = 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis, 3) / mu);
     const periods = options.numPeriods ?? 1;
     const steps = (options.numPoints ?? 180) * periods;
 
@@ -259,7 +261,7 @@ export async function getVisibleLocationsFromOrbitalElements(
         steps
     );
 
-    const ReKm = planet.radius * Constants.metersToKm;
+    const ReKm = planet.radius;
     const t0 = Date.now();
     const out = [];
 
@@ -267,12 +269,12 @@ export async function getVisibleLocationsFromOrbitalElements(
         const t = t0 + idx * (baseT * periods * 1000 / steps);
         const gmst = PhysicsUtils.calculateGMST(t);
         const { lat, lon } = PhysicsUtils.eciTiltToLatLon(
-            pKm.clone().multiplyScalar(Constants.kmToMeters), gmst, planet.inclination
+            pKm.clone(), gmst, planet.inclination
         );
         const alt = pKm.length() - ReKm;
 
         const theta = Math.acos(planet.radius /
-            (planet.radius + alt * Constants.kmToMeters));
+            (planet.radius + alt));
         const cosLimit = Math.cos(theta);
         const lat1 = THREE.MathUtils.degToRad(lat);
         const lon1 = THREE.MathUtils.degToRad(lon);

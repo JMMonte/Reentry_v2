@@ -386,13 +386,16 @@ ${shareUrl}`);
     return () => window.removeEventListener('assetsLoaded', handleAssetsLoaded);
   }, []);
 
-  // Build availableBodies from app3d.celestialBodies (use raw planetary configs for full data)
-  const availableBodies = app3d?.celestialBodies?.map(b => {
-    const cfg = app3d.planetaryDataManager?.naifToBody.get(b.naif_id);
-    return cfg
-      ? { ...cfg, naifId: cfg.naif_id, name: cfg.name }
-      : { name: b.name, naifId: b.naif_id };
-  }) || [{ name: 'Earth', naifId: 399 }];
+  // Build availableBodies from app3d.celestialBodies (use instantiated body objects, preserving all properties)
+  let availableBodies = [];
+  if (Array.isArray(app3d?.celestialBodies)) {
+    availableBodies = app3d.celestialBodies
+      .filter(b => b && (b.naifId !== undefined && b.naifId !== null))
+      .map(b => ({ ...b, naifId: b.naifId ?? b.naif_id }));
+  }
+  if (availableBodies.length === 0) {
+    availableBodies = [{ name: 'Earth', naifId: 399, type: 'planet' }];
+  }
 
   const { showToast } = useToast();
   React.useEffect(() => {

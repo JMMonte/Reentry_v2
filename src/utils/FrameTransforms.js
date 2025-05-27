@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Constants } from './Constants.js';
 
 /**
  * Convert an inertial state vector (ECI or similar) into world coordinates
@@ -21,8 +20,8 @@ export function inertialToWorld(planet, posInertial, velInertial, options = {}) 
     const inclination = planet?.inclination ?? 0;
 
     // 1) scale from meters to kilometers and apply global scale
-    const position = posInertial.clone().multiplyScalar(Constants.metersToKm * scale);
-    const velocity = velInertial.clone().multiplyScalar(Constants.metersToKm * scale);
+    const position = posInertial.clone().multiplyScalar(scale);
+    const velocity = velInertial.clone().multiplyScalar(scale);
 
     // 2) if equatorial frame, apply axial tilt about planet X-axis
     if (referenceFrame === 'equatorial') {

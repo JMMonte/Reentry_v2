@@ -1,6 +1,5 @@
 import LZString from 'lz-string';
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants.js';
 
 /**
  * Manages simulation state: satellite creation/removal, import/export, and state sync.
@@ -52,10 +51,6 @@ export class SimulationStateManager {
             console.warn('Satellite creation skipped: missing velocity');
             return null;
         }
-        // Convert from meters to simulation units (km * scale)
-        const toSimUnits = (v) => v.multiplyScalar(Constants.metersToKm);
-        if (safeParams.position) safeParams.position = toSimUnits(safeParams.position);
-        if (safeParams.velocity) safeParams.velocity = toSimUnits(safeParams.velocity);
         // Create Three.js satellite
         const sat = this.satellites.addSatellite(safeParams);
         return sat;

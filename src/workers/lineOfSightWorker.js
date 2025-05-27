@@ -1,14 +1,13 @@
 // Worker for calculating line of sight between satellites
 // Removed heavy THREE import, keeping only Constants for math
-import { Constants } from '../utils/Constants.js'; // for metersToKm only
 import { earthRadius } from '../physics/bodies/planets/Earth.js';
 import { moonRadius } from '../physics/bodies/moons/EarthMoons.js';
 
 let satellites = [];
 let moonPosition = { x: 0, y: 0, z: 0 };
-const EARTH_RADIUS = earthRadius * Constants.metersToKm; // in km
+const EARTH_RADIUS = earthRadius; // in km
 const ATMOSPHERE_HEIGHT = 100; // 100 km
-const MOON_RADIUS = moonRadius * Constants.metersToKm;
+const MOON_RADIUS = moonRadius;
 
 self.onmessage = function (e) {
     if (e.data.type === 'UPDATE_SATELLITES') {

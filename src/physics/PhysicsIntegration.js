@@ -3,9 +3,7 @@ import { PhysicsEngine } from './PhysicsEngine.js';
 import { OrbitPropagator } from './OrbitPropagator.js';
 
 /**
- * Integration manager that bridges the new physics engine with existing codebase
- * Connects PhysicsEngine and OrbitPropagator with SolarSystemManager, OrbitManager,
- * UI components, and Three.js rendering pipeline
+ * Integration manager that bridges the new physics engine with existing codebase.
  */
 export class PhysicsIntegration {
     constructor(app) {
@@ -339,7 +337,7 @@ export class PhysicsIntegration {
 
         for (const celestialBody of this.app.celestialBodies) {
             // Get the NAIF ID from the celestial body
-            const naifId = celestialBody.naif_id;
+            const naifId = celestialBody.naifId;
             if (!naifId) continue;
 
             // Get the physics state for this body
@@ -522,8 +520,8 @@ export class PhysicsIntegration {
         // Use PlanetaryDataManager to find the parent NAIF ID
         const planetaryDataManager = this.planetaryDataManager || (this.app?.planetaryDataManager);
         let parentNaifId = null;
-        if (planetaryDataManager && body.naif_id !== undefined) {
-            const config = planetaryDataManager.getBodyByNaif(body.naif_id);
+        if (planetaryDataManager && body.naifId !== undefined) {
+            const config = planetaryDataManager.getBodyByNaif(body.naifId);
             if (config && config.parent !== undefined && config.parent !== null) {
                 parentNaifId = config.parent;
             }

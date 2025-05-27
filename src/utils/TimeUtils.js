@@ -122,7 +122,7 @@ export class TimeUtils {
             0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180)
         );
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
-        const distance = Constants.AU * Constants.metersToKm;
+        const distance = Constants.AU;
         const rad = trueLongitude * Math.PI / 180;
         const x = distance * Math.cos(rad);
         const y = distance * Math.sin(rad);

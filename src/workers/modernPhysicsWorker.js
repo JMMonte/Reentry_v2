@@ -14,6 +14,7 @@ let updateRate = 30; // Hz
 
 // Message handler
 self.onmessage = async function (event) {
+    console.log('[ModernPhysicsWorker] Received message:', event.data);
     let messageData;
 
     // Parse JSON if needed
@@ -79,6 +80,7 @@ self.onmessage = async function (event) {
                 console.error('[ModernPhysicsWorker] Unknown message type:', type);
         }
     } catch (error) {
+        console.error('[ModernPhysicsWorker] Error:', error, 'Message:', messageData);
         self.postMessage({
             type: 'error',
             data: {
@@ -100,6 +102,13 @@ async function initializePhysics(data) {
         
         const initialTime = data.initialTime ? new Date(data.initialTime) : new Date();
         await physicsEngine.initialize(initialTime);
+        
+        // Add initial satellites if provided
+        if (data.satellites && Array.isArray(data.satellites)) {
+            for (const sat of data.satellites) {
+                physicsEngine.addSatellite(sat);
+            }
+        }
         
         // Set configuration from data
         if (data.timeWarp) timeWarp = data.timeWarp;
@@ -146,6 +155,13 @@ function addSatellite(satelliteData) {
         type: 'satelliteAdded',
         data: { id: satelliteData.id }
     });
+    
+    // Send updated satellites list
+    const satellites = physicsEngine.getSimulationState().satellites;
+    self.postMessage({
+        type: 'satellitesUpdate',
+        data: Object.values(satellites)
+    });
 }
 
 /**
@@ -159,6 +175,13 @@ function removeSatellite(satelliteId) {
     self.postMessage({
         type: 'satelliteRemoved',
         data: { id: satelliteId, success: removed }
+    });
+    
+    // Send updated satellites list
+    const satellites = physicsEngine.getSimulationState().satellites;
+    self.postMessage({
+        type: 'satellitesUpdate',
+        data: Object.values(satellites)
     });
 }
 
@@ -377,6 +400,13 @@ async function simulationLoop() {
                 deltaTime: warpedDeltaTime,
                 realDeltaTime
             }
+        });
+        
+        // Always send satellitesUpdate after each simulation step
+        const satellites = state.satellites;
+        self.postMessage({
+            type: 'satellitesUpdate',
+            data: Object.values(satellites)
         });
         
     } catch (error) {

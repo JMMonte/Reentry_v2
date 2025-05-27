@@ -60,8 +60,6 @@ import { PlanetVectors } from './components/planet/PlanetVectors.js';
 // ──────────────────────────────────────────────────────────────────────────────
 // 2. SMALL UTILITIES
 // ──────────────────────────────────────────────────────────────────────────────
-const KM = Constants.metersToKm;
-const toKm = v => v * KM;
 
 const getDefaultDisplaySettings = src =>
     Object.fromEntries(Object.entries(src).map(([k, v]) => [k, v.value]));
@@ -455,7 +453,7 @@ class App3D extends EventTarget {
             .filter(s => s?.position && s.id != null)
             .map(s => ({
                 id: s.id, position: {
-                    x: toKm(s.position.x), y: toKm(s.position.y), z: toKm(s.position.z)
+                    x: s.position.x, y: s.position.y, z: s.position.z
                 }
             }));
         this._lineOfSightWorker.postMessage({ type: 'UPDATE_SATELLITES', satellites: sats });

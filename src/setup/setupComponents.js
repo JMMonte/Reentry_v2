@@ -12,7 +12,6 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Constants } from '../utils/Constants.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 1. CAMERA
@@ -27,7 +26,7 @@ export function setupCamera() {
         CAMERA_OPTS.fov,
         window.innerWidth / window.innerHeight,
         CAMERA_OPTS.near,
-        CAMERA_OPTS.farKm * Constants.kmToMeters      // convert to metres
+        CAMERA_OPTS.farKm      // convert to metres
     );
 
     cam.up.set(0, 0, 1);                              // global Z-up

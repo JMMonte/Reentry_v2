@@ -185,7 +185,7 @@ export class AtmosphereComponent {
 
         // Sun intensity
         const dist = this._planetPos.distanceTo(this._sunPos); // Distance between planet center and sun center
-        const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU * Constants.metersToKm : 149597870.7;
+        const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU : 149597870.7;
         const BASE = 10.6; // Base sun intensity factor
         const EPS = 1e-6;
         mat.uniforms.uSunIntensity.value = BASE * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);

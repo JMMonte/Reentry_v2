@@ -25,7 +25,7 @@ export class StateVectorCalculator {
     constructor(hierarchy, bodiesConfigMap = null) {
         this.hierarchy = hierarchy;
         this.bodiesConfigMap = bodiesConfigMap;
-        this.AU_TO_KM = Constants.AU * Constants.metersToKm; // Astronomical unit in km
+        this.AU_TO_KM = Constants.AU; // Astronomical unit in km
         this.DAYS_TO_SEC = Constants.secondsInDay; // Seconds in a day
 
         // Initialize planetary data manager
@@ -182,7 +182,7 @@ export class StateVectorCalculator {
             let GM = parentFullConfig?.GM;
             if (!GM && parentFullConfig?.mass) {
                 // Fallback: calculate GM from mass
-                GM = 6.67430e-20 * parentFullConfig.mass; // Convert to km³/s²
+                GM = Constants.G * parentFullConfig.mass; // Convert to km³/s²
             }
 
             if (!GM) {

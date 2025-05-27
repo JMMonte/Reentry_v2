@@ -62,7 +62,7 @@ export class ManeuverManager {
         const simNow = this.timeUtils.getSimulatedTime();
         const r1 = this.sat.position.length();
         const mu = Constants.earthGravitationalParameter;
-        const r_target = (parseFloat(ellApoKm) || 0) * Constants.kmToMeters + Constants.earthRadius;
+        const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
         // Delta-V for Hohmann raise
         const { deltaV1, deltaV2, totalDeltaV } = PhysicsUtils.calculateHohmannOrbitRaiseDeltaV(r1, r_target, mu);
         const dv_plane = 0;
@@ -72,8 +72,8 @@ export class ManeuverManager {
         const time1 = new Date(simNow);
         const time2 = new Date(simNow.getTime() + transferTime * 1000);
         // Altitudes in km
-        const altitude1Km = (r1 - Constants.earthRadius) * Constants.metersToKm;
-        const altitudeTargetKm = (r_target - Constants.earthRadius) * Constants.metersToKm;
+        const altitude1Km = (r1 - Constants.earthRadius);
+        const altitudeTargetKm = (r_target - Constants.earthRadius);
         const dt1Sec = (time1.getTime() - simNow.getTime()) / 1000;
         const dt2Sec = (time2.getTime() - simNow.getTime()) / 1000;
         return {
@@ -107,7 +107,7 @@ export class ManeuverManager {
         const v1Vec = this.sat.velocity.clone();
         const r1 = r1Vec.length();
         // Target orbit radius
-        const r_target = (parseFloat(ellApoKm) || 0) * Constants.kmToMeters + Constants.earthRadius;
+        const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
         // Find next periapsis for first burn
         let burnTime = simNow;
         const posArr = [r1Vec.x, r1Vec.y, r1Vec.z];
