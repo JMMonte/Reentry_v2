@@ -128,13 +128,20 @@ function App3DMain() {
   const satellitesPhysics = usePhysicsSatellites(app3d);
   const satellitesUI = app3d?.satellites?.getSatellitesMap?.() || new Map();
   // Merge physics and UI data for each satellite
-  const satellites = Object.values(satellitesPhysics).map(satState => {
-    const satUI = satellitesUI.get(satState.id);
-    return {
-      ...satState,
-      ...(satUI ? { color: satUI.color, name: satUI.name, setColor: satUI.setColor?.bind(satUI), delete: satUI.delete?.bind(satUI) } : {})
-    };
-  });
+  const satellites = Object.values(satellitesPhysics)
+    .map(satState => {
+      const satUI = satellitesUI.get(satState.id);
+      // Only include satellites that have UI counterparts
+      if (!satUI) return null;
+      return {
+        ...satState,
+        color: satUI.color,
+        name: satUI.name,
+        setColor: satUI.setColor?.bind(satUI),
+        delete: satUI.delete?.bind(satUI)
+      };
+    })
+    .filter(Boolean); // Remove null entries
 
   useEffect(() => { setCheckedInitialState(true); }, []);
   useEffect(() => {
@@ -180,6 +187,7 @@ function App3DMain() {
     
     return () => clearInterval(uiUpdateInterval);
   }, [app3d]);
+  
   // Simplified UI updates - now just listen to physics-driven time events
   useEffect(() => {
     const handler = (e) => {
@@ -239,6 +247,29 @@ function App3DMain() {
     ready
   });
 
+  // Handle satellite deletion
+  useEffect(() => {
+    const handleSatelliteDeleted = (e) => {
+      const deletedSatelliteId = e.detail?.id;
+      if (deletedSatelliteId) {
+        // Close any debug windows for this satellite
+        setDebugWindows(prev => prev.filter(w => w.id !== deletedSatelliteId));
+        
+        // Check if the deleted satellite was the currently selected body
+        if (selectedBody) {
+          if (selectedBody.id === deletedSatelliteId || 
+              (typeof selectedBody === 'string' && selectedBody.includes(deletedSatelliteId))) {
+            // Switch camera to 'none' selection
+            handleBodyChange('none');
+          }
+        }
+      }
+    };
+    
+    document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
+    return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
+  }, [selectedBody, handleBodyChange]);
+
   useEffect(() => {
     if (
       controller?.app3d?.updateSelectedBody &&
@@ -260,23 +291,9 @@ function App3DMain() {
       } else if (params.mode === 'circular') {
         result = await app3d?.createSatelliteFromLatLonCircular(params);
       }
+      
       const satellite = result?.satellite || result;
-      const position = result?.position || satellite?.position?.toArray?.();
-      const velocity = result?.velocity || satellite?.velocity?.toArray?.();
       if (satellite) {
-        // Register with physics engine using correct position/velocity
-        if (app3d.physicsIntegration?.addSatellite) {
-          app3d.physicsIntegration.addSatellite({
-            id: satellite.id,
-            position,
-            velocity,
-            mass: satellite.mass,
-            dragCoefficient: satellite.dragCoefficient,
-            crossSectionalArea: satellite.crossSectionalArea,
-            centralBodyNaifId: satellite.centralBodyNaifId,
-            // Add more fields if needed
-          });
-        }
         setIsSatelliteModalOpen(false);
         // Focus on the new satellite in the navbar body selector
         handleBodyChange(satellite);

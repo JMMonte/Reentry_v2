@@ -356,7 +356,7 @@ export function Layout({
                 <ChatModal {...chatModalProps} />
                 <DisplayOptions {...displayOptionsProps} />
                 {debugWindows && debugWindows.map(({ id, satellite, earth, onBodySelect, onClose }) => {
-                    console.log('[Layout] Rendering SatelliteDebugWindow for id:', id, 'satellitesPhysics keys:', Object.keys(satellitesPhysics));
+                    // console.log('[Layout] Rendering SatelliteDebugWindow for id:', id, 'satellitesPhysics keys:', Object.keys(satellitesPhysics));
                     return (
                         <SatelliteDebugWindow
                             key={id}

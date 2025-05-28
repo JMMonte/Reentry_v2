@@ -16,6 +16,8 @@ export class PhysicsIntegration {
         this.updateInterval = null;
         this.physicsUpdateRate = 60; // Hz - now the primary time driver
         this._lastRealTime = null; // Track real time for physics-driven stepping
+        this._fixedTimeStep = 1.0 / 60.0; // Fixed 60Hz physics timestep (16.67ms)
+        this._accumulator = 0.0; // Time accumulator for fixed timestep
 
         // Cached data for performance
         this.bodyStatesCache = new Map();
@@ -118,6 +120,9 @@ export class PhysicsIntegration {
         // Update orbit visualizations with new physics state
         this._updateOrbitVisualizations();
 
+        // Dispatch physics update events
+        this._dispatchPhysicsUpdate(state);
+
         return state;
     }
 
@@ -130,12 +135,9 @@ export class PhysicsIntegration {
             return;
         }
 
-        this.physicsEngine.addSatellite(satelliteData);
-
-        // Also add to existing satellite manager if available
-        if (this.app.satelliteManager) {
-            this.app.satelliteManager.addSatellite(satelliteData);
-        }
+        // PhysicsEngine is the single source of truth
+        const id = this.physicsEngine.addSatellite(satelliteData);
+        return id;
     }
 
     /**
@@ -143,15 +145,16 @@ export class PhysicsIntegration {
      */
     removeSatellite(satelliteId) {
         if (!this.isInitialized) return;
-        // Only remove from main-thread physics engine if no provider is present
-        const provider = this.app.satellites?.physicsProvider;
-        if (!provider) {
-            this.physicsEngine.removeSatellite(satelliteId);
-        }
-        // Always remove from SatelliteManager for UI/scene cleanup
-        if (this.app.satelliteManager) {
-            this.app.satelliteManager.removeSatellite(satelliteId);
-        }
+        // PhysicsEngine handles everything including event dispatch
+        this.physicsEngine.removeSatellite(satelliteId);
+    }
+
+    /**
+     * Update satellite property (color, name, etc)
+     */
+    updateSatelliteProperty(satelliteId, property, value) {
+        if (!this.isInitialized) return;
+        this.physicsEngine.updateSatelliteProperty(satelliteId, property, value);
     }
 
     /**
@@ -291,46 +294,57 @@ export class PhysicsIntegration {
         const realDeltaMs = now - (this._lastRealTime || now);
         this._lastRealTime = now;
 
-        // Convert to simulation time delta
+        // Convert to simulation time delta and add to accumulator
         const simulatedDeltaMs = realDeltaMs * timeWarp;
         const simulatedDeltaSeconds = simulatedDeltaMs / 1000;
+        this._accumulator += simulatedDeltaSeconds;
 
-        // Only step if there's a meaningful time difference
-        if (Math.abs(simulatedDeltaSeconds) > 0.001) { // 1ms threshold
-            // Get current time and advance it
+        // Fixed timestep integration - process accumulated time in fixed chunks
+        let stepsProcessed = 0;
+        const maxSteps = 5; // Prevent spiral of death
+        
+        // If accumulator is too large (>1 second), it means we have high time warp
+        // In this case, clamp it to prevent infinite processing
+        if (this._accumulator > 1.0) {
+            console.log(`[PhysicsIntegration] Large time accumulator detected (${this._accumulator.toFixed(3)}s), clamping to 1.0s for high time warp`);
+            this._accumulator = 1.0;
+        }
+        
+        while (this._accumulator >= this._fixedTimeStep && stepsProcessed < maxSteps) {
+            // Get current time and advance by fixed timestep
             const currentTime = this.app.timeUtils.getSimulatedTime();
-            const newTime = new Date(currentTime.getTime() + simulatedDeltaMs);
+            const newTime = new Date(currentTime.getTime() + this._fixedTimeStep * 1000);
 
-            // Update physics engine time (this now automatically updates all body positions)
+            // Update physics engine time (this updates all body positions)
             await this.physicsEngine.setTime(newTime);
 
-            // Step physics simulation (this calls _updateOrbitVisualizations)
-            this.stepSimulation(simulatedDeltaSeconds);
+            // Step physics simulation with fixed timestep
+            await this.stepSimulation(this._fixedTimeStep);
 
             // Update TimeUtils with new time (this will dispatch UI events)
             this.app.timeUtils.updateFromPhysics(newTime);
-        } else {
-            // Even if simulation time doesn't advance, update orbit visualizations for real-time display
-            this._updateOrbitVisualizations();
+            
+            // Remove processed time from accumulator
+            this._accumulator -= this._fixedTimeStep;
+            stepsProcessed++;
         }
+        
+        // If we hit the step limit, clear remaining accumulator to prevent buildup
+        if (stepsProcessed >= maxSteps && this._accumulator > 0) {
+            console.log(`[PhysicsIntegration] Hit max steps limit (${maxSteps}), clearing remaining accumulator: ${this._accumulator.toFixed(3)}s`);
+            this._accumulator = 0;
+        }
+        
+        // Always update orbit visualizations for smooth rendering
+        this._updateOrbitVisualizations();
     }
 
     /**
      * Private: Sync existing satellites with physics engine
      */
     _syncExistingSatellites() {
-        if (!this.app.satelliteManager?.satellites) return;
-
-        for (const [id, satellite] of this.app.satelliteManager.satellites) {
-            this.physicsEngine.addSatellite({
-                id: id,
-                position: satellite.position.toArray(),
-                velocity: satellite.velocity.toArray(),
-                mass: satellite.mass || 1000,
-                dragCoefficient: satellite.dragCoefficient || 2.2,
-                crossSectionalArea: satellite.crossSectionalArea || 10
-            });
-        }
+        // No longer needed - physics engine is the single source of truth
+        // Satellites will be added through the normal flow
     }
 
     /**
@@ -495,10 +509,7 @@ export class PhysicsIntegration {
                     // console.log('[PhysicsIntegration] Syncing satellite', satId, satelliteState.position);
                     satellite._lastSyncLogTime = Date.now();
                 }
-                satellite.updateFromPhysicsEngine(
-                    satelliteState.position,
-                    satelliteState.velocity
-                );
+                satellite.updateVisualsFromState(satelliteState);
             } else {
                 if (!this._lastMissingLogTime || Date.now() - this._lastMissingLogTime > 5000) {
                     console.warn('[PhysicsIntegration] No UI satellite found for id', satId, 'keys:', Array.from(this.app.satelliteManager.satellites.keys()));
@@ -563,10 +574,17 @@ export class PhysicsIntegration {
      */
     _dispatchPhysicsUpdate(state) {
         if (typeof window !== 'undefined') {
+            // Dispatch general physics update event
             window.dispatchEvent(new CustomEvent('physicsUpdate', {
                 detail: {
                     state,
                     time: this.physicsEngine.simulationTime
+                }
+            }));
+            // Also dispatch specific physics state update for React components
+            window.dispatchEvent(new CustomEvent('physicsStateUpdate', {
+                detail: {
+                    satellites: state.satellites || {}
                 }
             }));
         }

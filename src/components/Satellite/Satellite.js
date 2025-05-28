@@ -87,10 +87,22 @@ export class Satellite {
                 localPos[1],
                 localPos[2]
             );
-            console.log(`[Satellite] updateVisualsFromState: set mesh position for satellite ${this.id} to`, localPos);
+            
+            // Store physics state for other components
+            this.position = new THREE.Vector3(...satState.position);
+            this.velocity = new THREE.Vector3(...satState.velocity);
+            if (satState.acceleration) {
+                this.acceleration = new THREE.Vector3(...satState.acceleration);
+            }
         }
-        // Optionally update orientation, color, etc. if needed
-        // (add more as needed for your visuals)
+    }
+
+    /**
+     * Legacy method - redirects to updateVisualsFromState
+     * @deprecated Use updateVisualsFromState instead
+     */
+    updateFromPhysicsEngine(position, velocity) {
+        this.updateVisualsFromState({ position, velocity });
     }
 
     setVisible(v) {
@@ -104,6 +116,11 @@ export class Satellite {
         this.color = c;
         this.visualizer.setColor(c);
         this.orbitPath.orbitLine.material.color.set(c);
+        
+        // Update physics engine (single source of truth)
+        if (this.app3d?.physicsIntegration?.updateSatelliteProperty) {
+            this.app3d.physicsIntegration.updateSatelliteProperty(this.id, 'color', c);
+        }
     }
 
     delete() {
@@ -115,15 +132,36 @@ export class Satellite {
     }
 
     dispose() {
-        this.visualizer?.removeFromScene(this.scene);
+        // Remove visualizer mesh from its actual parent (might be planet group or scene)
+        if (this.visualizer?.mesh?.parent) {
+            this.visualizer.mesh.parent.remove(this.visualizer.mesh);
+        }
         this.visualizer?.dispose();
-        this.scene.remove(this.orbitPath.orbitLine);
+        
+        // Remove orbit visualization
+        if (this.orbitPath?.orbitLine?.parent) {
+            this.orbitPath.orbitLine.parent.remove(this.orbitPath.orbitLine);
+        }
         this.orbitPath?.dispose();
+        
+        // Remove ground track
         this.groundTrackPath?.dispose();
+        
+        // Remove apsis visualizer
         this.apsisVisualizer?.dispose();
-        for (const n of this.maneuverNodes) n.dispose();
+        
+        // Remove maneuver nodes
+        for (const n of this.maneuverNodes) {
+            n.dispose();
+        }
         this.maneuverNodes.length = 0;
-        this.scene.remove(this.maneuverGroup);
+        
+        // Remove maneuver group
+        if (this.maneuverGroup?.parent) {
+            this.maneuverGroup.parent.remove(this.maneuverGroup);
+        }
+        
+        // Dispatch deletion event
         document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
     }
 

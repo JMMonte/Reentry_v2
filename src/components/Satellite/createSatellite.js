@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
-import { inertialToWorld } from '../../utils/FrameTransforms.js';
+import { SatelliteCoordinates } from '../../utils/SatelliteCoordinates.js';
 
 /*─────────────────── constants ────────────────────*/
 const DEG2RAD = Math.PI / 180;
@@ -61,10 +61,11 @@ export async function createSatellite(app, params = {}) {
         color = pickBrightColor(params.color)
     } = params;
 
-    const sat = app.satellites.addSatellite({
+    const sat = await app.satellites.addSatellite({
         position,
         velocity,
         planetConfig,
+        centralBodyNaifId: planetConfig.naifId,
         mass,
         size,
         name,
@@ -74,67 +75,8 @@ export async function createSatellite(app, params = {}) {
         color
     });
 
-    // Honour global display toggles
-    const disp = app.displaySettingsManager?.settings || app.displaySettings || {};
-    sat.orbitLine && (sat.orbitLine.visible = disp.showOrbits);
-    sat.apsisVisualizer && (sat.apsisVisualizer.visible = disp.showOrbits);
-    sat.velocityVector && (sat.velocityVector.visible = disp.showSatVectors);
-    sat.orientationVector && (sat.orientationVector.visible = disp.showSatVectors);
-
-    // One-off orbit-line build (deferred updates handled elsewhere)
-    sat.orbitLine?.visible && sat.updateOrbitLine(position, velocity);
-
-    sat.setCentralBody(planetConfig.naifId);
-
+    // Return the satellite object
     return sat;
-}
-
-/*─────────────────── 2. Lat/Lon launch creators ────────────────────*/
-/**
- * Convert geodetic launch parameters to an Earth-centred inertial state.
- * Geometry approximates WGS-84 but is kept simple intentionally.
- */
-function latLonAltToECI({
-    latitude, longitude, altitude,
-    velocity, azimuth = 0, angleOfAttack = 0
-}, planet) {
-
-    const lat = latitude * DEG2RAD;
-    const lon = longitude * DEG2RAD;
-    const a = planet.radius;               // equatorial
-    const b = planet.polarRadius ?? a;     // polar fallback
-    const e2 = 1 - (b * b) / (a * a);
-    const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
-
-    // ECEF position (km)
-    const X = (N + altitude) * Math.cos(lat) * Math.cos(lon);
-    const Y = (N + altitude) * Math.cos(lat) * Math.sin(lon);
-    const Z = ((1 - e2) * N + altitude) * Math.sin(lat);
-
-    // Local ENU basis vectors
-    const up = new THREE.Vector3(X, Y, Z).normalize();
-    const north = new THREE.Vector3(
-        -Math.sin(lat) * Math.cos(lon),
-        -Math.sin(lat) * Math.sin(lon),
-        Math.cos(lat)
-    ).normalize();
-    const east = new THREE.Vector3().crossVectors(up, north);
-
-    // Launch direction in ENU
-    const az = azimuth * DEG2RAD;
-    const aoa = angleOfAttack * DEG2RAD;
-    const horiz = east.clone().multiplyScalar(Math.cos(az + Math.PI))
-        .add(north.clone().multiplyScalar(Math.sin(az + Math.PI)));
-
-    const velENU = horiz.multiplyScalar(velocity * Math.cos(aoa))
-        .add(up.clone().multiplyScalar(velocity * Math.sin(aoa)));
-
-    // Ignoring planet rotation here. For high-fidelity models,
-    // rotate ECEF to ECI via GMST before return.
-    return {
-        pos: [X, Y, Z],
-        vel: [velENU.x, velENU.y, velENU.z]
-    };
 }
 
 /**
@@ -146,18 +88,21 @@ export async function createSatelliteFromLatLon(app, params = {}) {
     const planet = getPlanet(app, naifId);
     if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
 
-    const { pos, vel } = latLonAltToECI(params, planet);
+    // Use improved coordinate calculation with planet quaternion
+    const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
+    const { position, velocity } = SatelliteCoordinates.createFromLatLon(params, planet, currentTime);
 
     const sat = await createSatellite(app, {
         ...params,
-        position: pos,
-        velocity: vel,
+        position,
+        velocity,
         planetConfig: planet,
         crossSectionalArea: crossSectionalArea(params.size ?? DEFAULT_SIZE, params.crossSectionalArea),
         dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
         color: pickBrightColor(params.color)
     });
-    return { satellite: sat, position: pos, velocity: vel };
+    
+    return { satellite: sat, position, velocity };
 }
 
 /** Legacy alias kept for backwards compatibility. */
@@ -168,31 +113,17 @@ export const createSatelliteFromLatLonCircular = (...args) =>
 /**
  * Build a satellite directly from classical orbital elements.
  */
-export function createSatelliteFromOrbitalElements(app, params = {}) {
+export async function createSatelliteFromOrbitalElements(app, params = {}) {
     const naifId = params.planetNaifId || params.central_body || params.naifId
         || params.planet?.naifId || 399;
     const planet = getPlanet(app, naifId);
     if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
 
-    const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
-        params.semiMajorAxis,
-        params.eccentricity,
-        params.inclination,
-        params.argumentOfPeriapsis,
-        params.raan,
-        params.trueAnomaly,
-        planet.GM
-    );
+    // Use improved coordinate calculation with planet quaternion
+    const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
+    const { position, velocity } = SatelliteCoordinates.createFromOrbitalElements(params, planet, currentTime);
 
-    // Convert to the Three.js world frame (Z-up, planet centred)
-    const { position, velocity } = inertialToWorld(
-        planet,
-        positionECI,
-        velocityECI,
-        { referenceFrame: 'equatorial' }
-    );
-
-    const sat = createSatellite(app, {
+    const sat = await createSatellite(app, {
         ...params,
         position,
         velocity,
@@ -201,6 +132,7 @@ export function createSatelliteFromOrbitalElements(app, params = {}) {
         dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
         color: pickBrightColor(params.color)
     });
+    
     return { satellite: sat, position, velocity };
 }
 

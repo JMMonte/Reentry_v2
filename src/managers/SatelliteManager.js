@@ -39,46 +39,130 @@ export class SatelliteManager {
         this._needsListFlush = false;   // micro-task flag
         this._lastOrbitUpdate = 0;      // perf.now timestamp
         this._nextId = 0; // Unique satellite ID counter
+        
+        // Listen to physics events
+        this._setupEventListeners();
+    }
+
+    _setupEventListeners() {
+        // Bind event handlers
+        this._boundOnSatelliteAdded = (e) => this._onSatelliteAdded(e.detail);
+        this._boundOnSatelliteRemoved = (e) => this._onSatelliteRemoved(e.detail);
+        this._boundOnSatellitePropertyUpdated = (e) => this._onSatellitePropertyUpdated(e.detail);
+        
+        // Listen for satellite events from physics engine
+        window.addEventListener('satelliteAdded', this._boundOnSatelliteAdded);
+        window.addEventListener('satelliteRemoved', this._boundOnSatelliteRemoved);
+        window.addEventListener('satellitePropertyUpdated', this._boundOnSatellitePropertyUpdated);
+    }
+
+    _onSatelliteAdded(satData) {
+        // Create UI object for physics satellite
+        const id = String(satData.id);
+        if (!this._satellites.has(id)) {
+            const sat = new Satellite({
+                ...satData,
+                id,
+                scene: this.app3d.scene,
+                app3d: this.app3d,
+                planetConfig: this.app3d.bodiesByNaifId?.[satData.centralBodyNaifId],
+                centralBodyNaifId: satData.centralBodyNaifId
+            });
+            this._satellites.set(id, sat);
+            this._flushListSoon();
+        }
+    }
+
+    _onSatelliteRemoved(data) {
+        const id = String(data.id);
+        const sat = this._satellites.get(id);
+        if (sat) {
+            sat.dispose();
+            this._satellites.delete(id);
+            this._flushListSoon();
+        }
+    }
+
+    _onSatellitePropertyUpdated(data) {
+        const sat = this._satellites.get(String(data.id));
+        if (sat && data.property === 'color') {
+            sat.setColor(data.value);
+        } else if (sat && data.property === 'name') {
+            sat.name = data.value;
+        }
     }
 
     /* ───── Satellite CRUD ───── */
 
     /**
-     * @param {Object} params – forwarded to Satellite ctor
-     * @returns {Satellite}
+     * @param {Object} params – forwarded to physics engine
+     * @returns {Promise<Satellite>} satellite object after creation
      */
-    addSatellite(params) {
-        const planetConfig =
-            params.planetConfig ?? this.app3d.bodiesByNaifId?.[params.planetNaifId];
+    async addSatellite(params) {
+        // Prepare data for physics engine
         const centralBodyNaifId =
             params.centralBodyNaifId ??
             params.planetNaifId ??
-            planetConfig?.naifId ??
+            params.planetConfig?.naifId ??
             399; // Earth fallback
-        const id = String(params.id ?? this._nextId++);
-        const sat = new Satellite({
+        
+        const satData = {
             ...params,
-            id,
-            scene: this.app3d.scene,
-            app3d: this.app3d,
-            planetConfig,
+            id: params.id ?? this._nextId++,
             centralBodyNaifId
-        });
-        this._satellites.set(id, sat);
-        return sat;
+        };
+        
+        // Delegate to physics engine (single source of truth)
+        if (this.app3d?.physicsIntegration?.addSatellite) {
+            const satId = this.app3d.physicsIntegration.addSatellite(satData);
+            
+            // Wait for the satellite to be created via event
+            return new Promise((resolve) => {
+                const checkSatellite = () => {
+                    const sat = this._satellites.get(String(satId));
+                    if (sat) {
+                        resolve(sat);
+                    } else {
+                        setTimeout(checkSatellite, 10);
+                    }
+                };
+                checkSatellite();
+            });
+        }
+        
+        console.warn('[SatelliteManager] PhysicsIntegration not available');
+        return null;
     }
 
     /** Integrate backend-provided state (pos [m], vel [m s-1]). */
     updateSatelliteFromBackend(id, pos, vel, debug) {
-        this._satellites.get(String(id))?.updateFromPhysicsEngine(pos, vel, debug);
+        const sat = this._satellites.get(String(id));
+        if (sat) {
+            sat.updateVisualsFromState({ position: pos, velocity: vel, ...debug });
+        }
+    }
+
+    /** Cleanup all satellites and event listeners */
+    dispose() {
+        // Remove all satellites
+        for (const sat of this._satellites.values()) {
+            sat.dispose();
+        }
+        this._satellites.clear();
+        
+        // Remove event listeners
+        if (this._boundOnSatelliteAdded) {
+            window.removeEventListener('satelliteAdded', this._boundOnSatelliteAdded);
+            window.removeEventListener('satelliteRemoved', this._boundOnSatelliteRemoved);
+            window.removeEventListener('satellitePropertyUpdated', this._boundOnSatellitePropertyUpdated);
+        }
     }
 
     removeSatellite(id) {
-        const sat = this._satellites.get(String(id));
-        if (!sat) return;
-        sat.dispose();
-        this._satellites.delete(String(id));
-        this._flushListSoon();
+        // Delegate to physics engine - it will dispatch event that we listen to
+        if (this.app3d?.physicsIntegration?.removeSatellite) {
+            this.app3d.physicsIntegration.removeSatellite(id);
+        }
     }
 
     /* shorthand getters */
@@ -240,22 +324,12 @@ export class SatelliteManager {
      */
     updateAllFromPhysicsState(physicsState) {
         const satStates = physicsState.satellites || {};
-        // Log the physics state for all satellites
-        console.log('[SatelliteManager] updateAllFromPhysicsState: physicsState.satellites:', satStates);
-        // Update or create UI objects for all satellites in physics state
+        // Only update visuals for existing satellites
+        // Creation/deletion is handled by events
         for (const [id, satState] of Object.entries(satStates)) {
-            let sat = this._satellites.get(id);
-            if (!sat) {
-                // Create a new UI object if needed
-                sat = this.addSatellite({ id, ...satState });
-            }
-            console.log(`[SatelliteManager] Calling updateVisualsFromState for satellite ${id} with state:`, satState);
-            sat.updateVisualsFromState(satState);
-        }
-        // Remove UI objects for satellites no longer in physics state
-        for (const id of Array.from(this._satellites.keys())) {
-            if (!satStates[id]) {
-                this.removeSatellite(id);
+            const sat = this._satellites.get(id);
+            if (sat) {
+                sat.updateVisualsFromState(satState);
             }
         }
     }

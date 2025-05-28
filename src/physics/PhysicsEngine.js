@@ -394,8 +394,11 @@ export class PhysicsEngine {
             console.warn(`[PhysicsEngine] Central body ${satellite.centralBodyNaifId} not found at satellite creation!`);
         }
         console.log('[PhysicsEngine] Satellite initial planet-centric position:', satellite.position, 'velocity:', satellite.velocity);
-        this.satellites.set(String(satellite.id), {
+        
+        const id = String(satellite.id || Date.now());
+        const satData = {
             ...satellite,
+            id,
             // All positions/velocities are planet-centric (relative to central body)
             position: new THREE.Vector3().fromArray(satellite.position),
             velocity: new THREE.Vector3().fromArray(satellite.velocity),
@@ -404,16 +407,52 @@ export class PhysicsEngine {
             dragCoefficient: satellite.dragCoefficient || 2.2,
             crossSectionalArea: satellite.crossSectionalArea || 10,
             lastUpdate: this.simulationTime,
-            centralBodyNaifId: satellite.centralBodyNaifId
-        });
+            centralBodyNaifId: satellite.centralBodyNaifId,
+            // UI properties - store them here as single source of truth
+            color: satellite.color || 0xffff00,
+            name: satellite.name || `Satellite ${id}`
+        };
+        
+        this.satellites.set(id, satData);
         console.log('[PhysicsEngine] satellites after add:', Array.from(this.satellites.keys()));
+        
+        // Dispatch event for UI updates
+        this._dispatchSatelliteEvent('satelliteAdded', satData);
+        return id;
     }
 
     /**
      * Remove satellite (unchanged from original)
      */
     removeSatellite(id) {
-        this.satellites.delete(String(id));
+        const strId = String(id);
+        const satellite = this.satellites.get(strId);
+        if (satellite) {
+            this.satellites.delete(strId);
+            console.log('[PhysicsEngine] Removed satellite', strId);
+            // Dispatch event for UI cleanup
+            this._dispatchSatelliteEvent('satelliteRemoved', { id: strId });
+        }
+    }
+
+    /**
+     * Update satellite UI properties (color, name, etc)
+     */
+    updateSatelliteProperty(id, property, value) {
+        const satellite = this.satellites.get(String(id));
+        if (satellite) {
+            satellite[property] = value;
+            this._dispatchSatelliteEvent('satellitePropertyUpdated', { id, property, value });
+        }
+    }
+
+    /**
+     * Dispatch satellite events for UI synchronization
+     */
+    _dispatchSatelliteEvent(eventType, data) {
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(eventType, { detail: data }));
+        }
     }
 
     // Satellite integration methods (copied from original PhysicsEngine)
@@ -605,7 +644,11 @@ export class PhysicsEngine {
                 mass: satellite.mass,
                 altitude_radial,
                 altitude_surface,
-                speed
+                speed,
+                // Include UI properties
+                color: satellite.color,
+                name: satellite.name,
+                centralBodyNaifId: satellite.centralBodyNaifId
             };
         }
         return states;

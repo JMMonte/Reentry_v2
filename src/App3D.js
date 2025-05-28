@@ -585,15 +585,26 @@ class App3D extends EventTarget {
      * @param {number} delta - Time since last frame in seconds
      */
     tick(delta) {
-        // Step physics and sync satellites every frame
-        let latestPhysicsState = null;
-        if (this.physicsIntegration?.stepSimulation) {
-            this.physicsIntegration.stepSimulation(delta);
-            // Get the latest state after stepping
-            latestPhysicsState = this.physicsIntegration.physicsEngine?.getSimulationState?.();
-        }
+        // Get current physics state (physics is stepped by PhysicsIntegration.updateLoop)
+        const latestPhysicsState = this.physicsIntegration?.physicsEngine?.getSimulationState?.();
+        
         if (latestPhysicsState) {
             this.satellites.updateAllFromPhysicsState(latestPhysicsState);
+            // Dispatch physics state update event for React components
+            // Convert satellite states Map to object if needed
+            let satelliteStates = latestPhysicsState.satellites || {};
+            if (satelliteStates instanceof Map) {
+                const satObj = {};
+                for (const [id, sat] of satelliteStates) {
+                    satObj[id] = sat;
+                }
+                satelliteStates = satObj;
+            }
+            window.dispatchEvent(new CustomEvent('physicsStateUpdate', {
+                detail: {
+                    satellites: satelliteStates
+                }
+            }));
         }
         this.stats?.begin();
         
