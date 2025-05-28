@@ -294,7 +294,7 @@ export class Planet {
                 this.orbitGroup.position.copy(this.targetPosition);
             }
             if (this.orientationGroup) {
-                this.orientationGroup.quaternion.slerp(this.targetOrientation, 0.15);
+                this.orientationGroup.quaternion.slerp(this.targetOrientation, 1.0);
             }
             // Do NOT set equatorialGroup quaternion for barycenters
             return;
@@ -331,7 +331,7 @@ export class Planet {
 
         // Orientation interpolation (unchanged)
         if (this.orientationGroup) {
-            this.orientationGroup.quaternion.slerp(this.targetOrientation, 0.15);
+            this.orientationGroup.quaternion.slerp(this.targetOrientation, 1.0);
         }
         // Do NOT set equatorialGroup quaternion here
 

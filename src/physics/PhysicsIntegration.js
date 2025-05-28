@@ -84,8 +84,8 @@ export class PhysicsIntegration {
 
         await this.physicsEngine.setTime(newTime);
 
-        // Update all body positions using the physics engine
-        const state = await this.physicsEngine.step(0); // No time advance, just update positions
+        // Get current state without stepping (planets are already at correct positions from setTime)
+        const state = this.physicsEngine.getSimulationState();
 
         // Sync with existing celestial bodies in the app
         this._syncWithCelestialBodies(state);
@@ -101,9 +101,19 @@ export class PhysicsIntegration {
      * Step the simulation forward by deltaTime seconds
      */
     async stepSimulation(deltaTime) {
-        // Throttle log: only log every 5 seconds
-        if (!this._lastStepLogTime || Date.now() - this._lastStepLogTime > 5000) {
-            // console.log('[PhysicsIntegration] stepSimulation called with', deltaTime);
+        // Debug: Count step calls and track total time
+        if (!this._stepCallCount) {
+            this._stepCallCount = 0;
+            this._totalDeltaTime = 0;
+        }
+        this._stepCallCount++;
+        this._totalDeltaTime += deltaTime;
+        
+        // Throttle log: only log every 10 seconds
+        if (!this._lastStepLogTime || Date.now() - this._lastStepLogTime > 10000) {
+            // console.log(`[PhysicsIntegration] stepSimulation: ${this._stepCallCount} calls in 10s, total deltaTime: ${this._totalDeltaTime.toFixed(3)}s, avg: ${(this._totalDeltaTime/this._stepCallCount).toFixed(4)}s`);
+            this._stepCallCount = 0;
+            this._totalDeltaTime = 0;
             this._lastStepLogTime = Date.now();
         }
         if (!this.isInitialized) return;
@@ -295,22 +305,38 @@ export class PhysicsIntegration {
         const realDeltaMs = now - (this._lastRealTime || now);
         this._lastRealTime = now;
 
-        // Convert to simulation time delta and add to accumulator
+        // Convert to simulation time delta
         const simulatedDeltaMs = realDeltaMs * timeWarp;
         const simulatedDeltaSeconds = simulatedDeltaMs / 1000;
-        this._accumulator += simulatedDeltaSeconds;
 
-        // Fixed timestep integration - process accumulated time in fixed chunks
-        let stepsProcessed = 0;
-        const maxSteps = 5; // Prevent spiral of death
+        // Add to accumulator for fixed timestep integration
+        this._accumulator += simulatedDeltaSeconds;
         
-        // If accumulator is too large (>1 second), it means we have high time warp
-        // In this case, clamp it to prevent infinite processing
-        if (this._accumulator > 1.0) {
-            console.log(`[PhysicsIntegration] Large time accumulator detected (${this._accumulator.toFixed(3)}s), clamping to 1.0s for high time warp`);
-            this._accumulator = 1.0;
+        // Fixed timestep integration parameters
+        const stepSize = this._fixedTimeStep;
+        let maxSteps = 5;
+        
+        // For very high time warps, allow more steps per frame to keep up
+        if (timeWarp >= 10000) {
+            maxSteps = Math.min(100, Math.ceil(simulatedDeltaSeconds / this._fixedTimeStep));
+        } else if (timeWarp >= 1000) {
+            maxSteps = Math.min(50, Math.ceil(simulatedDeltaSeconds / this._fixedTimeStep));
+        } else if (timeWarp >= 100) {
+            maxSteps = Math.min(20, Math.ceil(simulatedDeltaSeconds / this._fixedTimeStep));
         }
         
+        // Clamp accumulator to prevent spiral of death
+        const maxAccumulator = maxSteps * this._fixedTimeStep;
+        if (this._accumulator > maxAccumulator) {
+            // Only log if clamping by a significant amount
+            if (this._accumulator - maxAccumulator > 0.1) {
+                // console.log(`[PhysicsIntegration] Clamping accumulator from ${this._accumulator.toFixed(3)}s to ${maxAccumulator.toFixed(3)}s`);
+            }
+            this._accumulator = maxAccumulator;
+        }
+        
+        // Process accumulated time in fixed timestep chunks
+        let stepsProcessed = 0;
         while (this._accumulator >= this._fixedTimeStep && stepsProcessed < maxSteps) {
             // Get current time and advance by fixed timestep
             const currentTime = this.app.timeUtils.getSimulatedTime();
@@ -319,22 +345,20 @@ export class PhysicsIntegration {
             // Update physics engine time (this updates all body positions)
             await this.physicsEngine.setTime(newTime);
 
-            // Step physics simulation with fixed timestep
+            // Step physics simulation with fixed timestep - ALWAYS use _fixedTimeStep for satellites
             await this.stepSimulation(this._fixedTimeStep);
 
             // Update TimeUtils with new time (this will dispatch UI events)
             this.app.timeUtils.updateFromPhysics(newTime);
-            
             
             // Remove processed time from accumulator
             this._accumulator -= this._fixedTimeStep;
             stepsProcessed++;
         }
         
-        // If we hit the step limit, clear remaining accumulator to prevent buildup
-        if (stepsProcessed >= maxSteps && this._accumulator > 0) {
-            console.log(`[PhysicsIntegration] Hit max steps limit (${maxSteps}), clearing remaining accumulator: ${this._accumulator.toFixed(3)}s`);
-            this._accumulator = 0;
+        // If we couldn't process all accumulated time, log it
+        if (this._accumulator > this._fixedTimeStep && stepsProcessed >= maxSteps) {
+            // console.log(`[PhysicsIntegration] Hit max steps (${maxSteps}) at ${timeWarp}x warp, ${this._accumulator.toFixed(3)}s remaining`);
         }
         
         // Always update orbit visualizations for smooth rendering

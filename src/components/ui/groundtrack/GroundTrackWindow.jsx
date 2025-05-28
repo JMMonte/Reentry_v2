@@ -78,12 +78,15 @@ export function GroundTrackWindow({
     }, [planet, activeLayers.pois]);
 
     // Compute groundtrack points for each satellite
-    const planetQuat = planet?.getMesh?.()?.quaternion || planet?.quaternion;
-    const planetRadius = planet?.radius;
     const groundtracks = Object.values(filteredSatellites).map(sat => {
         const pos = new THREE.Vector3(...sat.position);
-        const { lat, lon } = projectToPlanetLatLon(pos, planetQuat, planetRadius);
-        return { id: sat.id, lat, lon };
+        // Only project if we have a valid planet object
+        if (planet && planet.naifId) {
+            const { lat, lon } = projectToPlanetLatLon(pos, planet);
+            return { id: sat.id, lat, lon };
+        }
+        // Fallback if planet not available
+        return { id: sat.id, lat: 0, lon: 0 };
     });
 
     // Hook: subscribe to groundTrackUpdated

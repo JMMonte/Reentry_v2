@@ -68,14 +68,12 @@ export default {
                 metalness: 0.1,
             }
         },
-        createCloudMaterial: tm => new THREE.MeshLambertMaterial({
-            map: tm.getTexture('venusCloudTexture'), // Venus cloud texture
-            transparent: true,
-            blending: THREE.NormalBlending,
+        cloudConfig: {
+            textureKey: 'venusCloudTexture',
+            cloudType: 'opaque', // Venus uses opaque clouds
             opacity: 0.95, // Dense clouds
-            depthWrite: false,
-            depthTest: true,
-        }),
+            color: 0xffffff,
+        },
     },
 
     // Lighting

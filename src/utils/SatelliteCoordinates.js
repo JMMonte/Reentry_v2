@@ -34,10 +34,28 @@ export class SatelliteCoordinates {
         } = params;
 
         // Calculate appropriate orbital velocity if not provided
-        const finalVelocity = velocity !== undefined ? velocity : 
-            SatelliteCoordinates._calculateCircularOrbitalVelocity(altitude, planet);
+        let finalVelocity = velocity;
+        if (velocity === undefined) {
+            // Calculate the inertial velocity needed for circular orbit
+            const inertialVelocity = SatelliteCoordinates._calculateCircularOrbitalVelocity(altitude, planet);
+            
+            // Calculate Earth's rotation velocity at this location
+            const rotationVelocity = SatelliteCoordinates._calculateRotationVelocityAtLocation(
+                latitude, altitude, planet
+            );
+            
+            // For eastward launch (azimuth ~90°), subtract rotation velocity
+            // For westward launch (azimuth ~270°), add rotation velocity
+            const azimuthRad = THREE.MathUtils.degToRad(azimuth);
+            const eastwardComponent = Math.sin(azimuthRad); // 1 for east, -1 for west
+            
+            // Adjust velocity: subtract Earth's rotation contribution
+            finalVelocity = inertialVelocity - rotationVelocity * eastwardComponent;
+            
+            // console.log(`[SatelliteCoordinates] Orbital velocity adjustment: inertial=${inertialVelocity.toFixed(3)} km/s, rotation=${rotationVelocity.toFixed(3)} km/s, final=${finalVelocity.toFixed(3)} km/s`);
+        }
 
-        console.log(`[SatelliteCoordinates] Creating from lat/lon: lat=${latitude}°, lon=${longitude}°, alt=${altitude}km, vel=${finalVelocity.toFixed(3)}km/s, az=${azimuth}°`);
+        // console.log(`[SatelliteCoordinates] Creating from lat/lon: lat=${latitude}°, lon=${longitude}°, alt=${altitude}km, vel=${finalVelocity.toFixed(3)}km/s, az=${azimuth}°`);
 
         // 1. Calculate position in Planet-Fixed frame (rotating with surface)
         const positionPF = SatelliteCoordinates._latLonAltToPlanetFixed(
@@ -55,7 +73,7 @@ export class SatelliteCoordinates {
                 positionPF, velocityPF, planet, time
             );
 
-        console.log(`[SatelliteCoordinates] Final PCI coordinates: pos=[${positionPCI.map(p => p.toFixed(2)).join(', ')}] km, vel=[${velocityPCI.map(v => v.toFixed(3)).join(', ')}] km/s`);
+        // console.log(`[SatelliteCoordinates] Final PCI coordinates: pos=[${positionPCI.map(p => p.toFixed(2)).join(', ')}] km, vel=[${velocityPCI.map(v => v.toFixed(3)).join(', ')}] km/s`);
 
         return {
             position: positionPCI,
@@ -79,8 +97,8 @@ export class SatelliteCoordinates {
         // Get gravitational parameter with fallback
         const GM = planet.GM || (planet.mass * Constants.G); // km³/s²
         
-        console.log(`[SatelliteCoordinates] Creating from orbital elements: a=${semiMajorAxis}km, e=${eccentricity}, i=${inclination}°, ω=${argumentOfPeriapsis}°, Ω=${raan}°, f=${trueAnomaly}°`);
-        console.log(`[SatelliteCoordinates] Using GM=${GM} km³/s² for ${planet.name || 'planet'}`);
+        // console.log(`[SatelliteCoordinates] Creating from orbital elements: a=${semiMajorAxis}km, e=${eccentricity}, i=${inclination}°, ω=${argumentOfPeriapsis}°, Ω=${raan}°, f=${trueAnomaly}°`);
+        // console.log(`[SatelliteCoordinates] Using GM=${GM} km³/s² for ${planet.name || 'planet'}`);
 
         if (!GM || isNaN(GM) || GM <= 0) {
             throw new Error(`Invalid gravitational parameter GM=${GM} for planet: ${planet.name || 'unknown'}`);
@@ -96,7 +114,7 @@ export class SatelliteCoordinates {
         const position = [positionECI.x, positionECI.y, positionECI.z];
         const velocity = [velocityECI.x, velocityECI.y, velocityECI.z];
         
-        console.log(`[SatelliteCoordinates] Final PCI coordinates: pos=[${position.map(p => p.toFixed(2)).join(', ')}] km, vel=[${velocity.map(v => v.toFixed(3)).join(', ')}] km/s`);
+        // console.log(`[SatelliteCoordinates] Final PCI coordinates: pos=[${position.map(p => p.toFixed(2)).join(', ')}] km, vel=[${velocity.map(v => v.toFixed(3)).join(', ')}] km/s`);
 
         return { position, velocity };
     }
@@ -126,7 +144,7 @@ export class SatelliteCoordinates {
         const Y = (N + altitude) * Math.cos(lat) * Math.sin(lon);
         const Z = ((1 - e2) * N + altitude) * Math.sin(lat);
 
-        console.log(`[SatelliteCoordinates] Planet-Fixed position: [${X.toFixed(2)}, ${Y.toFixed(2)}, ${Z.toFixed(2)}] km`);
+        // console.log(`[SatelliteCoordinates] Planet-Fixed position: [${X.toFixed(2)}, ${Y.toFixed(2)}, ${Z.toFixed(2)}] km`);
         return [X, Y, Z];
     }
 
@@ -168,7 +186,7 @@ export class SatelliteCoordinates {
             .addScaledVector(east, eastVel)
             .addScaledVector(up, verticalSpeed);
 
-        console.log(`[SatelliteCoordinates] Planet-Fixed velocity: [${velocity.x.toFixed(3)}, ${velocity.y.toFixed(3)}, ${velocity.z.toFixed(3)}] km/s (ENU: E=${eastVel.toFixed(3)}, N=${northVel.toFixed(3)}, U=${verticalSpeed.toFixed(3)})`);
+        // console.log(`[SatelliteCoordinates] Planet-Fixed velocity: [${velocity.x.toFixed(3)}, ${velocity.y.toFixed(3)}, ${velocity.z.toFixed(3)}] km/s (ENU: E=${eastVel.toFixed(3)}, N=${northVel.toFixed(3)}, U=${verticalSpeed.toFixed(3)})`);
         return [velocity.x, velocity.y, velocity.z];
     }
 
@@ -183,7 +201,7 @@ export class SatelliteCoordinates {
         // Get planet's rotation rate (rad/s)
         const rotationRate = planet.rotationRate || SatelliteCoordinates._calculateRotationRate(planet);
         
-        console.log(`[SatelliteCoordinates] Planet rotation rate: ${rotationRate.toExponential(3)} rad/s (period: ${(2 * Math.PI / rotationRate / 3600).toFixed(2)} hours)`);
+        // console.log(`[SatelliteCoordinates] Planet rotation rate: ${rotationRate.toExponential(3)} rad/s (period: ${(2 * Math.PI / rotationRate / 3600).toFixed(2)} hours)`);
 
         // 1. Transform position: Planet-Fixed to Planet-Centered Inertial
         // PCI = Q * PF (where Q is the rotation from PF to PCI)
@@ -207,7 +225,7 @@ export class SatelliteCoordinates {
         
         const velocityPCI = [velocityPCI_vec.x, velocityPCI_vec.y, velocityPCI_vec.z];
 
-        console.log(`[SatelliteCoordinates] Transformation PF→PCI: rotation component added [${rotationVelocity.x.toFixed(3)}, ${rotationVelocity.y.toFixed(3)}, ${rotationVelocity.z.toFixed(3)}] km/s`);
+        // console.log(`[SatelliteCoordinates] Transformation PF→PCI: rotation component added [${rotationVelocity.x.toFixed(3)}, ${rotationVelocity.y.toFixed(3)}, ${rotationVelocity.z.toFixed(3)}] km/s`);
 
         return { position: positionPCI, velocity: velocityPCI };
     }
@@ -220,19 +238,19 @@ export class SatelliteCoordinates {
         if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
             // Convert [x, y, z, w] to THREE.Quaternion
             const [x, y, z, w] = planet.quaternion;
-            console.log(`[SatelliteCoordinates] Using physics engine quaternion for ${planet.name}: [${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}, ${w.toFixed(3)}]`);
+            // console.log(`[SatelliteCoordinates] Using physics engine quaternion for ${planet.name}: [${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}, ${w.toFixed(3)}]`);
             return new THREE.Quaternion(x, y, z, w);
         }
 
         // 2. Try to get from Three.js object if available
         if (planet.mesh?.quaternion) {
-            console.log(`[SatelliteCoordinates] Using Three.js mesh quaternion for ${planet.name}`);
+            // console.log(`[SatelliteCoordinates] Using Three.js mesh quaternion for ${planet.name}`);
             return planet.mesh.quaternion.clone();
         }
 
         // 3. Try to get from planet's rotation group
         if (planet.getRotationGroup?.()?.quaternion) {
-            console.log(`[SatelliteCoordinates] Using rotation group quaternion for ${planet.name}`);
+            // console.log(`[SatelliteCoordinates] Using rotation group quaternion for ${planet.name}`);
             return planet.getRotationGroup().quaternion.clone();
         }
 
@@ -321,7 +339,7 @@ export class SatelliteCoordinates {
         
         const naifId = planet.naif_id || planet.naifId;
         if (naifId && knownRotationRates[naifId]) {
-            console.log(`[SatelliteCoordinates] Using known rotation rate for NAIF ${naifId}`);
+            // console.log(`[SatelliteCoordinates] Using known rotation rate for NAIF ${naifId}`);
             return knownRotationRates[naifId];
         }
         
@@ -356,8 +374,29 @@ export class SatelliteCoordinates {
         }
         
         const orbitalVel = Math.sqrt(GM / r); // km/s
-        console.log(`[SatelliteCoordinates] Circular orbital velocity: ${orbitalVel.toFixed(3)} km/s at ${altitude} km altitude around ${planet.name || 'planet'}`);
+        // console.log(`[SatelliteCoordinates] Circular orbital velocity: ${orbitalVel.toFixed(3)} km/s at ${altitude} km altitude around ${planet.name || 'planet'}`);
         return orbitalVel;
+    }
+
+    /**
+     * Calculate the rotation velocity at a given latitude and altitude
+     * @param {number} latitude - Latitude in degrees
+     * @param {number} altitude - Altitude in km
+     * @param {Object} planet - Planet object
+     * @returns {number} - Rotation velocity in km/s
+     */
+    static _calculateRotationVelocityAtLocation(latitude, altitude, planet) {
+        const rotationRate = planet.rotationRate || SatelliteCoordinates._calculateRotationRate(planet);
+        const latRad = THREE.MathUtils.degToRad(latitude);
+        
+        // Distance from rotation axis at this latitude
+        const r = planet.radius + altitude;
+        const distanceFromAxis = r * Math.cos(latRad);
+        
+        // Linear velocity = angular velocity × distance from axis
+        const rotationVelocity = rotationRate * distanceFromAxis; // km/s
+        
+        return rotationVelocity;
     }
 
     /**
@@ -376,7 +415,7 @@ export class SatelliteCoordinates {
             return { position: [...position], velocity: [...velocity] };
         }
 
-        console.log(`[SatelliteCoordinates] Transforming ${fromFrame}→${toFrame}`);
+        // console.log(`[SatelliteCoordinates] Transforming ${fromFrame}→${toFrame}`);
 
         // Define transformation paths
         switch (`${fromFrame}→${toFrame}`) {

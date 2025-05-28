@@ -67,6 +67,13 @@ export class Satellite {
      */
     updateVisualsFromState(satState) {
         if (this.visualizer?.mesh && satState.position) {
+            // Debug: Log position updates
+            if (!this._lastUpdateLogTime || Date.now() - this._lastUpdateLogTime > 1000) {
+                // console.log(`[Satellite ${this.id}] updateVisualsFromState - position: [${satState.position.map(v => v.toFixed(1)).join(', ')}] km`);
+                // console.log(`  velocity: [${satState.velocity.map(v => v.toFixed(3)).join(', ')}] km/s, speed: ${satState.speed?.toFixed(3)} km/s`);
+                this._lastUpdateLogTime = Date.now();
+            }
+            
             // satState.position is already planet-centric (relative to central body)
             // Since the mesh is parented to the central body's group, we can use it directly
             this.visualizer.mesh.position.set(

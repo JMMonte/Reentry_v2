@@ -228,18 +228,18 @@ export default [
         cloudThickness: 100, // km
         atmosphere: {
             thickness: 200, // km - visible haze layer
-            densityScaleHeight: 21, // km (approx for lower atmosphere)
+            densityScaleHeight: 20, // km (approx for lower atmosphere)
             pressure: 1.45, // bar (surface pressure)
             composition: { nitrogen: 0.95, methane: 0.049, hydrogen: 0.001 },
-            hazeIntensity: 2,
+            hazeIntensity: 5, // Stronger haze
             scaleHeightMultiplier: 3.0,
             rayleighScaleHeight: 20, // km
-            mieScaleHeight: 50, // km (tholin haze layers)
-            rayleighScatteringCoeff: [0.001, 0.0008, 0.0005], // Orange/brown
-            mieScatteringCoeff: 0.01,
+            mieScaleHeight: 20, // km (tholin haze layers)
+            rayleighScatteringCoeff: [0.00005, 0.0002, 0.01], // Even more blue
+            mieScatteringCoeff: 0.02, // More haze
             mieAnisotropy: 0.7,
             numLightSteps: 3,
-            sunIntensity: 0.5,
+            sunIntensity: 4.0, // Brighter blue haze
             equatorialRadius: 2574.73 + 200, // Including atmosphere for rendering
             polarRadius: 2574.73 + 200,
         },
@@ -249,16 +249,11 @@ export default [
                 textureKey: 'titanTexture',
                 params: { roughness: 0.6, metalness: 0.1 }
             },
-            createCloudMaterial: tm => new THREE.MeshLambertMaterial({
-                map: tm.getTexture('titanCloudTexture'),
-                color: 0xffffff,
-                transparent: true,
-                blending: THREE.NormalBlending,
-                opacity: 1.0,
-                depthWrite: false,
-                depthTest: true,
-            }),
-            // Titan might also have a cloud layer material if detailed textures are available
+            cloudConfig: {
+                textureKey: 'titanCloudTexture',
+                cloudType: 'opaque', // Titan uses opaque cloud layers
+                opacity: 1.0, // Fully opaque
+            },
         },
         lodLevelsKey: 'default',
         details: {

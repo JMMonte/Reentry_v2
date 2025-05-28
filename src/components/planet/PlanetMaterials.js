@@ -87,24 +87,41 @@ function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
     }
 }
 
-// Modify this internal default cloud material function
-function createCloudMaterial(textureManager, anisotropy) {
-    const cloudTexture = textureManager.getTexture('cloudTexture');
+// Default cloud material function - supports both transparent and opaque clouds
+function createCloudMaterial(textureManager, anisotropy, config = {}) {
+    const {
+        textureKey = 'cloudTexture',
+        cloudType = 'transparent', // 'transparent' (Earth-style) or 'opaque' (Venus/Titan-style)
+        opacity = cloudType === 'transparent' ? 1.0 : 0.95,
+        color = 0xffffff,
+        params = {}
+    } = config;
+
+    const cloudTexture = textureManager.getTexture(textureKey);
     if (!cloudTexture) return null;
 
     cloudTexture.anisotropy = anisotropy;
 
-    return new THREE.MeshLambertMaterial({ // Keep Lambert
-        // map: cloudTexture, // REMOVED from map
+    const baseParams = {
         side: THREE.DoubleSide,
-        alphaMap: cloudTexture, // USE texture as alphaMap
-        color: 0xffffff, // Base color for clouds (white)
+        color: color,
         transparent: true,
-        renderOrder: 0,
         blending: THREE.NormalBlending,
         depthWrite: false,
-        depthTest: true
-    });
+        depthTest: true,
+        opacity: opacity,
+        ...params
+    };
+
+    if (cloudType === 'transparent') {
+        // Earth-style: use texture as alphaMap for transparency
+        baseParams.alphaMap = cloudTexture;
+    } else {
+        // Venus/Titan-style: use texture as color map
+        baseParams.map = cloudTexture;
+    }
+
+    return new THREE.MeshLambertMaterial(baseParams);
 }
 
 function createAtmosphereMaterial(earthRadius, {
@@ -178,7 +195,14 @@ export class PlanetMaterials {
         this.config = materialsConfig;
         // Use generic surface material creator with config
         this.surfaceCreator = (tm, aniso) => createSurfaceMaterial(tm, aniso, materialsConfig.surfaceConfig || {});
-        this.cloudCreator = materialsConfig.createCloudMaterial || createCloudMaterial;
+        
+        // Cloud material creator - use custom if provided, otherwise use default with config
+        if (materialsConfig.createCloudMaterial) {
+            this.cloudCreator = materialsConfig.createCloudMaterial;
+        } else {
+            this.cloudCreator = (tm, aniso) => createCloudMaterial(tm, aniso, materialsConfig.cloudConfig || {});
+        }
+        
         this.atmosphereCreator = createAtmosphereMaterial;
         this.glowCreator = materialsConfig.createGlowMaterial || createGlowMaterial;
         this.soiCreator = materialsConfig.createSOIMaterial || createSoiMaterial;

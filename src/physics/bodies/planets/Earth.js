@@ -92,14 +92,12 @@ export default {
                 metalness: 0.0,
             }
         },
-        createCloudMaterial: tm => new THREE.MeshLambertMaterial({
-            alphaMap: tm.getTexture('cloudTexture'),
+        cloudConfig: {
+            textureKey: 'cloudTexture',
+            cloudType: 'transparent', // Earth uses transparent clouds
+            opacity: 1.0,
             color: 0xffffff,
-            transparent: true,
-            blending: THREE.NormalBlending,
-            depthWrite: false,
-            depthTest: true,
-        }),
+        },
     },
 
     // Lighting
