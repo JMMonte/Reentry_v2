@@ -476,7 +476,7 @@ export class PhysicsEngine {
             // 3. If outside SOI, switch to parent body
             if (distToCentral > soiRadius) {
                 // Find parent body in hierarchy
-                const parentNaifId = this.hierarchy.getParentNaifId(satellite.centralBodyNaifId);
+                const parentNaifId = this.hierarchy.getParent(satellite.centralBodyNaifId);
                 if (parentNaifId !== undefined && this.bodies[parentNaifId]) {
                     const newCentral = this.bodies[parentNaifId];
                     // Recalculate new planet-centric state
@@ -509,43 +509,229 @@ export class PhysicsEngine {
             console.warn(`[PhysicsEngine] Central body ${satellite.centralBodyNaifId} not found for satellite ${satellite.id}`);
             return totalAccel;
         }
-        // Satellite's global position
+        // Convert satellite from planet-centric to solar system coordinates
         const satGlobalPos = satellite.position.clone().add(centralBody.position);
 
-        // --- Compute satellite's global acceleration ---
+        // === GRAVITATIONAL ACCELERATION FROM SIGNIFICANT BODIES ONLY ===
+        // Apply sphere of influence filtering to avoid computational issues
+        const significantBodies = this._getSignificantBodies(satellite, centralBody);
+        
         for (const [bodyId, body] of Object.entries(this.bodies)) {
-            const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
-            const distance = r.length();
             let accVec = new THREE.Vector3();
-            if (distance > 0) {
-                const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-                accVec.copy(r).multiplyScalar(gravAccel);
-                totalAccel.add(accVec);
+            
+            // Only compute forces from significant bodies or the central body
+            if (bodyId == satellite.centralBodyNaifId || significantBodies.has(Number(bodyId))) {
+                const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
+                const distance = r.length();
+                
+                if (distance > 0) {
+                    const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
+                    accVec.copy(r).multiplyScalar(gravAccel);
+                    totalAccel.add(accVec);
+                }
             }
+            // Store acceleration vector (zero for non-significant bodies)
             a_bodies[bodyId] = [accVec.x, accVec.y, accVec.z];
         }
 
-        // --- Compute central body's global acceleration ---
+        // === COMPUTE CENTRAL BODY'S ACCELERATION (for reference frame correction) ===
+        // Only compute from the same significant bodies to maintain consistency
         const centralAccel = new THREE.Vector3();
         for (const [bodyId, body] of Object.entries(this.bodies)) {
             if (bodyId == satellite.centralBodyNaifId) continue; // skip self
-            const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
-            const distance = r.length();
-            if (distance > 0) {
-                const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-                centralAccel.add(r.multiplyScalar(gravAccel));
+            
+            // Only include significant bodies in central body acceleration calculation  
+            if (significantBodies.has(Number(bodyId))) {
+                const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
+                const distance = r.length();
+                if (distance > 0) {
+                    const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
+                    centralAccel.add(r.multiplyScalar(gravAccel));
+                }
             }
         }
 
-        // --- Subtract central body's acceleration to get planet-centric acceleration ---
+        // Subtract central body's acceleration to get planet-centric acceleration
         totalAccel.sub(centralAccel);
 
-        // Attach per-body gravity to satellite for UI
+        // === J2 PERTURBATION (Earth oblateness) ===
+        const j2Accel = this._computeJ2Perturbation(satellite, centralBody);
+        totalAccel.add(j2Accel);
+
+        // === ATMOSPHERIC DRAG ===
+        const dragAccel = this._computeAtmosphericDrag(satellite);
+        totalAccel.add(dragAccel);
+
+        // === STORE FORCE COMPONENTS FOR VISUALIZATION ===
         satellite.a_bodies = a_bodies;
-        satellite.a_j2 = [0, 0, 0];
-        satellite.a_drag = [0, 0, 0];
+        satellite.a_j2 = [j2Accel.x, j2Accel.y, j2Accel.z];
+        satellite.a_drag = [dragAccel.x, dragAccel.y, dragAccel.z];
         satellite.a_total = [totalAccel.x, totalAccel.y, totalAccel.z];
+        
         return totalAccel;
+    }
+
+    /**
+     * Compute J2 perturbation acceleration (Earth's oblateness effect)
+     */
+    _computeJ2Perturbation(satellite, centralBody) {
+        // Only apply J2 for Earth (NAIF ID 399) for now
+        if (satellite.centralBodyNaifId !== 399) {
+            return new THREE.Vector3(0, 0, 0);
+        }
+
+        // Earth's J2 coefficient and radius
+        const J2 = 1.08262668e-3; // Earth's J2
+        const Re = 6378.137; // Earth's equatorial radius in km
+        const mu = Constants.G * centralBody.mass; // Gravitational parameter
+
+        // Satellite position relative to central body (planet-centric)
+        const r = satellite.position.clone();
+        const rMag = r.length();
+        
+        if (rMag < Re * 1.1) {
+            // Too close to surface, skip J2 calculation
+            return new THREE.Vector3(0, 0, 0);
+        }
+
+        // Get central body's orientation quaternion to determine pole direction
+        const centralBodyState = this.bodies[satellite.centralBodyNaifId];
+        let poleDirection = new THREE.Vector3(0, 0, 1); // Default to Z-axis
+        
+        if (centralBodyState?.quaternion) {
+            // Transform Z-axis by body's quaternion to get actual pole direction
+            poleDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(
+                new THREE.Quaternion(...centralBodyState.quaternion)
+            );
+        }
+
+        // Project satellite position onto pole direction to get z-component
+        const z = r.dot(poleDirection);
+        
+        // J2 acceleration components
+        const factor = -1.5 * J2 * mu * (Re * Re) / (rMag ** 5);
+        
+        // Radial component
+        const radialComp = r.clone().multiplyScalar(factor * (1 - 5 * (z * z) / (rMag * rMag)));
+        
+        // Polar component  
+        const polarComp = poleDirection.clone().multiplyScalar(factor * z * (3 - 5 * (z * z) / (rMag * rMag)));
+        
+        return radialComp.add(polarComp);
+    }
+
+    /**
+     * Compute atmospheric drag acceleration
+     */
+    _computeAtmosphericDrag(satellite) {
+        // Only apply drag for Earth (NAIF ID 399) for now
+        if (satellite.centralBodyNaifId !== 399) {
+            return new THREE.Vector3(0, 0, 0);
+        }
+
+        const r = satellite.position.clone();
+        const altitude = r.length() - 6378.137; // Altitude above Earth surface in km
+        
+        // No drag above 1000 km altitude
+        if (altitude > 1000 || altitude < 80) {
+            return new THREE.Vector3(0, 0, 0);
+        }
+
+        // Simplified atmospheric density model (exponential)
+        const h0 = 200; // Reference altitude (km)
+        const rho0 = 2.789e-13; // Reference density (kg/m³) at 200km
+        const H = 50; // Scale height (km)
+        const density = rho0 * Math.exp(-(altitude - h0) / H);
+
+        // Satellite properties (simplified)
+        const mass = satellite.mass || 100; // kg
+        const area = satellite.area || 1; // m² cross-sectional area
+        const Cd = satellite.dragCoeff || 2.2; // Drag coefficient
+
+        // Velocity relative to rotating atmosphere
+        // For simplicity, assume atmosphere rotates with the planet
+        const atmosphereVel = new THREE.Vector3(0, 0, 0); // Simplified: no atmosphere rotation
+        const relativeVel = satellite.velocity.clone().sub(atmosphereVel);
+        const velMag = relativeVel.length() * 1000; // Convert km/s to m/s
+        
+        if (velMag === 0) {
+            return new THREE.Vector3(0, 0, 0);
+        }
+
+        // Drag force magnitude: F = -0.5 * rho * v² * Cd * A
+        const dragMag = 0.5 * density * velMag * velMag * Cd * area / mass;
+        
+        // Drag direction is opposite to velocity
+        const dragDirection = relativeVel.clone().normalize().multiplyScalar(-1);
+        
+        // Convert back to km/s²
+        return dragDirection.multiplyScalar(dragMag / 1000);
+    }
+
+    /**
+     * Determine which bodies have significant gravitational influence on the satellite
+     * This prevents computational issues from distant planetary perturbations
+     */
+    _getSignificantBodies(satellite, centralBody) {
+        const significantBodies = new Set();
+        const satGlobalPos = satellite.position.clone().add(centralBody.position);
+        const satAltitude = satellite.position.length(); // Distance from central body center
+        
+        // Define sphere of influence based on central body and satellite altitude
+        let sphereOfInfluence;
+        
+        switch (satellite.centralBodyNaifId) {
+            case 399: // Earth
+                sphereOfInfluence = Math.max(1e6, satAltitude * 5); // At least 1M km or 5x satellite altitude
+                // Always include Moon for Earth satellites
+                if (this.bodies[301]) significantBodies.add(301); // Moon
+                // Include Sun for high Earth orbits
+                if (satAltitude > 100000) significantBodies.add(10); // Sun for high orbits
+                break;
+                
+            case 499: // Mars  
+                sphereOfInfluence = Math.max(5e5, satAltitude * 3); // 500k km or 3x altitude
+                // Include Sun for Mars satellites
+                significantBodies.add(10); // Sun
+                // Include Jupiter for Mars (significant perturbation)
+                if (this.bodies[599]) significantBodies.add(599); // Jupiter
+                break;
+                
+            case 301: // Moon (if satellite around Moon)
+                sphereOfInfluence = Math.max(1e5, satAltitude * 2); // 100k km or 2x altitude  
+                // Include Earth for lunar satellites
+                significantBodies.add(399); // Earth
+                significantBodies.add(10);  // Sun
+                break;
+                
+            default:
+                // For other bodies, use conservative sphere of influence
+                sphereOfInfluence = Math.max(1e6, satAltitude * 10);
+                // Always include Sun
+                significantBodies.add(10); // Sun
+                break;
+        }
+        
+        // Check all bodies within sphere of influence
+        for (const [bodyId, body] of Object.entries(this.bodies)) {
+            const bId = Number(bodyId);
+            if (bId === satellite.centralBodyNaifId) continue; // Skip central body (handled separately)
+            if (significantBodies.has(bId)) continue; // Already added
+            
+            const distance = body.position.distanceTo(satGlobalPos);
+            if (distance < sphereOfInfluence) {
+                // Additional check: only include if gravitational acceleration is significant
+                const gravAccel = (Constants.G * body.mass) / (distance * distance);
+                const centralGravAccel = (Constants.G * centralBody.mass) / (satAltitude * satAltitude);
+                
+                // Include if perturbation is at least 0.1% of central body's gravity
+                if (gravAccel > centralGravAccel * 0.001) {
+                    significantBodies.add(bId);
+                }
+            }
+        }
+        
+        return significantBodies;
     }
 
     _integrateRK4(satellite, acceleration, dt) {

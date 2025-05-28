@@ -19,7 +19,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
         latitude: 0,
         longitude: 0,
         altitude: 400,
-        azimuth: 0,
+        azimuth: 90, // Default to eastward for orbital motion
         velocity: 7.8,
         semiMajorAxis: 6778,
         eccentricity: 0,
@@ -37,10 +37,12 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
     const [popoverOpen, setPopoverOpen] = useState(false);
     const searchInputRef = useRef(null);
 
-    // auto-calc circular velocity on altitude or circular flag change
+    // Calculate circular orbital velocity for display and auto-fill
+    const [circularVelocity, setCircularVelocity] = useState(0);
+    
     useEffect(() => {
-        if (mode === 'latlon' && formData.circular && selectedBody) {
-            // Use selected body's radius (km) and mass (kg)
+        if (mode === 'latlon' && selectedBody) {
+            // Use selected body's radius (km) and mass (kg) 
             const radiusKm = Number(selectedBody.radius);
             const massKg = Number(selectedBody.mass);
             const altitudeKm = Number(formData.altitude);
@@ -49,15 +51,20 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                 !isNaN(massKg) && isFinite(massKg) &&
                 !isNaN(altitudeKm) && isFinite(altitudeKm)
             ) {
-                // Here, PhysicsUtils.calculateOrbitalVelocity expects mass in kg, radius in kilometers
+                // Calculate circular orbital velocity for this altitude
                 const rKm = (radiusKm + altitudeKm);
                 const vCirc = PhysicsUtils.calculateOrbitalVelocity(massKg, rKm);
                 if (!isNaN(vCirc) && isFinite(vCirc)) {
-                    setFormData(prev => ({ ...prev, velocity: vCirc }));
+                    setCircularVelocity(vCirc);
+                    
+                    // Auto-fill velocity field when circular toggle is enabled
+                    if (formData.circular) {
+                        setFormData(prev => ({ ...prev, velocity: vCirc }));
+                    }
                 }
             }
         }
-    }, [mode, formData.circular, formData.altitude, selectedBody]);
+    }, [mode, formData.altitude, selectedBody, formData.circular]);
 
     useEffect(() => {
         if (popoverOpen && searchInputRef.current) {
@@ -97,11 +104,22 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
             }
             if (type === 'number') {
                 const parsed = parseFloat(value);
-                return {
+                const newData = {
                     ...prev,
                     // If parsed is NaN, keep previous; otherwise use parsed
                     [field]: isNaN(parsed) ? prev[field] : parsed
                 };
+                
+                // Auto-check circular toggle if velocity matches calculated circular velocity
+                if (field === 'velocity' && !isNaN(parsed) && Math.abs(parsed - circularVelocity) < 0.01) {
+                    newData.circular = true;
+                }
+                // Auto-uncheck circular toggle if velocity is manually changed away from circular
+                else if (field === 'velocity' && !isNaN(parsed) && prev.circular && Math.abs(parsed - circularVelocity) > 0.01) {
+                    newData.circular = false;
+                }
+                
+                return newData;
             }
             // For text inputs (e.g. name), keep the raw value
             return { ...prev, [field]: value };
@@ -349,7 +367,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                 <Label htmlFor="circular" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
                                     Circular:
                                 </Label>
-                                <div className="col-span-9">
+                                <div className="col-span-9 flex items-center gap-2">
                                     <input
                                         type="checkbox"
                                         id="circular"
@@ -358,6 +376,26 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                         onChange={handleInputChange}
                                         className="h-4 w-4"
                                     />
+                                    <span className="text-xs text-muted-foreground">
+                                        ({circularVelocity.toFixed(3)} km/s)
+                                    </span>
+                                    {!formData.circular && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 px-2 text-xs"
+                                            onClick={() => {
+                                                setFormData(prev => ({ 
+                                                    ...prev, 
+                                                    velocity: circularVelocity, 
+                                                    circular: true 
+                                                }));
+                                            }}
+                                        >
+                                            Use
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
                         </>

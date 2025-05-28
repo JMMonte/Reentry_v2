@@ -113,7 +113,7 @@ export class OrbitManager {
                 const parentConfig = calculator._getFullBodyConfig(parentNaif);
                 let GM = parentConfig?.GM;
                 if (!GM && parentConfig?.mass) {
-                    GM = 6.67430e-20 * parentConfig.mass; // Convert to km³/s²
+                    GM = Constants.G * parentConfig.mass; // Convert to km³/s²
                 }
                 if (GM) {
                     periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(a, 3) / GM);

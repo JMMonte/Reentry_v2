@@ -5,8 +5,10 @@ import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
+import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
 
 export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenManeuver, physics }) {
+  const { celestialBodies } = useCelestialBodies();
   const [apsisData, setApsisData] = useState(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [dragData, setDragData] = useState(null);
@@ -165,6 +167,14 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       ? Math.sqrt(arr[0] ** 2 + arr[1] ** 2 + arr[2] ** 2)
       : 0;
 
+  // Helper to get body name from NAIF ID using celestial bodies data
+  const getBodyName = (naifId) => {
+    const body = celestialBodies.find(b => 
+      b.naif_id === parseInt(naifId) || b.naifId === parseInt(naifId)
+    );
+    return body?.name || `Body ${naifId}`;
+  };
+
   if (!satellite) return null;
 
   // Warn if no physics data is available
@@ -286,14 +296,25 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                     <span className='text-[10px] font-mono'>{formatNumber(physics.a_j2[2])}</span>
                   </div>
                 )}
-                {physics.a_bodies && Object.entries(physics.a_bodies).map(([bodyId, vec]) => (
-                  <div className='grid grid-cols-5 gap-0.5' key={bodyId}>
-                    <span className='text-[10px] font-mono text-muted-foreground'>a_body {bodyId}:</span>
-                    <span className='text-[10px] font-mono'>{formatNumber(vec[0])}</span>
-                    <span className='text-[10px] font-mono'>{formatNumber(vec[1])}</span>
-                    <span className='text-[10px] font-mono'>{formatNumber(vec[2])}</span>
+                {physics.a_bodies && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-semibold">Gravitational Forces</div>
+                    {Object.entries(physics.a_bodies).map(([bodyId, vec]) => {
+                      const magnitude = vectorLength(vec);
+                      const bodyName = getBodyName(bodyId);
+                      return (
+                        <div className='grid grid-cols-6 gap-0.5 text-[9px]' key={bodyId}>
+                          <span className='text-muted-foreground'>{bodyName}:</span>
+                          <span className='font-mono'>{magnitude.toExponential(2)}</span>
+                          <span className='font-mono'>{formatNumber(vec[0])}</span>
+                          <span className='font-mono'>{formatNumber(vec[1])}</span>
+                          <span className='font-mono'>{formatNumber(vec[2])}</span>
+                          <span className='text-muted-foreground'>km/s²</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
+                )}
               </div>
             )}
             {renderVector(physics && toVector3(physics.position), "Position")}

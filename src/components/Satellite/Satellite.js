@@ -67,25 +67,12 @@ export class Satellite {
      */
     updateVisualsFromState(satState) {
         if (this.visualizer?.mesh && satState.position) {
-            let localPos = satState.position;
-            // If mesh is parented to a planet group, use local position
-            if (this.centralBodyNaifId && this.app3d?.bodiesByNaifId?.[this.centralBodyNaifId]) {
-                const centralBody = this.app3d.bodiesByNaifId[this.centralBodyNaifId];
-                const cbPos = centralBody.targetPosition || centralBody.position;
-                if (cbPos && Array.isArray(cbPos.toArray ? cbPos.toArray() : cbPos)) {
-                    // cbPos may be a THREE.Vector3 or array
-                    const cbArr = cbPos.toArray ? cbPos.toArray() : cbPos;
-                    localPos = [
-                        satState.position[0] - cbArr[0],
-                        satState.position[1] - cbArr[1],
-                        satState.position[2] - cbArr[2],
-                    ];
-                }
-            }
+            // satState.position is already planet-centric (relative to central body)
+            // Since the mesh is parented to the central body's group, we can use it directly
             this.visualizer.mesh.position.set(
-                localPos[0],
-                localPos[1],
-                localPos[2]
+                satState.position[0],
+                satState.position[1],
+                satState.position[2]
             );
             
             // Store physics state for other components

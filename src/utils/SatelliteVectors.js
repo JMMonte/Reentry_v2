@@ -107,14 +107,9 @@ export class SatelliteVectors {
         arrows.velocity = { arrow: makeArrow(0xff0000), label: this._makeLabel('v→', '#ff0000', new THREE.Vector3(0, 0, 0)) };
         // Orientation
         arrows.orientation = { arrow: makeArrow(0x0000ff), label: this._makeLabel('y→', '#0000ff', new THREE.Vector3(0, 0, 0)) };
-        // Per-body gravity
-        this.gravitySources.forEach((src) => {
-            const key = `body_${src.name}`;
-            arrows[key] = {
-                arrow: makeArrow(0x00ff00),
-                label: this._makeLabel((src.body.symbol || src.name || 'g') + '→', '#00ff00', new THREE.Vector3(0, 0, 0))
-            };
-        });
+        // Per-body gravity (dynamically created based on physics engine data)
+        // We'll create these dynamically in _updateEntry based on actual physics data
+        // This ensures we only show vectors for bodies that actually affect the satellite
         // J2
         arrows.j2 = { arrow: makeArrow(0xff00ff), label: this._makeLabel('J2→', '#ff00ff', new THREE.Vector3(0, 0, 0)) };
         // Drag
@@ -141,6 +136,16 @@ export class SatelliteVectors {
                 mesh.remove(obj.arrow);
                 mesh.remove(obj.label);
             }
+            // Properly dispose of Three.js objects to prevent memory leaks
+            if (obj.arrow) {
+                obj.arrow.line?.geometry?.dispose();
+                obj.arrow.line?.material?.dispose();
+                obj.arrow.cone?.geometry?.dispose();
+                obj.arrow.cone?.material?.dispose();
+            }
+            if (obj.label?.element) {
+                obj.label.element.remove();
+            }
             this.labels = this.labels.filter(l => l !== obj.label);
         });
         this._entries.delete(id);
@@ -161,68 +166,167 @@ export class SatelliteVectors {
         mesh.getWorldScale(meshWorldScale);
         const avgScale = (meshWorldScale.x + meshWorldScale.y + meshWorldScale.z) / 3;
         const len = (camDist * this.cfg.lengthFactor) / (avgScale || 1);
+        
         // Helper to set direction in local space
-        const setArrow = (arrow, worldDir) => {
+        const setArrow = (arrow, worldDir, scaleFactor = 1) => {
+            if (!worldDir || worldDir.length() === 0) {
+                arrow.visible = false;
+                return;
+            }
+            arrow.visible = true;
             const localDir = worldDir.clone().applyMatrix4(invWorldMatrix).normalize();
             arrow.setDirection(localDir);
-            arrow.setLength(len, len * this.cfg.headLengthFactor, len * this.cfg.headWidthFactor);
+            const adjustedLen = len * scaleFactor;
+            arrow.setLength(adjustedLen, adjustedLen * this.cfg.headLengthFactor, adjustedLen * this.cfg.headWidthFactor);
         };
-        const setLabel = (label, worldDir) => {
-            const localDir = worldDir.clone().applyMatrix4(invWorldMatrix).normalize();
-            label.position.copy(localDir.clone().multiplyScalar(len));
-        };
-        // Velocity (world velocity = planet-centric + central body velocity)
-        let worldVel = null;
-        try {
-            const centralBodyId = sat.centralBodyNaifId;
-            const bodies = this.app3d.physicsIntegration?.physicsEngine?.bodies;
-            const cb = bodies?.[centralBodyId];
-            if (cb && cb.velocity) {
-                worldVel = this._tmpDir.copy(sat.velocity).add(cb.velocity).normalize();
-            } else {
-                worldVel = this._tmpDir.copy(sat.velocity).normalize();
+        
+        const setLabel = (label, worldDir, scaleFactor = 1) => {
+            if (!worldDir || worldDir.length() === 0) {
+                label.visible = false;
+                return;
             }
-        } catch {
-            worldVel = this._tmpDir.copy(sat.velocity).normalize();
+            label.visible = true;
+            const localDir = worldDir.clone().applyMatrix4(invWorldMatrix).normalize();
+            label.position.copy(localDir.clone().multiplyScalar(len * scaleFactor));
+        };
+
+        // Get physics state from PhysicsEngine (single source of truth)
+        const physicsState = this.app3d.physicsIntegration?.physicsEngine?.getSimulationState();
+        const satPhysicsData = physicsState?.satellites?.[sat.id];
+        
+        if (!satPhysicsData) {
+            // Hide all vectors if no physics data available
+            Object.values(arrows).forEach(({ arrow, label }) => {
+                arrow.visible = false;
+                label.visible = false;
+            });
+            return;
         }
-        setArrow(arrows.velocity.arrow, worldVel);
-        setLabel(arrows.velocity.label, worldVel);
-        // Orientation (use mesh's actual world +Y direction)
+
+        // === VELOCITY VECTOR ===
+        // Convert from physics engine coordinate system (planet-centric km/s) to world coordinates
+        let worldVelocity = null;
+        if (satPhysicsData.velocity && Array.isArray(satPhysicsData.velocity)) {
+            const satVel = new THREE.Vector3(...satPhysicsData.velocity);
+            // Get central body velocity to compute absolute velocity
+            const centralBodyId = satPhysicsData.centralBodyNaifId || sat.centralBodyNaifId;
+            const centralBody = physicsState?.bodies?.[centralBodyId];
+            
+            if (centralBody?.velocity && Array.isArray(centralBody.velocity)) {
+                const cbVel = new THREE.Vector3(...centralBody.velocity);
+                worldVelocity = satVel.clone().add(cbVel);
+            } else {
+                worldVelocity = satVel.clone();
+            }
+            
+            // Scale velocity vector for better visibility (velocity is typically much larger than acceleration)
+            const velMagnitude = worldVelocity.length();
+            if (velMagnitude > 0) {
+                worldVelocity.normalize();
+                setArrow(arrows.velocity.arrow, worldVelocity, 1.2); // Slightly longer for visibility
+                setLabel(arrows.velocity.label, worldVelocity, 1.2);
+            }
+        }
+
+        // === ORIENTATION VECTOR ===
+        // Use satellite mesh's actual world +Y direction (pointing direction)
         const meshWorldPos2 = new THREE.Vector3();
         mesh.getWorldPosition(meshWorldPos2);
         const meshWorldTip = mesh.localToWorld(new THREE.Vector3(0, 1, 0));
         const orientDir = meshWorldTip.sub(meshWorldPos2).normalize();
         setArrow(arrows.orientation.arrow, orientDir);
         setLabel(arrows.orientation.label, orientDir);
-        // Per-body gravity
-        if (sat.a_bodies) {
-            Object.entries(sat.a_bodies).forEach(([bodyId, vec]) => {
-                const key = `body_${bodyId}`;
-                if (arrows[key]) {
-                    const dir = this._tmpAcc.set(vec[0], vec[1], vec[2]).normalize();
-                    setArrow(arrows[key].arrow, dir);
-                    setLabel(arrows[key].label, dir);
+
+        // === GRAVITATIONAL ACCELERATION VECTORS ===
+        // Per-body gravity vectors from physics engine (dynamically create as needed)
+        if (satPhysicsData.a_bodies && typeof satPhysicsData.a_bodies === 'object') {
+            Object.entries(satPhysicsData.a_bodies).forEach(([bodyId, accArray]) => {
+                const bodyName = this._getBodyNameFromId(bodyId, physicsState);
+                const key = `body_${bodyName}`;
+                
+                // Create arrow if it doesn't exist
+                if (!arrows[key] && Array.isArray(accArray) && accArray.length === 3) {
+                    const accVec = new THREE.Vector3(...accArray);
+                    if (accVec.length() > 1e-10) { // Only create if there's meaningful acceleration
+                        const makeArrow = color => new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 0, color);
+                        arrows[key] = {
+                            arrow: makeArrow(0x00ff00),
+                            label: this._makeLabel(`${bodyName}→`, '#00ff00', new THREE.Vector3(0, 0, 0))
+                        };
+                        // Add to mesh
+                        arrows[key].arrow.position.set(0, 0, 0);
+                        arrows[key].label.position.set(0, 0, 0);
+                        mesh.add(arrows[key].arrow);
+                        mesh.add(arrows[key].label);
+                        this.labels.push(arrows[key].label);
+                    }
+                }
+                
+                // Update existing arrow
+                if (arrows[key] && Array.isArray(accArray) && accArray.length === 3) {
+                    const accVec = new THREE.Vector3(...accArray);
+                    if (accVec.length() > 1e-10) {
+                        setArrow(arrows[key].arrow, accVec.normalize(), 0.8);
+                        setLabel(arrows[key].label, accVec.normalize(), 0.8);
+                    } else {
+                        arrows[key].arrow.visible = false;
+                        arrows[key].label.visible = false;
+                    }
                 }
             });
         }
-        // J2
-        if (sat.a_j2 && arrows.j2) {
-            const dir = this._tmpAcc.set(sat.a_j2[0], sat.a_j2[1], sat.a_j2[2]).normalize();
-            setArrow(arrows.j2.arrow, dir);
-            setLabel(arrows.j2.label, dir);
+
+        // === J2 PERTURBATION VECTOR ===
+        if (satPhysicsData.a_j2 && Array.isArray(satPhysicsData.a_j2) && arrows.j2) {
+            const j2Vec = new THREE.Vector3(...satPhysicsData.a_j2);
+            if (j2Vec.length() > 0) {
+                setArrow(arrows.j2.arrow, j2Vec.normalize(), 0.6);
+                setLabel(arrows.j2.label, j2Vec.normalize(), 0.6);
+            } else {
+                arrows.j2.arrow.visible = false;
+                arrows.j2.label.visible = false;
+            }
         }
-        // Drag
-        if (sat.a_drag && arrows.drag) {
-            const dir = this._tmpAcc.set(sat.a_drag[0], sat.a_drag[1], sat.a_drag[2]).normalize();
-            setArrow(arrows.drag.arrow, dir);
-            setLabel(arrows.drag.label, dir);
+
+        // === ATMOSPHERIC DRAG VECTOR ===
+        if (satPhysicsData.a_drag && Array.isArray(satPhysicsData.a_drag) && arrows.drag) {
+            const dragVec = new THREE.Vector3(...satPhysicsData.a_drag);
+            if (dragVec.length() > 0) {
+                setArrow(arrows.drag.arrow, dragVec.normalize(), 0.6);
+                setLabel(arrows.drag.label, dragVec.normalize(), 0.6);
+            } else {
+                arrows.drag.arrow.visible = false;
+                arrows.drag.label.visible = false;
+            }
         }
-        // Total
-        if (sat.a_total && arrows.total) {
-            const dir = this._tmpAcc.set(sat.a_total[0], sat.a_total[1], sat.a_total[2]).normalize();
-            setArrow(arrows.total.arrow, dir);
-            setLabel(arrows.total.label, dir);
+
+        // === TOTAL ACCELERATION VECTOR ===
+        if (satPhysicsData.a_total && Array.isArray(satPhysicsData.a_total) && arrows.total) {
+            const totalVec = new THREE.Vector3(...satPhysicsData.a_total);
+            if (totalVec.length() > 0) {
+                setArrow(arrows.total.arrow, totalVec.normalize(), 1.0);
+                setLabel(arrows.total.label, totalVec.normalize(), 1.0);
+            } else {
+                arrows.total.arrow.visible = false;
+                arrows.total.label.visible = false;
+            }
         }
+    }
+
+    /**
+     * Get human-readable body name from NAIF ID
+     */
+    _getBodyNameFromId(naifId, physicsState) {
+        const body = physicsState?.bodies?.[naifId];
+        if (body?.name) {
+            return body.name;
+        }
+        // Fallback to common NAIF IDs
+        const naifNames = {
+            10: 'Sun', 199: 'Mercury', 299: 'Venus', 399: 'Earth', 
+            499: 'Mars', 599: 'Jupiter', 699: 'Saturn', 799: 'Uranus', 899: 'Neptune'
+        };
+        return naifNames[naifId] || naifId.toString();
     }
 
     _makeLabel(text, color, pos) {
