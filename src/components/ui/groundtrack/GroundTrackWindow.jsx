@@ -2,7 +2,6 @@
 import React, {
     useEffect,
     useRef,
-    useReducer,
     useState,
     useMemo,
 } from 'react';
@@ -12,31 +11,9 @@ import { usePlanetList } from './hooks';
 import GroundTrackCanvas from './GroundTrackCanvas.jsx';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 import { Button } from '../button';
-
-// ---------------------------------------------------------------------------
-// Layers state machine
-const initialLayers = {
-    grid: true, // toggle latitude/longitude grid
-    cities: true,
-    airports: true,
-    spaceports: true,
-    groundStations: true,
-    observatories: true,
-    missions: true,
-    countryBorders: true,
-    states: true,
-};
-
-function layersReducer(state, action) {
-    switch (action.type) {
-        case 'TOGGLE':
-            return { ...state, [action.key]: !state[action.key] };
-        case 'SET':
-            return { ...state, ...action.payload };
-        default:
-            return state;
-    }
-}
+import { projectToPlanetLatLon } from '../../../utils/MapProjection';
+import * as THREE from 'three';
+import { Switch } from '../switch';
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -53,7 +30,17 @@ export function GroundTrackWindow({
     const [selectedPlanetNaifId, setSelectedPlanetNaifId] = useState(
         planets?.[0]?.naifId || 399
     );
-    const [layers, dispatchLayers] = useReducer(layersReducer, initialLayers);
+    const [activeLayers, setActiveLayers] = React.useState({
+        grid: true,
+        countryBorders: false,
+        states: false,
+        cities: false,
+        airports: false,
+        spaceports: false,
+        groundStations: false,
+        observatories: false,
+        missions: false,
+    });
     const [showCoverage] = useState(false);
 
     const planetList = usePlanetList(planets).filter(
@@ -88,6 +75,15 @@ export function GroundTrackWindow({
             return acc;
         }, {});
     }, [planet]);
+
+    // Compute groundtrack points for each satellite
+    const planetQuat = planet?.getMesh?.()?.quaternion || planet?.quaternion;
+    const planetRadius = planet?.radius;
+    const groundtracks = Object.values(filteredSatellites).map(sat => {
+        const pos = new THREE.Vector3(...sat.position);
+        const { lat, lon } = projectToPlanetLatLon(pos, planetQuat, planetRadius);
+        return { id: sat.id, lat, lon };
+    });
 
     // Hook: subscribe to groundTrackUpdated
     useEffect(() => {
@@ -157,6 +153,7 @@ export function GroundTrackWindow({
     useEffect(() => {
         const cfg = planet?.config?.surfaceOptions || {};
         const payload = {
+            grid: true,
             cities: !!cfg.addCities,
             airports: !!cfg.addAirports,
             spaceports: !!cfg.addSpaceports,
@@ -166,7 +163,7 @@ export function GroundTrackWindow({
             countryBorders: !!cfg.addCountryBorders,
             states: !!cfg.addStates,
         };
-        dispatchLayers({ type: 'SET', payload });
+        setActiveLayers(payload);
     }, [planet]);
 
     // UI: planet selector (DropdownMenu)
@@ -191,6 +188,35 @@ export function GroundTrackWindow({
         </DropdownMenu>
     );
 
+    // UI: layer toggles for available features
+    const availableLayers = {
+        grid: true,
+        countryBorders: !!planet?.surface?.countryGeo,
+        states: !!planet?.surface?.stateGeo,
+        cities: !!planet?.surface?.cities,
+        airports: !!planet?.surface?.airports,
+        spaceports: !!planet?.surface?.spaceports,
+        groundStations: !!planet?.surface?.groundStations,
+        observatories: !!planet?.surface?.observatories,
+        missions: !!planet?.surface?.missions,
+    };
+    const layerToggles = (
+        <div className="flex flex-wrap gap-2 mb-2">
+            {Object.entries(availableLayers).map(([key, available]) =>
+                available ? (
+                    <label key={key} className="flex items-center gap-1 text-xs">
+                        <Switch
+                            checked={!!activeLayers[key]}
+                            onCheckedChange={v => setActiveLayers(l => ({ ...l, [key]: v }))}
+                            id={`layer-toggle-${key}`}
+                        />
+                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
+                    </label>
+                ) : null
+            )}
+        </div>
+    );
+
     return (
         <DraggableModal
             title={`Ground-track: ${planet?.name || ''}`}
@@ -203,6 +229,7 @@ export function GroundTrackWindow({
             minWidth={300}
             minHeight={200}
         >
+            {layerToggles}
             <GroundTrackCanvas
                 map={planet?.getSurfaceTexture?.()}
                 planet={planet}
@@ -210,9 +237,10 @@ export function GroundTrackWindow({
                 height={512}
                 satellites={filteredSatellites}
                 tracks={tracks}
-                layers={layers}
+                layers={activeLayers}
                 showCoverage={showCoverage}
                 poiData={poiData}
+                groundtracks={groundtracks}
             />
         </DraggableModal>
     );

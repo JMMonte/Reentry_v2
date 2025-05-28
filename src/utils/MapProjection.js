@@ -65,3 +65,22 @@ export function projectWorldPosToCanvas(eciWorldPos, planet, width, height, epoc
     return { x, y, latitude: geo.latitude, longitude: geo.longitude, altitude: geo.altitude };
 }
 
+/**
+ * Project a satellite's position (in planet-centric ECI) to planet-fixed lat/lon using the planet's quaternion.
+ * @param {THREE.Vector3} satPos - Satellite position in planet-centric ECI (km)
+ * @param {THREE.Quaternion} planetQuat - Planet's current orientation (Three.js quaternion)
+ * @param {number} planetRadius - Planet's mean radius (km)
+ * @returns {{lat: number, lon: number, alt: number}}
+ */
+export function projectToPlanetLatLon(satPos, planetQuat, planetRadius) {
+    // Rotate satellite position into planet-fixed frame
+    const posFixed = satPos.clone().applyQuaternion(planetQuat.clone().invert());
+
+    // Convert to spherical coordinates
+    const r = posFixed.length();
+    const lat = Math.asin(posFixed.z / r) * 180 / Math.PI;
+    const lon = Math.atan2(posFixed.y, posFixed.x) * 180 / Math.PI;
+    const alt = r - planetRadius;
+    return { lat, lon, alt };
+}
+

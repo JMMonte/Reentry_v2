@@ -291,11 +291,19 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               <div className="text-[10px] font-semibold">Current Altitude</div>
               <div className="grid grid-cols-4 gap-0.5">
                 <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
-                <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.getRadialAltitude())} km</span>
+                <span className="col-span-3 text-[10px] font-mono">
+                  {physics?.altitude_radial !== undefined
+                    ? formatNumber(physics.altitude_radial)
+                    : 'N/A'} km
+                </span>
               </div>
               <div className="grid grid-cols-4 gap-0.5">
                 <span className="text-[10px] font-mono text-muted-foreground">Surface:</span>
-                <span className="col-span-3 text-[10px] font-mono">{formatNumber(satellite.getSurfaceAltitude())} km</span>
+                <span className="col-span-3 text-[10px] font-mono">
+                  {physics?.altitude_surface !== undefined
+                    ? formatNumber(physics.altitude_surface)
+                    : 'N/A'} km
+                </span>
               </div>
             </div>
 

@@ -145,7 +145,7 @@ export async function createSceneObjects(app) {
     for (const [, config] of planetaryDataManager.naifToBody.entries()) {
         let bodyObj = null;
         if (config.type === 'star') {
-            bodyObj = new Sun(scene, timeUtils, config);
+            bodyObj = new Sun(scene, timeUtils, config, textureManager);
             app.stars.push(bodyObj);
             if (config.name.toLowerCase() === 'sun') app.sun = bodyObj;
         } else {

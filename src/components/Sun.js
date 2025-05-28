@@ -3,10 +3,11 @@ import { Constants } from '../utils/Constants.js';
 import { Lensflare, LensflareElement } from '../addons/Lensflare.js';
 
 export class Sun {
-    constructor(scene, timeUtils, config) {
+    constructor(scene, timeUtils, config, textureManager) {
         this.scene = scene;
         this.timeUtils = timeUtils;  // Inject TimeUtils instance directly into Sun
         this.config = config; // Store config
+        this.textureManager = textureManager;
         this.symbol = '☉';
         this.name = config.name || 'sun';
         this.nameLower = this.name.toLowerCase();
@@ -23,9 +24,12 @@ export class Sun {
         // Define a reference distance (e.g., Earth's average orbit radius) for 1x scale
         this.referenceDistance = Constants.AU; // Earth's average orbital radius
 
+        // Get the sun surface texture from the texture manager
+        const sunTexture = this.textureManager?.getTexture('sunTexture');
 
-        const geometry = new THREE.SphereGeometry(this.radius, 32, 32); // Approximate Sun's radius, scaled down
+        const geometry = new THREE.SphereGeometry(this.radius, 128, 128); // Approximate Sun's radius, scaled down
         const material = new THREE.MeshPhongMaterial({
+            map: sunTexture, // Use the sun texture as the diffuse map
             color: 0xFFFFFF,  // Sun's color
             emissive: 0xFFFFFF,  // Glowing color
             emissiveIntensity: 1.0,
@@ -96,5 +100,11 @@ export class Sun {
     // Add a getter for the main mesh, for selection/camera logic compatibility
     getMesh() {
         return this.sun;
+    }
+
+    // Provide the surface texture as an HTMLImageElement for groundtrack UI
+    getSurfaceTexture() {
+        const tex = this.textureManager?.getTexture('sunTexture');
+        return tex?.image || null;
     }
 }

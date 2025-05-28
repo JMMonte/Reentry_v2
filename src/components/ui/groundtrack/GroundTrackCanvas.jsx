@@ -16,6 +16,7 @@ export default function GroundTrackCanvas({
     layers,
     showCoverage,
     poiData,
+    groundtracks = [],
 }) {
     const canvasRef = useRef(null);
     const tracksRef = useRef(tracks);
@@ -29,15 +30,14 @@ export default function GroundTrackCanvas({
         const ctx = canvas.getContext('2d');
         const w = width;
         const h = height;
-        // Get current simulation time once per frame (fallback to real time)
-        const currentEpochMillis = planet && planet.timeManager
-            ? planet.timeManager.getSimulatedTime().getTime()
-            : Date.now();
 
         ctx.clearRect(0, 0, w, h);
         // draw equirectangular texture: prefer planet surface image, else offscreen map
         const imgSource = planet?.getSurfaceTexture?.() || map;
-        if (imgSource instanceof HTMLImageElement || imgSource instanceof HTMLCanvasElement) {
+        if (
+            (imgSource instanceof HTMLImageElement && imgSource.complete && imgSource.naturalWidth > 0) ||
+            imgSource instanceof HTMLCanvasElement
+        ) {
             ctx.drawImage(imgSource, 0, 0, w, h);
             // overlay our grid (to avoid baked grid on texture)
             drawGrid(ctx, w, h);
@@ -61,25 +61,10 @@ export default function GroundTrackCanvas({
             });
         }
 
-        // Draw current satellite positions by projecting ECI→canvas
-        Object.entries(tracksRef.current).forEach(([id, pts]) => {
-            if (!pts?.length) return;
-            const last = pts[pts.length - 1];
-            if (!last.position || last.time === undefined) return;
-
-            // Project last position to canvas (data from local physics engine, ECI in kilometers)
-            const { x, y } = projectWorldPosToCanvas(
-                new THREE.Vector3(
-                    last.position.x,
-                    last.position.y,
-                    last.position.z
-                ),
-                planet,
-                w,
-                h,
-                currentEpochMillis
-            );
-            const color = satsRef.current[id]?.color ?? 0xffffff;
+        // Draw current satellite positions using groundtracks (lat/lon)
+        groundtracks.forEach(({ id, lat, lon }) => {
+            const { x, y } = latLonToCanvas(lat, lon, width, height);
+            const color = satellites?.[id]?.color ?? 0xffffff;
             ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
             ctx.beginPath();
             ctx.arc(x, y, SAT_DOT_RADIUS, 0, 2 * Math.PI);
@@ -176,7 +161,7 @@ export default function GroundTrackCanvas({
         };
         if (layers.countryBorders && planet?.surface?.countryGeo) drawBorders(planet.surface.countryGeo, 'rgba(255,255,255,0.3)');
         if (layers.states && planet?.surface?.stateGeo) drawBorders(planet.surface.stateGeo, 'rgba(255,255,255,0.5)');
-    }, [map, width, height, layers, showCoverage, planet, poiData]);
+    }, [map, width, height, layers, showCoverage, planet, poiData, groundtracks, satellites]);
 
     useEffect(() => {
         let raf;
@@ -228,4 +213,11 @@ GroundTrackCanvas.propTypes = {
     }).isRequired,
     showCoverage: PropTypes.bool.isRequired,
     poiData: PropTypes.object,
+    groundtracks: PropTypes.arrayOf(
+        PropTypes.shape({
+            id: PropTypes.string.isRequired,
+            lat: PropTypes.number.isRequired,
+            lon: PropTypes.number.isRequired,
+        })
+    ),
 }; 

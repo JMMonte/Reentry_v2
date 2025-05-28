@@ -49,6 +49,7 @@ import nixTexture from '../assets/texture/placeholder.jpg';
 import hydraTexture from '../assets/texture/placeholder.jpg';
 import kerberosTexture from '../assets/texture/placeholder.jpg';
 import styxTexture from '../assets/texture/placeholder.jpg';
+import sunTexture from '../assets/texture/sun_surface_texture.png';
 
 export const textureDefinitions = [
     { key: 'earthTexture', src: earthTexture },
@@ -98,6 +99,7 @@ export const textureDefinitions = [
     { key: 'saturnRingsTexture', src: saturnRingTexture },
     { key: 'uranusRingsTexture', src: uranusRingTexture },
     { key: 'neptuneRingsTexture', src: neptuneRingTexture },
+    { key: 'sunTexture', src: sunTexture },
 ];
 
 export {

@@ -46,7 +46,7 @@ self.onmessage = async function (e) {
             },
             allowFullEllipse // now dynamic, not hardcoded
         );
-        // Positions are already in kilometers; just flatten to Float32Array for transfer
+        // Flatten to Float32Array for transfer
         const coords = new Float32Array(rawPtsWithTime.length * 3);
         for (let i = 0; i < rawPtsWithTime.length; i++) {
             const pos = rawPtsWithTime[i].position; // [x, y, z] in kilometers

@@ -387,6 +387,13 @@ export class PhysicsEngine {
         if (!satellite.centralBodyNaifId) {
             throw new Error('Satellite must specify centralBodyNaifId (NAIF ID of central body)');
         }
+        const centralBody = this.bodies[satellite.centralBodyNaifId];
+        if (centralBody) {
+            console.log(`[PhysicsEngine] Central body ${satellite.centralBodyNaifId} (${centralBody.name}): global position:`, centralBody.position?.toArray?.(), 'mass:', centralBody.mass);
+        } else {
+            console.warn(`[PhysicsEngine] Central body ${satellite.centralBodyNaifId} not found at satellite creation!`);
+        }
+        console.log('[PhysicsEngine] Satellite initial planet-centric position:', satellite.position, 'velocity:', satellite.velocity);
         this.satellites.set(String(satellite.id), {
             ...satellite,
             // All positions/velocities are planet-centric (relative to central body)
@@ -415,6 +422,43 @@ export class PhysicsEngine {
             const acceleration = this._computeSatelliteAcceleration(satellite);
             this._integrateRK4(satellite, acceleration, deltaTime);
             satellite.lastUpdate = new Date(this.simulationTime.getTime());
+
+            // --- SOI transition logic ---
+            // 1. Compute satellite's global position
+            const centralBody = this.bodies[satellite.centralBodyNaifId];
+            if (!centralBody) continue;
+            const satGlobalPos = satellite.position.clone().add(centralBody.position);
+            const satGlobalVel = satellite.velocity.clone().add(centralBody.velocity);
+
+            // 2. Compute SOI radius for current central body
+            const soiRadius = centralBody.soiRadius || 1e12; // fallback large
+            const distToCentral = satellite.position.length(); // planet-centric
+
+            // 3. If outside SOI, switch to parent body
+            if (distToCentral > soiRadius) {
+                // Find parent body in hierarchy
+                const parentNaifId = this.hierarchy.getParentNaifId(satellite.centralBodyNaifId);
+                if (parentNaifId !== undefined && this.bodies[parentNaifId]) {
+                    const newCentral = this.bodies[parentNaifId];
+                    // Recalculate new planet-centric state
+                    const newPos = satGlobalPos.clone().sub(newCentral.position);
+                    const newVel = satGlobalVel.clone().sub(newCentral.velocity);
+                    // Log transition
+                    console.log(`[PhysicsEngine] Satellite ${satellite.id} exited SOI of ${centralBody.name}, switching to ${newCentral.name}`);
+                    // Update satellite's reference frame
+                    satellite.centralBodyNaifId = parentNaifId;
+                    satellite.position.copy(newPos);
+                    satellite.velocity.copy(newVel);
+                } else {
+                    // If no parent, reference to SSB (0,0,0)
+                    const newPos = satGlobalPos.clone();
+                    const newVel = satGlobalVel.clone();
+                    console.log(`[PhysicsEngine] Satellite ${satellite.id} exited all SOIs, switching to SSB`);
+                    satellite.centralBodyNaifId = 0;
+                    satellite.position.copy(newPos);
+                    satellite.velocity.copy(newVel);
+                }
+            }
         }
     }
 

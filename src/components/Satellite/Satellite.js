@@ -46,9 +46,12 @@ export class Satellite {
     _initVisuals() {
         this.visualizer = new SatelliteVisualizer(this.color, undefined, this.app3d);
         if (this.planetConfig && typeof this.planetConfig.getRotationGroup === 'function') {
-            this.planetConfig.getRotationGroup().add(this.visualizer.mesh);
+            const group = this.planetConfig.getRotationGroup();
+            group.add(this.visualizer.mesh);
+            console.log(`[Satellite] Added mesh for satellite ${this.id} to planetConfig.getRotationGroup()`, group.name || group, this.visualizer.mesh);
         } else {
             this.visualizer.addToScene(this.scene);
+            console.warn(`[Satellite] Added mesh for satellite ${this.id} directly to scene (no valid planetConfig)`, this.visualizer.mesh);
         }
         this.orbitPath = new OrbitPath(this.color);
         this.scene.add(this.orbitPath.orbitLine);
@@ -69,6 +72,7 @@ export class Satellite {
                 satState.position[1],
                 satState.position[2]
             );
+            console.log(`[Satellite] updateVisualsFromState: set mesh position for satellite ${this.id} to`, satState.position);
         }
         // Optionally update orientation, color, etc. if needed
         // (add more as needed for your visuals)
@@ -111,16 +115,32 @@ export class Satellite {
     setCentralBody(naifId) {
         if (!this.app3d || !this.visualizer?.mesh) return;
         const parentBody = this.app3d.bodiesByNaifId?.[naifId];
-        if (!parentBody) return;
+        if (!parentBody) {
+            console.warn(`[Satellite] setCentralBody: parentBody not found for naifId ${naifId}`);
+            return;
+        }
         if (this.visualizer.mesh.parent) {
             this.visualizer.mesh.parent.remove(this.visualizer.mesh);
         }
         if (parentBody.getOrbitGroup) {
             parentBody.getOrbitGroup().add(this.visualizer.mesh);
+            console.log(`[Satellite] setCentralBody: mesh parented to getOrbitGroup() of`, parentBody.name || parentBody, this.visualizer.mesh);
         } else if (parentBody instanceof THREE.Group) {
             parentBody.add(this.visualizer.mesh);
+            console.log(`[Satellite] setCentralBody: mesh parented to THREE.Group`, parentBody.name || parentBody, this.visualizer.mesh);
         } else if (parentBody.getMesh) {
             parentBody.getMesh().add(this.visualizer.mesh);
+            console.log(`[Satellite] setCentralBody: mesh parented to getMesh() of`, parentBody.name || parentBody, this.visualizer.mesh);
+        } else {
+            console.warn(`[Satellite] setCentralBody: no valid parent group for naifId ${naifId}`);
         }
+        // Log mesh world position after parenting
+        const meshWorldPos = new THREE.Vector3();
+        this.visualizer.mesh.getWorldPosition(meshWorldPos);
+        console.log(`[Satellite] Mesh world position after parenting:`, meshWorldPos);
+    }
+
+    getMesh() {
+        return this.visualizer?.mesh;
     }
 }

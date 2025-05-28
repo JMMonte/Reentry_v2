@@ -240,6 +240,8 @@ export class SatelliteManager {
      */
     updateAllFromPhysicsState(physicsState) {
         const satStates = physicsState.satellites || {};
+        // Log the physics state for all satellites
+        console.log('[SatelliteManager] updateAllFromPhysicsState: physicsState.satellites:', satStates);
         // Update or create UI objects for all satellites in physics state
         for (const [id, satState] of Object.entries(satStates)) {
             let sat = this._satellites.get(id);
@@ -247,6 +249,7 @@ export class SatelliteManager {
                 // Create a new UI object if needed
                 sat = this.addSatellite({ id, ...satState });
             }
+            console.log(`[SatelliteManager] Calling updateVisualsFromState for satellite ${id} with state:`, satState);
             sat.updateVisualsFromState(satState);
         }
         // Remove UI objects for satellites no longer in physics state

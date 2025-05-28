@@ -148,7 +148,7 @@ export async function createSatelliteFromLatLon(app, params = {}) {
 
     const { pos, vel } = latLonAltToECI(params, planet);
 
-    return createSatellite(app, {
+    const sat = await createSatellite(app, {
         ...params,
         position: pos,
         velocity: vel,
@@ -157,6 +157,7 @@ export async function createSatelliteFromLatLon(app, params = {}) {
         dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
         color: pickBrightColor(params.color)
     });
+    return { satellite: sat, position: pos, velocity: vel };
 }
 
 /** Legacy alias kept for backwards compatibility. */
@@ -191,7 +192,7 @@ export function createSatelliteFromOrbitalElements(app, params = {}) {
         { referenceFrame: 'equatorial' }
     );
 
-    return createSatellite(app, {
+    const sat = createSatellite(app, {
         ...params,
         position,
         velocity,
@@ -200,6 +201,7 @@ export function createSatelliteFromOrbitalElements(app, params = {}) {
         dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
         color: pickBrightColor(params.color)
     });
+    return { satellite: sat, position, velocity };
 }
 
 /*─────────────────── 4. Ground-track helper ────────────────────*/

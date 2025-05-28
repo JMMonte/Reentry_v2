@@ -251,19 +251,35 @@ function App3DMain() {
 
   const onCreateSatellite = async (params) => {
     try {
-      let satellite;
+      let result;
       if (params.mode === 'latlon') {
-        satellite = await app3d?.createSatelliteFromLatLon(params);
+        result = await app3d?.createSatelliteFromLatLon(params);
       } else if (params.mode === 'orbital') {
-        satellite = await app3d?.createSatelliteFromOrbitalElements(params);
+        result = await app3d?.createSatelliteFromOrbitalElements(params);
       } else if (params.mode === 'circular') {
-        satellite = await app3d?.createSatelliteFromLatLonCircular(params);
+        result = await app3d?.createSatelliteFromLatLonCircular(params);
       }
+      const satellite = result?.satellite || result;
+      const position = result?.position || satellite?.position?.toArray?.();
+      const velocity = result?.velocity || satellite?.velocity?.toArray?.();
       if (satellite) {
+        // Register with physics engine using correct position/velocity
+        if (app3d.physicsIntegration?.addSatellite) {
+          app3d.physicsIntegration.addSatellite({
+            id: satellite.id,
+            position,
+            velocity,
+            mass: satellite.mass,
+            dragCoefficient: satellite.dragCoefficient,
+            crossSectionalArea: satellite.crossSectionalArea,
+            centralBodyNaifId: satellite.centralBodyNaifId,
+            // Add more fields if needed
+          });
+        }
         setIsSatelliteModalOpen(false);
         // Focus on the new satellite in the navbar body selector
         handleBodyChange(satellite);
-        app3d?.createDebugWindow?.(satellite); // <-- Add this line
+        app3d?.createDebugWindow?.(satellite);
       }
     } catch (error) {
       console.error('Error creating satellite:', error);
