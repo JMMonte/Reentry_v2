@@ -7,6 +7,73 @@ export class OrbitHierarchy {
         this.scene = scene;
         this.app = app;
 
+        // Visual parent mapping - for most moons, we want to show orbits relative to planets, not barycenters
+        // EXCEPT for special cases like Pluto-Charon which is a true binary system
+        this.visualParentMap = {
+            // Mars moons orbit Mars visually, not Mars Barycenter
+            401: 499,  // Phobos -> Mars
+            402: 499,  // Deimos -> Mars
+            
+            // Jupiter moons orbit Jupiter visually
+            501: 599,  // Io -> Jupiter
+            502: 599,  // Europa -> Jupiter
+            503: 599,  // Ganymede -> Jupiter
+            504: 599,  // Callisto -> Jupiter
+            505: 599,  // Amalthea -> Jupiter
+            506: 599,  // Himalia -> Jupiter
+            507: 599,  // Elara -> Jupiter
+            508: 599,  // Pasiphae -> Jupiter
+            509: 599,  // Sinope -> Jupiter
+            510: 599,  // Lysithea -> Jupiter
+            511: 599,  // Carme -> Jupiter
+            512: 599,  // Ananke -> Jupiter
+            513: 599,  // Leda -> Jupiter
+            514: 599,  // Thebe -> Jupiter
+            515: 599,  // Adrastea -> Jupiter
+            516: 599,  // Metis -> Jupiter
+            
+            // Saturn moons orbit Saturn visually
+            601: 699,  // Mimas -> Saturn
+            602: 699,  // Enceladus -> Saturn
+            603: 699,  // Tethys -> Saturn
+            604: 699,  // Dione -> Saturn
+            605: 699,  // Rhea -> Saturn
+            606: 699,  // Titan -> Saturn
+            607: 699,  // Hyperion -> Saturn
+            608: 699,  // Iapetus -> Saturn
+            609: 699,  // Phoebe -> Saturn
+            610: 699,  // Janus -> Saturn
+            611: 699,  // Epimetheus -> Saturn
+            612: 699,  // Helene -> Saturn
+            613: 699,  // Telesto -> Saturn
+            614: 699,  // Calypso -> Saturn
+            615: 699,  // Atlas -> Saturn
+            616: 699,  // Prometheus -> Saturn
+            617: 699,  // Pandora -> Saturn
+            
+            // Uranus moons orbit Uranus visually
+            701: 799,  // Ariel -> Uranus
+            702: 799,  // Umbriel -> Uranus
+            703: 799,  // Titania -> Uranus
+            704: 799,  // Oberon -> Uranus
+            705: 799,  // Miranda -> Uranus
+            
+            // Neptune moons orbit Neptune visually
+            801: 899,  // Triton -> Neptune
+            802: 899,  // Proteus -> Neptune
+            803: 899,  // Nereid -> Neptune
+            
+            // Pluto system - ALL bodies orbit the Pluto System Barycenter (9)
+            // because Pluto-Charon is a binary system where the barycenter
+            // is outside Pluto's surface (~2110 km from Pluto's center)
+            // So we DON'T override the default parent for Pluto moons
+            // 901: 9,  // Charon -> Pluto Barycenter (keep default)
+            // 902: 9,  // Nix -> Pluto Barycenter (keep default)
+            // 903: 9,  // Hydra -> Pluto Barycenter (keep default)
+            // 904: 9,  // Kerberos -> Pluto Barycenter (keep default)
+            // 905: 9,  // Styx -> Pluto Barycenter (keep default)
+        };
+
         // Define the hierarchical orbital relationships based on NAIF IDs
         this.relationships = {
             // Bodies that orbit the Sun (Solar System Barycenter)
@@ -85,6 +152,14 @@ export class OrbitHierarchy {
      */
     getRelationship(naifId) {
         return this.relationships[naifId];
+    }
+
+    /**
+     * Get visual parent for orbit rendering
+     * For moons, returns the planet instead of barycenter
+     */
+    getVisualParent(naifId) {
+        return this.visualParentMap[naifId] || this.relationships[naifId]?.parent;
     }
 
     /**

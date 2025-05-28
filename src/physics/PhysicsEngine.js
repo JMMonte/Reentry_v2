@@ -546,7 +546,8 @@ export class PhysicsEngine {
                 const distance = r.length();
                 if (distance > 0) {
                     const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-                    centralAccel.add(r.multiplyScalar(gravAccel));
+                    const accVec = r.clone().multiplyScalar(gravAccel);
+                    centralAccel.add(accVec);
                 }
             }
         }
@@ -572,18 +573,19 @@ export class PhysicsEngine {
     }
 
     /**
-     * Compute J2 perturbation acceleration (Earth's oblateness effect)
+     * Compute J2 perturbation acceleration (body's oblateness effect)
+     * Generic for any celestial body with J2 coefficient
      */
     _computeJ2Perturbation(satellite, centralBody) {
-        // Only apply J2 for Earth (NAIF ID 399) for now
-        if (satellite.centralBodyNaifId !== 399) {
+        // Check if body has J2 coefficient
+        if (!centralBody.J2 || centralBody.J2 === 0) {
             return new THREE.Vector3(0, 0, 0);
         }
 
-        // Earth's J2 coefficient and radius
-        const J2 = 1.08262668e-3; // Earth's J2
-        const Re = 6378.137; // Earth's equatorial radius in km
-        const mu = Constants.G * centralBody.mass; // Gravitational parameter
+        // Use body's J2 coefficient and radius
+        const J2 = centralBody.J2;
+        const Re = centralBody.radius || centralBody.equatorialRadius;
+        const mu = centralBody.GM || (Constants.G * centralBody.mass); // Gravitational parameter
 
         // Satellite position relative to central body (planet-centric)
         const r = satellite.position.clone();
@@ -600,8 +602,9 @@ export class PhysicsEngine {
         
         if (centralBodyState?.quaternion) {
             // Transform Z-axis by body's quaternion to get actual pole direction
+            const q = centralBodyState.quaternion;
             poleDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(
-                new THREE.Quaternion(...centralBodyState.quaternion)
+                new THREE.Quaternion(q.x, q.y, q.z, q.w)
             );
         }
 
@@ -622,26 +625,38 @@ export class PhysicsEngine {
 
     /**
      * Compute atmospheric drag acceleration
+     * Generic for any celestial body with atmosphere
      */
     _computeAtmosphericDrag(satellite) {
-        // Only apply drag for Earth (NAIF ID 399) for now
-        if (satellite.centralBodyNaifId !== 399) {
+        const centralBody = this.bodies[satellite.centralBodyNaifId];
+        
+        // Check if body has atmosphere model
+        if (!centralBody || !centralBody.atmosphere) {
             return new THREE.Vector3(0, 0, 0);
         }
 
         const r = satellite.position.clone();
-        const altitude = r.length() - 6378.137; // Altitude above Earth surface in km
+        const altitude = r.length() - (centralBody.radius || centralBody.equatorialRadius); // Altitude above surface in km
         
-        // No drag above 1000 km altitude
-        if (altitude > 1000 || altitude < 80) {
+        // Use body's atmosphere limits or defaults
+        const maxAlt = centralBody.atmosphere.maxAltitude || 1000;
+        const minAlt = centralBody.atmosphere.minAltitude || 0;
+        
+        if (altitude > maxAlt || altitude < minAlt) {
             return new THREE.Vector3(0, 0, 0);
         }
 
-        // Simplified atmospheric density model (exponential)
-        const h0 = 200; // Reference altitude (km)
-        const rho0 = 2.789e-13; // Reference density (kg/m³) at 200km
-        const H = 50; // Scale height (km)
-        const density = rho0 * Math.exp(-(altitude - h0) / H);
+        // Use body's atmospheric density model or simplified exponential
+        let density;
+        if (centralBody.atmosphere.getDensity) {
+            density = centralBody.atmosphere.getDensity(altitude);
+        } else {
+            // Fallback exponential model using body's parameters
+            const h0 = centralBody.atmosphere.referenceAltitude || 200;
+            const rho0 = centralBody.atmosphere.referenceDensity || 2.789e-13;
+            const H = centralBody.atmosphere.scaleHeight || 50;
+            density = rho0 * Math.exp(-(altitude - h0) / H);
+        }
 
         // Satellite properties (simplified)
         const mass = satellite.mass || 100; // kg

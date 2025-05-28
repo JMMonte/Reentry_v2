@@ -403,7 +403,7 @@ export class SatelliteCoordinates {
 
             case 'PF→GEO': {
                 // Convert cartesian to geographic
-                const geo = SatelliteCoordinates._planetFixedToLatLonAlt(position, planet);
+                const geo = SatelliteCoordinates.planetFixedToLatLonAlt(position, planet);
                 // Velocity would need to be converted to speed/azimuth/AoA
                 console.warn('[SatelliteCoordinates] PF→GEO velocity transformation not fully implemented');
                 return { position: geo, velocity: [...velocity] };
@@ -465,8 +465,11 @@ export class SatelliteCoordinates {
 
     /**
      * Convert Planet-Fixed cartesian to geographic coordinates
+     * @param {Array} positionPF - [x, y, z] in planet-fixed frame (km)
+     * @param {Object} planet - Planet object with radius and polarRadius
+     * @returns {Array} [latitude, longitude, altitude] in degrees and km
      */
-    static _planetFixedToLatLonAlt(positionPF, planet) {
+    static planetFixedToLatLonAlt(positionPF, planet) {
         const [X, Y, Z] = positionPF;
         
         // Planet parameters

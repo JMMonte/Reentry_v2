@@ -116,8 +116,9 @@ export class PositionManager {
                 return pos.add(parentBody.position);
             }
         }
-        // Default: position is relative to parent
-        return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+        // Default: position is relative to parent, so add parent position
+        const relativePos = new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+        return relativePos.add(parentBody.position);
     }
 
     /**
@@ -136,9 +137,10 @@ export class PositionManager {
             // Fallback: treat as root
             return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
         }
-        // If parent is a barycenter, the state vector is already relative to the barycenter
+        // If parent is a barycenter, add the barycenter's position to get absolute position
         if (this.hierarchy.isBarycenter(parentId)) {
-            return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+            const relativePos = new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return relativePos.add(parentBody.position);
         }
         // Otherwise, subtract parent position
         return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]).sub(parentBody.position);
@@ -150,14 +152,44 @@ export class PositionManager {
     _calculateHierarchicalVelocity(naifId, rawState) {
         const bodyInfo = this.hierarchy.getBodyInfo(naifId);
         const parentId = bodyInfo.parent;
+        
+        // Root level bodies use absolute velocities
         if (parentId === null || parentId === 0) {
             return new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
         }
-        if (this.hierarchy.isMoon(naifId)) {
-            return new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
-        } else {
+        
+        const parentBody = this.bodies[parentId];
+        if (!parentBody) {
+            // Fallback: use raw velocity
             return new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
         }
+        
+        // For hierarchical bodies, velocities are relative to parent
+        // We need to add parent's velocity to get absolute velocity
+        const relativeVel = new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
+        
+        // Special handling for moons (their velocities might need rotation)
+        if (this.hierarchy.isMoon(naifId)) {
+            const moonConfig = this.hierarchy.bodiesConfigMap?.get(naifId) || {};
+            const referenceFrame = moonConfig.orbitalElements?.referenceFrame || moonConfig.referenceFrame;
+            
+            // If moon uses equatorial reference frame and parent is a barycenter
+            if (this.hierarchy.isBarycenter(parentId) && referenceFrame && /_equatorial$/i.test(referenceFrame)) {
+                // Find the planet and apply its rotation to the velocity
+                const planetNaif = Array.from(this.hierarchy.bodiesConfigMap.entries()).find(([, cfg]) => 
+                    cfg.parent && this.hierarchy._findNaifIdByName(this.hierarchy.bodiesConfigMap, cfg.parent) === parentId && 
+                    (cfg.type === 'planet' || cfg.type === 'dwarf_planet')
+                )?.[0];
+                
+                if (planetNaif && this.bodies[planetNaif]) {
+                    const planetQuat = this.bodies[planetNaif].quaternion;
+                    relativeVel.applyQuaternion(planetQuat);
+                }
+            }
+        }
+        
+        // Add parent velocity to get absolute velocity
+        return relativeVel.add(parentBody.velocity);
     }
 
     /**

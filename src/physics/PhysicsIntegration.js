@@ -288,6 +288,7 @@ export class PhysicsIntegration {
             this._updateOrbitVisualizations();
             return;
         }
+        
 
         // Calculate real time elapsed since last update
         const now = performance.now();
@@ -324,6 +325,7 @@ export class PhysicsIntegration {
             // Update TimeUtils with new time (this will dispatch UI events)
             this.app.timeUtils.updateFromPhysics(newTime);
             
+            
             // Remove processed time from accumulator
             this._accumulator -= this._fixedTimeStep;
             stepsProcessed++;
@@ -348,6 +350,72 @@ export class PhysicsIntegration {
     }
 
     /**
+     * Private: Get parent NAIF ID from hierarchy
+     */
+    _getParentNaifId(naifId) {
+        // Define parent relationships based on NAIF ID conventions
+        const parentMap = {
+            // Planets to their barycenters
+            199: 1,   // Mercury -> Mercury Barycenter
+            299: 2,   // Venus -> Venus Barycenter
+            399: 3,   // Earth -> Earth-Moon Barycenter
+            499: 4,   // Mars -> Mars Barycenter
+            599: 5,   // Jupiter -> Jupiter Barycenter
+            699: 6,   // Saturn -> Saturn Barycenter
+            799: 7,   // Uranus -> Uranus Barycenter
+            899: 8,   // Neptune -> Neptune Barycenter
+            999: 9,   // Pluto -> Pluto Barycenter
+            
+            // Moons to their parent barycenters
+            301: 3,   // Moon -> Earth-Moon Barycenter
+            401: 4,   // Phobos -> Mars Barycenter
+            402: 4,   // Deimos -> Mars Barycenter
+            
+            // Jupiter moons
+            501: 5,   // Io -> Jupiter Barycenter
+            502: 5,   // Europa -> Jupiter Barycenter
+            503: 5,   // Ganymede -> Jupiter Barycenter
+            504: 5,   // Callisto -> Jupiter Barycenter
+            505: 5,   // Amalthea -> Jupiter Barycenter
+            506: 5,   // Himalia -> Jupiter Barycenter
+            507: 5,   // Elara -> Jupiter Barycenter
+            508: 5,   // Pasiphae -> Jupiter Barycenter
+            
+            // Saturn moons
+            601: 6,   // Mimas -> Saturn Barycenter
+            602: 6,   // Enceladus -> Saturn Barycenter
+            603: 6,   // Tethys -> Saturn Barycenter
+            604: 6,   // Dione -> Saturn Barycenter
+            605: 6,   // Rhea -> Saturn Barycenter
+            606: 6,   // Titan -> Saturn Barycenter
+            607: 6,   // Hyperion -> Saturn Barycenter
+            608: 6,   // Iapetus -> Saturn Barycenter
+            609: 6,   // Phoebe -> Saturn Barycenter
+            
+            // Uranus moons
+            701: 7,   // Ariel -> Uranus Barycenter
+            702: 7,   // Umbriel -> Uranus Barycenter
+            703: 7,   // Titania -> Uranus Barycenter
+            704: 7,   // Oberon -> Uranus Barycenter
+            705: 7,   // Miranda -> Uranus Barycenter
+            
+            // Neptune moons
+            801: 8,   // Triton -> Neptune Barycenter
+            802: 8,   // Nereid -> Neptune Barycenter
+            803: 8,   // Naiad -> Neptune Barycenter
+            
+            // Pluto moons
+            901: 9,   // Charon -> Pluto Barycenter
+            902: 9,   // Nix -> Pluto Barycenter
+            903: 9,   // Hydra -> Pluto Barycenter
+            904: 9,   // Kerberos -> Pluto Barycenter
+            905: 9    // Styx -> Pluto Barycenter
+        };
+        
+        return parentMap[naifId] || null;
+    }
+
+    /**
      * Private: Sync physics state with existing celestial bodies
      */
     _syncWithCelestialBodies(state) {
@@ -367,13 +435,39 @@ export class PhysicsIntegration {
             if (!bodyState) continue;
 
             try {
-                // Update target position (Planet class expects this)
-                if (celestialBody.targetPosition && Array.isArray(bodyState.position)) {
-                    celestialBody.targetPosition.set(
+                // Store absolute position for physics calculations and orbit rendering
+                if (!celestialBody.absolutePosition) {
+                    celestialBody.absolutePosition = new THREE.Vector3();
+                }
+                if (Array.isArray(bodyState.position)) {
+                    celestialBody.absolutePosition.set(
                         bodyState.position[0],
-                        bodyState.position[1],
+                        bodyState.position[1], 
                         bodyState.position[2]
                     );
+                }
+                
+                // Update target position (Planet class expects this)
+                if (celestialBody.targetPosition && Array.isArray(bodyState.position)) {
+                    // Check if this body has a parent in the hierarchy
+                    const parentNaifId = this._getParentNaifId(naifId);
+                    
+                    if (parentNaifId && state.bodies[parentNaifId]) {
+                        // Calculate relative position to parent
+                        const parentState = state.bodies[parentNaifId];
+                        celestialBody.targetPosition.set(
+                            bodyState.position[0] - parentState.position[0],
+                            bodyState.position[1] - parentState.position[1],
+                            bodyState.position[2] - parentState.position[2]
+                        );
+                    } else {
+                        // No parent, use absolute position
+                        celestialBody.targetPosition.set(
+                            bodyState.position[0],
+                            bodyState.position[1],
+                            bodyState.position[2]
+                        );
+                    }
                 }
 
                 // Store velocity for orbital calculations if needed
@@ -436,12 +530,39 @@ export class PhysicsIntegration {
         if (this.app.bodiesByNaifId) {
             for (const [naifId, bodyState] of Object.entries(state.bodies)) {
                 const body = this.app.bodiesByNaifId[naifId];
-                if (body && body.targetPosition && Array.isArray(bodyState.position)) {
-                    body.targetPosition.set(
+                if (body && Array.isArray(bodyState.position)) {
+                    // Store absolute position
+                    if (!body.absolutePosition) {
+                        body.absolutePosition = new THREE.Vector3();
+                    }
+                    body.absolutePosition.set(
                         bodyState.position[0],
                         bodyState.position[1],
                         bodyState.position[2]
                     );
+                    
+                    // Update target position for rendering
+                    if (body.targetPosition) {
+                        // Check if this body has a parent in the hierarchy
+                        const parentNaifId = this._getParentNaifId(parseInt(naifId));
+                        
+                        if (parentNaifId && state.bodies[parentNaifId]) {
+                            // Calculate relative position to parent
+                            const parentState = state.bodies[parentNaifId];
+                            body.targetPosition.set(
+                                bodyState.position[0] - parentState.position[0],
+                                bodyState.position[1] - parentState.position[1],
+                                bodyState.position[2] - parentState.position[2]
+                            );
+                        } else {
+                            // No parent, use absolute position
+                            body.targetPosition.set(
+                                bodyState.position[0],
+                                bodyState.position[1],
+                                bodyState.position[2]
+                            );
+                        }
+                    }
 
                     // Store velocity
                     if (!body.velocity) {
@@ -477,6 +598,33 @@ export class PhysicsIntegration {
                             }
                             body.northPole.fromArray(bodyState.northPole);
                         }
+                    }
+                }
+            }
+        }
+
+        // Also update barycenter positions
+        if (state.barycenters && this.app.bodiesByNaifId) {
+            for (const [naifId, barycenterState] of Object.entries(state.barycenters)) {
+                const barycenter = this.app.bodiesByNaifId[naifId];
+                if (barycenter && barycenter.targetPosition && Array.isArray(barycenterState.position)) {
+                    // Barycenters always use absolute positions (no parent in rendering)
+                    barycenter.targetPosition.set(
+                        barycenterState.position[0],
+                        barycenterState.position[1],
+                        barycenterState.position[2]
+                    );
+                    
+                    // Store velocity if available
+                    if (barycenterState.velocity && Array.isArray(barycenterState.velocity)) {
+                        if (!barycenter.velocity) {
+                            barycenter.velocity = new THREE.Vector3();
+                        }
+                        barycenter.velocity.set(
+                            barycenterState.velocity[0],
+                            barycenterState.velocity[1],
+                            barycenterState.velocity[2]
+                        );
                     }
                 }
             }

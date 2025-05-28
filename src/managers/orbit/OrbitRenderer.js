@@ -8,6 +8,8 @@ export class OrbitRenderer {
         // Color scheme for different orbital levels
         this.orbitColors = {
             0: 0xFFFFFF,   // Heliocentric orbits (white)
+            
+            // Barycenter systems (used when moons orbit barycenters)
             3: 0x00FF00,   // Earth-Moon system (green)
             4: 0xFF4500,   // Mars system (orange-red)
             5: 0xFFA500,   // Jupiter system (orange)
@@ -15,8 +17,17 @@ export class OrbitRenderer {
             7: 0x4FD0E7,   // Uranus system (cyan)
             8: 0x4169E1,   // Neptune system (royal blue)
             9: 0x8A2BE2,   // Pluto system (blue violet)
-            399: 0x0088FF, // Earth satellites (blue)
-            // Add more as needed for other planetary systems
+            
+            // Planet systems (used when moons orbit planets directly)
+            399: 0x00FF00, // Earth and its satellites (green)
+            499: 0xFF4500, // Mars and its moons (orange-red)
+            599: 0xFFA500, // Jupiter and its moons (orange)
+            699: 0xFFD700, // Saturn and its moons (gold)
+            799: 0x4FD0E7, // Uranus and its moons (cyan)
+            899: 0x4169E1, // Neptune and its moons (royal blue)
+            999: 0x8A2BE2, // Pluto (blue violet) - though moons orbit barycenter
+            
+            // Add more as needed for other systems
         };
 
         // Line styling configuration

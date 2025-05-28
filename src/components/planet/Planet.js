@@ -1,7 +1,7 @@
 /* Planet.js */
 import * as THREE from 'three';
-import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { Constants } from '../../utils/Constants.js';
+import { SatelliteCoordinates } from '../../utils/SatelliteCoordinates.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
 import atmosphereMeshVertexShader from '../../shaders/atmosphereMesh.vert?raw';
 import atmosphereMeshFragmentShader from '../../shaders/atmosphereMesh.frag?raw';
@@ -516,14 +516,29 @@ export class Planet {
     }
 
     /**
-     * Convert ECI coordinates to ground intersection (lat/lon/alt).
-     * @param {THREE.Vector3} posEci
-     * @returns {object} Intersection result
+     * Convert planet-centered inertial position to ground coordinates.
+     * Generic for any celestial body.
+     * @param {THREE.Vector3} posPCI - Position in planet-centered inertial frame
+     * @param {Date} time - Time for transformation
+     * @returns {{latitude: number, longitude: number, altitude: number}} Ground coordinates
      */
-    convertEciToGround(posEci) {
-        const gmst = PhysicsUtils.calculateGMST(Date.now());
-        const ecef = PhysicsUtils.eciToEcef(posEci, gmst);
-        return PhysicsUtils.calculateIntersectionWithEarth(ecef);
+    convertPCIToGround(posPCI, time = new Date()) {
+        const position = [posPCI.x, posPCI.y, posPCI.z];
+        const velocity = [0, 0, 0];
+        
+        // Transform from planet-centered inertial to planet-fixed
+        const result = SatelliteCoordinates.transformCoordinates(
+            position, velocity, 'PCI', 'PF', this, time
+        );
+        
+        // Convert to geographic coordinates
+        const geo = SatelliteCoordinates.planetFixedToLatLonAlt(result.position, this);
+        
+        return {
+            latitude: geo[0],
+            longitude: geo[1],
+            altitude: geo[2]
+        };
     }
 
     /**

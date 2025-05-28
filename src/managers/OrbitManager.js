@@ -64,6 +64,19 @@ export class OrbitManager {
 
         const physicsEngine = this.app.physicsIntegration.physicsEngine;
         const bodyStates = physicsEngine.getSimulationState().bodies;
+        
+        // Enhance bodyStates with absolutePosition from bodiesByNaifId
+        const enhancedBodyStates = {};
+        for (const [naifId, state] of Object.entries(bodyStates)) {
+            enhancedBodyStates[naifId] = { ...state };
+            const body = this.app.bodiesByNaifId?.[naifId];
+            if (body?.absolutePosition) {
+                enhancedBodyStates[naifId].absolutePosition = body.absolutePosition;
+            }
+            // Don't override velocity - keep the array format from physics engine
+            // The calculateRelativeMotion method will handle both formats
+        }
+        
         const relationships = this.hierarchy.getAllRelationships();
 
         // Process each body in the hierarchy
@@ -71,7 +84,7 @@ export class OrbitManager {
             this.processOrbitForBody(
                 parseInt(naifId),
                 hierarchyInfo,
-                bodyStates
+                enhancedBodyStates
             );
         }
 
@@ -84,7 +97,9 @@ export class OrbitManager {
      * Process orbit generation for a single body
      */
     processOrbitForBody(naifNum, hierarchyInfo, bodyStates) {
-        const parentNaif = hierarchyInfo.parent;
+        // Use visual parent for moons (planet instead of barycenter)
+        const visualParentNaif = this.hierarchy.getVisualParent(naifNum);
+        const parentNaif = visualParentNaif !== undefined ? visualParentNaif : hierarchyInfo.parent;
 
         // Skip Solar System Barycenter
         if (naifNum === 0) return true;
@@ -128,14 +143,31 @@ export class OrbitManager {
             const dt = periodSeconds / numPoints; // seconds per step
             const centerTime = physicsEngine.simulationTime;
             
+            // Get parent position for relative calculations
+            const parentState = bodyStates[parentNaif];
+            const parentPos = parentState ? new THREE.Vector3().fromArray(parentState.position) : new THREE.Vector3(0, 0, 0);
+            
             const points = [];
             for (let i = 0; i <= numPoints; i++) {
                 const t = new Date(centerTime.getTime() + (i - numPoints / 2) * dt * 1000);
                 
                 try {
                     const state = calculator.calculateStateVector(naifNum, t);
+                    const parentStateAtTime = parentNaif !== 0 ? calculator.calculateStateVector(parentNaif, t) : null;
+                    
                     if (state && state.position) {
-                        points.push(new THREE.Vector3(state.position[0], state.position[1], state.position[2]));
+                        const point = new THREE.Vector3(state.position[0], state.position[1], state.position[2]);
+                        
+                        // Subtract parent position to get relative orbit
+                        if (parentStateAtTime && parentStateAtTime.position) {
+                            point.sub(new THREE.Vector3(
+                                parentStateAtTime.position[0],
+                                parentStateAtTime.position[1],
+                                parentStateAtTime.position[2]
+                            ));
+                        }
+                        
+                        points.push(point);
                     }
                 } catch (error) {
                     console.warn(`Failed to calculate orbit point for ${hierarchyInfo.name}:`, error);
@@ -228,28 +260,27 @@ export class OrbitManager {
             parentMass = sun ? sun.mass : 1.989e30; // Fallback to standard solar mass
         }
 
-        // Get body position and velocity
-        const bodyPos = new THREE.Vector3().fromArray(body.position);
-        const bodyVel = new THREE.Vector3().fromArray(body.velocity);
-
-        // Check if this body has a parent in the orbit hierarchy
-        const relationship = this.hierarchy.getRelationship(body.naif);
-        const hasParentInHierarchy = relationship && relationship.parent !== 0;
-
-        let relPos, relVel;
-
-        if (hasParentInHierarchy && relationship.parent === parentNaif) {
-            // If the body already has this parent in the hierarchy, 
-            // then the PhysicsEngine is already providing relative positions
-            // Use the position and velocity directly without subtracting parent
-            relPos = bodyPos.clone();
-            relVel = bodyVel.clone();
+        // Get body position and velocity - use absolute position if available
+        const bodyPos = body.absolutePosition ? 
+            body.absolutePosition.clone() : 
+            new THREE.Vector3().fromArray(body.position);
+        
+        // Handle velocity - it might be a Vector3 or an array
+        let bodyVel;
+        if (body.velocity instanceof THREE.Vector3) {
+            bodyVel = body.velocity.clone();
+        } else if (Array.isArray(body.velocity)) {
+            bodyVel = new THREE.Vector3().fromArray(body.velocity);
         } else {
-            // For bodies without hierarchy relationships or different parent,
-            // calculate relative vectors by subtracting parent position
-            relPos = bodyPos.clone().sub(parentPos);
-            relVel = bodyVel.clone().sub(parentVel);
+            // Fallback to zeros if no velocity
+            bodyVel = new THREE.Vector3(0, 0, 0);
         }
+
+        // Always calculate relative position by subtracting parent
+        // The physics engine provides absolute positions, so we need to
+        // subtract the parent position to get the relative orbit
+        const relPos = bodyPos.clone().sub(parentPos);
+        const relVel = bodyVel.clone().sub(parentVel);
 
         // Validate relative motion
         const validation = this.calculator.validateRelativeMotion(relPos, relVel, parentNaif);

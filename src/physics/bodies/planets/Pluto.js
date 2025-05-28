@@ -26,8 +26,20 @@ export default {
 
     // Orbital properties (part of Pluto-Charon binary system)
     soiRadius: 5800000, // km (SOI for Pluto-Charon system around Sun)
-    orbitalPeriod: 247.94 * 365.25 * 86400, // seconds (247.94 Earth years around Sun)
-    semiMajorAxis: 5906.44e6, // km (39.48 AU from Sun)
+    orbitalPeriod: 6.387230 * 24 * 3600, // seconds - same as Charon (tidally locked)
+    semiMajorAxis: 5906.44e6, // km (39.48 AU from Sun - this is for heliocentric orbit)
+    
+    // Pluto's orbit around the Pluto-Charon barycenter
+    orbitalElements: {
+        semiMajorAxis: 2126.7, // km - distance from Pluto center to barycenter
+        eccentricity: 0.0,     // Circular orbit (tidally locked)
+        inclination: 96.168,   // Same as Charon's orbit
+        longitudeOfAscendingNode: 223.046, // Same as Charon
+        argumentOfPeriapsis: 180.0, // Opposite side from Charon
+        meanAnomalyAtEpoch: 180.0,  // Opposite phase from Charon
+        epoch: 2451545.0,           // J2000.0
+        referenceFrame: 'pluto_equatorial'
+    },
 
     // Atmospheric properties (thin, tenuous, variable)
     atmosphere: {
