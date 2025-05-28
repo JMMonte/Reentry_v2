@@ -79,9 +79,6 @@ export default [
         // LOD levels for rendering optimization
         lodLevelsKey: 'default',
 
-        // Mission data
-        missionsData: geojsonDataMissions,
-
         // Radial grid configuration for orbital visualization
         radialGridConfig: {
             circles: [
@@ -118,8 +115,11 @@ export default [
                 average: 218 // K - average temperature
             },
             regolithDepth: 0.004, // km - average regolith thickness
-            craterDensity: 'high' // relative crater density
+            craterDensity: 'high', // relative crater density
         },
+
+        // Add missionsData at the top level for POI instancing
+        missionsData: geojsonDataMissions,
 
         // Phases (for rendering and astronomical calculations)
         phases: {

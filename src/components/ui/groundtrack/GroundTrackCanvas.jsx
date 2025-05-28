@@ -39,8 +39,12 @@ export default function GroundTrackCanvas({
             imgSource instanceof HTMLCanvasElement
         ) {
             ctx.drawImage(imgSource, 0, 0, w, h);
-            // overlay our grid (to avoid baked grid on texture)
-            drawGrid(ctx, w, h);
+            // Only draw grid if enabled
+            if (layers.grid) drawGrid(ctx, w, h);
+        }
+        // If no texture, still draw grid if enabled
+        if (!(imgSource instanceof HTMLImageElement || imgSource instanceof HTMLCanvasElement)) {
+            if (layers.grid) drawGrid(ctx, w, h);
         }
 
         if (showCoverage) {
@@ -120,20 +124,22 @@ export default function GroundTrackCanvas({
         });
 
         // POI layers from dynamic data
-        const poiCategories = [
-            { key: 'cities', color: '#00A5FF' },
-            { key: 'airports', color: '#FF0000' },
-            { key: 'spaceports', color: '#FFD700' },
-            { key: 'groundStations', color: '#00FF00' },
-            { key: 'observatories', color: '#FF00FF' },
-            { key: 'missions', color: '#FFFF00' }
-        ];
-        poiCategories.forEach(({ key, color }) => {
-            const data = poiData?.[key] || [];
-            if (layers[key] && data.length) {
-                drawPOI(ctx, data, w, h, color, 2);
-            }
-        });
+        if (layers.pois) {
+            const poiCategories = [
+                { key: 'cities', color: '#00A5FF' },
+                { key: 'airports', color: '#FF0000' },
+                { key: 'spaceports', color: '#FFD700' },
+                { key: 'groundStations', color: '#00FF00' },
+                { key: 'observatories', color: '#FF00FF' },
+                { key: 'missions', color: '#FFFF00' }
+            ];
+            poiCategories.forEach(({ key, color }) => {
+                const data = poiData?.[key] || [];
+                if (layers[key] && data.length) {
+                    drawPOI(ctx, data, w, h, color, 2);
+                }
+            });
+        }
 
         // Borders
         const drawBorders = (data, style) => {
@@ -147,11 +153,27 @@ export default function GroundTrackCanvas({
                         : f.geometry.coordinates;
                 polys.forEach(poly => {
                     poly.forEach(ring => {
+                        // Skip degenerate rings (all lat or all lon the same)
+                        const lats = ring.map(([, lat]) => lat);
+                        const lons = ring.map(([lon]) => lon);
+                        const allSameLat = lats.every(lat => lat === lats[0]);
+                        const allSameLon = lons.every(lon => lon === lons[0]);
+                        if (allSameLat || allSameLon) return; // skip flat lines
                         ctx.beginPath();
+                        let prevLon;
                         ring.forEach(([lon, lat], i) => {
+                            lon = normalizeLon(lon);
                             const { x, y } = latLonToCanvas(lat, lon, w, h);
-                            if (i) ctx.lineTo(x, y);
-                            else ctx.moveTo(x, y);
+                            if (i) {
+                                if (prevLon !== undefined && Math.abs(lon - prevLon) > 180) {
+                                    ctx.moveTo(x, y);
+                                } else {
+                                    ctx.lineTo(x, y);
+                                }
+                            } else {
+                                ctx.moveTo(x, y);
+                            }
+                            prevLon = lon;
                         });
                         ctx.stroke();
                     });
@@ -210,6 +232,7 @@ GroundTrackCanvas.propTypes = {
         missions: PropTypes.bool.isRequired,
         countryBorders: PropTypes.bool.isRequired,
         states: PropTypes.bool.isRequired,
+        pois: PropTypes.bool.isRequired,
     }).isRequired,
     showCoverage: PropTypes.bool.isRequired,
     poiData: PropTypes.object,
@@ -220,4 +243,9 @@ GroundTrackCanvas.propTypes = {
             lon: PropTypes.number.isRequired,
         })
     ),
-}; 
+};
+
+// Helper to normalize longitude to [-180, 180]
+function normalizeLon(lon) {
+    return ((lon + 180) % 360 + 360) % 360 - 180;
+} 

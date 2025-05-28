@@ -15,6 +15,7 @@ import { SatelliteManeuverWindow } from './satellite/SatelliteManeuverWindow';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './dropdown-menu';
 import { Button } from './button';
 import { GroundTrackWindow } from './groundtrack/GroundTrackWindow';
+import { usePhysicsSatellites } from '../../providers/PhysicsStateContext.jsx';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -242,8 +243,7 @@ export function Layout({
     authModalProps,
     simulationWindowProps,
     earthPointModalProps,
-    isLoadingInitialData,
-    satellitesPhysics
+    isLoadingInitialData
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {
@@ -256,6 +256,8 @@ export function Layout({
 
     const [currentLoadingMessage, setCurrentLoadingMessage] = useState(loadingMessages[0]);
     const loadingMessageIndexRef = useRef(0);
+
+    const satellitesPhysics = usePhysicsSatellites();
 
     useEffect(() => {
         if (isLoadingInitialData) {
@@ -353,17 +355,20 @@ export function Layout({
             <ModalPortal>
                 <ChatModal {...chatModalProps} />
                 <DisplayOptions {...displayOptionsProps} />
-                {debugWindows && debugWindows.map(({ id, satellite, earth, onBodySelect, onClose }) => (
-                    <SatelliteDebugWindow
-                        key={id}
-                        satellite={satellite}
-                        earth={earth}
-                        onBodySelect={onBodySelect}
-                        onClose={onClose}
-                        onOpenManeuver={handleOpenManeuver}
-                        physics={satellitesPhysics?.[id]}
-                    />
-                ))}
+                {debugWindows && debugWindows.map(({ id, satellite, earth, onBodySelect, onClose }) => {
+                    console.log('[Layout] Rendering SatelliteDebugWindow for id:', id, 'satellitesPhysics keys:', Object.keys(satellitesPhysics));
+                    return (
+                        <SatelliteDebugWindow
+                            key={id}
+                            satellite={satellite}
+                            earth={earth}
+                            onBodySelect={onBodySelect}
+                            onClose={onClose}
+                            onOpenManeuver={handleOpenManeuver}
+                            physics={satellitesPhysics?.[String(id)]}
+                        />
+                    );
+                })}
                 <SatelliteListWindow {...satelliteListWindowProps} onOpenManeuver={handleOpenManeuver} />
                 <SatelliteCreatorModal {...satelliteCreatorModalProps} />
                 <ShareModal {...shareModalProps} />
@@ -462,6 +467,5 @@ Layout.propTypes = {
         ).isRequired,
         onToggle: PropTypes.func.isRequired
     }),
-    isLoadingInitialData: PropTypes.bool.isRequired,
-    satellitesPhysics: PropTypes.object
+    isLoadingInitialData: PropTypes.bool.isRequired
 }; 

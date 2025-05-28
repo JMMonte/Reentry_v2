@@ -465,17 +465,16 @@ export class PhysicsEngine {
     _computeSatelliteAcceleration(satellite) {
         const totalAccel = new THREE.Vector3();
         const a_bodies = {};
-        // Get the central body's global position
         const centralBody = this.bodies[satellite.centralBodyNaifId];
         if (!centralBody) {
             console.warn(`[PhysicsEngine] Central body ${satellite.centralBodyNaifId} not found for satellite ${satellite.id}`);
             return totalAccel;
         }
-        // Satellite's global position = planet-centric position + central body's global position
+        // Satellite's global position
         const satGlobalPos = satellite.position.clone().add(centralBody.position);
-        // Gravitational forces from all bodies (in global frame)
+
+        // --- Compute satellite's global acceleration ---
         for (const [bodyId, body] of Object.entries(this.bodies)) {
-            // Vector from satellite to body (in global frame)
             const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
             const distance = r.length();
             let accVec = new THREE.Vector3();
@@ -486,9 +485,24 @@ export class PhysicsEngine {
             }
             a_bodies[bodyId] = [accVec.x, accVec.y, accVec.z];
         }
+
+        // --- Compute central body's global acceleration ---
+        const centralAccel = new THREE.Vector3();
+        for (const [bodyId, body] of Object.entries(this.bodies)) {
+            if (bodyId == satellite.centralBodyNaifId) continue; // skip self
+            const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
+            const distance = r.length();
+            if (distance > 0) {
+                const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
+                centralAccel.add(r.multiplyScalar(gravAccel));
+            }
+        }
+
+        // --- Subtract central body's acceleration to get planet-centric acceleration ---
+        totalAccel.sub(centralAccel);
+
         // Attach per-body gravity to satellite for UI
         satellite.a_bodies = a_bodies;
-        // Attach J2, drag, and total (set to zero for now except total)
         satellite.a_j2 = [0, 0, 0];
         satellite.a_drag = [0, 0, 0];
         satellite.a_total = [totalAccel.x, totalAccel.y, totalAccel.z];
@@ -570,14 +584,28 @@ export class PhysicsEngine {
 
     _getSatelliteStates() {
         const states = {};
-        // console.log('[PhysicsEngine] _getSatelliteStates: satellites keys:', Array.from(this.satellites.keys()));
         for (const [id, satellite] of this.satellites) {
+            // Get central body for this satellite
+            const centralBody = this.bodies[satellite.centralBodyNaifId];
+            let altitude_radial = undefined;
+            let altitude_surface = undefined;
+            if (centralBody && centralBody.radius !== undefined) {
+                altitude_radial = satellite.position.length();
+                altitude_surface = altitude_radial - centralBody.radius;
+            }
+            // Compute speed
+            const speed = satellite.velocity.length();
+            // Optionally, add more derived fields here
+
             states[id] = {
                 id: id,
                 position: satellite.position.toArray(),
                 velocity: satellite.velocity.toArray(),
                 acceleration: satellite.acceleration.toArray(),
-                mass: satellite.mass
+                mass: satellite.mass,
+                altitude_radial,
+                altitude_surface,
+                speed
             };
         }
         return states;

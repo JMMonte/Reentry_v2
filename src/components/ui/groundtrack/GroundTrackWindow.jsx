@@ -40,6 +40,7 @@ export function GroundTrackWindow({
         groundStations: false,
         observatories: false,
         missions: false,
+        pois: true,
     });
     const [showCoverage] = useState(false);
 
@@ -65,7 +66,7 @@ export function GroundTrackWindow({
 
     // Prepare POI data from the planet's surface for canvas rendering
     const poiData = useMemo(() => {
-        if (!planet?.surface) return {};
+        if (!activeLayers.pois || !planet?.surface?.points) return {};
         return Object.entries(planet.surface.points).reduce((acc, [key, meshes]) => {
             acc[key] = meshes.map(mesh => {
                 const feat = mesh.userData.feature;
@@ -74,7 +75,7 @@ export function GroundTrackWindow({
             });
             return acc;
         }, {});
-    }, [planet]);
+    }, [planet, activeLayers.pois]);
 
     // Compute groundtrack points for each satellite
     const planetQuat = planet?.getMesh?.()?.quaternion || planet?.quaternion;
@@ -162,6 +163,7 @@ export function GroundTrackWindow({
             missions: !!cfg.addMissions,
             countryBorders: !!cfg.addCountryBorders,
             states: !!cfg.addStates,
+            pois: !!planet?.surface?.points,
         };
         setActiveLayers(payload);
     }, [planet]);
@@ -199,6 +201,7 @@ export function GroundTrackWindow({
         groundStations: !!planet?.surface?.groundStations,
         observatories: !!planet?.surface?.observatories,
         missions: !!planet?.surface?.missions,
+        pois: !!planet?.surface?.points,
     };
     const layerToggles = (
         <div className="flex flex-wrap gap-2 mb-2">

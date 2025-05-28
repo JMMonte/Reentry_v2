@@ -15,12 +15,11 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   const [lat, setLat] = useState(null);
   const [lon, setLon] = useState(null);
 
-  // Store reference to setIsOpen in satellite (for toggling from list)
+  // Only keep useEffect for non-physics debug data
   useEffect(() => {
     if (satellite) {
       satellite.debugWindow = {
         onPositionUpdate: () => {
-          // Pull precomputed debug data from satellite (now sent by the physics engine)
           if (satellite.debug) {
             setApsisData(satellite.debug.apsisData);
             setDragData(satellite.debug.dragData);
@@ -167,6 +166,27 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       : 0;
 
   if (!satellite) return null;
+
+  // Warn if no physics data is available
+  if (!physics) {
+    return (
+      <DraggableModal
+        title={satellite.name || `Satellite ${satellite.id}`}
+        isOpen={true}
+        onClose={onClose}
+        defaultPosition={{ x: window.innerWidth - 320, y: 80 }}
+        resizable={true}
+        defaultWidth={300}
+        defaultHeight={200}
+        minWidth={200}
+        minHeight={100}
+      >
+        <div className="text-xs text-red-500 p-4">
+          No physics data found for satellite id: {String(satellite.id)}
+        </div>
+      </DraggableModal>
+    );
+  }
 
   return (
     <>

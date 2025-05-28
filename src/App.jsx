@@ -12,6 +12,7 @@ import { SimulationProvider } from './simulation/SimulationContext';
 import { useBodySelection } from './hooks/useBodySelection';
 import PropTypes from 'prop-types';
 import { usePhysicsSatellites } from './hooks/usePhysicsSatellites';
+import { PhysicsStateProvider } from './providers/PhysicsStateContext.jsx';
 
 // --- Toast Context and Hook ---
 const ToastContext = createContext(null);
@@ -566,23 +567,25 @@ ${shareUrl}`);
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <ToastProvider>
         <SimulationProvider timeUtils={app3d?.timeUtils} displaySettings={displaySettings} simulatedTime={app3d?.timeUtils?.getSimulatedTime() ?? new Date()} timeWarp={app3d?.timeUtils?.getTimeWarp() ?? 1}>
-          <Layout
-            navbarProps={navbarProps}
-            chatModalProps={chatModalProps}
-            displayOptionsProps={displayOptionsProps}
-            debugWindows={debugWindows}
-            satelliteListWindowProps={satelliteListWindowProps}
-            satelliteCreatorModalProps={satelliteCreatorModalProps}
-            shareModalProps={shareModalProps}
-            authModalProps={authModalProps}
-            simulationWindowProps={simulationWindowProps}
-            groundTrackWindowProps={groundTrackWindowProps}
-            earthPointModalProps={earthPointModalProps}
-            isLoadingInitialData={isLoadingInitialData}
-          >
-            {/* Main app content (canvas, etc.) */}
-            <canvas id="three-canvas" className="absolute inset-0 z-0" />
-          </Layout>
+          <PhysicsStateProvider>
+            <Layout
+              navbarProps={navbarProps}
+              chatModalProps={chatModalProps}
+              displayOptionsProps={displayOptionsProps}
+              debugWindows={debugWindows}
+              satelliteListWindowProps={satelliteListWindowProps}
+              satelliteCreatorModalProps={satelliteCreatorModalProps}
+              shareModalProps={shareModalProps}
+              authModalProps={authModalProps}
+              simulationWindowProps={simulationWindowProps}
+              groundTrackWindowProps={groundTrackWindowProps}
+              earthPointModalProps={earthPointModalProps}
+              isLoadingInitialData={isLoadingInitialData}
+            >
+              {/* Main app content (canvas, etc.) */}
+              <canvas id="three-canvas" className="absolute inset-0 z-0" />
+            </Layout>
+          </PhysicsStateProvider>
         </SimulationProvider>
       </ToastProvider>
     </ThemeProvider>

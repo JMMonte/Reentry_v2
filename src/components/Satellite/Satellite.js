@@ -67,12 +67,27 @@ export class Satellite {
      */
     updateVisualsFromState(satState) {
         if (this.visualizer?.mesh && satState.position) {
+            let localPos = satState.position;
+            // If mesh is parented to a planet group, use local position
+            if (this.centralBodyNaifId && this.app3d?.bodiesByNaifId?.[this.centralBodyNaifId]) {
+                const centralBody = this.app3d.bodiesByNaifId[this.centralBodyNaifId];
+                const cbPos = centralBody.targetPosition || centralBody.position;
+                if (cbPos && Array.isArray(cbPos.toArray ? cbPos.toArray() : cbPos)) {
+                    // cbPos may be a THREE.Vector3 or array
+                    const cbArr = cbPos.toArray ? cbPos.toArray() : cbPos;
+                    localPos = [
+                        satState.position[0] - cbArr[0],
+                        satState.position[1] - cbArr[1],
+                        satState.position[2] - cbArr[2],
+                    ];
+                }
+            }
             this.visualizer.mesh.position.set(
-                satState.position[0],
-                satState.position[1],
-                satState.position[2]
+                localPos[0],
+                localPos[1],
+                localPos[2]
             );
-            console.log(`[Satellite] updateVisualsFromState: set mesh position for satellite ${this.id} to`, satState.position);
+            console.log(`[Satellite] updateVisualsFromState: set mesh position for satellite ${this.id} to`, localPos);
         }
         // Optionally update orientation, color, etc. if needed
         // (add more as needed for your visuals)
