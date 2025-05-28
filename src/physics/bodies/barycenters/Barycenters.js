@@ -185,6 +185,7 @@ export default [
         astronomyEngineName: 'Pluto',
         parent: 'ss_barycenter',
         type: 'barycenter',
+        isDwarf: true, // Dwarf planet system barycenter
         GM: 9.818e2, // km³/s²
         mass: 1.471e22, // kg - Pluto + moons combined mass
         description: 'Pluto System Barycenter',
@@ -198,6 +199,98 @@ export default [
             longitudeOfAscendingNode: 110.299,
             argumentOfPeriapsis: 113.834,
             meanAnomalyAtEpoch: 14.53,
+            epoch: 2451545.0
+        }
+    },
+    {
+        name: 'ceres_barycenter',
+        naif_id: 100001, // Using 100000+ range for dwarf planet barycenters
+        astronomyEngineName: 'Ceres', // Note: May not be in astronomy-engine
+        parent: 'ss_barycenter',
+        type: 'barycenter',
+        isDwarf: true, // Dwarf planet system barycenter
+        GM: 62.6284, // km³/s²
+        mass: 9.3835e20, // kg - Ceres mass (no significant moons)
+        description: 'Ceres System Barycenter',
+        radius: 0,
+        poleRA: 291.418,
+        poleDec: 66.764,
+        orbitalElements: {
+            semiMajorAxis: 414010000.0, // km (2.77 AU)
+            eccentricity: 0.0758,
+            inclination: 10.594, // deg
+            longitudeOfAscendingNode: 80.329,
+            argumentOfPeriapsis: 73.115,
+            meanAnomalyAtEpoch: 77.372,
+            epoch: 2451545.0
+        }
+    },
+    {
+        name: 'eris_barycenter',
+        naif_id: 100002, // Using 100000+ range for dwarf planet barycenters
+        astronomyEngineName: 'Eris', // Note: May not be in astronomy-engine
+        parent: 'ss_barycenter',
+        type: 'barycenter',
+        isDwarf: true, // Dwarf planet system barycenter
+        GM: 1108, // km³/s²
+        mass: 1.66e22, // kg - Eris + Dysnomia
+        description: 'Eris System Barycenter',
+        radius: 0,
+        poleRA: 0.0, // Unknown
+        poleDec: 90.0,
+        orbitalElements: {
+            semiMajorAxis: 10120000000.0, // km (67.7 AU at aphelion)
+            eccentricity: 0.4415,
+            inclination: 44.04, // deg - highly inclined!
+            longitudeOfAscendingNode: 35.951,
+            argumentOfPeriapsis: 151.639,
+            meanAnomalyAtEpoch: 205.989,
+            epoch: 2451545.0
+        }
+    },
+    {
+        name: 'makemake_barycenter',
+        naif_id: 100003, // Using 100000+ range for dwarf planet barycenters
+        astronomyEngineName: 'Makemake', // Note: May not be in astronomy-engine
+        parent: 'ss_barycenter',
+        type: 'barycenter',
+        isDwarf: true, // Dwarf planet system barycenter
+        GM: 207, // km³/s²
+        mass: 3.1e21, // kg - Makemake + moon
+        description: 'Makemake System Barycenter',
+        radius: 0,
+        poleRA: 0.0, // Unknown
+        poleDec: 90.0,
+        orbitalElements: {
+            semiMajorAxis: 6783000000.0, // km (45.3 AU)
+            eccentricity: 0.1619,
+            inclination: 28.99, // deg
+            longitudeOfAscendingNode: 79.416,
+            argumentOfPeriapsis: 245.848,
+            meanAnomalyAtEpoch: 213.919,
+            epoch: 2451545.0
+        }
+    },
+    {
+        name: 'haumea_barycenter',
+        naif_id: 100004, // Using 100000+ range for dwarf planet barycenters
+        astronomyEngineName: 'Haumea', // Note: May not be in astronomy-engine
+        parent: 'ss_barycenter',
+        type: 'barycenter',
+        isDwarf: true, // Dwarf planet system barycenter
+        GM: 267.2, // km³/s²
+        mass: 4.006e21, // kg - Haumea + moons
+        description: 'Haumea System Barycenter',
+        radius: 0,
+        poleRA: 284.0,
+        poleDec: 13.0,
+        orbitalElements: {
+            semiMajorAxis: 6432000000.0, // km (43.0 AU)
+            eccentricity: 0.1912,
+            inclination: 28.21, // deg
+            longitudeOfAscendingNode: 122.103,
+            argumentOfPeriapsis: 239.041,
+            meanAnomalyAtEpoch: 198.075,
             epoch: 2451545.0
         }
     }

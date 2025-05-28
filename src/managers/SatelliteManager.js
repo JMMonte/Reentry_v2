@@ -206,6 +206,11 @@ export class SatelliteManager {
     }
 
     _updateVisualsAndPaths(simMs, dtReal, dtWarp, perfNow, timeWarp, thirds) {
+        // Skip old orbit system if new orbit manager is available
+        if (this.app3d.satelliteOrbitManager) {
+            return;
+        }
+        
         const dsm = this.app3d.displaySettingsManager;
         const showOrbits = dsm.getSetting('showOrbits');
         const orbitMs = 1000 / dsm.getSetting('orbitUpdateInterval');

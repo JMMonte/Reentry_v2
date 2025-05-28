@@ -181,6 +181,12 @@ class App3D extends EventTarget {
             try {
                 await this.physicsIntegration.initialize(this.timeUtils.getSimulatedTime());
                 console.log('[App3D] Physics integration initialized successfully');
+                
+                // Initialize satellite orbit manager after physics is ready
+                const { SatelliteOrbitManager } = await import('./managers/SatelliteOrbitManager.js');
+                this.satelliteOrbitManager = new SatelliteOrbitManager(this);
+                this.satelliteOrbitManager.initialize();
+                console.log('[App3D] Satellite orbit manager initialized');
             } catch (physicsError) {
                 console.warn('[App3D] Physics integration failed to initialize:', physicsError);
                 // Continue without physics integration - fallback to existing systems
@@ -726,6 +732,11 @@ class App3D extends EventTarget {
             }
         });
 
+        // Update satellite vectors if visible and using new implementation
+        if (this.satelliteVectors?.update && this.displaySettings?.getSetting('showSatVectors')) {
+            this.satelliteVectors.update();
+        }
+        
         this.labelRenderer?.render?.(this.scene, this.camera);
         this.stats?.end();
     }

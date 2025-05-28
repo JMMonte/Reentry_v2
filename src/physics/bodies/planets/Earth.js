@@ -49,6 +49,49 @@ export default {
     oblateness: 0.0033528106647474805,
     equatorialRadius: earthRadius, // km
     polarRadius: earthPolarRadius, // km
+    
+    // J2 coefficient for oblateness perturbations
+    J2: 0.00108263,
+    
+    // Atmosphere model for drag calculations
+    atmosphere: {
+        maxAltitude: 1000, // km - above this, no drag
+        minAltitude: 0, // km
+        referenceAltitude: 200, // km
+        referenceDensity: 2.789e-10, // kg/m³ at 200km
+        scaleHeight: 50, // km - exponential decay scale
+        // More accurate density model
+        getDensity: function(altitude) {
+            // Simple exponential model
+            // Real atmosphere is much more complex with multiple layers
+            if (altitude > 1000 || altitude < 0) return 0;
+            
+            // Different scale heights for different altitude ranges
+            let scaleHeight;
+            if (altitude < 100) {
+                scaleHeight = 8.5; // Troposphere/stratosphere
+            } else if (altitude < 300) {
+                scaleHeight = 30; // Thermosphere lower
+            } else {
+                scaleHeight = 50; // Thermosphere upper
+            }
+            
+            // Reference densities at different altitudes (kg/m³)
+            let rho0, h0;
+            if (altitude < 100) {
+                rho0 = 1.225; // Sea level
+                h0 = 0;
+            } else if (altitude < 200) {
+                rho0 = 5.1e-7; // 100km
+                h0 = 100;
+            } else {
+                rho0 = 2.789e-10; // 200km
+                h0 = 200;
+            }
+            
+            return rho0 * Math.exp(-(altitude - h0) / scaleHeight);
+        }
+    },
 
     // Rotation properties
     rotationPeriod: Constants.siderialDay, // seconds (sidereal day)

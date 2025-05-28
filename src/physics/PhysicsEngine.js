@@ -409,9 +409,9 @@ export class PhysicsEngine {
             position: new THREE.Vector3().fromArray(satellite.position),
             velocity: new THREE.Vector3().fromArray(satellite.velocity),
             acceleration: new THREE.Vector3(),
-            mass: satellite.mass || 1000,
+            mass: satellite.mass || 1000, // kg - typical small satellite
             dragCoefficient: satellite.dragCoefficient || 2.2,
-            crossSectionalArea: satellite.crossSectionalArea || 10,
+            crossSectionalArea: satellite.crossSectionalArea || 2, // m² - more realistic for 1000kg satellite
             lastUpdate: this.simulationTime,
             centralBodyNaifId: satellite.centralBodyNaifId,
             // UI properties - store them here as single source of truth
@@ -709,10 +709,10 @@ export class PhysicsEngine {
             density = rho0 * Math.exp(-(altitude - h0) / H);
         }
 
-        // Satellite properties (simplified)
-        const mass = satellite.mass || 100; // kg
-        const area = satellite.area || 1; // m² cross-sectional area
-        const Cd = satellite.dragCoeff || 2.2; // Drag coefficient
+        // Satellite properties
+        const mass = satellite.mass || 1000; // kg (use same default as in addSatellite)
+        const area = satellite.crossSectionalArea || 10; // m² cross-sectional area
+        const Cd = satellite.dragCoefficient || 2.2; // Drag coefficient
 
         // Velocity relative to rotating atmosphere
         // For simplicity, assume atmosphere rotates with the planet

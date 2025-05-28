@@ -1,5 +1,5 @@
 import * as Astronomy from 'astronomy-engine';
-import { OrbitPropagator, dateToJd } from './OrbitPropagator.js';
+import { KeplerianPropagator, dateToJd } from './KeplerianPropagator.js';
 import { planetaryDataManager } from './bodies/PlanetaryDataManager.js';
 import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
@@ -184,13 +184,19 @@ export class StateVectorCalculator {
                 // Fallback: calculate GM from mass
                 GM = Constants.G * parentFullConfig.mass; // Convert to km³/s²
             }
+            
+            // Special case: if parent is Solar System Barycenter (0), use Sun's GM
+            if (!GM && parentId === 0) {
+                const sunConfig = this._getFullBodyConfig(10); // Sun's NAIF ID is 10
+                GM = sunConfig?.GM || 1.32712440018e11; // km³/s² - Sun's standard gravitational parameter
+            }
 
             if (!GM) {
                 console.warn(`No GM found for parent ${parentId} of body ${naifId}`);
                 return null;
             }
 
-            const propagator = new OrbitPropagator();
+            const propagator = new KeplerianPropagator();
             const jd = dateToJd(time);
 
             // Prepare orbital elements with proper epoch

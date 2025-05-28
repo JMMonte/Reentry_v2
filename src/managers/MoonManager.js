@@ -4,9 +4,10 @@
  * ----------------------------------------------------------- */
 
 import * as THREE from 'three';
-import {
-    computeOrientationQuaternion
-} from '../../physics/OrbitPropagator.js';
+// TODO: computeOrientationQuaternion needs to be implemented or moved
+// import {
+//     computeOrientationQuaternion
+// } from '../../physics/KeplerianPropagator.js';
 import { StateVectorCalculator } from '../../physics/StateVectorCalculator.js';
 import { planetaryDataManager } from '../../physics/bodies/PlanetaryDataManager.js';
 
@@ -237,8 +238,9 @@ export class MoonManager {
      * @param {Date} currentTime - Current simulation time
      */
     updateMoonOrientation(moonMesh, naifId, currentTime) {
-        const quaternion = computeOrientationQuaternion(naifId, currentTime);
-        moonMesh.quaternion.copy(quaternion);
+        // TODO: computeOrientationQuaternion needs to be implemented
+        // const quaternion = computeOrientationQuaternion(naifId, currentTime);
+        // moonMesh.quaternion.copy(quaternion);
     }
 
     /**

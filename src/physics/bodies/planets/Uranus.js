@@ -40,7 +40,7 @@ export default {
         mieScatteringCoeff: 0.002,
         mieAnisotropy: 0.5,
         numLightSteps: 2,
-        sunIntensity: 2,
+        sunIntensity: 5,
         equatorialRadius: 25559,
         polarRadius: 24973,
         composition: {

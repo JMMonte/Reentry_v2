@@ -9,6 +9,7 @@ export default [
         mass: 1.0659e16, // kg
         radius: 11.2667, // km (mean radius)
         GM: 7.11e-4, // km³/s²
+        isDwarf: true, // Small irregular moon
         dimensions: [26.8, 22.4, 18.4], // km (a x b x c)
         oblateness: 0.19, // Calculated from dimensions
         rotationPeriod: 27554, // seconds (0.3189 Earth days - synchronous with orbit)
@@ -54,6 +55,7 @@ export default [
         mass: 1.4762e15, // kg
         radius: 6.2, // km (mean radius)
         GM: 9.85e-5, // km³/s²
+        isDwarf: true, // Small irregular moon
         dimensions: [15.0, 12.2, 10.4], // km (a x b x c)
         oblateness: 0.16, // Calculated from dimensions
         rotationPeriod: 109605, // seconds (1.268 Earth days - synchronous with orbit)

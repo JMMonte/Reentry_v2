@@ -13,7 +13,7 @@ import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
-import { OrbitPropagator } from '../../physics/OrbitPropagator.js';
+import { KeplerianPropagator } from '../../physics/KeplerianPropagator.js';
 import SunConfig from '../../physics/bodies/planets/Sun.js';
 
 /*
@@ -305,7 +305,7 @@ export class Planet {
         // --- Orbital position update (no lerp) ---
         if (this.orbitElements && this.timeManager && typeof this.timeManager.getJulianDate === 'function') {
             if (!this._orbitPropagator) {
-                this._orbitPropagator = new OrbitPropagator();
+                this._orbitPropagator = new KeplerianPropagator();
             }
             const parent = SunConfig;
             const jd = this.timeManager.getJulianDate();

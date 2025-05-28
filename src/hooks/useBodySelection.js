@@ -17,6 +17,10 @@ const planetMoonOrder = [
     { planet: 'uranus', moons: ['miranda', 'ariel', 'umbriel', 'titania', 'oberon'] },
     { planet: 'neptune', moons: ['triton', 'proteus', 'nereid'] },
     { planet: 'pluto', moons: ['charon', 'nix', 'hydra', 'kerberos', 'styx'] },
+    { planet: 'ceres', moons: [] },
+    { planet: 'eris', moons: [] },
+    { planet: 'makemake', moons: [] },
+    { planet: 'haumea', moons: [] },
 ];
 
 /**

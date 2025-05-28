@@ -50,7 +50,7 @@ export class OrbitRenderer {
     /**
      * Create orbit line with appropriate styling
      */
-    createOrbitLine(points, parentNaif, bodyName) {
+    createOrbitLine(points, parentNaif, bodyName, bodyData = {}) {
         if (!points || points.length === 0) {
             return null;
         }
@@ -61,13 +61,21 @@ export class OrbitRenderer {
         const color = this.orbitColors[parentNaif] || 0xFFFFFF;
         const style = this.getLineStyle(parentNaif);
 
+        // Check if body is a dwarf (dwarf planet or moon with isDwarf flag)
+        // Also check if it's a barycenter for a dwarf planet system
+        const isDwarf = bodyData.type === 'dwarf_planet' || 
+                       bodyData.isDwarf === true;
+        
+        // Apply 20% opacity for dwarf bodies
+        const opacity = isDwarf ? style.opacity * 0.2 : style.opacity;
+
         // Create material based on style
         let material;
         if (style.dashed) {
             material = new THREE.LineDashedMaterial({
                 color,
                 transparent: true,
-                opacity: style.opacity,
+                opacity: opacity,
                 linewidth: style.linewidth,
                 dashSize: style.dashSize,
                 gapSize: style.gapSize
@@ -76,7 +84,7 @@ export class OrbitRenderer {
             material = new THREE.LineBasicMaterial({
                 color,
                 transparent: true,
-                opacity: style.opacity,
+                opacity: opacity,
                 linewidth: style.linewidth
             });
         }

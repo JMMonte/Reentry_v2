@@ -1,4 +1,4 @@
-// OrbitPropagator.js
+// KeplerianPropagator.js
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 
@@ -11,12 +11,12 @@ export function dateToJd(date) {
 const DEG_TO_RAD = Math.PI / 180.0;
 
 /**
- * Specialized orbit propagator for rendering orbital paths
+ * Specialized orbit propagator for analytical Keplerian orbit propagation
  * Supports Keplerian orbits, numerical integration, and trajectory prediction
  * 
  * Now includes consolidated orbital mechanics functions from OrbitalMechanics.js
  */
-export class OrbitPropagator {
+export class KeplerianPropagator {
     constructor() {
         this.cache = new Map(); // Cache orbital elements and trajectories
         this.maxCacheSize = 1000;

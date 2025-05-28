@@ -10,6 +10,8 @@ export class DisplaySettingsManager {
     constructor(app3d, defaults = {}) {
         this.app3d = app3d;
         this.settings = { ...defaults };
+        this.listeners = new Map(); // key -> Set of callback functions
+        
         // Listen for display settings updates
         document.addEventListener('displaySettingsUpdate', (event) => {
             if (event.detail) {
@@ -38,6 +40,18 @@ export class DisplaySettingsManager {
         if (this.settings[key] !== value) {
             this.settings[key] = value;
             this._applySetting(key, value);
+            
+            // Notify listeners
+            const callbacks = this.listeners.get(key);
+            if (callbacks) {
+                callbacks.forEach(callback => {
+                    try {
+                        callback(value);
+                    } catch (e) {
+                        console.error(`Error in display setting listener for ${key}:`, e);
+                    }
+                });
+            }
         }
     }
 
@@ -47,6 +61,30 @@ export class DisplaySettingsManager {
      */
     getSetting(key) {
         return this.settings[key];
+    }
+
+    /**
+     * Add a listener for a specific setting
+     * @param {string} key - Setting key to listen for
+     * @param {Function} callback - Function to call when setting changes
+     */
+    addListener(key, callback) {
+        if (!this.listeners.has(key)) {
+            this.listeners.set(key, new Set());
+        }
+        this.listeners.get(key).add(callback);
+    }
+
+    /**
+     * Remove a listener for a specific setting
+     * @param {string} key - Setting key
+     * @param {Function} callback - Function to remove
+     */
+    removeListener(key, callback) {
+        const callbacks = this.listeners.get(key);
+        if (callbacks) {
+            callbacks.delete(callback);
+        }
     }
 
     /**
@@ -83,7 +121,13 @@ export class DisplaySettingsManager {
                 break;
             case 'showSatVectors':
                 // Toggle satellite-centric velocity/gravity arrows only
-                if (app3d.satelliteVectors) app3d.satelliteVectors.setVisible(value);
+                if (app3d.satelliteVectors) {
+                    app3d.satelliteVectors.setVisible(value);
+                    // If using new implementation, force update
+                    if (value && app3d.satelliteVectors.update) {
+                        app3d.satelliteVectors.update();
+                    }
+                }
                 break;
             case 'showSurfaceLines':
                 Planet.instances.forEach(p => {
@@ -172,6 +216,16 @@ export class DisplaySettingsManager {
             case 'orbitPointsPerPeriod':
                 if (app3d.satellites?.refreshOrbitPaths) {
                     app3d.satellites.refreshOrbitPaths();
+                }
+                break;
+            case 'showOrbits':
+                // Update satellite orbit visibility for both old and new systems
+                if (app3d.satelliteOrbitManager) {
+                    app3d.satelliteOrbitManager.updateVisibility(value);
+                }
+                // Also update old orbit system if it exists
+                if (app3d.satellites?.setOrbitVisibility) {
+                    app3d.satellites.setOrbitVisibility(value);
                 }
                 break;
             case 'pixelRatio': {

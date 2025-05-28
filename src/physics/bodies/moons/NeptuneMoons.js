@@ -90,6 +90,7 @@ export default [
         mass: 3.1e19, // kg
         radius: 170, // km
         GM: 0.29, // km³/s² (2.9e8 / 1e9)
+        isDwarf: true, // Small irregular moon
         density: 1500, // kg/m³ (estimated)
         rotationPeriod: 11.52 * 3600, // seconds (11.52 hours, not synchronous)
         orbitalPeriod: 360.14 * 24 * 3600, // Highly eccentric orbit

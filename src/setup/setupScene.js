@@ -252,14 +252,14 @@ export async function createSceneObjects(app) {
     // Ensure no null/undefined entries
     const validGravitySources = gravitySources.filter(Boolean);
 
+    // Use refactored satellite vectors implementation
     app.satelliteVectors = new SatelliteVectors({
         scene,
-        timeUtils,
-        satelliteManager: app.satellites,
-        gravitySources: validGravitySources,
         camera,
-        app3d: app
+        app3d: app,
+        satelliteManager: app.satellites
     });
+    console.log('[setupScene] Initialized SatelliteVectors');
 
     // --- Parent moons to their planet's equatorialGroup ---
     for (const [, config] of planetaryDataManager.naifToBody.entries()) {

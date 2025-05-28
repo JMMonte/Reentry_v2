@@ -109,6 +109,18 @@ export class OrbitHierarchy {
             502: { parent: 5, name: 'Europa' },
             503: { parent: 5, name: 'Ganymede' },
             504: { parent: 5, name: 'Callisto' },
+            505: { parent: 5, name: 'Amalthea' },
+            506: { parent: 5, name: 'Himalia' },
+            507: { parent: 5, name: 'Elara' },
+            508: { parent: 5, name: 'Pasiphae' },
+            509: { parent: 5, name: 'Sinope' },
+            510: { parent: 5, name: 'Lysithea' },
+            511: { parent: 5, name: 'Carme' },
+            512: { parent: 5, name: 'Ananke' },
+            513: { parent: 5, name: 'Leda' },
+            514: { parent: 5, name: 'Thebe' },
+            515: { parent: 5, name: 'Adrastea' },
+            516: { parent: 5, name: 'Metis' },
 
             // Bodies that orbit the Saturn Barycenter
             601: { parent: 6, name: 'Mimas' },

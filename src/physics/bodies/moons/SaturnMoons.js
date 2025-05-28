@@ -9,6 +9,7 @@ export default [
         mass: 3.7493e19, // kg
         radius: 198.2, // km (mean radius)
         GM: 2.5025, // km³/s²
+        isDwarf: true, // Small moon
         density: 1148, // kg/m³
         rotationPeriod: 0.942422 * 24 * 3600, // Synchronous
         orbitalPeriod: 0.942422 * 24 * 3600, // days to seconds
@@ -228,7 +229,7 @@ export default [
         cloudThickness: 100, // km
         atmosphere: {
             thickness: 200, // km - visible haze layer
-            densityScaleHeight: 20, // km (approx for lower atmosphere)
+            densityScaleHeight: 15, // km (approx for lower atmosphere)
             pressure: 1.45, // bar (surface pressure)
             composition: { nitrogen: 0.95, methane: 0.049, hydrogen: 0.001 },
             hazeIntensity: 5, // Stronger haze

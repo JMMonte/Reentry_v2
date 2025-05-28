@@ -31,7 +31,7 @@ export function CelestialBodiesProvider({ children }) {
     // Utility: get grouped planet/moon options, with optional filter
     const getGroupedPlanetOptions = useCallback((options = {}) => {
         const { excludeBarycenters = false } = options;
-        const planets = celestialBodies.filter(b => b.type === 'planet' && (!excludeBarycenters || b.subtype !== 'barycenter'));
+        const planets = celestialBodies.filter(b => (b.type === 'planet' || b.type === 'dwarf_planet') && (!excludeBarycenters || b.subtype !== 'barycenter'));
         const moons = celestialBodies.filter(b => b.type === 'moon');
         const moonsByParent = {};
         for (const moon of moons) {

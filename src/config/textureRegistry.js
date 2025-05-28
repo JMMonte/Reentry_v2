@@ -50,6 +50,11 @@ import nixTexture from '../assets/texture/placeholder.jpg';
 import hydraTexture from '../assets/texture/placeholder.jpg';
 import kerberosTexture from '../assets/texture/placeholder.jpg';
 import styxTexture from '../assets/texture/placeholder.jpg';
+// Dwarf planets
+import ceresTexture from '../assets/texture/4k_ceres_fictional.jpg';
+import erisTexture from '../assets/texture/4k_eris_fictional.jpg';
+import makemakeTexture from '../assets/texture/4k_makemake_fictional.jpg';
+import haumeaTexture from '../assets/texture/4k_haumea_fictional.jpg';
 import sunTexture from '../assets/texture/sun_surface_texture.png';
 
 export const textureDefinitions = [
@@ -98,6 +103,10 @@ export const textureDefinitions = [
     { key: 'hydraTexture', src: hydraTexture },
     { key: 'kerberosTexture', src: kerberosTexture },
     { key: 'styxTexture', src: styxTexture },
+    { key: 'ceresTexture', src: ceresTexture },
+    { key: 'erisTexture', src: erisTexture },
+    { key: 'makemakeTexture', src: makemakeTexture },
+    { key: 'haumeaTexture', src: haumeaTexture },
     { key: 'saturnRingsTexture', src: saturnRingTexture },
     { key: 'uranusRingsTexture', src: uranusRingTexture },
     { key: 'neptuneRingsTexture', src: neptuneRingTexture },
@@ -148,6 +157,10 @@ export {
     hydraTexture,
     kerberosTexture,
     styxTexture,
+    ceresTexture,
+    erisTexture,
+    makemakeTexture,
+    haumeaTexture,
     saturnRingTexture,
     uranusRingTexture,
     neptuneRingTexture

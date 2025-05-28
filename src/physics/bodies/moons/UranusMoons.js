@@ -174,6 +174,7 @@ export default [
         mass: 6.59e19, // kg
         radius: 235.8, // km
         GM: 0.44, // km³/s²
+        isDwarf: true, // Smallest major moon of Uranus
         density: 1200, // kg/m³
         rotationPeriod: 1.413479 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.413479 * 24 * 3600,

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
-import { OrbitPropagator } from './OrbitPropagator.js';
+import { KeplerianPropagator } from './KeplerianPropagator.js';
 
 /**
  * Integration manager that bridges the new physics engine with existing codebase.
@@ -9,7 +9,7 @@ export class PhysicsIntegration {
     constructor(app) {
         this.app = app; // Reference to main App3D instance
         this.physicsEngine = new PhysicsEngine();
-        this.orbitPropagator = new OrbitPropagator();
+        this.orbitPropagator = new KeplerianPropagator();
 
         // Integration state
         this.isInitialized = false;
@@ -404,6 +404,12 @@ export class PhysicsIntegration {
             506: 5,   // Himalia -> Jupiter Barycenter
             507: 5,   // Elara -> Jupiter Barycenter
             508: 5,   // Pasiphae -> Jupiter Barycenter
+            509: 5,   // Sinope -> Jupiter Barycenter
+            510: 5,   // Lysithea -> Jupiter Barycenter
+            511: 5,   // Carme -> Jupiter Barycenter
+            512: 5,   // Ananke -> Jupiter Barycenter
+            513: 5,   // Leda -> Jupiter Barycenter
+            514: 5,   // Thebe -> Jupiter Barycenter
             
             // Saturn moons
             601: 6,   // Mimas -> Saturn Barycenter

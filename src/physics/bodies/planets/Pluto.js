@@ -13,6 +13,7 @@ export default {
     mass: 1.303e22, // kg
     radius: 1188.3, // km
     GM: 8.71e2, // km³/s²
+    isDwarf: true, // Dwarf planet
     // j2: unknown or negligible for Pluto
 
     // Shape properties
@@ -47,13 +48,13 @@ export default {
         densityScaleHeight: 60, // km (highly variable)
         hazeIntensity: 0.1,
         scaleHeightMultiplier: 1.0, // Less pronounced effect for thin atm
-        rayleighScaleHeight: 50, // km
-        mieScaleHeight: 10, // km (tholin hazes)
+        rayleighScaleHeight: 5, // km
+        mieScaleHeight: 5, // km (tholin hazes)
         rayleighScatteringCoeff: [0.0001, 0.0001, 0.0002], // Very faint blue/grey
         mieScatteringCoeff: 0.0005,
         mieAnisotropy: 0.3,
         numLightSteps: 1,
-        sunIntensity: 0.5,
+        sunIntensity: 10,
         equatorialRadius: 1188.3,
         polarRadius: 1188.3,
         composition: {

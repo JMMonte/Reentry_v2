@@ -135,6 +135,7 @@ export default [
         mass: 1.65e16, // kg
         radius: 19, // km (irregular)
         GM: 0.0011, // km³/s² (1.1e6 / 1e9)
+        isDwarf: true, // Small moon
         density: 1400, // kg/m³ (estimated)
         rotationPeriod: 32.17 * 24 * 3600, // seconds (synchronous)
         orbitalPeriod: 32.17 * 24 * 3600, // seconds
@@ -177,6 +178,7 @@ export default [
         mass: 7.5e15, // kg
         radius: 16, // km (irregular)
         GM: 0.00048, // km³/s² (4.8e5 / 1e9)
+        isDwarf: true, // Small moon
         density: 1500, // kg/m³ (est)
         rotationPeriod: 3.24 * 24 * 3600, // Not tidally locked
         orbitalPeriod: 20.16155 * 24 * 3600,

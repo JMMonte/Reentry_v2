@@ -91,8 +91,8 @@ export function setupRenderer(canvas) {
 export function setupControls(camera, renderer) {
     const controls = new OrbitControls(camera, renderer.domElement);
 
-    controls.minDistance = 1;
-    controls.maxDistance = 500_000_000_000;
+    controls.minDistance = 0.1;
+    controls.maxDistance = 9_460_730_472_580.8; // 1 lightyear in km
 
     return controls;
 }

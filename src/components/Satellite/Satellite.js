@@ -41,6 +41,11 @@ export class Satellite {
         this.maneuverNodes = [];
         this.maneuverGroup = new THREE.Group();
         scene.add(this.maneuverGroup);
+        
+        // Request orbit update from new orbit manager
+        if (this.app3d?.satelliteOrbitManager) {
+            this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
+        }
     }
 
     _initVisuals() {
@@ -53,9 +58,10 @@ export class Satellite {
             this.visualizer.addToScene(this.scene);
             console.warn(`[Satellite] Added mesh for satellite ${this.id} directly to scene (no valid planetConfig)`, this.visualizer.mesh);
         }
-        this.orbitPath = new OrbitPath(this.color);
-        this.scene.add(this.orbitPath.orbitLine);
-        this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
+        // Skip old orbit path - using new SatelliteOrbitManager instead
+        // this.orbitPath = new OrbitPath(this.color);
+        // this.scene.add(this.orbitPath.orbitLine);
+        // this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
         this.apsisVisualizer.setVisible(this.app3d.getDisplaySetting('showOrbits'));
         this.groundTrackPath = new GroundtrackPath();
@@ -83,10 +89,24 @@ export class Satellite {
             );
             
             // Store physics state for other components
+            const oldPos = this.position ? this.position.clone() : null;
+            const oldVel = this.velocity ? this.velocity.clone() : null;
+            
             this.position = new THREE.Vector3(...satState.position);
             this.velocity = new THREE.Vector3(...satState.velocity);
             if (satState.acceleration) {
                 this.acceleration = new THREE.Vector3(...satState.acceleration);
+            }
+            
+            // Check if orbit needs update (significant change in state)
+            if (this.app3d?.satelliteOrbitManager && oldPos && oldVel) {
+                const posDiff = this.position.distanceTo(oldPos);
+                const velDiff = this.velocity.distanceTo(oldVel);
+                
+                // Update orbit if position changed by >10km or velocity by >0.1km/s
+                if (posDiff > 10 || velDiff > 0.1) {
+                    this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
+                }
             }
         }
     }
@@ -102,14 +122,18 @@ export class Satellite {
     setVisible(v) {
         const showOrbit = v && this.app3d.getDisplaySetting('showOrbits');
         this.visualizer.setVisible(v);
-        this.orbitPath.setVisible(showOrbit);
+        // Orbit visibility handled by SatelliteOrbitManager
         this.apsisVisualizer.setVisible(showOrbit);
     }
 
     setColor(c) {
         this.color = c;
         this.visualizer.setColor(c);
-        this.orbitPath.orbitLine.material.color.set(c);
+        
+        // Update orbit color in new manager
+        if (this.app3d?.satelliteOrbitManager) {
+            this.app3d.satelliteOrbitManager.updateSatelliteColor(this.id, c);
+        }
         
         // Update physics engine (single source of truth)
         if (this.app3d?.physicsIntegration?.updateSatelliteProperty) {
@@ -132,11 +156,10 @@ export class Satellite {
         }
         this.visualizer?.dispose();
         
-        // Remove orbit visualization
-        if (this.orbitPath?.orbitLine?.parent) {
-            this.orbitPath.orbitLine.parent.remove(this.orbitPath.orbitLine);
+        // Remove orbit from new manager
+        if (this.app3d?.satelliteOrbitManager) {
+            this.app3d.satelliteOrbitManager.removeSatelliteOrbit(this.id);
         }
-        this.orbitPath?.dispose();
         
         // Remove ground track
         this.groundTrackPath?.dispose();

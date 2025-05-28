@@ -61,6 +61,13 @@ export async function createSatellite(app, params = {}) {
         color = pickBrightColor(params.color)
     } = params;
 
+    // Debug logging for velocity tracking
+    console.log('[createSatellite] Creating satellite with:');
+    console.log('  Position:', position ? `[${position.x?.toFixed(1) || position[0]?.toFixed(1)}, ${position.y?.toFixed(1) || position[1]?.toFixed(1)}, ${position.z?.toFixed(1) || position[2]?.toFixed(1)}] km` : 'undefined');
+    console.log('  Velocity:', velocity ? `[${velocity.x?.toFixed(3) || velocity[0]?.toFixed(3)}, ${velocity.y?.toFixed(3) || velocity[1]?.toFixed(3)}, ${velocity.z?.toFixed(3) || velocity[2]?.toFixed(3)}] km/s` : 'undefined');
+    console.log('  Velocity magnitude:', velocity ? Math.sqrt((velocity.x || velocity[0])**2 + (velocity.y || velocity[1])**2 + (velocity.z || velocity[2])**2).toFixed(3) + ' km/s' : 'undefined');
+    console.log('  Central body:', planetConfig?.name || 'unknown');
+
     const sat = await app.satellites.addSatellite({
         position,
         velocity,
@@ -91,6 +98,12 @@ export async function createSatelliteFromLatLon(app, params = {}) {
     // Use improved coordinate calculation with planet quaternion
     const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
     const { position, velocity } = SatelliteCoordinates.createFromLatLon(params, planet, currentTime);
+
+    // Debug logging
+    console.log('[createSatelliteFromLatLon] Calculated initial state:');
+    console.log('  Position:', position.toArray().map(v => v.toFixed(1)).join(', '), 'km');
+    console.log('  Velocity:', velocity.toArray().map(v => v.toFixed(3)).join(', '), 'km/s');
+    console.log('  Velocity magnitude:', velocity.length().toFixed(3), 'km/s');
 
     const sat = await createSatellite(app, {
         ...params,

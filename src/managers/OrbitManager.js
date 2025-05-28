@@ -3,6 +3,7 @@ import { Constants } from '../utils/Constants.js';
 import { OrbitCalculator } from './orbit/OrbitCalculator.js';
 import { OrbitRenderer } from './orbit/OrbitRenderer.js';
 import { OrbitHierarchy } from './orbit/OrbitHierarchy.js';
+import { planetaryDataManager } from '../physics/bodies/PlanetaryDataManager.js';
 
 /**
  * OrbitManager orchestrates hierarchical planetary orbit visualization
@@ -178,7 +179,17 @@ export class OrbitManager {
             console.log(`[OrbitManager] Generated ${points.length} orbit points for ${hierarchyInfo.name}`);
             
             if (points.length > 1) {
-                const orbitLine = this.renderer.createOrbitLine(points, parentNaif, hierarchyInfo.name);
+                // Get full body config for dwarf determination
+                let fullBodyConfig = bodyConfig;
+                if ((!fullBodyConfig || !fullBodyConfig.isDwarf) && planetaryDataManager) {
+                    const pmConfig = planetaryDataManager.getBodyByNaif(naifNum);
+                    if (pmConfig) {
+                        fullBodyConfig = { ...bodyConfig, ...pmConfig };
+                    }
+                }
+                
+                
+                const orbitLine = this.renderer.createOrbitLine(points, parentNaif, hierarchyInfo.name, fullBodyConfig);
                 if (!orbitLine) {
                     console.warn(`[OrbitManager] Failed to create orbit line for ${hierarchyInfo.name}`);
                     return false;
@@ -223,8 +234,23 @@ export class OrbitManager {
             return false;
         }
 
+        // Get body config for dwarf determination
+        // Try multiple sources to get the body config
+        let bodyConfigForDwarf = {};
+        
+        // Try from calculator first
+        if (calculator && calculator._getFullBodyConfig) {
+            bodyConfigForDwarf = calculator._getFullBodyConfig(naifNum) || {};
+        }
+        
+        // If empty, try from planetaryDataManager directly
+        if ((!bodyConfigForDwarf || Object.keys(bodyConfigForDwarf).length === 0) && planetaryDataManager) {
+            bodyConfigForDwarf = planetaryDataManager.getBodyByNaif(naifNum) || {};
+        }
+        
+        
         // Create and place orbit line
-        const orbitLine = this.renderer.createOrbitLine(points, parentNaif, hierarchyInfo.name);
+        const orbitLine = this.renderer.createOrbitLine(points, parentNaif, hierarchyInfo.name, bodyConfigForDwarf);
         if (!orbitLine) return false;
 
         // Add to appropriate parent group
