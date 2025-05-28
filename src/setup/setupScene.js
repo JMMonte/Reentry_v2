@@ -250,7 +250,7 @@ export async function createSceneObjects(app) {
     });
 
     // Ensure no null/undefined entries
-    const validGravitySources = gravitySources.filter(Boolean);
+    // const validGravitySources = gravitySources.filter(Boolean);
 
     // Use refactored satellite vectors implementation
     app.satelliteVectors = new SatelliteVectors({

@@ -112,16 +112,6 @@ export default {
         cryovolcanism: 'possible'
     },
 
-    // Orbital mechanics from orbitalBodiesData.js (for Pluto around Sun)
-    orbitalElements: {
-        semiMajorAxis: 5906440628.0,
-        eccentricity: 0.2488,
-        inclination: 17.16,
-        longitudeOfAscendingNode: 110.299,
-        argumentOfPeriapsis: 113.834,
-        meanAnomalyAtEpoch: 14.53
-    },
-
     // Orientation (IAU 2023/2025)
     poleRA: 132.993, // deg at J2000.0, +0.0*T per century
     poleDec: -6.163, // deg at J2000.0, +0.0*T per century

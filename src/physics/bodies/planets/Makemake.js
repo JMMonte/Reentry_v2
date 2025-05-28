@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 export default {
     // Basic identification
     name: 'makemake',
@@ -36,8 +34,7 @@ export default {
         longitudeOfAscendingNode: 0.0,
         argumentOfPeriapsis: 0.0,
         meanAnomalyAtEpoch: 0.0,
-        epoch: 2451545.0, // J2000.0
-        referenceFrame: 'ecliptic_J2000'
+        epoch: 2451545.0 // J2000.0
     },
 
     // Surface properties

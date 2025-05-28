@@ -103,7 +103,7 @@ function createCloudMaterial(textureManager, anisotropy, config = {}) {
     cloudTexture.anisotropy = anisotropy;
 
     const baseParams = {
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
         color: color,
         transparent: true,
         blending: THREE.NormalBlending,

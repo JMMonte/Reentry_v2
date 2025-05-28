@@ -145,6 +145,19 @@ export class PhysicsIntegration {
             return;
         }
 
+        // Debug logging for velocity tracking
+        console.log('[PhysicsIntegration.addSatellite] Adding satellite:');
+        console.log('  satelliteData:', satelliteData);
+        if (satelliteData.velocity) {
+            const vel = satelliteData.velocity;
+            const velMag = Math.sqrt(
+                (vel.x || vel[0] || 0)**2 + 
+                (vel.y || vel[1] || 0)**2 + 
+                (vel.z || vel[2] || 0)**2
+            );
+            console.log('  Velocity magnitude:', velMag.toFixed(3), 'km/s');
+        }
+
         // PhysicsEngine is the single source of truth
         const id = this.physicsEngine.addSatellite(satelliteData);
         return id;
@@ -313,7 +326,6 @@ export class PhysicsIntegration {
         this._accumulator += simulatedDeltaSeconds;
         
         // Fixed timestep integration parameters
-        const stepSize = this._fixedTimeStep;
         let maxSteps = 5;
         
         // For very high time warps, allow more steps per frame to keep up
@@ -374,6 +386,19 @@ export class PhysicsIntegration {
     }
 
     /**
+     * Check if a system is a multi-body system where bodies orbit around a shared barycenter
+     */
+    _isMultiBodySystem(bodyNaifId, parentNaifId) {
+        // Known multi-body systems where the barycenter is significantly displaced
+        const knownMultiBodySystems = [
+            3,  // Earth-Moon Barycenter (EMB)
+            9   // Pluto System Barycenter (Pluto-Charon)
+        ];
+        
+        return knownMultiBodySystems.includes(parentNaifId);
+    }
+
+    /**
      * Private: Get parent NAIF ID from hierarchy
      */
     _getParentNaifId(naifId) {
@@ -389,6 +414,12 @@ export class PhysicsIntegration {
             799: 7,   // Uranus -> Uranus Barycenter
             899: 8,   // Neptune -> Neptune Barycenter
             999: 9,   // Pluto -> Pluto Barycenter
+            
+            // Dwarf planets to their barycenters
+            2000001: 100001,  // Ceres -> Ceres Barycenter
+            136199: 100002,   // Eris -> Eris Barycenter
+            136472: 100003,   // Makemake -> Makemake Barycenter
+            136108: 100004,   // Haumea -> Haumea Barycenter
             
             // Moons to their parent barycenters
             301: 3,   // Moon -> Earth-Moon Barycenter
@@ -482,8 +513,13 @@ export class PhysicsIntegration {
                     // Check if this body has a parent in the hierarchy
                     const parentNaifId = this._getParentNaifId(naifId);
                     
-                    if (parentNaifId && state.bodies[parentNaifId]) {
-                        // Calculate relative position to parent
+                    // For single-planet systems (like dwarf planets), the planet position IS the absolute position
+                    // For multi-body systems (like Earth-Moon, Pluto-Charon), calculate relative to parent
+                    // const bodyConfig = this.physicsEngine.positionManager?.hierarchy?.getBodyInfo?.(naifId);
+                    const isMultiBodySystem = this._isMultiBodySystem(naifId, parentNaifId);
+                    
+                    if (parentNaifId && state.bodies[parentNaifId] && isMultiBodySystem) {
+                        // Multi-body system: calculate relative position to parent
                         const parentState = state.bodies[parentNaifId];
                         celestialBody.targetPosition.set(
                             bodyState.position[0] - parentState.position[0],
@@ -491,7 +527,7 @@ export class PhysicsIntegration {
                             bodyState.position[2] - parentState.position[2]
                         );
                     } else {
-                        // No parent, use absolute position
+                        // Single-planet system or no parent: use absolute position
                         celestialBody.targetPosition.set(
                             bodyState.position[0],
                             bodyState.position[1],

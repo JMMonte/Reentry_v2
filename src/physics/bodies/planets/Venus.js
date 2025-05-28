@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 export default {
     // Basic identification
     name: 'venus',

@@ -121,10 +121,12 @@ export class DisplaySettingsManager {
                 break;
             case 'showSatVectors':
                 // Toggle satellite-centric velocity/gravity arrows only
+                console.log(`[DisplaySettingsManager] Setting satellite vectors visibility to ${value}`);
                 if (app3d.satelliteVectors) {
                     app3d.satelliteVectors.setVisible(value);
                     // If using new implementation, force update
                     if (value && app3d.satelliteVectors.update) {
+                        console.log('[DisplaySettingsManager] Forcing satellite vectors update');
                         app3d.satelliteVectors.update();
                     }
                 }
@@ -134,12 +136,7 @@ export class DisplaySettingsManager {
                     if (typeof p.setSurfaceLinesVisible === 'function') p.setSurfaceLinesVisible(value);
                 });
                 break;
-            case 'showOrbits':
-                Object.values(app3d.satellites.getSatellites()).forEach(sat => {
-                    if (sat.orbitPath?.setVisible) sat.orbitPath.setVisible(value);
-                    if (sat.apsisVisualizer?.setVisible) sat.apsisVisualizer.setVisible(value);
-                });
-                break;
+            // Removed duplicate showOrbits case - handled below
             case 'showCities':
                 Planet.instances.forEach(p => {
                     if (typeof p.setCitiesVisible === 'function') p.setCitiesVisible(value);

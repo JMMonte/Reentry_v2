@@ -22,8 +22,8 @@ export default [
         astronomyEngineName: 'EMB', // Earth-Moon Barycenter
         parent: 'ss_barycenter',
         type: 'barycenter',
-        GM: 4.035032e5, // km³/s² - Combined Earth-Moon system
-        mass: 6.0458e24, // kg - Earth + Moon combined mass
+        GM: 4.035032e5, // km³/s² - Combined Earth-Moon system (needed for orbital calculations)
+        mass: 0, // Barycenters have no mass for gravitational forces - only GM for orbital math
         description: 'Earth-Moon Barycenter',
         radius: 0,
         poleRA: 0,
@@ -55,8 +55,8 @@ export default [
         astronomyEngineName: 'Venus',
         parent: 'ss_barycenter',
         type: 'barycenter',
-        GM: 3.24859e5, // km³/s²
-        mass: 4.867e24, // kg
+        GM: 0, // Barycenters have no mass
+        mass: 0, // Barycenters have no mass
         description: 'Venus System Barycenter (essentially Venus center)',
         radius: 0,
         orbitalElements: {
@@ -75,7 +75,7 @@ export default [
         astronomyEngineName: 'Mars',
         parent: 'ss_barycenter',
         type: 'barycenter',
-        GM: 4.282837e4, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Mars System Barycenter',
         radius: 0,
@@ -97,7 +97,7 @@ export default [
         astronomyEngineName: 'Jupiter',
         parent: 'ss_barycenter',
         type: 'barycenter',
-        GM: 1.26686534e8, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Jupiter System Barycenter',
         radius: 0,
@@ -119,7 +119,7 @@ export default [
         astronomyEngineName: 'Saturn',
         parent: 'ss_barycenter',
         type: 'barycenter',
-        GM: 3.7931187e7, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Saturn System Barycenter',
         radius: 0,
@@ -141,7 +141,7 @@ export default [
         astronomyEngineName: 'Uranus',
         parent: 'ss_barycenter',
         type: 'barycenter',
-        GM: 5.793939e6, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Uranus System Barycenter',
         radius: 0,
@@ -163,7 +163,7 @@ export default [
         astronomyEngineName: 'Neptune',
         parent: 'ss_barycenter',
         type: 'barycenter',
-        GM: 6.836529e6, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Neptune System Barycenter',
         radius: 0,
@@ -186,7 +186,7 @@ export default [
         parent: 'ss_barycenter',
         type: 'barycenter',
         isDwarf: true, // Dwarf planet system barycenter
-        GM: 9.818e2, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Pluto System Barycenter',
         radius: 0,
@@ -209,7 +209,7 @@ export default [
         parent: 'ss_barycenter',
         type: 'barycenter',
         isDwarf: true, // Dwarf planet system barycenter
-        GM: 62.6284, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Ceres System Barycenter',
         radius: 0,
@@ -232,7 +232,7 @@ export default [
         parent: 'ss_barycenter',
         type: 'barycenter',
         isDwarf: true, // Dwarf planet system barycenter
-        GM: 1108, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Eris System Barycenter',
         radius: 0,
@@ -255,7 +255,7 @@ export default [
         parent: 'ss_barycenter',
         type: 'barycenter',
         isDwarf: true, // Dwarf planet system barycenter
-        GM: 207, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Makemake System Barycenter',
         radius: 0,
@@ -278,7 +278,7 @@ export default [
         parent: 'ss_barycenter',
         type: 'barycenter',
         isDwarf: true, // Dwarf planet system barycenter
-        GM: 267.2, // km³/s² (needed for orbital calculations)
+        GM: 0, // Barycenters have no mass
         mass: 0, // Barycenters have no mass
         description: 'Haumea System Barycenter',
         radius: 0,

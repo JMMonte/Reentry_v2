@@ -1,9 +1,8 @@
-import * as THREE from 'three';
 
 export default {
     // Basic identification
     name: 'ceres',
-    naif_id: 1,  // Ceres has NAIF ID 1 (special case - it's also minor planet 1)
+    naif_id: 2000001,  // Using 2000000+ range to avoid conflict with Mercury Barycenter
     astronomyEngineName: 'Ceres', // Note: May not be in astronomy-engine
     parent: 'ceres_barycenter',
     type: 'dwarf_planet',
@@ -36,8 +35,7 @@ export default {
         longitudeOfAscendingNode: 0.0,
         argumentOfPeriapsis: 0.0,
         meanAnomalyAtEpoch: 0.0,
-        epoch: 2451545.0, // J2000.0
-        referenceFrame: 'ecliptic_J2000'
+        epoch: 2451545.0 // J2000.0
     },
 
     // Surface properties

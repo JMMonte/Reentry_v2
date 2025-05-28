@@ -237,7 +237,7 @@ export class MoonManager {
      * @param {number} naifId - NAIF ID of the moon
      * @param {Date} currentTime - Current simulation time
      */
-    updateMoonOrientation(moonMesh, naifId, currentTime) {
+    updateMoonOrientation(/* moonMesh, naifId, currentTime */) {
         // TODO: computeOrientationQuaternion needs to be implemented
         // const quaternion = computeOrientationQuaternion(naifId, currentTime);
         // moonMesh.quaternion.copy(quaternion);

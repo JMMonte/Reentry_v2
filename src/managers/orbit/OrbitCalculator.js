@@ -27,8 +27,8 @@ export class OrbitCalculator {
 
         // Transform to planet's equatorial coordinates if this is a moon orbiting a planet
         const { transformedPos, transformedVel } = this.transformToParentEquatorial(
-            relativePosition, 
-            relativeVelocity, 
+            relativePosition,
+            relativeVelocity,
             parentNaif
         );
 
@@ -67,7 +67,7 @@ export class OrbitCalculator {
     transformToParentEquatorial(relativePosition, relativeVelocity, parentNaif) {
         // Get parent planet's orientation
         const parentQuaternion = this.getParentOrientation(parentNaif);
-        
+
         if (!parentQuaternion) {
             // If no parent orientation available, return original vectors
             return {
@@ -78,7 +78,7 @@ export class OrbitCalculator {
 
         // Create the inverse rotation (from ecliptic to planet equatorial)
         const inverseQuaternion = parentQuaternion.clone().invert();
-        
+
         // Transform position and velocity vectors
         const transformedPos = relativePosition.clone().applyQuaternion(inverseQuaternion);
         const transformedVel = relativeVelocity.clone().applyQuaternion(inverseQuaternion);
@@ -87,20 +87,47 @@ export class OrbitCalculator {
     }
 
     /**
+     * Helper to get parent NAIF ID from body config
+     */
+    _getParentNaifFromConfig(bodyConfig) {
+        if (!bodyConfig || !bodyConfig.parent) return null;
+        
+        // Find the parent by name in the celestial bodies
+        if (typeof window !== 'undefined' && window.app && window.app.celestialBodies) {
+            const parent = window.app.celestialBodies.find(body => {
+                const config = body.config || body;
+                return config.name === bodyConfig.parent;
+            });
+            
+            if (parent) {
+                return parent.naifId || parent.naif_id || parent.config?.naif_id;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
      * Get parent planet's orientation quaternion
      */
     getParentOrientation(parentNaif) {
-        // Map of barycenter NAIF IDs to main planet NAIF IDs
-        const barycenterToPlanet = {
-            4: 499,  // Mars Barycenter -> Mars
-            5: 599,  // Jupiter Barycenter -> Jupiter  
-            6: 699,  // Saturn Barycenter -> Saturn
-            7: 799,  // Uranus Barycenter -> Uranus
-            8: 899,  // Neptune Barycenter -> Neptune
-            9: 999,  // Pluto System Barycenter -> Pluto
-            3: 399   // Earth-Moon Barycenter -> Earth (for Moon)
-        };
-        const planetNaif = barycenterToPlanet[parentNaif] || parentNaif;
+        // Dynamically find the planet associated with this barycenter
+        let planetNaif = parentNaif;
+
+        // Look for a planet/dwarf_planet that has this barycenter as parent
+        if (typeof window !== 'undefined' && window.app && window.app.celestialBodies) {
+            const planet = window.app.celestialBodies.find(body => {
+                // Check if this body is a planet/dwarf_planet with the parentNaif as its parent barycenter
+                const bodyConfig = body.config || body;
+                const bodyParentNaif = this._getParentNaifFromConfig(bodyConfig);
+                return (bodyConfig.type === 'planet' || bodyConfig.type === 'dwarf_planet') &&
+                    bodyParentNaif === parentNaif;
+            });
+
+            if (planet) {
+                planetNaif = planet.naifId || planet.naif_id || planet.config?.naif_id;
+            }
+        }
         // Try to get the planet's orientation quaternion from the app context
         if (typeof window !== 'undefined' && window.app && window.app.bodiesByNaifId) {
             const planet = window.app.bodiesByNaifId[planetNaif];

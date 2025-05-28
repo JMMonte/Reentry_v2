@@ -1,7 +1,7 @@
 // Satellite.js
 import * as THREE from 'three';
 import { ApsisVisualizer } from '../ApsisVisualizer.js';
-import { OrbitPath } from './OrbitPath.js';
+// import { OrbitPath } from './OrbitPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { GroundtrackPath } from './GroundtrackPath.js';
 
@@ -73,6 +73,15 @@ export class Satellite {
      */
     updateVisualsFromState(satState) {
         if (this.visualizer?.mesh && satState.position) {
+            // Debug extreme velocity issue
+            const velMag = Math.sqrt(satState.velocity[0]**2 + satState.velocity[1]**2 + satState.velocity[2]**2);
+            if (velMag > 50) {
+                console.error(`[Satellite.updateVisualsFromState] EXTREME VELOCITY for satellite ${this.id}:`);
+                console.error(`  Velocity: [${satState.velocity[0].toFixed(3)}, ${satState.velocity[1].toFixed(3)}, ${satState.velocity[2].toFixed(3)}] km/s`);
+                console.error(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
+                console.error(`  Position: [${satState.position[0].toFixed(1)}, ${satState.position[1].toFixed(1)}, ${satState.position[2].toFixed(1)}] km`);
+            }
+            
             // Debug: Log position updates
             if (!this._lastUpdateLogTime || Date.now() - this._lastUpdateLogTime > 1000) {
                 // console.log(`[Satellite ${this.id}] updateVisualsFromState - position: [${satState.position.map(v => v.toFixed(1)).join(', ')}] km`);

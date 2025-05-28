@@ -13,8 +13,8 @@ import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
-import { KeplerianPropagator } from '../../physics/KeplerianPropagator.js';
-import SunConfig from '../../physics/bodies/planets/Sun.js';
+// import { KeplerianPropagator } from '../../physics/KeplerianPropagator.js';
+// import SunConfig from '../../physics/bodies/planets/Sun.js';
 
 /*
  * Planet.js
@@ -302,31 +302,11 @@ export class Planet {
         // Always update distantComponent so it can toggle dot visibility
         this.distantComponent?.update();
 
-        // --- Orbital position update (no lerp) ---
-        if (this.orbitElements && this.timeManager && typeof this.timeManager.getJulianDate === 'function') {
-            if (!this._orbitPropagator) {
-                this._orbitPropagator = new KeplerianPropagator();
-            }
-            const parent = SunConfig;
-            const jd = this.timeManager.getJulianDate();
-            const els = {
-                a: this.orbitElements.semiMajorAxis || this.orbitElements.a,
-                e: this.orbitElements.eccentricity || this.orbitElements.e,
-                i: this.orbitElements.inclination || this.orbitElements.i,
-                Omega: this.orbitElements.longitudeOfAscendingNode || this.orbitElements.Omega,
-                omega: this.orbitElements.argumentOfPeriapsis || this.orbitElements.omega,
-                M0: this.orbitElements.meanAnomalyAtEpoch || this.orbitElements.M0,
-                epoch: this.orbitElements.epoch || 2451545.0 // J2000 default
-            };
-            const state = this._orbitPropagator.orbitalElementsToStateVector(els, jd, parent.GM);
-            if (state && state.position && this.orbitGroup) {
-                this.orbitGroup.position.copy(state.position);
-            }
-        } else {
-            // Fallback: set position directly
-            if (this.orbitGroup) {
-                this.orbitGroup.position.copy(this.targetPosition);
-            }
+        // --- Orbital position update ---
+        // Always use targetPosition which is set by the physics engine
+        // The physics engine handles all orbital mechanics including multi-body systems
+        if (this.orbitGroup) {
+            this.orbitGroup.position.copy(this.targetPosition);
         }
 
         // Orientation interpolation (unchanged)

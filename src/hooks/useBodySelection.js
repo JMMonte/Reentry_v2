@@ -5,23 +5,8 @@ import {
     getPlanetOptions,
     getSatelliteOptions
 } from '../utils/BodySelectionUtils';
+import { planetaryDataManager } from '../physics/bodies/PlanetaryDataManager.js';
 
-// --- Solar System Order for Planets and Moons ---
-const planetMoonOrder = [
-    { planet: 'mercury', moons: [] },
-    { planet: 'venus', moons: [] },
-    { planet: 'earth', moons: ['moon'] },
-    { planet: 'mars', moons: ['phobos', 'deimos'] },
-    { planet: 'jupiter', moons: ['io', 'europa', 'ganymede', 'callisto'] },
-    { planet: 'saturn', moons: ['mimas', 'enceladus', 'tethys', 'dione', 'rhea', 'titan', 'iapetus'] },
-    { planet: 'uranus', moons: ['miranda', 'ariel', 'umbriel', 'titania', 'oberon'] },
-    { planet: 'neptune', moons: ['triton', 'proteus', 'nereid'] },
-    { planet: 'pluto', moons: ['charon', 'nix', 'hydra', 'kerberos', 'styx'] },
-    { planet: 'ceres', moons: [] },
-    { planet: 'eris', moons: [] },
-    { planet: 'makemake', moons: [] },
-    { planet: 'haumea', moons: [] },
-];
 
 /**
  * Hook to manage celestial body selection (planets & satellites).
@@ -86,25 +71,83 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
     // Display name formatter
     const getDisplayValue = (value) => getBodyDisplayName(value, satellites, app3dRef.current?.celestialBodies);
 
-    // Build groupedPlanetOptions for UI
+    // Build groupedPlanetOptions for UI dynamically from planetOptions
+    // This avoids the complexity of accessing Planet instance configs
+    
     // Add Sun as a top-level option if present in planetOptions
     const sunObj = planetOptions.find(o => o.value === 'sun');
     const groupedPlanetOptions = [];
     if (sunObj) {
         groupedPlanetOptions.push({ planet: sunObj, moons: [] });
     }
-    groupedPlanetOptions.push(
-        ...planetMoonOrder.map(({ planet, moons }) => {
-            const planetObj = planetOptions.find(o => o.value === planet);
-            // Find barycenter for this planet (by convention: <planet>_barycenter, except for Earth which is 'emb')
-            const barycenterKey = planet === 'earth' ? 'emb' : `${planet}_barycenter`;
+    
+    // Define solar system order for consistent display
+    const planetOrder = [
+        'mercury', 'venus', 'earth', 'mars', 'jupiter', 
+        'saturn', 'uranus', 'neptune', 'pluto',
+        'ceres', 'eris', 'makemake', 'haumea'
+    ];
+    
+    // Use imported PlanetaryDataManager
+    
+    if (planetaryDataManager) {
+        // Use dynamic hierarchy from PlanetaryDataManager
+        planetOrder.forEach(planetName => {
+            const planetObj = planetOptions.find(o => o.value === planetName);
+            if (!planetObj) return; // Planet not available in options
+            
+            // Find barycenter for this planet
+            const barycenterKey = planetName === 'earth' ? 'emb' : `${planetName}_barycenter`;
             const barycenterObj = planetOptions.find(o => o.value === barycenterKey);
-            const moonObjs = moons.map(moon => planetOptions.find(o => o.value === moon)).filter(Boolean);
+            
+            // Find moons that orbit this planet's barycenter using PlanetaryDataManager
+            const moonObjs = [];
+            const allBodies = Array.from(planetaryDataManager.bodies.values());
+            for (const config of allBodies) {
+                if (config.type === 'moon' && config.parent === barycenterKey) {
+                    const moonObj = planetOptions.find(o => o.value === config.name);
+                    if (moonObj) {
+                        moonObjs.push(moonObj);
+                    }
+                }
+            }
+            
             // Barycenter (if present) should be first in the moons array
             const children = [barycenterObj, ...moonObjs].filter(Boolean);
-            return planetObj ? { planet: planetObj, moons: children } : null;
-        }).filter(Boolean)
-    );
+            
+            groupedPlanetOptions.push({ planet: planetObj, moons: children });
+        });
+    } else {
+        // Fallback to hardcoded moon patterns if PlanetaryDataManager not available
+        console.warn('[useBodySelection] PlanetaryDataManager not available, using fallback moon patterns');
+        
+        planetOrder.forEach(planetName => {
+            const planetObj = planetOptions.find(o => o.value === planetName);
+            if (!planetObj) return;
+            
+            const barycenterKey = planetName === 'earth' ? 'emb' : `${planetName}_barycenter`;
+            const barycenterObj = planetOptions.find(o => o.value === barycenterKey);
+            
+            const moonPatterns = {
+                mars: ['phobos', 'deimos'],
+                jupiter: ['io', 'europa', 'ganymede', 'callisto', 'amalthea', 'himalia', 'elara', 'pasiphae', 'sinope', 'lysithea', 'carme', 'ananke', 'leda', 'thebe', 'adrastea', 'metis'],
+                saturn: ['mimas', 'enceladus', 'tethys', 'dione', 'rhea', 'titan', 'iapetus'],
+                uranus: ['miranda', 'ariel', 'umbriel', 'titania', 'oberon'],
+                neptune: ['triton', 'proteus', 'nereid'],
+                pluto: ['charon', 'nix', 'hydra', 'kerberos', 'styx']
+            };
+            
+            const moonObjs = planetOptions.filter(option => {
+                if (option.value === planetName || option.value === barycenterKey) return false;
+                if (planetName === 'earth' && option.value === 'moon') return true;
+                return moonPatterns[planetName]?.includes(option.value) || false;
+            });
+            
+            const children = [barycenterObj, ...moonObjs].filter(Boolean);
+            groupedPlanetOptions.push({ planet: planetObj, moons: children });
+        });
+    }
+    
     // --- PATCH: Add any bodies not already included ---
     const includedValues = new Set(groupedPlanetOptions.flatMap(g => [g.planet.value, ...g.moons.map(m => m.value)]));
     (planetOptions || []).forEach(opt => {

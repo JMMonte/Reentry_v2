@@ -175,6 +175,11 @@ export class StateVectorCalculator {
      */
     _calculateFromOrbitalElements(naifId, time, orbitalElements) {
         try {
+            // Special case: if semiMajorAxis is 0, body is at parent center
+            if (orbitalElements.semiMajorAxis === 0.0 || orbitalElements.a === 0.0) {
+                return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+            }
+            
             const parentId = this.hierarchy.getParent(naifId);
             const parentFullConfig = this._getFullBodyConfig(parentId);
 

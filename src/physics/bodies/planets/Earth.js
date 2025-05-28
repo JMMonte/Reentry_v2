@@ -54,7 +54,7 @@ export default {
     J2: 0.00108263,
     
     // Atmosphere model for drag calculations
-    atmosphere: {
+    atmosphericModel: {
         maxAltitude: 1000, // km - above this, no drag
         minAltitude: 0, // km
         referenceAltitude: 200, // km

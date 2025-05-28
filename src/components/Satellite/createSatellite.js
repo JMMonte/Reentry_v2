@@ -101,9 +101,10 @@ export async function createSatelliteFromLatLon(app, params = {}) {
 
     // Debug logging
     console.log('[createSatelliteFromLatLon] Calculated initial state:');
-    console.log('  Position:', position.toArray().map(v => v.toFixed(1)).join(', '), 'km');
-    console.log('  Velocity:', velocity.toArray().map(v => v.toFixed(3)).join(', '), 'km/s');
-    console.log('  Velocity magnitude:', velocity.length().toFixed(3), 'km/s');
+    console.log('  Position:', Array.isArray(position) ? position.map(v => v.toFixed(1)).join(', ') : position.toArray().map(v => v.toFixed(1)).join(', '), 'km');
+    console.log('  Velocity:', Array.isArray(velocity) ? velocity.map(v => v.toFixed(3)).join(', ') : velocity.toArray().map(v => v.toFixed(3)).join(', '), 'km/s');
+    const velMag = Array.isArray(velocity) ? Math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2) : velocity.length();
+    console.log('  Velocity magnitude:', velMag.toFixed(3), 'km/s');
 
     const sat = await createSatellite(app, {
         ...params,

@@ -145,8 +145,10 @@ export class OrbitManager {
             const centerTime = physicsEngine.simulationTime;
             
             // Get parent position for relative calculations
-            const parentState = bodyStates[parentNaif];
-            const parentPos = parentState ? new THREE.Vector3().fromArray(parentState.position) : new THREE.Vector3(0, 0, 0);
+            // const parentState = bodyStates[parentNaif];
+            // const parentPos = (parentState && Array.isArray(parentState.position)) 
+            //     ? new THREE.Vector3().fromArray(parentState.position) 
+            //     : new THREE.Vector3(0, 0, 0);
             
             const points = [];
             for (let i = 0; i <= numPoints; i++) {
@@ -277,8 +279,12 @@ export class OrbitManager {
             if (!parentBody) {
                 return { isValid: false };
             }
-            parentPos.fromArray(parentBody.position);
-            parentVel.fromArray(parentBody.velocity);
+            if (Array.isArray(parentBody.position)) {
+                parentPos.fromArray(parentBody.position);
+            }
+            if (Array.isArray(parentBody.velocity)) {
+                parentVel.fromArray(parentBody.velocity);
+            }
             parentMass = parentBody.mass;
         } else {
             // For heliocentric orbits, use Sun's mass
