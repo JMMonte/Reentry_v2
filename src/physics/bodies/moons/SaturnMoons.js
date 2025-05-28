@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 export default [
     {
         name: 'mimas',
@@ -224,6 +225,7 @@ export default [
             epoch: 2451545.0,
             referenceFrame: 'saturn_equatorial'
         },
+        cloudThickness: 100, // km
         atmosphere: {
             thickness: 200, // km - visible haze layer
             densityScaleHeight: 21, // km (approx for lower atmosphere)
@@ -247,6 +249,15 @@ export default [
                 textureKey: 'titanTexture',
                 params: { roughness: 0.6, metalness: 0.1 }
             },
+            createCloudMaterial: tm => new THREE.MeshLambertMaterial({
+                map: tm.getTexture('titanCloudTexture'),
+                color: 0xffffff,
+                transparent: true,
+                blending: THREE.NormalBlending,
+                opacity: 1.0,
+                depthWrite: false,
+                depthTest: true,
+            }),
             // Titan might also have a cloud layer material if detailed textures are available
         },
         lodLevelsKey: 'default',

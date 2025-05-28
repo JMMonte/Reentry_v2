@@ -32,7 +32,8 @@ import enceladusTexture from '../assets/texture/placeholder.jpg';
 import tethysTexture from '../assets/texture/placeholder.jpg';
 import dioneTexture from '../assets/texture/placeholder.jpg';
 import rheaTexture from '../assets/texture/placeholder.jpg';
-import titanTexture from '../assets/texture/placeholder.jpg';
+import titanTexture from '../assets/texture/titan_surface.jpg';
+import titanCloudTexture from '../assets/texture/titan_clouds.jpg';
 import iapetusTexture from '../assets/texture/placeholder.jpg';
 // Uranus moons
 import arielTexture from '../assets/texture/placeholder.jpg';
@@ -83,6 +84,7 @@ export const textureDefinitions = [
     { key: 'dioneTexture', src: dioneTexture },
     { key: 'rheaTexture', src: rheaTexture },
     { key: 'titanTexture', src: titanTexture },
+    { key: 'titanCloudTexture', src: titanCloudTexture },
     { key: 'iapetusTexture', src: iapetusTexture },
     { key: 'arielTexture', src: arielTexture },
     { key: 'umbrielTexture', src: umbrielTexture },
@@ -132,6 +134,7 @@ export {
     dioneTexture,
     rheaTexture,
     titanTexture,
+    titanCloudTexture,
     iapetusTexture,
     arielTexture,
     umbrielTexture,
