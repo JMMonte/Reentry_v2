@@ -38,10 +38,8 @@ export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelec
     const handleDelete = (satellite) => {
         if (satellite.delete) {
             satellite.delete();
-        } else if (app3d && typeof app3d.removeSatellite === 'function') {
-            app3d.removeSatellite(satellite.id);
-        } else if (satellite.dispose) {
-            satellite.dispose();
+        } else {
+            console.error('[SatelliteListWindow] Cannot delete satellite: .delete() method not found on satellite');
         }
     };
 

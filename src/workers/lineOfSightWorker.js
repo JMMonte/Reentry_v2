@@ -1,49 +1,50 @@
 // Worker for calculating line of sight between satellites
 // Removed heavy THREE import, keeping only Constants for math
-import { earthRadius } from '../physics/bodies/planets/Earth.js';
-import { moonRadius } from '../physics/bodies/moons/EarthMoons.js';
 
 let satellites = [];
-let moonPosition = { x: 0, y: 0, z: 0 };
-const EARTH_RADIUS = earthRadius; // in km
-const ATMOSPHERE_HEIGHT = 100; // 100 km
-const MOON_RADIUS = moonRadius;
+let bodies = [];
 
 self.onmessage = function (e) {
-    if (e.data.type === 'UPDATE_SATELLITES') {
-        satellites = e.data.satellites;
-        calculateLineOfSight();
-    } else if (e.data.type === 'UPDATE_BODIES') {
-        // Update positions of celestial bodies if needed
-        if (e.data.moonPosition) {
-            moonPosition = e.data.moonPosition;
-        }
+    if (e.data.type === 'UPDATE_SCENE') {
+        satellites = e.data.satellites || [];
+        bodies = e.data.bodies || [];
         calculateLineOfSight();
     }
 };
 
-// Compute line of sight using plain JS vector math
+// Compute line of sight using plain JS vector math and all bodies as occluders
 function calculateLineOfSight() {
     const connections = [];
     for (let i = 0; i < satellites.length; i++) {
         for (let j = i + 1; j < satellites.length; j++) {
             const a = satellites[i], b = satellites[j];
-            const ox = a.position.x, oy = a.position.y, oz = a.position.z;
-            const dx = b.position.x - ox, dy = b.position.y - oy, dz = b.position.z - oz;
+            const ox = a.position[0], oy = a.position[1], oz = a.position[2];
+            const dx = b.position[0] - ox, dy = b.position[1] - oy, dz = b.position[2] - oz;
             const dist = Math.hypot(dx, dy, dz);
             if (dist <= 0) continue;
             const invD = 1 / dist;
             const rdx = dx * invD, rdy = dy * invD, rdz = dz * invD;
-            const hitEarth = sphereIntersect(ox, oy, oz, rdx, rdy, rdz, 0, 0, 0, EARTH_RADIUS, dist);
-            const hitAtmos = sphereIntersect(ox, oy, oz, rdx, rdy, rdz, 0, 0, 0, EARTH_RADIUS + ATMOSPHERE_HEIGHT, dist);
-            const hitMoon = sphereIntersect(ox, oy, oz, rdx, rdy, rdz, moonPosition.x, moonPosition.y, moonPosition.z, MOON_RADIUS, dist);
-            if (!hitEarth && !hitMoon) {
+
+            let blocked = false;
+            for (const body of bodies) {
+                // Optionally skip satellites themselves if they are in the bodies list
+                if (body.id === a.id || body.id === b.id) continue;
+                if (sphereIntersect(ox, oy, oz, rdx, rdy, rdz, body.position[0], body.position[1], body.position[2], body.radius, dist)) {
+                    blocked = true;
+                    break;
+                }
+            }
+
+            if (!blocked) {
                 connections.push({
                     from: a.id,
                     to: b.id,
-                    points: [[ox, oy, oz], [b.position.x, b.position.y, b.position.z]],
-                    color: hitAtmos ? 'red' : 'green'
+                    points: [a.position, b.position],
+                    color: 'green'
                 });
+            } else {
+                // Optionally, you could push blocked connections with info
+                // connections.push({ from: a.id, to: b.id, blockedBy: blockedBy.id, color: 'red' });
             }
         }
     }

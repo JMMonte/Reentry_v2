@@ -17,11 +17,11 @@ self.onmessage = async function (e) {
         const { id, startTime, position, velocity, bodies, period, numPoints, seq } = e.data;
         if (id === undefined || id === null) return;
 
-        const initPos = [position.x, position.y, position.z]; // ECI meters
-        const initVel = [velocity.x, velocity.y, velocity.z]; // ECI m/s
+        const initPos = [position.x, position.y, position.z]; // ECI kilometers
+        const initVel = [velocity.x, velocity.y, velocity.z]; // ECI km/s
         const startTimestamp = startTime; // Assuming startTime is already a timestamp (ms)
 
-        // Get propagated ECI positions (meters) and time offsets (seconds)
+        // Get propagated ECI positions (kilometers) and time offsets (seconds)
         const propagatedPoints = await propagateOrbit(
             initPos,
             initVel,
@@ -44,7 +44,7 @@ self.onmessage = async function (e) {
         // Collect raw ECI positions + times and stream in chunks
         for (let i = 0; i < propagatedPoints.length; i++) {
             const { position: eciPosArray, timeOffset } = propagatedPoints[i];
-            // raw ECI meters
+            // raw ECI kilometers
             const pos = { x: eciPosArray[0], y: eciPosArray[1], z: eciPosArray[2] };
             const pointTime = startTimestamp + timeOffset * 1000;
             groundPoints.push({ time: pointTime, position: pos });

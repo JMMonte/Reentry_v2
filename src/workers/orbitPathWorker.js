@@ -46,14 +46,13 @@ self.onmessage = async function (e) {
             },
             allowFullEllipse // now dynamic, not hardcoded
         );
-        // Convert ECI meter positions to scaled KM positions for Three.js
-        // and store as a transferable Float32Array [x1,y1,z1, x2,y2,z2,...]
+        // Positions are already in kilometers; just flatten to Float32Array for transfer
         const coords = new Float32Array(rawPtsWithTime.length * 3);
         for (let i = 0; i < rawPtsWithTime.length; i++) {
-            const posMeters = rawPtsWithTime[i].position; // [x, y, z] in meters
-            coords[i * 3] = posMeters[0];
-            coords[i * 3 + 1] = posMeters[1];
-            coords[i * 3 + 2] = posMeters[2];
+            const pos = rawPtsWithTime[i].position; // [x, y, z] in kilometers
+            coords[i * 3] = pos[0];
+            coords[i * 3 + 1] = pos[1];
+            coords[i * 3 + 2] = pos[2];
         }
         orbitPathMap[id] = coords;
         // Post buffer as transferable to minimize copying overhead

@@ -38,7 +38,7 @@ export function MissionPlanSection({
                             <th className="p-1 text-left">Node</th>
                             <th className="p-1 text-left">Time (UTC)</th>
                             <th className="p-1 text-left">T-</th>
-                            <th className="p-1 text-left">ΔV (m/s)</th>
+                            <th className="p-1 text-left">ΔV (km/s)</th>
                             <th className="p-1 text-left">Period</th>
                             <th className="p-1 text-left">Velocity (km/s)</th>
                             <th className="p-1 text-left">Notes</th>
@@ -125,7 +125,7 @@ export function MissionPlanSection({
                         <th className="p-1 text-left">Node</th>
                         <th className="p-1 text-left">Time (UTC)</th>
                         <th className="p-1 text-left">T-</th>
-                        <th className="p-1 text-left">ΔV (m/s)</th>
+                        <th className="p-1 text-left">ΔV (km/s)</th>
                         <th className="p-1 text-left">Period</th>
                         <th className="p-1 text-left">Velocity (km/s)</th>
                         <th className="p-1 text-left">Notes</th>

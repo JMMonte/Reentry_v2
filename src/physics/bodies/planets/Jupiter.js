@@ -137,18 +137,18 @@ export default {
         latitude: -22, // degrees
         width: 16350, // km
         height: 13020, // km
-        windSpeed: 120, // m/s - maximum wind speed
+        windSpeed: 0.120, // km/s - maximum wind speed
         age: 350 * 365.25 * 24 * 3600, // seconds (at least 350 years old)
         color: 0xcc6633 // reddish-brown color
     },
 
-    // Atmospheric dynamics
+    // Atmospheric dynamics (windSpeed in km/s)
     atmosphericBands: {
-        equatorialZone: { latitude: [-7, 7], windSpeed: 100 }, // m/s eastward
-        northEquatorialBelt: { latitude: [7, 20], windSpeed: -50 }, // m/s westward
-        southEquatorialBelt: { latitude: [-20, -7], windSpeed: -70 }, // m/s westward
-        northTemperateZone: { latitude: [20, 40], windSpeed: 40 }, // m/s eastward
-        southTemperateZone: { latitude: [-40, -20], windSpeed: 60 } // m/s eastward
+        equatorialZone: { latitude: [-7, 7], windSpeed: 0.1 }, // km/s eastward
+        northEquatorialBelt: { latitude: [7, 20], windSpeed: -0.05 }, // km/s westward
+        southEquatorialBelt: { latitude: [-20, -7], windSpeed: -0.07 }, // km/s westward
+        northTemperateZone: { latitude: [20, 40], windSpeed: 0.04 }, // km/s eastward
+        southTemperateZone: { latitude: [-40, -20], windSpeed: 0.06 } // km/s eastward
     },
 
     // Trojan asteroids

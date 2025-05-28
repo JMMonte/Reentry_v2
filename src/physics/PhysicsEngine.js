@@ -383,10 +383,11 @@ export class PhysicsEngine {
      * @param {Object} satellite - Must include centralBodyNaifId (the NAIF ID of the central body)
      */
     addSatellite(satellite) {
+        console.log('[PhysicsEngine] addSatellite called with', satellite);
         if (!satellite.centralBodyNaifId) {
             throw new Error('Satellite must specify centralBodyNaifId (NAIF ID of central body)');
         }
-        this.satellites.set(satellite.id, {
+        this.satellites.set(String(satellite.id), {
             ...satellite,
             // All positions/velocities are planet-centric (relative to central body)
             position: new THREE.Vector3().fromArray(satellite.position),
@@ -398,13 +399,14 @@ export class PhysicsEngine {
             lastUpdate: this.simulationTime,
             centralBodyNaifId: satellite.centralBodyNaifId
         });
+        console.log('[PhysicsEngine] satellites after add:', Array.from(this.satellites.keys()));
     }
 
     /**
      * Remove satellite (unchanged from original)
      */
     removeSatellite(id) {
-        return this.satellites.delete(id);
+        this.satellites.delete(String(id));
     }
 
     // Satellite integration methods (copied from original PhysicsEngine)
@@ -418,7 +420,7 @@ export class PhysicsEngine {
 
     _computeSatelliteAcceleration(satellite) {
         const totalAccel = new THREE.Vector3();
-
+        const a_bodies = {};
         // Get the central body's global position
         const centralBody = this.bodies[satellite.centralBodyNaifId];
         if (!centralBody) {
@@ -427,19 +429,25 @@ export class PhysicsEngine {
         }
         // Satellite's global position = planet-centric position + central body's global position
         const satGlobalPos = satellite.position.clone().add(centralBody.position);
-
         // Gravitational forces from all bodies (in global frame)
-        for (const body of Object.values(this.bodies)) {
+        for (const [bodyId, body] of Object.entries(this.bodies)) {
             // Vector from satellite to body (in global frame)
             const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
             const distance = r.length();
-
+            let accVec = new THREE.Vector3();
             if (distance > 0) {
                 const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-                totalAccel.addScaledVector(r, gravAccel);
+                accVec.copy(r).multiplyScalar(gravAccel);
+                totalAccel.add(accVec);
             }
+            a_bodies[bodyId] = [accVec.x, accVec.y, accVec.z];
         }
-
+        // Attach per-body gravity to satellite for UI
+        satellite.a_bodies = a_bodies;
+        // Attach J2, drag, and total (set to zero for now except total)
+        satellite.a_j2 = [0, 0, 0];
+        satellite.a_drag = [0, 0, 0];
+        satellite.a_total = [totalAccel.x, totalAccel.y, totalAccel.z];
         return totalAccel;
     }
 
@@ -518,6 +526,7 @@ export class PhysicsEngine {
 
     _getSatelliteStates() {
         const states = {};
+        // console.log('[PhysicsEngine] _getSatelliteStates: satellites keys:', Array.from(this.satellites.keys()));
         for (const [id, satellite] of this.satellites) {
             states[id] = {
                 id: id,
@@ -542,5 +551,39 @@ export class PhysicsEngine {
             };
         }
         return states;
+    }
+
+    /**
+     * Get all celestial bodies as plain JS objects for line-of-sight calculations
+     * Returns: [{ id, name, position: [x, y, z], radius }]
+     */
+    getBodiesForLineOfSight() {
+        const bodies = [];
+        for (const [naifId, body] of Object.entries(this.bodies)) {
+            if (!body || typeof body.position?.toArray !== 'function' || typeof body.radius !== 'number') continue;
+            bodies.push({
+                id: Number(naifId),
+                name: body.name,
+                position: body.position.toArray(),
+                radius: body.radius
+            });
+        }
+        return bodies;
+    }
+
+    /**
+     * Get all satellites as plain JS objects for line-of-sight calculations
+     * Returns: [{ id, position: [x, y, z] }]
+     */
+    getSatellitesForLineOfSight() {
+        const sats = [];
+        for (const [id, sat] of this.satellites) {
+            if (!sat || typeof sat.position?.toArray !== 'function') continue;
+            sats.push({
+                id,
+                position: sat.position.toArray()
+            });
+        }
+        return sats;
     }
 }

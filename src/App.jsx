@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useRef, useContext, useCallback } from 'react';
+import React, { useState, useEffect, createContext, useRef, useContext } from 'react';
 import { ThemeProvider } from './components/ui/theme-provider';
 import { Layout } from './components/ui/Layout';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
@@ -10,8 +10,8 @@ import './styles/animations.css';
 import LZString from 'lz-string';
 import { SimulationProvider } from './simulation/SimulationContext';
 import { useBodySelection } from './hooks/useBodySelection';
-import { setSimulationDate, setTimewarp } from './utils/simApi.js';
 import PropTypes from 'prop-types';
+import { usePhysicsSatellites } from './hooks/usePhysicsSatellites';
 
 // --- Toast Context and Hook ---
 const ToastContext = createContext(null);
@@ -103,7 +103,6 @@ function App3DMain() {
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
   const [debugWindows, setDebugWindows] = useState([]);
-  const [satellites, setSatellites] = useState({});
   const [displaySettings, setDisplaySettings] = useState(() => getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash()));
   const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
   const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
@@ -123,8 +122,18 @@ function App3DMain() {
   const toastRef = useRef();
   const [openPointModals, setOpenPointModals] = useState([]);
   const [isAssetsLoaded, setIsAssetsLoaded] = useState(false);
-  const [isBackendReady, setIsBackendReady] = useState(false);
+  const [isSimReady, setIsSimReady] = useState(false);
   const [timeWarpLoading, setTimeWarpLoading] = useState(false);
+  const satellitesPhysics = usePhysicsSatellites(app3d);
+  const satellitesUI = app3d?.satellites?.getSatellitesMap?.() || new Map();
+  // Merge physics and UI data for each satellite
+  const satellites = Object.values(satellitesPhysics).map(satState => {
+    const satUI = satellitesUI.get(satState.id);
+    return {
+      ...satState,
+      ...(satUI ? { color: satUI.color, name: satUI.name, setColor: satUI.setColor?.bind(satUI), delete: satUI.delete?.bind(satUI) } : {})
+    };
+  });
 
   useEffect(() => { setCheckedInitialState(true); }, []);
   useEffect(() => {
@@ -145,24 +154,6 @@ function App3DMain() {
     }
   }, [importedState]);
 
-  const handleSatelliteListUpdate = useCallback(() => {
-    if (app3d && app3d.satellites) {
-      const satsMap = app3d.satellites.getSatellites();
-      setSatellites({ ...satsMap });
-      setDebugWindows(prev =>
-        prev.map(w => satsMap[w.id] ? { ...w, satellite: satsMap[w.id] } : null).filter(Boolean)
-      );
-    }
-  }, [app3d, setSatellites, setDebugWindows]);
-
-  useEffect(() => {
-    document.addEventListener('satelliteListUpdated', handleSatelliteListUpdate);
-    handleSatelliteListUpdate(); // Initial sync
-    return () => {
-        document.removeEventListener('satelliteListUpdated', handleSatelliteListUpdate);
-    };
-  }, [handleSatelliteListUpdate]);
-
   useEffect(() => {
     if (app3d && app3d.displaySettingsManager && typeof app3d.displaySettingsManager.applyAll === 'function') {
       app3d.displaySettingsManager.applyAll();
@@ -171,9 +162,9 @@ function App3DMain() {
   useEffect(() => {
     if (app3d && app3d.sessionId) {
       // This call ensures that when a session ID first becomes available,
-      // the backend is synced with the current simTime established by initialState or defaults.
+      // the simulation is synced with the current simTime established by initialState or defaults.
       // It should NOT run every time simTime changes, only when sessionId becomes available.
-      setSimulationDate(app3d.sessionId, simTime.toISOString());
+      setSimTime(app3d.timeUtils.getSimulatedTime());
     }
   }, [app3d?.sessionId]);
   // High-frequency UI updates for smooth time display
@@ -212,14 +203,14 @@ function App3DMain() {
     console.log('[App.jsx] handleSimulatedTimeChange called with newTime:', newTime);
     setSimTime(new Date(newTime));
     
-    // Check if we're using local physics or have a backend session
+    // Check if we're using local physics or (legacy) remote session
     const sessionId = app3d?.sessionId || controller?.sessionId;
     const physicsProviderType = app3d?.physicsProviderType;
     
     if (sessionId && physicsProviderType === 'remote') {
-      // Backend/remote physics - use API call
+      // (Legacy) remote physics - use API call
       console.log('[App.jsx] handleSimulatedTimeChange - Using backend API for remote physics');
-      setSimulationDate(sessionId, new Date(newTime).toISOString());
+      setSimTime(new Date(newTime));
     } else if (app3d?.timeUtils) {
       // Local physics - update time directly
       console.log('[App.jsx] handleSimulatedTimeChange - Using local time management');
@@ -367,11 +358,11 @@ ${shareUrl}`);
     }
   }, [app3d]);
 
-  // Listen for the custom event from simSocket.js
+  // Listen for the custom event from simulation init
   useEffect(() => {
     const handleSceneReady = () => {
-      setIsBackendReady(true);
-      console.log('[App.jsx] sceneReadyFromBackend event received, hiding spinner.');
+      setIsSimReady(true);
+      console.log('[App.jsx] sceneReady event received, hiding spinner.');
     };
     window.addEventListener('sceneReadyFromBackend', handleSceneReady);
     return () => {
@@ -400,10 +391,10 @@ ${shareUrl}`);
   const { showToast } = useToast();
   React.useEffect(() => {
     function handleLost() {
-      showToast('Lost connection to simulation backend');
+      showToast('Simulation connection lost');
     }
     function handleRestored() {
-      showToast('Reconnected to simulation backend');
+      showToast('Simulation connection restored');
     }
     window.addEventListener('sim-connection-lost', handleLost);
     window.addEventListener('sim-connection-restored', handleRestored);
@@ -413,7 +404,7 @@ ${shareUrl}`);
     };
   }, [showToast]);
 
-  const isLoadingInitialData = !isAssetsLoaded || !isBackendReady;
+  const isLoadingInitialData = !isAssetsLoaded || !isSimReady;
 
   useEffect(() => {
     if (!app3d) return;
@@ -470,28 +461,9 @@ ${shareUrl}`);
     timeWarpLoading,
     onTimeWarpChange: async (newWarp) => {
       console.log('[App.jsx] onTimeWarpChange called with newWarp:', newWarp);
-      
-      // Check if we're using local physics or have a backend session
-      const sessionId = app3d?.sessionId || controller?.sessionId;
-      const physicsProviderType = app3d?.physicsProviderType;
-      
-      if (sessionId && physicsProviderType === 'remote') {
-        // Backend/remote physics - use API call
-        console.log('[App.jsx] onTimeWarpChange - Using backend API for remote physics');
-        setTimeWarpLoading(true);
-        const appliedFactor = await setTimewarp(sessionId, newWarp);
-        setTimeWarpLoading(false);
-        if (appliedFactor !== null && app3d?.timeUtils?.setLocalTimeWarp) {
-          app3d.timeUtils.setLocalTimeWarp(appliedFactor);
-        } else if (appliedFactor === null) {
-          console.warn('[App.jsx] Timewarp HTTP call failed or returned invalid data. UI might be out of sync.');
-        }
-      } else if (app3d?.timeUtils) {
-        // Local physics - update time warp directly
-        console.log('[App.jsx] onTimeWarpChange - Using local time management');
+      // Only use local time management for time warp
+      if (app3d?.timeUtils) {
         app3d.timeUtils.setLocalTimeWarp(newWarp);
-        
-        // Also notify physics provider if it supports time warp
         if (app3d.satellites?.physicsProvider?.setTimeWarp) {
           app3d.satellites.physicsProvider.setTimeWarp(newWarp);
         }
@@ -572,7 +544,7 @@ ${shareUrl}`);
       });
     }
   };
-  const groundTrackWindowProps = { isOpen: isGroundtrackOpen, onClose: () => setIsGroundtrackOpen(false) };
+  const groundTrackWindowProps = { isOpen: isGroundtrackOpen, onClose: () => setIsGroundtrackOpen(false), satellites: satellitesPhysics, planets: window.app3d?.planets || [] };
   const simulationWindowProps = { isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), app3d };
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">

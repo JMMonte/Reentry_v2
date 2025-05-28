@@ -67,7 +67,7 @@ export default function GroundTrackCanvas({
             const last = pts[pts.length - 1];
             if (!last.position || last.time === undefined) return;
 
-            // Project last position to canvas (worker outputs ECI in meters)
+            // Project last position to canvas (data from local physics engine, ECI in kilometers)
             const { x, y } = projectWorldPosToCanvas(
                 new THREE.Vector3(
                     last.position.x,
@@ -102,7 +102,7 @@ export default function GroundTrackCanvas({
                 const epochMillis = typeof time === 'string' ? parseFloat(time) : time;
                 if (isNaN(epochMillis) || !position) return;
 
-                // Project position to canvas at point time (worker outputs ECI in meters)
+                // Project position to canvas at point time (data from local physics engine, ECI in kilometers)
                 const { x: xpt, y: ypt, longitude: lon } = projectWorldPosToCanvas(
                     new THREE.Vector3(
                         position.x,

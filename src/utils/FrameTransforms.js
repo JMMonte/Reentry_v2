@@ -4,8 +4,8 @@ import * as THREE from 'three';
  * Convert an inertial state vector (ECI or similar) into world coordinates
  * for a given planet, applying reference frame and mesh transform chain.
  * @param {Object} planet      - The planet instance (must expose getRotationGroup, getEquatorialGroup, etc.)
- * @param {THREE.Vector3} posInertial   - Position in inertial frame (meters)
- * @param {THREE.Vector3} velInertial   - Velocity in inertial frame (m/s)
+ * @param {THREE.Vector3} posInertial   - Position in inertial frame (kilometers)
+ * @param {THREE.Vector3} velInertial   - Velocity in inertial frame (km/s)
  * @param {Object} options 
  * @param {string} options.referenceFrame - 'equatorial' or 'ecliptic'
  * @param {number} options.scale         - Additional scale factor (default 1.0)
@@ -16,42 +16,37 @@ export function inertialToWorld(planet, posInertial, velInertial, options = {}) 
         throw new Error('inertialToWorld: planet must expose getRotationGroup().');
     }
     const referenceFrame = options.referenceFrame || 'equatorial';
-    const scale = options.scale != null ? options.scale : 1.0;
     const inclination = planet?.inclination ?? 0;
 
-    // 1) scale from meters to kilometers and apply global scale
-    const position = posInertial.clone().multiplyScalar(scale);
-    const velocity = velInertial.clone().multiplyScalar(scale);
-
-    // 2) if equatorial frame, apply axial tilt about planet X-axis
+    // 1) if equatorial frame, apply axial tilt about planet X-axis
     if (referenceFrame === 'equatorial') {
         const epsilon = THREE.MathUtils.degToRad(inclination);
         // rotate from ecliptic to equatorial
         const tiltQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), epsilon);
-        position.applyQuaternion(tiltQ);
-        velocity.applyQuaternion(tiltQ);
+        posInertial.applyQuaternion(tiltQ);
+        velInertial.applyQuaternion(tiltQ);
 
         // apply planet's spin (ECEF rotation)
         const rotationGroup = planet.getRotationGroup();
         if (rotationGroup?.quaternion) {
-            position.applyQuaternion(rotationGroup.quaternion);
-            velocity.applyQuaternion(rotationGroup.quaternion);
+            posInertial.applyQuaternion(rotationGroup.quaternion);
+            velInertial.applyQuaternion(rotationGroup.quaternion);
         }
     }
 
-    // 3) translate by planet's world position (if any) for all frames
+    // 2) translate by planet's world position (if any) for all frames
     let bodyPos = new THREE.Vector3(0, 0, 0);
     if (planet.getOrbitGroup && planet.getOrbitGroup()?.position) {
         bodyPos.copy(planet.getOrbitGroup().position);
     }
-    position.add(bodyPos);
+    posInertial.add(bodyPos);
 
-    return { position, velocity };
+    return { position: posInertial, velocity: velInertial };
 }
 
 /**
  * Transform a vector from SSB (solar system barycentric) to the planet's mesh Z-up frame.
- * @param {THREE.Vector3} vecSSB - Vector in SSB frame (meters)
+ * @param {THREE.Vector3} vecSSB - Vector in SSB frame (kilometers)
  * @param {Object} planet - The planet instance
  * @returns {THREE.Vector3} Vector in planet mesh Z-up frame (Three.js world)
  */

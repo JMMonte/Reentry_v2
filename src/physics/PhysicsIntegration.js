@@ -99,9 +99,15 @@ export class PhysicsIntegration {
      * Step the simulation forward by deltaTime seconds
      */
     async stepSimulation(deltaTime) {
+        // Throttle log: only log every 5 seconds
+        if (!this._lastStepLogTime || Date.now() - this._lastStepLogTime > 5000) {
+            // console.log('[PhysicsIntegration] stepSimulation called with', deltaTime);
+            this._lastStepLogTime = Date.now();
+        }
         if (!this.isInitialized) return;
 
         const state = await this.physicsEngine.step(deltaTime);
+        // console.log('[PhysicsIntegration] stepSimulation: state.satellites keys:', Object.keys(state.satellites));
 
         // Sync with existing celestial bodies
         this._syncWithCelestialBodies(state);
@@ -137,10 +143,12 @@ export class PhysicsIntegration {
      */
     removeSatellite(satelliteId) {
         if (!this.isInitialized) return;
-
-        this.physicsEngine.removeSatellite(satelliteId);
-
-        // Also remove from existing satellite manager
+        // Only remove from main-thread physics engine if no provider is present
+        const provider = this.app.satellites?.physicsProvider;
+        if (!provider) {
+            this.physicsEngine.removeSatellite(satelliteId);
+        }
+        // Always remove from SatelliteManager for UI/scene cleanup
         if (this.app.satelliteManager) {
             this.app.satelliteManager.removeSatellite(satelliteId);
         }
@@ -469,17 +477,32 @@ export class PhysicsIntegration {
      * Private: Sync satellite states with existing managers
      */
     _syncSatelliteStates(state) {
+        // console.log('[PhysicsIntegration] _syncSatelliteStates: called with satellites keys:', Object.keys(state.satellites));
         if (!this.app.satelliteManager?.satellites) return;
 
-        for (const [id, satelliteState] of Object.entries(state.satellites)) {
-            const satellite = this.app.satelliteManager.satellites.get(id);
-            if (satellite) {
-                satellite.position.fromArray(satelliteState.position);
-                satellite.velocity.fromArray(satelliteState.velocity);
+        // Throttle log: only log every 5 seconds
+        if (!this._lastSyncLogTime || Date.now() - this._lastSyncLogTime > 5000) {
+            // console.log('[PhysicsIntegration] _syncSatelliteStates called, satellites:', Object.keys(state.satellites));
+            this._lastSyncLogTime = Date.now();
+        }
 
-                // Update 3D object if it exists
-                if (satellite.object3D) {
-                    satellite.object3D.position.copy(satellite.position);
+        for (const [id, satelliteState] of Object.entries(state.satellites)) {
+            const satId = String(id);
+            let satellite = this.app.satelliteManager.satellites.get(satId);
+            if (satellite) {
+                // Only log every 5 seconds
+                if (!satellite._lastSyncLogTime || Date.now() - satellite._lastSyncLogTime > 5000) {
+                    // console.log('[PhysicsIntegration] Syncing satellite', satId, satelliteState.position);
+                    satellite._lastSyncLogTime = Date.now();
+                }
+                satellite.updateFromPhysicsEngine(
+                    satelliteState.position,
+                    satelliteState.velocity
+                );
+            } else {
+                if (!this._lastMissingLogTime || Date.now() - this._lastMissingLogTime > 5000) {
+                    console.warn('[PhysicsIntegration] No UI satellite found for id', satId, 'keys:', Array.from(this.app.satelliteManager.satellites.keys()));
+                    this._lastMissingLogTime = Date.now();
                 }
             }
         }

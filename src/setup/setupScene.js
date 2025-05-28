@@ -257,7 +257,8 @@ export async function createSceneObjects(app) {
         timeUtils,
         satelliteManager: app.satellites,
         gravitySources: validGravitySources,
-        camera
+        camera,
+        app3d: app
     });
 
     // --- Parent moons to their planet's equatorialGroup ---

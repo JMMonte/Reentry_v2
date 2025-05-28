@@ -23,10 +23,9 @@ export function projectToGeodetic(eciWorldPos, planet, epochMillis) {
     // 3. Equatorial ECI → ECEF (in km) via GMST rotation
     const gmst = PhysicsUtils.calculateGMST(epochMillis);
     const ecefKm = PhysicsUtils.eciToEcef(equatorialECI, gmst, new THREE.Vector3());
-    // 4. Convert to meters for ellipsoidal geodetic calculation
-    const ecefM = ecefKm.clone().multiplyScalar(1000);
-    const geodetic = PhysicsUtils.ecefToGeodetic(ecefM.x, ecefM.y, ecefM.z, planet.radius, planet.polarRadius);
-    // Altitude returned in meters → convert to kilometers
+    // 4. ECEF → geodetic
+    const geodetic = PhysicsUtils.ecefToGeodetic(ecefKm.x, ecefKm.y, ecefKm.z, planet.radius, planet.polarRadius);
+    // Altitude returned in kilometers
     const altitudeKm = geodetic.altitude;
     return {
         latitude: geodetic.latitude,

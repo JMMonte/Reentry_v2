@@ -49,7 +49,6 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                 !isNaN(massKg) && isFinite(massKg) &&
                 !isNaN(altitudeKm) && isFinite(altitudeKm)
             ) {
-                // Convert to meters for PhysicsUtils if needed, or use km if that's the expected unit
                 // Here, PhysicsUtils.calculateOrbitalVelocity expects mass in kg, radius in kilometers
                 const rKm = (radiusKm + altitudeKm);
                 const vCirc = PhysicsUtils.calculateOrbitalVelocity(massKg, rKm);

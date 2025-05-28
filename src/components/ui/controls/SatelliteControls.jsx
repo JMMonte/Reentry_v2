@@ -64,7 +64,7 @@ const orbitalElementsSchema = z.object({
   ),
 });
 
-export function SatelliteControls({ socket }) {
+export function SatelliteControls({ onCreateSatellite }) {
   const [activeTab, setActiveTab] = useState('lat-lon');
   
   const latLonForm = useForm({
@@ -91,14 +91,12 @@ export function SatelliteControls({ socket }) {
   });
 
   const onLatLonSubmit = (data) => {
-    if (!socket) return;
-    socket.emit('create satellite from lat lon', data);
+    if (onCreateSatellite) onCreateSatellite({ ...data, mode: 'latlon' });
     latLonForm.reset();
   };
 
   const onOrbitalElementsSubmit = (data) => {
-    if (!socket) return;
-    socket.emit('create satellite from orbital elements', data);
+    if (onCreateSatellite) onCreateSatellite({ ...data, mode: 'orbital' });
     orbitalElementsForm.reset();
   };
 
@@ -288,7 +286,5 @@ export function SatelliteControls({ socket }) {
 }
 
 SatelliteControls.propTypes = {
-  socket: PropTypes.shape({
-    emit: PropTypes.func.isRequired
-  })
+  onCreateSatellite: PropTypes.func.isRequired
 };

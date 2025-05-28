@@ -119,7 +119,7 @@ export class ManeuverNode {
         // camera-relative scaling for sphere and arrow length (constant screen-based)
         const targetSize = 0.005;  // matched to SatelliteVisualizer
         const arrowScale = 20;     // arrow length on screen units
-        const saturation = 10;     // saturation constant for ΔV (m/s)
+        const saturation = 10;     // saturation constant for ΔV (km/s)
         this.mesh.onBeforeRender = (renderer, scene, camera) => {
             const dist = camera.position.distanceTo(this.mesh.position);
             const scale = dist * targetSize;

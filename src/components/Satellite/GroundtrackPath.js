@@ -55,8 +55,8 @@ export class GroundtrackPath {
     /**
      * Ask the worker to (re)compute a ground-track polyline.
      * @param {Date|number} startTime – epoch ms or Date
-     * @param {THREE.Vector3} position – ECI metres
-     * @param {THREE.Vector3} velocity – ECI m/s
+     * @param {THREE.Vector3} position – ECI kilometres
+     * @param {THREE.Vector3} velocity – ECI km/s
      * @param {string|number} id – satellite id
      * @param {{position:THREE.Vector3, mass:number}[]} bodies
      * @param {number} period – seconds to propagate

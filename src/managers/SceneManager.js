@@ -123,7 +123,7 @@ export class SceneManager {
 
     _syncBodiesAndPhysics() {
         // PhysicsWorld and orbitManager loops are now disabled.
-        // All planetary and satellite state is updated via simSocket stream in App3D.
+        // All planetary and satellite state is updated via local physics engine only.
     }
 
     _updateVectors() {

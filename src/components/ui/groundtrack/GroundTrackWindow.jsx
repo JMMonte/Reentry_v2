@@ -10,9 +10,8 @@ import PropTypes from 'prop-types';
 import { DraggableModal } from '../modal/DraggableModal';
 import { usePlanetList } from './hooks';
 import GroundTrackCanvas from './GroundTrackCanvas.jsx';
-import GroundTrackControls from './GroundTrackControls.jsx';
-import { projectToGeodetic } from '../../../utils/MapProjection';
-import * as THREE from 'three';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
+import { Button } from '../button';
 
 // ---------------------------------------------------------------------------
 // Layers state machine
@@ -47,17 +46,35 @@ export function GroundTrackWindow({
     satellites,
     planets,
 }) {
-    const [offscreenCanvas, setOffscreenCanvas] = useState(null);
     const [tracks, setTracks] = useState({});
     // refs to batch updates
     const pendingTracksRef = useRef({});
     const flushTracksScheduledRef = useRef(false);
-    const [selectedPlanet, setSelectedPlanet] = useState(0);
+    const [selectedPlanetNaifId, setSelectedPlanetNaifId] = useState(
+        planets?.[0]?.naifId || 399
+    );
     const [layers, dispatchLayers] = useReducer(layersReducer, initialLayers);
-    const [showCoverage, setShowCoverage] = useState(false);
+    const [showCoverage] = useState(false);
 
-    const planetList = usePlanetList(planets);
-    const planet = planetList[selectedPlanet];
+    const planetList = usePlanetList(planets).filter(
+        p => p.type !== 'barycenter' &&
+            !(typeof p.name === 'string' && (
+                p.name.endsWith('_barycenter') ||
+                p.name === 'ss_barycenter' ||
+                p.name === 'emb'
+            ))
+    );
+    const planet = planetList.find(p => p.naifId === selectedPlanetNaifId) || planetList[0];
+
+    // Filter satellites to only those orbiting the selected planet
+    const filteredSatellites = useMemo(() => {
+        if (!satellites || !planet) return {};
+        return Object.fromEntries(
+            Object.entries(satellites).filter(
+                ([, sat]) => sat.centralBodyNaifId === planet.naifId
+            )
+        );
+    }, [satellites, planet]);
 
     // Prepare POI data from the planet's surface for canvas rendering
     const poiData = useMemo(() => {
@@ -71,15 +88,6 @@ export function GroundTrackWindow({
             return acc;
         }, {});
     }, [planet]);
-
-    // Clamp planet index if list changes
-    useEffect(() => {
-        if (
-            selectedPlanet >= planetList.length &&
-            planetList.length
-        )
-            setSelectedPlanet(0);
-    }, [planetList.length, selectedPlanet]);
 
     // Hook: subscribe to groundTrackUpdated
     useEffect(() => {
@@ -135,7 +143,6 @@ export function GroundTrackWindow({
             off.width = source.width;
             off.height = source.height;
             off.getContext('2d').drawImage(source, 0, 0);
-            setOffscreenCanvas(off);
         }
 
         if (img instanceof HTMLImageElement) {
@@ -162,56 +169,34 @@ export function GroundTrackWindow({
         dispatchLayers({ type: 'SET', payload });
     }, [planet]);
 
-    // CSV download: convert raw ECI positions to lat/lon per selected planet
-    const downloadCsv = () => {
-        const rows = [['satelliteId', 'time', 'lat', 'lon']];
+    // UI: planet selector (DropdownMenu)
+    const planetSelector = (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="justify-start w-full">
+                    {planet?.name || 'Select Planet'}
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[10rem] w-48 max-h-80 overflow-y-auto z-[11000]">
+                {planetList.map(p => (
+                    <DropdownMenuItem
+                        key={p.naifId}
+                        onSelect={() => setSelectedPlanetNaifId(p.naifId)}
+                        className={p.naifId === selectedPlanetNaifId ? 'font-semibold bg-accent' : ''}
+                    >
+                        {p.name}
+                    </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
 
-        for (const [id, pts] of Object.entries(tracks)) {
-            pts.forEach(pt => {
-                const { time, position } = pt;
-                const scratch = new THREE.Vector3(
-                    position.x,
-                    position.y,
-                    position.z
-                );
-                const { latitude, longitude } = projectToGeodetic(scratch, planet);
-                rows.push([id, time, latitude, longitude]);
-            });
-        }
-        const blob = new Blob(
-            [rows.map(r => r.join(',')).join('\n')],
-            { type: 'text/csv;charset=utf-8;' },
-        );
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'groundtracks.csv';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-    };
-
-    // -----------------------------------------------------------------------
-    // Render
     return (
         <DraggableModal
-            title="Ground-track"
+            title={`Ground-track: ${planet?.name || ''}`}
             isOpen={isOpen}
             onClose={onClose}
-            rightElement={
-                <GroundTrackControls
-                    onDownloadCsv={downloadCsv}
-                    planetList={planetList}
-                    selectedPlanet={selectedPlanet}
-                    setSelectedPlanet={setSelectedPlanet}
-                    planet={planet}
-                    showCoverage={showCoverage}
-                    setShowCoverage={setShowCoverage}
-                    layers={layers}
-                    dispatchLayers={dispatchLayers}
-                />
-            }
+            rightElement={planetSelector}
             defaultWidth={500}
             defaultHeight={300}
             resizable
@@ -219,11 +204,11 @@ export function GroundTrackWindow({
             minHeight={200}
         >
             <GroundTrackCanvas
-                map={offscreenCanvas}
+                map={planet?.getSurfaceTexture?.()}
                 planet={planet}
                 width={1024}
                 height={512}
-                satellites={satellites}
+                satellites={filteredSatellites}
                 tracks={tracks}
                 layers={layers}
                 showCoverage={showCoverage}

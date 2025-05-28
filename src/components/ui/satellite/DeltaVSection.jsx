@@ -7,7 +7,7 @@ import { Button } from '../button';
 export function DeltaVSection({ vx, vy, vz, setVx, setVy, setVz, multP, multA, multN, setMultP, setMultA, setMultN, dvMag }) {
     return (
         <div>
-            <div className="text-[10px] font-semibold mb-1">Delta-V (m/s)</div>
+            <div className="text-[10px] font-semibold mb-1">Delta-V (km/s)</div>
             {['Prograde', 'Antiradial', 'Normal'].map((axis, idx) => {
                 const val = idx === 0 ? vx : idx === 1 ? vy : vz;
                 const setter = idx === 0 ? setVx : idx === 1 ? setVy : setVz;
@@ -36,7 +36,7 @@ export function DeltaVSection({ vx, vy, vz, setVx, setVy, setVz, multP, multA, m
                 );
             })}
             {/* Show magnitude of the delta-V */}
-            <div className="text-[10px] font-semibold mt-1">|ΔV|: {dvMag.toFixed(1)} m/s</div>
+            <div className="text-[10px] font-semibold mt-1">|ΔV|: {dvMag.toFixed(1)} km/s</div>
         </div>
     );
 }

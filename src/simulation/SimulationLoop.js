@@ -82,6 +82,9 @@ export class SimulationLoop {
         switch (key) {
             case 'showSatConnections':
                 this.app._toggleSatelliteLinks(value);
+                if (value) {
+                    this.app._updateSatelliteConnections(this.app._connections || []);
+                }
                 break;
             case 'physicsTimeStep':
                 this.satellites.setPhysicsTimeStep(value);

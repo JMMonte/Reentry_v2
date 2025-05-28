@@ -1,390 +1,259 @@
 // SatelliteManager.js
+//
+// Responsibilities
+// • CRUD for Satellite instances
+// • Delegation of physics updates to a provider (stubbed for now)
+// • Visual upkeep: orbits, ground tracks, etc.
+// • Keeps all distances in kilometres and velocities in km s-1
+//
+// External deps: THREE, Satellite, OrbitPath, Constants
+// Public API: addSatellite, removeSatellite, updateSatelliteFromBackend,
+//             updateAll, getSatellitesMap, getSatellites, setTimeWarp,
+//             refreshOrbitPaths, plus createSatelliteFrom* helpers.
 
 import * as THREE from 'three';
 import { Satellite } from '../components/Satellite/Satellite.js';
 import { OrbitPath } from '../components/Satellite/OrbitPath.js';
 import { Constants } from '../utils/Constants.js';
-// Import providers (assuming they are in a 'providers' subdirectory)
-// import { LocalPhysicsProvider } from '../providers/LocalPhysicsProvider.js';
-// import { RemotePhysicsProvider } from '../providers/RemotePhysicsProvider.js';
-// Import the actual satellite creation functions
 import {
     createSatelliteFromLatLon as createSatFromLatLonInternal,
     createSatelliteFromOrbitalElements as createSatFromOEInternal,
     createSatelliteFromLatLonCircular as createSatFromLatLonCircularInternal
 } from '../components/Satellite/createSatellite.js';
 
-/**
- * Manages satellites, their state updates via a physics provider, and related scene updates.
- * – Uses Map<> for O(1) ops and cleaner iteration
- * – Centralises physics delegation to a provider
- * – Minimises Vector3 allocations & loops (for orbit drawing)
- * – Batches UI updates with queueMicrotask()
- */
+/* ────────────── small helpers ────────────── */
+
+/** Safe Hill-sphere / SOI accessor with huge fallback. */
+const soi = body => body?.soiRadius ?? 1e12;
+
+/* ────────────── class ────────────── */
+
 export class SatelliteManager {
     /**
-     * @param {App3D} app3d – Main App3D instance
-     * @param {object} options - Configuration options
-     * @param {'local' | 'remote'} options.physicsSource - Specifies the physics provider to use.
-     * @param {LocalPhysicsProvider | RemotePhysicsProvider} options.physicsProviderInstance - Pre-instantiated provider.
+     * @param {App3D} app3d – shared context containing scene, time utils, bodies, settings…
      */
-    constructor(app3d, { physicsProviderInstance } = {}) {
+    constructor(app3d) {
         /** @readonly */ this.app3d = app3d;
-
         /** @type {Map<string|number, Satellite>} */
         this._satellites = new Map();
-        // this._satelliteAddQueue = []; // Queue was for worker, provider handles its own init logic
-
-        /** @type {LocalPhysicsProvider | RemotePhysicsProvider} */
-        this.physicsProvider = physicsProviderInstance;
-        if (!this.physicsProvider) {
-            throw new Error("[SatelliteManager] A physicsProviderInstance must be provided.");
-        }
-
-        // Time-sync related properties might still be relevant for orbit drawing logic
-        // this._lastTimeWarp = undefined; // Provider will handle its own timeWarp sync if needed
-
-        // micro-task flag for UI list updates
-        this._needsListFlush = false;
-
-        // Exposed tweakables - these might now be passed to the provider if they are physics-related
-        // this.sensitivityScale = 1; // Example: If LocalPhysicsProvider needs it
-
-        // Initialize the provider with the current (empty) set of satellites
-        this.physicsProvider.initialize?.(this._satellites);
+        this._needsListFlush = false;   // micro-task flag
+        this._lastOrbitUpdate = 0;      // perf.now timestamp
+        this._nextId = 0; // Unique satellite ID counter
     }
 
-    /**
-     * Initialize the local physics worker if not already running.
-     */
-    _initPhysicsWorker() {
-        if (
-            this.physicsProvider &&
-            typeof this.physicsProvider.initialize === 'function' &&
-            !this.physicsProvider._worker
-        ) {
-            this.physicsProvider.initialize(this._satellites);
-        }
-    }
-
-    /* ───────────────────────────── Satellite CRUD ─────────────────────────── */
+    /* ───── Satellite CRUD ───── */
 
     /**
-     * Add a new satellite and return it.
-     * @param {Object} params – ctor params forwarded to {@link Satellite}
+     * @param {Object} params – forwarded to Satellite ctor
      * @returns {Satellite}
      */
     addSatellite(params) {
-        // Convert position/velocity arrays (km) to THREE.Vector3 (km)
-        let position = params.position;
-        let velocity = params.velocity;
-        if (Array.isArray(position)) position = new THREE.Vector3(position[0], position[1], position[2]);
-        if (Array.isArray(velocity)) velocity = new THREE.Vector3(velocity[0], velocity[1], velocity[2]);
-
-        // --- NO conversion: keep in km and km/s ---
-
-        // --- FIX: Look up planetConfig using planetNaifId ---
-        let planetConfig = params.planetConfig;
-        if (!planetConfig && params.planetNaifId) {
-            planetConfig = this.app3d.bodiesByNaifId?.[params.planetNaifId];
-        }
-
-        // Ensure centralBodyNaifId is always set
-        let centralBodyNaifId = params.centralBodyNaifId ?? params.planetNaifId ?? planetConfig?.naifId;
-        if (!centralBodyNaifId) {
-            console.warn('[SatelliteManager] No centralBodyNaifId found for satellite, defaulting to 399 (Earth)');
-            centralBodyNaifId = 399;
-        }
-
-        const sat = new Satellite({ ...params, position, velocity, scene: this.app3d.scene, app3d: this.app3d, planetConfig, centralBodyNaifId });
-        this._applyDisplaySettings(sat); // Apply visual settings
-        sat.timeWarp = this.app3d.timeUtils?.timeWarp ?? 1; // Satellites still need to know timeWarp for local animations/effects
-        this._satellites.set(sat.id, sat);
-
-        this.physicsProvider?.addSatellite?.(sat); // Inform the physics provider
-
-        this._flushListSoon();
+        const planetConfig =
+            params.planetConfig ?? this.app3d.bodiesByNaifId?.[params.planetNaifId];
+        const centralBodyNaifId =
+            params.centralBodyNaifId ??
+            params.planetNaifId ??
+            planetConfig?.naifId ??
+            399; // Earth fallback
+        const id = String(params.id ?? this._nextId++);
+        const sat = new Satellite({
+            ...params,
+            id,
+            scene: this.app3d.scene,
+            app3d: this.app3d,
+            planetConfig,
+            centralBodyNaifId
+        });
+        this._satellites.set(id, sat);
         return sat;
     }
 
-    /**
-     * Update a satellite from backend data.
-     * This method is now primarily intended to be called by the RemotePhysicsProvider.
-     * @param {number|string} satId
-     * @param {Array} pos - [x, y, z] in meters (as per original implementation)
-     * @param {Array} vel - [vx, vy, vz] in m/s
-     * @param {Object} debug - optional debug data
-     */
-    updateSatelliteFromBackend(satId, pos, vel, debug) {
-        const sat = this._satellites.get(satId);
-        if (!sat) return;
-        // Use the new internal method
-        sat._updateFromBackend(pos, vel, debug);
+    /** Integrate backend-provided state (pos [m], vel [m s-1]). */
+    updateSatelliteFromBackend(id, pos, vel, debug) {
+        this._satellites.get(String(id))?.updateFromPhysicsEngine(pos, vel, debug);
     }
 
-
-    /**
-     * Remove a satellite by id (string or number).
-     * @param {string|number} id
-     */
     removeSatellite(id) {
-        const sat = this._satellites.get(id);
+        const sat = this._satellites.get(String(id));
         if (!sat) return;
-
-        sat.dispose(); // Visual disposal
-        this._satellites.delete(id);
-
-        this.physicsProvider?.removeSatellite?.(id); // Inform the physics provider
-
+        sat.dispose();
+        this._satellites.delete(String(id));
         this._flushListSoon();
-        // this._teardownWorkerIfIdle(); // Provider handles its own lifecycle
     }
 
-    /** @returns {Map<string|number, Satellite>} the internal map of satellites */
-    getSatellitesMap() {
-        return this._satellites;
-    }
+    /* shorthand getters */
+    getSatellitesMap() { return this._satellites; }
+    getSatellites() { return Object.fromEntries(this._satellites); }
+    get satellites() { return this._satellites; }
 
-    /** @returns {Object<string, Satellite>} a shallow copy for external code */
-    getSatellites() {
-        return Object.fromEntries(this._satellites);
-    }
-
-    /* ───────────────────────────── Render Loop ────────────────────────────── */
+    /* ───── Render-loop hook ───── */
 
     /**
-     * Called from the main animation loop.
-     * @param {number} currentTime - Current simulation time (epoch ms or similar)
-     * @param {number} realDelta - Real time elapsed since last frame (seconds)
-     * @param {number} warpedDelta - Warped simulation time elapsed (seconds)
+     * @param {number} simTimeMs  – simulation epoch (ms)
+     * @param {number} realDtS    – real seconds since last frame
+     * @param {number} warpDtS    – warped sim-seconds since last frame
      */
-    updateAll(currentTime, realDelta, warpedDelta) {
-        const nowPerf = performance.now(); // For throttling UI updates like orbit drawing
+    updateAll(simTimeMs, realDtS, warpDtS) {
+        const perfNow = performance.now();
         const { timeWarp } = this.app3d.timeUtils;
+        const thirdBodies = this._collectThirdBodyPositions();
 
-        // Collect third body positions for the provider and orbit drawing
-        const thirdBodyPositions = this._collectThirdBodyPositions();
+        // physicsProvider?.update(…)  ← stub
 
-
-        // Delegate satellite state updates to the physics provider
-        this.physicsProvider?.update?.(
-            this._satellites,
-            currentTime,
-            realDelta,
-            warpedDelta,
-            thirdBodyPositions
+        this._updateVisualsAndPaths(
+            simTimeMs, realDtS, warpDtS, perfNow, timeWarp, thirdBodies
         );
-
-        // Update local visual aspects of satellites (animations, non-physics effects)
-        // And update orbit paths, ground tracks etc. which are visual representations
-        // derived from the (now updated by provider) satellite states.
-        this._updateSatelliteVisualsAndPaths(currentTime, realDelta, warpedDelta, nowPerf, timeWarp, thirdBodyPositions);
     }
+
+    /* ───── internals ───── */
 
     _collectThirdBodyPositions() {
-        const bodies = [];
-        const allPlanetaryBodies = this.app3d.celestialBodies ?? [];
-        for (const body of allPlanetaryBodies.filter(b => b)) {
-            const mesh = body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
-            if (!mesh) continue;
-            const tempWorldPos = new THREE.Vector3();
-            mesh.getWorldPosition(tempWorldPos); // Positions are in km (simulation units)
-            // Use mass from body config directly
-            const mass = body.mass ?? 0;
-            bodies.push({ name: body.name, position: tempWorldPos.clone(), mass });
-        }
-        return bodies;
+        return (this.app3d.celestialBodies ?? [])
+            .filter(Boolean)
+            .map(body => {
+                const mesh =
+                    body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
+                if (!mesh) return null;
+                const pos = new THREE.Vector3();
+                mesh.getWorldPosition(pos);
+                return { name: body.name, position: pos, mass: body.mass ?? 0 };
+            })
+            .filter(Boolean);
     }
 
+    _updateVisualsAndPaths(simMs, dtReal, dtWarp, perfNow, timeWarp, thirds) {
+        const dsm = this.app3d.displaySettingsManager;
+        const showOrbits = dsm.getSetting('showOrbits');
+        const orbitMs = 1000 / dsm.getSetting('orbitUpdateInterval');
+        const shouldUpdatePaths = perfNow - this._lastOrbitUpdate >= orbitMs;
+        const predPeriods = dsm.getSetting('orbitPredictionInterval');
+        const ptsPerPeriod = dsm.getSetting('orbitPointsPerPeriod');
+        const fallbackDay = dsm.getSetting('nonKeplerianFallbackDays') ?? 30;
+        const hyperMult = dsm.getSetting('hyperbolicPointsMultiplier') ?? 1;
+        const epochMs = this.app3d.timeUtils.getSimulatedTime()?.getTime?.() ?? simMs;
 
-    /* ───────────────────────────── Worker control (REMOVED) ───────────────── */
-    // _ensureWorker() - MOVED to LocalPhysicsProvider
-    // _handleWorkerInit() - MOVED to LocalPhysicsProvider
-    // _teardownWorkerIfIdle() - MOVED/Handled by LocalPhysicsProvider or general logic
-    // _post() - MOVED to LocalPhysicsProvider (_postToWorker)
-    // _pushSatelliteToWorker() - MOVED to LocalPhysicsProvider
-    // _applyWorkerUpdates() - MOVED to LocalPhysicsProvider
+        let updated = false;
 
-    /* ─────────────────── Public physics tuning helpers ─────────────────── */
-    // These now delegate to the provider
-
-    setTimeWarp(v) {
-        // SatelliteManager might still inform its satellites for visual effects,
-        // but the physics source also needs to know.
         for (const sat of this._satellites.values()) {
-            sat.timeWarp = v;
-        }
-        this.physicsProvider?.setTimeWarp?.(v);
-        // this._lastTimeWarp = v; // Provider manages its own state if needed
-    }
-
-    setPhysicsTimeStep(v) {
-        this.physicsProvider?.setPhysicsTimeStep?.(v);
-    }
-
-    // Example: if perturbation scale was a general setting
-    // setPerturbationScale(v) {
-    //     this.physicsProvider?.setPerturbationScale?.(v);
-    // }
-
-    // Example: if sensitivity scale was a general setting
-    // setSensitivityScale(v) {
-    //     this.sensitivityScale = v; // If it's a direct SM property
-    //     this.physicsProvider?.setSensitivityScale?.(v);
-    // }
-
-
-    /* ───────────────────────────── Internals (mostly orbit drawing)────────── */
-
-    // _syncBodiesToWorker() - MOVED to LocalPhysicsProvider
-    // This method is now _collectThirdBodyPositions and its results are passed to provider and local visual updates.
-
-    /**
-     * Core per-frame loop over satellites for visual updates, orbit and ground-track drawing.
-     * This runs *after* the physicsProvider has updated the satellite states (position, velocity).
-     */
-    _updateSatelliteVisualsAndPaths(nowSim, dtReal, dtWarped, nowPerf, timeWarp, thirdBodyPositionsForOrbits) {
-        const showOrbits = this.app3d.getDisplaySetting('showOrbits');
-        const orbitRateHz = this.app3d.getDisplaySetting('orbitUpdateInterval');
-        const orbitMs = 1000 / orbitRateHz;
-        const shouldUpdatePaths = nowPerf - this._lastOrbitUpdate >= orbitMs;
-        const predPeriods = this.app3d.getDisplaySetting('orbitPredictionInterval');
-        const pointsPerPeriod = this.app3d.getDisplaySetting('orbitPointsPerPeriod');
-        const nonKeplFallbackDay = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 30;
-        const epochMs = this.app3d.timeUtils.getSimulatedTime().getTime?.() ?? nowSim;
-        let pathsUpdated = false;
-        for (const sat of this._satellites.values()) {
-            try {
-                if (sat.orbitPath) sat.orbitPath.visible = showOrbits;
+            sat.orbitPath && (sat.orbitPath.visible = showOrbits);
                 if (!shouldUpdatePaths) continue;
+
                 const els = sat.getOrbitalElements?.();
                 if (!els) continue;
+
                 const ecc = els.eccentricity ?? 0;
-                const apol = ecc >= 1;
-                const nearP = !apol && ecc >= 0.99;
-                const effP = (predPeriods > 0) ? predPeriods : 1;
+            const hyper = ecc >= 1;
+            const nearParab = !hyper && ecc >= 0.99;
+            const effP = predPeriods > 0 ? predPeriods : 1;
+            const r = sat.position.length();
+            const satSOI = soi(sat.planetConfig);
+
                 let periodS, pts;
-                const r = sat.position.length(); // sat.position is in km
-                // Use the satellite's planet config for SOI if available
-                const soi = sat.planetConfig?.soiRadius ?? 1e12; // fallback to huge if not set
-                if (apol || nearP) {
-                    const fbDays = this.app3d.getDisplaySetting('nonKeplerianFallbackDays') ?? 1;
+
+            if (hyper || nearParab) {
+                const fbDays = dsm.getSetting('nonKeplerianFallbackDays') ?? 1;
                     periodS = fbDays * Constants.secondsInDay;
-                    let rawPts = pointsPerPeriod * fbDays;
-                    if (r <= soi) {
-                        rawPts *= this.app3d.getDisplaySetting('hyperbolicPointsMultiplier') ?? 1;
-                    }
-                    pts = Math.ceil(rawPts);
+                pts = Math.ceil(ptsPerPeriod * fbDays * (r <= satSOI ? hyperMult : 1));
                 } else {
-                    const basePeriodS = (els.period > 0 && Number.isFinite(els.period))
+                const baseP = Number.isFinite(els.period) && els.period > 0
                         ? els.period
-                        : nonKeplFallbackDay * Constants.secondsInDay;
-                    periodS = basePeriodS * effP;
-                    pts = pointsPerPeriod > 0
-                        ? Math.ceil(pointsPerPeriod * effP)
+                    : fallbackDay * Constants.secondsInDay;
+                periodS = baseP * effP;
+                pts = ptsPerPeriod > 0
+                    ? Math.ceil(ptsPerPeriod * effP)
                         : sat.orbitPath?._maxOrbitPoints ?? 180;
                 }
-                if (r > soi) pts = Math.max(10, Math.ceil(pts * 0.2));
+
+            if (r > satSOI) pts = Math.max(10, Math.ceil(pts * 0.2));
                 pts = Math.min(pts, OrbitPath.CAPACITY - 1);
-                const satPosKm = sat.position.clone();
-                sat.orbitPath?.update(satPosKm, sat.velocity, sat.id, thirdBodyPositionsForOrbits, periodS, pts, true);
-                sat.groundTrackPath?.update(epochMs, satPosKm, sat.velocity, sat.id, thirdBodyPositionsForOrbits, periodS, pts);
-                pathsUpdated = true;
+
+            try {
+                const posKm = sat.position.clone();
+
+                sat.orbitPath?.update(posKm, sat.velocity, sat.id, thirds, periodS, pts, true);
+                sat.groundTrackPath?.update(epochMs, posKm, sat.velocity, sat.id, thirds, periodS, pts);
+
+                updated = true;
             } catch (err) {
-                console.error(`Satellite ${sat.id} visual/path update failed:`, err);
+                console.error(`[SatelliteManager] path update failed for ${sat.id}:`, err);
             }
         }
-        if (pathsUpdated && shouldUpdatePaths) this._lastOrbitUpdate = nowPerf;
-    }
 
-    /* ─────────────────────── UI / Display Settings helpers ────────────────── */
+        if (updated && shouldUpdatePaths) this._lastOrbitUpdate = perfNow;
+    }
 
     _applyDisplaySettings(sat) {
-        const dsm = this.app3d.displaySettingsManager;
-        if (!dsm) return;
-        const showOrbits = dsm.getSetting('showOrbits');
-        // These are direct visual properties of the satellite's THREE objects
-        if (sat.orbitLine) sat.orbitLine.visible = showOrbits; // If Satellite directly holds orbitLine
-        if (sat.orbitPath && sat.orbitPath.setTraceVisible) sat.orbitPath.setTraceVisible(showOrbits); // If OrbitPath handles its own main line visibility
-        else if (sat.orbitPath) sat.orbitPath.visible = showOrbits; // Fallback
-
-        sat.apsisVisualizer?.setVisible?.(showOrbits);
-        // Add more display settings applications here if needed
+        const show = this.app3d.displaySettingsManager?.getSetting('showOrbits');
+        sat.orbitPath?.setTraceVisible?.(show);
+        if (sat.orbitPath) sat.orbitPath.visible = show;
+        if (sat.orbitLine) sat.orbitLine.visible = show;
+        sat.apsisVisualizer?.setVisible?.(show);
     }
 
-    /** Batch satellite-list dispatch into a micro-task frame */
     _flushListSoon() {
         if (this._needsListFlush) return;
         this._needsListFlush = true;
+
         queueMicrotask(() => {
-            const data = Object.fromEntries(
-                [...this._satellites.values()].map(s => [s.id, { id: s.id, name: s.name || `Satellite ${s.id}` }])
+            const payload = Object.fromEntries(
+                [...this._satellites.values()].map(s => [
+                    s.id,
+                    { id: s.id, name: s.name ?? `Satellite ${s.id}` }
+                ])
             );
-            // Dispatch a global event that App.jsx listens for
-            document.dispatchEvent(new CustomEvent('satelliteListUpdated', { detail: { satellites: data } }));
+            document.dispatchEvent(
+                new CustomEvent('satelliteListUpdated', { detail: { satellites: payload } })
+            );
             this._needsListFlush = false;
         });
     }
 
-    /* ───────────────────────────── Destructors ────────────────────────────── */
+    /* ───── public helpers ───── */
 
-    /** Dispose manager, provider and all satellites. */
-    dispose() {
-        this.physicsProvider?.dispose?.();
-        this.physicsProvider = null;
+    setTimeWarp(v) {
+        for (const sat of this._satellites.values()) sat.timeWarp = v;
+        // physicsProvider?.setTimeWarp(v)  ← stub
+    }
 
-        for (const s of this._satellites.values()) s.dispose(); // Visual disposal
-        this._satellites.clear();
-        // this._satelliteAddQueue.length = 0; // No longer used
+    refreshOrbitPaths() { this._lastOrbitUpdate = 0; }
 
-        console.log("[SatelliteManager] Disposed.");
+    /* ───── factory wrappers ───── */
+
+    createSatelliteFromLatLon(app3d, p, selectedBody) {
+        const naifId = selectedBody?.naifId ?? p.planetNaifId ?? 10;
+        return createSatFromLatLonInternal(app3d, { ...p, planetNaifId: naifId });
+    }
+
+    createSatelliteFromOrbitalElements(app3d, p) {
+        const naifId = p.planet?.naifId ?? p.selectedBody?.naifId ?? 399;
+        return createSatFromOEInternal(app3d, { ...p, planetNaifId: naifId });
+    }
+
+    createSatelliteFromLatLonCircular(app3d, p, selectedBody) {
+        const naifId = selectedBody?.naifId ?? 399;
+        return createSatFromLatLonCircularInternal(app3d, { ...p, planetNaifId: naifId });
     }
 
     /**
-     * Force an immediate orbit path update on next frame by resetting throttle.
+     * Update all Satellite UI objects from the latest physics state.
+     * @param {Object} physicsState - { satellites: { id: { ... } } }
      */
-    refreshOrbitPaths() {
-        this._lastOrbitUpdate = 0;
+    updateAllFromPhysicsState(physicsState) {
+        const satStates = physicsState.satellites || {};
+        // Update or create UI objects for all satellites in physics state
+        for (const [id, satState] of Object.entries(satStates)) {
+            let sat = this._satellites.get(id);
+            if (!sat) {
+                // Create a new UI object if needed
+                sat = this.addSatellite({ id, ...satState });
+            }
+            sat.updateVisualsFromState(satState);
+        }
+        // Remove UI objects for satellites no longer in physics state
+        for (const id of Array.from(this._satellites.keys())) {
+            if (!satStates[id]) {
+                this.removeSatellite(id);
+            }
+        }
     }
-
-    // --- SATELLITE CREATION HELPERS (moved from App3D) ---
-    /**
-     * @param {App3D} app3dInstance - Usually this.app3d passed from the calling context (e.g., App3D itself)
-     * @param {object} p - Parameters for satellite creation
-     * @param {object} selectedBody - The selected celestial body for context (e.g., { naifId: 399 } for Earth)
-     */
-    createSatelliteFromLatLon(app3dInstance, p, selectedBody) {
-        // Step 1: Extract naifId from selectedBody or fallback
-        const naifId = selectedBody?.naifId ?? p.planetNaifId ?? 10; // orbit sun if no naifId
-        console.log('[SatelliteManager.createSatelliteFromLatLon] called with naifId:', naifId, 'params:', p);
-        // Step 2: Call internal creation function with naifId in params
-        return createSatFromLatLonInternal(app3dInstance, { ...p, planetNaifId: naifId });
-    }
-
-    /**
-     * @param {App3D} app3dInstance
-     * @param {object} p
-     */
-    createSatelliteFromOrbitalElements(app3dInstance, p) {
-        // Step 1: Extract naifId from p.planet or p.selectedBody or fallback
-        const naifId = p.planet?.naifId || p.selectedBody?.naifId || 399;
-        console.log('[SatelliteManager.createSatelliteFromOrbitalElements] called with naifId:', naifId, 'params:', p);
-        // Step 2: Call internal creation function with naifId in params
-        return createSatFromOEInternal(app3dInstance, { ...p, planetNaifId: naifId });
-    }
-
-    /**
-     * @param {App3D} app3dInstance
-     * @param {object} p
-     * @param {object} selectedBody
-     */
-    createSatelliteFromLatLonCircular(app3dInstance, p, selectedBody) {
-        // Step 1: Extract naifId from selectedBody or fallback
-        const naifId = selectedBody?.naifId || 399;
-        console.log('[SatelliteManager.createSatelliteFromLatLonCircular] called with naifId:', naifId, 'params:', p);
-        // Step 2: Call internal creation function with naifId in params
-        return createSatFromLatLonCircularInternal(app3dInstance, { ...p, planetNaifId: naifId });
-    }
-
-    // --- END SATELLITE CREATION HELPERS ---
 }

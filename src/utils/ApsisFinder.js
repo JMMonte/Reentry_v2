@@ -2,8 +2,8 @@ import { adaptiveIntegrate } from './OrbitIntegrator.js';
 
 /**
  * Find the next periapsis or apoapsis after the given state.
- * @param {Array} pos0 - Initial position [x, y, z] in meters
- * @param {Array} vel0 - Initial velocity [vx, vy, vz] in m/s
+ * @param {Array} pos0 - Initial position [x, y, z] in kilometers
+ * @param {Array} vel0 - Initial velocity [vx, vy, vz] in km/s
  * @param {Array} bodies - Array of gravity bodies
  * @param {number} perturbationScale
  * @param {'periapsis'|'apoapsis'} type

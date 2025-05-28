@@ -190,11 +190,7 @@ export class DisplaySettingsManager {
                 break;
             }
             case 'useRemoteCompute':
-                if (app3d.setPhysicsSource) {
-                    app3d.setPhysicsSource(value ? 'remote' : 'local');
-                } else {
-                    console.warn("[DisplaySettingsManager] app3d.setPhysicsSource method not found. Cannot switch physics provider.");
-                }
+                // No longer supported: only local physics is used
                 break;
         }
     }

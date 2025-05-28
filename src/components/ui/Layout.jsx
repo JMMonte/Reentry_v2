@@ -242,7 +242,8 @@ export function Layout({
     authModalProps,
     simulationWindowProps,
     earthPointModalProps,
-    isLoadingInitialData
+    isLoadingInitialData,
+    satellitesPhysics
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {
@@ -360,6 +361,7 @@ export function Layout({
                         onBodySelect={onBodySelect}
                         onClose={onClose}
                         onOpenManeuver={handleOpenManeuver}
+                        physics={satellitesPhysics?.[id]}
                     />
                 ))}
                 <SatelliteListWindow {...satelliteListWindowProps} onOpenManeuver={handleOpenManeuver} />
@@ -370,7 +372,6 @@ export function Layout({
                 {groundTrackWindowProps &&
                     <GroundTrackWindow
                         {...groundTrackWindowProps}
-                        satellites={satelliteListWindowProps.satellites}
                         planets={window.app3d?.planets || []}
                     />
                 }
@@ -461,5 +462,6 @@ Layout.propTypes = {
         ).isRequired,
         onToggle: PropTypes.func.isRequired
     }),
-    isLoadingInitialData: PropTypes.bool.isRequired
+    isLoadingInitialData: PropTypes.bool.isRequired,
+    satellitesPhysics: PropTypes.object
 }; 
