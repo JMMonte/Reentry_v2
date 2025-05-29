@@ -457,6 +457,8 @@ export class PhysicsUtils {
 
     /**
      *  RK4 propagator with multiple gravitating bodies
+     *  Note: This method is kept for backward compatibility but could be
+     *  refactored to use the centralized integrator in the future
      */
     static propagateOrbit(initialPos, initialVel, bodies, period, numPts = 180) {
         const dt = period / numPts;
@@ -476,6 +478,8 @@ export class PhysicsUtils {
             return a;
         };
 
+        // TODO: Replace with centralized integrateRK4 from OrbitalIntegrators.js
+        // Currently kept for compatibility to avoid breaking dependent code
         for (let i = 0; i < numPts; i++) {
             const p0 = pos.clone(), v0 = vel.clone(), a0 = accel(p0);
             const k1p = v0.clone().multiplyScalar(dt);

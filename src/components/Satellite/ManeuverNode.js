@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { adaptiveIntegrate } from '../../utils/OrbitIntegrator.js';
+import { integrateRK45 } from '../../physics/integrators/OrbitalIntegrators.js';
+import { GravityCalculator } from '../../physics/core/GravityCalculator.js';
 import { Constants } from '../../utils/Constants.js';
-import { OrbitPath } from './OrbitPath.js';
 import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 
 export class ManeuverNode {
@@ -11,7 +11,6 @@ export class ManeuverNode {
         this.deltaV = deltaV.clone();
         this.scene = satellite.scene;
         this.app3d = satellite.app3d;
-        this.orbitPath = satellite.orbitPath;
         this._initVisual();
         this._initPredictionOrbit();
     }
@@ -20,14 +19,10 @@ export class ManeuverNode {
         // Create a predicted orbit path post-maneuver
         ManeuverNode._predCount = (ManeuverNode._predCount || 0) + 1;
         this.predictionId = `${this.satellite.id}-maneuverPred-${ManeuverNode._predCount}`;
-        this.predictedOrbit = new OrbitPath(this.satellite.color);
-        this.scene.add(this.predictedOrbit.orbitLine);
-        // Atmosphere crossing markers
-        this._atmMarkers = [];
-        this._atmMarkerGroup = new THREE.Group();
-        this.scene.add(this._atmMarkerGroup);
-        // Make predicted orbit line dashed
-        this.predictedOrbit.orbitLine.material = new THREE.LineDashedMaterial({
+        
+        // Create orbit line geometry
+        const geometry = new THREE.BufferGeometry();
+        const material = new THREE.LineDashedMaterial({
             color: this.satellite.color,
             dashSize: 5,
             gapSize: 5,
@@ -35,72 +30,82 @@ export class ManeuverNode {
             transparent: true,
             opacity: 0.7
         });
-        // Recompute dashed-line distances whenever the predicted orbit updates
-        this._predOrbitHandler = (e) => {
-            if (e.detail.id === this.predictionId) {
-                const geom = this.predictedOrbit.orbitLine.geometry;
-                const posAttr = geom.attributes.position;
-                const count = posAttr.count;
-                const lineDistances = new Float32Array(count);
-                for (let i = 0; i < count; i++) {
-                    if (i === 0) {
-                        lineDistances[i] = 0;
-                    } else {
-                        const x1 = posAttr.getX(i - 1), y1 = posAttr.getY(i - 1), z1 = posAttr.getZ(i - 1);
-                        const x2 = posAttr.getX(i), y2 = posAttr.getY(i), z2 = posAttr.getZ(i);
-                        const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
-                        lineDistances[i] = lineDistances[i - 1] + Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    }
+        
+        this.predictedOrbitLine = new THREE.Line(geometry, material);
+        this.predictedOrbitLine.frustumCulled = false;
+        this.predictedOrbitLine.computeLineDistances();
+        this.scene.add(this.predictedOrbitLine);
+        
+        // Atmosphere crossing markers
+        this._atmMarkers = [];
+        this._atmMarkerGroup = new THREE.Group();
+        this.scene.add(this._atmMarkerGroup);
+        
+        // Store predicted orbit points
+        this._predictedOrbitPoints = [];
+        
+        // Create our own worker for prediction
+        this._predictionWorker = new Worker(
+            new URL('../../workers/orbitPropagationWorker.js', import.meta.url),
+            { type: 'module' }
+        );
+        
+        // Handle worker messages
+        this._predictionWorker.onmessage = (event) => {
+            const { type, points, isComplete } = event.data;
+            
+            if (type === 'chunk') {
+                // Accumulate points
+                this._predictedOrbitPoints.push(...points);
+                
+                // Update visualization
+                this._updatePredictedOrbitVisualization();
+                
+                if (isComplete) {
+                    // Final update with atmosphere markers
+                    this._updateAtmosphereMarkers();
                 }
-                geom.setAttribute('lineDistance', new THREE.BufferAttribute(lineDistances, 1));
-                geom.attributes.lineDistance.needsUpdate = true;
-                // Detect atmosphere entry/exit (100 km above surface)
-                const flatPts = e.detail.orbitPoints;
-                const pts = [];
-                if (flatPts && flatPts.length > 0) {
-                    for (let i = 0; i < flatPts.length; i += 3) {
-                        if (i + 2 < flatPts.length) { // Ensure we have x, y, and z
-                            pts.push(new THREE.Vector3(flatPts[i], flatPts[i + 1], flatPts[i + 2]));
-                        }
-                    }
-                }
-                const boundary = (Constants.earthRadius + 100000);
-                // clear previous markers
-                this._atmMarkers.forEach(m => { this._atmMarkerGroup.remove(m); m.geometry.dispose(); m.material.dispose(); });
-                this._atmMarkers = [];
-                let inside = false;
-                let entryPos, exitPos;
-                for (let i = 1; i < pts.length; i++) {
-                    const r0 = pts[i - 1].length();
-                    const r1 = pts[i].length();
-                    if (!inside && r0 > boundary && r1 <= boundary) {
-                        entryPos = pts[i].clone(); inside = true;
-                    }
-                    if (inside && r0 <= boundary && r1 > boundary) {
-                        exitPos = pts[i].clone(); break;
-                    }
-                }
-                [entryPos, exitPos].forEach(pos => {
-                    if (pos) {
-                        const sphereGeom = new THREE.SphereGeometry(1, 8, 8);
-                        const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-                        const marker = new THREE.Mesh(sphereGeom, sphereMat);
-                        marker.position.copy(pos);
-                        this._atmMarkerGroup.add(marker);
-                        this._atmMarkers.push(marker);
-                    }
-                });
+            } else if (type === 'error') {
+                console.error('Maneuver prediction error:', event.data.error);
             }
         };
-        document.addEventListener('orbitDataUpdate', this._predOrbitHandler);
+        
+        // Update worker physics state when available
+        if (this.app3d?.physicsIntegration?.physicsEngine) {
+            const state = this.app3d.physicsIntegration.physicsEngine.getSimulationState();
+            const simplifiedBodies = {};
+            
+            for (const [id, body] of Object.entries(state.bodies)) {
+                simplifiedBodies[id] = {
+                    position: body.position,
+                    velocity: body.velocity,
+                    mass: body.mass,
+                    soiRadius: body.soiRadius
+                };
+            }
+            
+            this._predictionWorker.postMessage({
+                type: 'updatePhysicsState',
+                data: {
+                    bodies: simplifiedBodies,
+                    hierarchy: state.hierarchy
+                }
+            });
+        }
+        
         // Sync visibility with showOrbits setting
         this._predVisibilityHandler = (e) => {
             if (e.detail.key === 'showOrbits') {
-                this.predictedOrbit.setVisible(e.detail.value);
+                this.predictedOrbitLine.visible = e.detail.value;
+                this._atmMarkerGroup.visible = e.detail.value;
             }
         };
         this.app3d.addEventListener('displaySettingChanged', this._predVisibilityHandler);
-        this.predictedOrbit.setVisible(this.app3d.getDisplaySetting('showOrbits'));
+        
+        const showOrbits = this.app3d.getDisplaySetting('showOrbits');
+        this.predictedOrbitLine.visible = showOrbits;
+        this._atmMarkerGroup.visible = showOrbits;
+        
         // Update predicted orbit when user changes prediction parameters
         this._paramChangeHandler = (e) => {
             if (e.detail.key === 'orbitPredictionInterval' || e.detail.key === 'orbitPointsPerPeriod') {
@@ -108,6 +113,67 @@ export class ManeuverNode {
             }
         };
         this.app3d.addEventListener('displaySettingChanged', this._paramChangeHandler);
+    }
+
+    _updatePredictedOrbitVisualization() {
+        if (this._predictedOrbitPoints.length < 2) return;
+        
+        // Convert points to positions array
+        const positions = [];
+        for (const point of this._predictedOrbitPoints) {
+            positions.push(point.position[0], point.position[1], point.position[2]);
+        }
+        
+        // Update geometry
+        this.predictedOrbitLine.geometry.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute(positions, 3)
+        );
+        this.predictedOrbitLine.geometry.computeBoundingSphere();
+        this.predictedOrbitLine.computeLineDistances();
+    }
+    
+    _updateAtmosphereMarkers() {
+        // Clear previous markers
+        this._atmMarkers.forEach(m => {
+            this._atmMarkerGroup.remove(m);
+            m.geometry.dispose();
+            m.material.dispose();
+        });
+        this._atmMarkers = [];
+        
+        // Find atmosphere crossings (100km above surface)
+        const boundary = Constants.earthRadius + 100000;
+        let inside = false;
+        let entryPos, exitPos;
+        
+        for (let i = 1; i < this._predictedOrbitPoints.length; i++) {
+            const p0 = new THREE.Vector3(...this._predictedOrbitPoints[i - 1].position);
+            const p1 = new THREE.Vector3(...this._predictedOrbitPoints[i].position);
+            const r0 = p0.length();
+            const r1 = p1.length();
+            
+            if (!inside && r0 > boundary && r1 <= boundary) {
+                entryPos = p1.clone();
+                inside = true;
+            }
+            if (inside && r0 <= boundary && r1 > boundary) {
+                exitPos = p1.clone();
+                break;
+            }
+        }
+        
+        // Create markers
+        [entryPos, exitPos].forEach(pos => {
+            if (pos) {
+                const sphereGeom = new THREE.SphereGeometry(1, 8, 8);
+                const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+                const marker = new THREE.Mesh(sphereGeom, sphereMat);
+                marker.position.copy(pos);
+                this._atmMarkerGroup.add(marker);
+                this._atmMarkers.push(marker);
+            }
+        });
     }
 
     _initVisual() {
@@ -185,9 +251,17 @@ export class ManeuverNode {
             // Integrate orbital motion until this burn
             const dtSeg = (nd.time.getTime() - prevTime.getTime()) / 1000;
             if (dtSeg > 0) {
-                const res = adaptiveIntegrate(posArr, velArr, dtSeg, bodiesAll, pertScale);
-                posArr = res.pos;
-                velArr = res.vel;
+                // Simple integration to burn time - we'll use RK45 for accuracy
+                const pos = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
+                const vel = new THREE.Vector3(velArr[0], velArr[1], velArr[2]);
+                const accelFunc = (p, v) => {
+                    return GravityCalculator.computeAcceleration(p, bodiesAll, {
+                        perturbationScale: pertScale
+                    });
+                };
+                const result = integrateRK45(pos, vel, accelFunc, dtSeg);
+                posArr = [result.position.x, result.position.y, result.position.z];
+                velArr = [result.velocity.x, result.velocity.y, result.velocity.z];
             }
             // Compute instantaneous orbital frame at burn time
             const posVec = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
@@ -255,18 +329,23 @@ export class ManeuverNode {
         // Update predicted orbit from post-burn state (throttled)
         const nowPerf = performance.now();
         if (!this._lastPredTime || nowPerf - this._lastPredTime > 100) {
-            // Store orbital period and velocity for UI consumption
-            this.predictedOrbit._orbitPeriod = periodSec;
-            this.predictedOrbit._currentVelocity = velVec.clone();
-            this.predictedOrbit.update(
-                posVec,
-                velVec,
-                this.predictionId,
-                bodiesForWorker,
-                periodSec,
-                numPts,
-                true // allowFullEllipse: always show full ellipse for preview/post-burn orbits
-            );
+            // Clear previous points
+            this._predictedOrbitPoints = [];
+            
+            // Send propagation request to worker
+            const timeStep = periodSec / numPts;
+            this._predictionWorker.postMessage({
+                type: 'propagate',
+                data: {
+                    satelliteId: this.predictionId,
+                    position: [posVec.x, posVec.y, posVec.z],
+                    velocity: [velVec.x, velVec.y, velVec.z],
+                    centralBodyNaifId: this.satellite.centralBodyNaifId || 399, // Earth by default
+                    duration: periodSec,
+                    timeStep: timeStep
+                }
+            });
+            
             this._lastPredTime = nowPerf;
         }
         // Arrow orientation: use the computed world ΔV vector for this node
@@ -296,17 +375,31 @@ export class ManeuverNode {
         }
         this.scene.remove(this.group);
         // Dispose predicted orbit line
-        if (this.predictedOrbit) {
-            this.scene.remove(this.predictedOrbit.orbitLine);
-            this.predictedOrbit.dispose();
-            // Remove atmosphere markers
-            if (this._atmMarkerGroup) {
-                this.scene.remove(this._atmMarkerGroup);
-                this._atmMarkers.forEach(m => { m.geometry.dispose(); m.material.dispose(); });
-            }
-            // Remove listeners
-            document.removeEventListener('orbitDataUpdate', this._predOrbitHandler);
+        if (this.predictedOrbitLine) {
+            this.scene.remove(this.predictedOrbitLine);
+            this.predictedOrbitLine.geometry.dispose();
+            this.predictedOrbitLine.material.dispose();
+        }
+        
+        // Remove atmosphere markers
+        if (this._atmMarkerGroup) {
+            this.scene.remove(this._atmMarkerGroup);
+            this._atmMarkers.forEach(m => { 
+                m.geometry.dispose(); 
+                m.material.dispose(); 
+            });
+        }
+        
+        // Clean up worker
+        if (this._predictionWorker) {
+            this._predictionWorker.terminate();
+        }
+        
+        // Remove listeners
+        if (this._predVisibilityHandler) {
             this.app3d.removeEventListener('displaySettingChanged', this._predVisibilityHandler);
+        }
+        if (this._paramChangeHandler) {
             this.app3d.removeEventListener('displaySettingChanged', this._paramChangeHandler);
         }
     }

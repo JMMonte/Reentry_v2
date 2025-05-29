@@ -7,22 +7,22 @@ import * as THREE from 'three';
 export class ManeuverUtils {
     /**
      * Returns the orbit path used for the given node index: for idx>0 returns the previous
-     * node's predictedOrbit; for idx===0 returns the main satellite orbitPath.
+     * node's predictedOrbit; for idx===0 returns null.
      * @param {Array} nodes Array of ManeuverNode instances
      * @param {number} idx Index of the node being edited or applied
      * @param {Object} satellite Satellite instance (for fallback path)
-     * @returns {Object} OrbitPath instance
+     * @returns {Object|null} Orbit data or null
      */
     static getCompositePath(nodes, idx, satellite) {
         if (idx > 0 && nodes[idx - 1]?.predictedOrbit) {
             return nodes[idx - 1].predictedOrbit;
         }
-        return satellite.orbitPath;
+        return null; // Orbit paths now handled by SatelliteOrbitManager
     }
 
     /**
      * Projects a world-space delta-v vector into the local spacecraft frame at a given time.
-     * @param {Object} path OrbitPath with orbitPoints (Vector3[]) and _period (seconds)
+     * @param {Object} path Orbit data with orbitPoints (Vector3[]) and _period (seconds)
      * @param {THREE.Vector3} dvWorld World-space delta-v
      * @param {Date} nodeTime Execution time of the burn
      * @param {Date} simTime Current simulation time
@@ -52,7 +52,7 @@ export class ManeuverUtils {
 
     /**
      * Projects a local delta-v vector (pro/ral/normal) into world-space at a given time.
-     * @param {Object} path OrbitPath with orbitPoints (Vector3[]) and _period (seconds)
+     * @param {Object} path Orbit data with orbitPoints (Vector3[]) and _period (seconds)
      * @param {THREE.Vector3} dvLocal Local delta-v [prograde, radial, normal]
      * @param {Date} execTime Execution time of the burn
      * @param {Date} simTime Current simulation time

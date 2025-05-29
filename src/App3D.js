@@ -52,7 +52,6 @@ import { setupEventListeners as setupGlobalListeners }
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
 
 // Domain helpers
-import { getVisibleLocationsFromOrbitalElements as computeVisibleLocations } from './components/Satellite/createSatellite.js';
 import { Planet } from './components/planet/Planet.js';
 import { PlanetVectors } from './components/planet/PlanetVectors.js';
 
@@ -566,11 +565,6 @@ class App3D extends EventTarget {
         console.log('[App3D.createSatelliteFromLatLonCircular] called with selectedBody:', selectedBody, 'params:', p);
         // Step 2: Call SatelliteManager
         return this.satellites.createSatelliteFromLatLonCircular(this, p, selectedBody);
-    }
-
-    getVisibleLocationsFromOrbitalElements(p) {
-        const { locations, numPoints, numPeriods, ...orbit } = p;
-        return computeVisibleLocations(this, orbit, locations, { numPoints, numPeriods });
     }
 
     // Display-linked getters / setters

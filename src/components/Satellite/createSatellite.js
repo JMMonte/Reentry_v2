@@ -6,15 +6,11 @@
  *   createSatelliteFromLatLon
  *   createSatelliteFromLatLonCircular (alias)
  *   createSatelliteFromOrbitalElements
- *   getVisibleLocationsFromOrbitalElements
  *********************************************************************/
 
-import * as THREE from 'three';
-import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
 import { SatelliteCoordinates } from '../../utils/SatelliteCoordinates.js';
 
 /*─────────────────── constants ────────────────────*/
-const DEG2RAD = Math.PI / 180;
 const DEFAULT_SIZE = 1;           // m (radius, for visuals)
 const DEFAULT_MASS = 100;         // kg
 const DEFAULT_CD = 2.2;         // dimensionless
@@ -150,62 +146,3 @@ export async function createSatelliteFromOrbitalElements(app, params = {}) {
     return { satellite: sat, position, velocity };
 }
 
-/*─────────────────── 4. Ground-track helper ────────────────────*/
-/**
- * Propagate an orbit and report visibility from a list of ground sites.
- * Returns an array of records: { time, lat, lon, altitude, visible[] }.
- */
-export async function getVisibleLocationsFromOrbitalElements(
-    app,
-    orbitParams,
-    locations,
-    planet,
-    { numPeriods = 1, numPoints = 180 } = {}
-) {
-    const sat = createSatelliteFromOrbitalElements(app, {
-        ...orbitParams, mass: 1, size: 0.1, name: '_tmp_', planet
-    });
-    const { position: startPos, velocity: startVel } = sat;
-    const mu = planet.GM;
-    const period = 2 * Math.PI * Math.sqrt(Math.pow(orbitParams.semiMajorAxis, 3) / mu);
-    const steps = numPoints * numPeriods;
-
-    const eciPts = await PhysicsUtils.propagateOrbit(
-        startPos, startVel,
-        [{ position: new THREE.Vector3(), mass: planet.mass }],
-        period * numPeriods,
-        steps
-    );
-
-    const t0 = Date.now();
-    const ReKm = planet.radius;
-    const results = [];
-
-    eciPts.forEach((pKm, idx) => {
-        const t = t0 + idx * (period * numPeriods * 1e3 / steps);
-        const gmst = PhysicsUtils.calculateGMST(t);
-        const { lat, lon } = PhysicsUtils.eciTiltToLatLon(pKm.clone(), gmst, planet.inclination);
-        const alt = pKm.length() - ReKm;
-        const theta = Math.acos(ReKm / (ReKm + alt));
-        const cosLimit = Math.cos(theta);
-
-        const latR = lat * DEG2RAD;
-        const lonR = lon * DEG2RAD;
-        const sinLat = Math.sin(latR);
-        const cosLat = Math.cos(latR);
-
-        const visible = locations.filter(loc => {
-            const lat2 = loc.lat * DEG2RAD;
-            const lon2 = loc.lon * DEG2RAD;
-            let dLon = Math.abs(lon2 - lonR);
-            if (dLon > Math.PI) dLon = 2 * Math.PI - dLon;
-            const cosC = sinLat * Math.sin(lat2) + cosLat * Math.cos(lat2) * Math.cos(dLon);
-            return cosC >= cosLimit;
-        });
-
-        results.push({ time: t, lat, lon, altitude: alt, visible });
-    });
-
-    app.satellites.removeSatellite?.(sat.id);  // tidy temporary sat
-    return results;
-}

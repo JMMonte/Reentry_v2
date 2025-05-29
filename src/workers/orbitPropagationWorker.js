@@ -7,6 +7,8 @@
 
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
+import { integrateRK4 } from '../physics/integrators/OrbitalIntegrators.js';
+import { GravityCalculator } from '../physics/core/GravityCalculator.js';
 
 // Simplified physics engine state
 let physicsState = {
@@ -14,118 +16,37 @@ let physicsState = {
     hierarchy: null
 };
 
-// Simplified force calculations (matching PhysicsEngine)
-function computeSatelliteAcceleration(satellite) {
-    const totalAccel = new THREE.Vector3();
-    const centralBody = physicsState.bodies[satellite.centralBodyNaifId];
-    
-    if (!centralBody) {
-        return totalAccel;
-    }
-
-    // Convert to global position
-    const satGlobalPos = new THREE.Vector3()
-        .fromArray(satellite.position)
-        .add(new THREE.Vector3().fromArray(centralBody.position));
-
-    // Compute forces from all bodies
-    for (const [bodyId, body] of Object.entries(physicsState.bodies)) {
-        if (!body.position || !body.mass) continue;
-        
-        const r = new THREE.Vector3()
-            .fromArray(body.position)
-            .sub(satGlobalPos);
-        const distance = r.length();
-        
-        if (distance > 1e-6) {
-            const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-            const accVec = r.multiplyScalar(gravAccel);
-            totalAccel.add(accVec);
+// Create acceleration function using centralized calculator
+function createAccelerationFunction(centralBodyNaifId) {
+    return (position, velocity) => {
+        const centralBody = physicsState.bodies[centralBodyNaifId];
+        if (!centralBody) {
+            return new THREE.Vector3();
         }
-    }
 
-    // Compute central body acceleration for reference frame
-    const centralAccel = new THREE.Vector3();
-    const centralGlobalPos = new THREE.Vector3().fromArray(centralBody.position);
-    
-    for (const [bodyId, body] of Object.entries(physicsState.bodies)) {
-        if (bodyId == satellite.centralBodyNaifId || !body.position || !body.mass) continue;
+        // Convert to global position
+        const globalPos = position.clone()
+            .add(new THREE.Vector3().fromArray(centralBody.position));
+
+        // Get bodies array for GravityCalculator
+        const bodiesArray = Object.values(physicsState.bodies).filter(b => b.position && b.mass);
         
-        const r = new THREE.Vector3()
-            .fromArray(body.position)
-            .sub(centralGlobalPos);
-        const distance = r.length();
+        // Compute acceleration in global frame
+        const globalAccel = GravityCalculator.computeAcceleration(globalPos, bodiesArray);
         
-        if (distance > 1e-6) {
-            const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-            centralAccel.add(r.clone().multiplyScalar(gravAccel));
-        }
-    }
-
-    // Convert to planet-centric frame
-    totalAccel.sub(centralAccel);
-    
-    return totalAccel;
-}
-
-// RK4 integration
-function integrateRK4(position, velocity, dt) {
-    const satellite = {
-        position: position.toArray(),
-        velocity: velocity.toArray(),
-        centralBodyNaifId: currentCentralBodyId
+        // Compute central body acceleration for reference frame
+        const centralGlobalPos = new THREE.Vector3().fromArray(centralBody.position);
+        const centralAccel = GravityCalculator.computeAcceleration(
+            centralGlobalPos, 
+            bodiesArray,
+            { excludeBodies: [centralBodyNaifId] }
+        );
+        
+        // Convert to planet-centric frame
+        return globalAccel.sub(centralAccel);
     };
-
-    const pos0 = position.clone();
-    const vel0 = velocity.clone();
-    const acc0 = computeSatelliteAcceleration(satellite);
-
-    // k1
-    const k1v = acc0.clone().multiplyScalar(dt);
-    const k1p = vel0.clone().multiplyScalar(dt);
-
-    // k2
-    const pos1 = pos0.clone().addScaledVector(k1p, 0.5);
-    const vel1 = vel0.clone().addScaledVector(k1v, 0.5);
-    satellite.position = pos1.toArray();
-    satellite.velocity = vel1.toArray();
-    const acc1 = computeSatelliteAcceleration(satellite);
-    const k2v = acc1.clone().multiplyScalar(dt);
-    const k2p = vel1.clone().multiplyScalar(dt);
-
-    // k3
-    const pos2 = pos0.clone().addScaledVector(k2p, 0.5);
-    const vel2 = vel0.clone().addScaledVector(k2v, 0.5);
-    satellite.position = pos2.toArray();
-    satellite.velocity = vel2.toArray();
-    const acc2 = computeSatelliteAcceleration(satellite);
-    const k3v = acc2.clone().multiplyScalar(dt);
-    const k3p = vel2.clone().multiplyScalar(dt);
-
-    // k4
-    const pos3 = pos0.clone().add(k3p);
-    const vel3 = vel0.clone().add(k3v);
-    satellite.position = pos3.toArray();
-    satellite.velocity = vel3.toArray();
-    const acc3 = computeSatelliteAcceleration(satellite);
-    const k4v = acc3.clone().multiplyScalar(dt);
-    const k4p = vel3.clone().multiplyScalar(dt);
-
-    // Final update
-    const newPos = pos0
-        .addScaledVector(k1p, 1/6)
-        .addScaledVector(k2p, 1/3)
-        .addScaledVector(k3p, 1/3)
-        .addScaledVector(k4p, 1/6);
-
-    const newVel = vel0
-        .addScaledVector(k1v, 1/6)
-        .addScaledVector(k2v, 1/3)
-        .addScaledVector(k3v, 1/3)
-        .addScaledVector(k4v, 1/6);
-
-    return { position: newPos, velocity: newVel };
 }
+
 
 // Check SOI transition
 function checkSOITransition(position, velocity, centralBodyId) {
@@ -271,8 +192,9 @@ function propagateOrbit(params) {
     });
 
     for (let i = 0; i < numSteps && isRunning; i++) {
-        // Integrate one step
-        const result = integrateRK4(position, velocity, timeStep);
+        // Use centralized RK4 integration
+        const accelerationFunc = createAccelerationFunction(currentCentralBodyId);
+        const result = integrateRK4(position, velocity, accelerationFunc, timeStep);
         position = result.position;
         velocity = result.velocity;
         currentTime += timeStep;

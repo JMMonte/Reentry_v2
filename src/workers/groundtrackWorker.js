@@ -1,7 +1,8 @@
 // Worker for calculating satellite ground tracks
 
-import { propagateOrbit } from '../utils/OrbitIntegrator.js';
+import { propagateOrbit } from '../physics/integrators/OrbitalIntegrators.js';
 import { Constants } from '../utils/Constants.js';
+import { planetaryDataManager } from '../physics/bodies/PlanetaryDataManager.js';
 
 // map of satellite id -> full groundtrack arrays (cache)
 let groundtrackMap = {};
@@ -28,13 +29,17 @@ self.onmessage = async function (e) {
             bodies,
             period,
             numPoints,
-            Constants.perturbationScale, // Use global perturbation scale
-            (progress) => {
-                const now = Date.now();
-                if (now - lastProgressTime >= PROGRESS_THROTTLE_MS || progress === 1) {
-                    lastProgressTime = now;
-                    self.postMessage({ type: 'GROUNDTRACK_PROGRESS', id, progress, seq });
-                }
+            {
+                perturbationScale: Constants.perturbationScale || 1,
+                onProgress: (progress) => {
+                    const now = Date.now();
+                    if (now - lastProgressTime >= PROGRESS_THROTTLE_MS || progress === 1) {
+                        lastProgressTime = now;
+                        self.postMessage({ type: 'GROUNDTRACK_PROGRESS', id, progress, seq });
+                    }
+                },
+                allowFullEllipse: true,
+                bodyMap: planetaryDataManager.naifToBody
             }
         );
 

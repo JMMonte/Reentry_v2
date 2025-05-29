@@ -1,11 +1,12 @@
 // KeplerianPropagator.js
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
+import { integrateRK4 } from './integrators/OrbitalIntegrators.js';
+import { solveKeplerEquation } from '../utils/KeplerianUtils.js';
 
 // Julian date utilities
-export const J2000_EPOCH_JD = 2451545.0;
 export function dateToJd(date) {
-    return (date.getTime() / 86400000) + 2440587.5;
+    return (date.getTime() / 86400000) + Constants.ECLIPIC_J2000_JD;
 }
 
 const DEG_TO_RAD = Math.PI / 180.0;
@@ -22,29 +23,6 @@ export class KeplerianPropagator {
         this.maxCacheSize = 1000;
     }
 
-    /**
-     * Solve Kepler's equation for eccentric anomaly
-     * @param {number} M - Mean anomaly (radians)
-     * @param {number} e - Eccentricity
-     * @param {number} tolerance - Convergence tolerance
-     * @returns {number} Eccentric anomaly (radians)
-     */
-    solveKeplersEquation(M, e, tolerance = 1e-10) {
-        let E = M; // Initial guess
-        let deltaE = 1.0;
-        let iterations = 0;
-        const maxIterations = 100;
-
-        while (Math.abs(deltaE) > tolerance && iterations < maxIterations) {
-            const f = E - e * Math.sin(E) - M;
-            const fp = 1.0 - e * Math.cos(E);
-            deltaE = f / fp;
-            E -= deltaE;
-            iterations++;
-        }
-
-        return E;
-    }
 
     /**
      * Convert orbital elements to Cartesian state vector
@@ -72,7 +50,7 @@ export class KeplerianPropagator {
         const M = M0_rad + n * deltaT;
 
         // Solve Kepler's equation for eccentric anomaly
-        const E = this.solveKeplersEquation(M, e);
+        const E = solveKeplerEquation(M, e);
 
         // True anomaly
         const cosnu = (Math.cos(E) - e) / (1 - e * Math.cos(E));
@@ -214,19 +192,13 @@ export class KeplerianPropagator {
             trajectory.push(currentPos.clone());
 
             if (step < numSteps) {
-                // Compute acceleration
-                const acceleration = this._computeGravitationalAcceleration(
-                    currentPos,
-                    gravitationalBodies
-                );
-
-                // RK4 integration step
-                const { position: newPos, velocity: newVel } = this._rk4Step(
+                // RK4 integration step using centralized integrator
+                const accelerationFunc = (pos) => this._computeGravitationalAcceleration(pos, gravitationalBodies);
+                const { position: newPos, velocity: newVel } = integrateRK4(
                     currentPos,
                     currentVel,
-                    acceleration,
-                    timeStep,
-                    gravitationalBodies
+                    accelerationFunc,
+                    timeStep
                 );
 
                 currentPos = newPos;
@@ -335,7 +307,7 @@ export class KeplerianPropagator {
         const M = (elements.trueAnomaly + n * time) % (2 * Math.PI);
 
         // Solve Kepler's equation for eccentric anomaly
-        const E = this.solveKeplersEquation(M, elements.eccentricity);
+        const E = solveKeplerEquation(M, elements.eccentricity);
 
         // True anomaly
         const nu = 2 * Math.atan2(
@@ -430,54 +402,6 @@ export class KeplerianPropagator {
         return acceleration;
     }
 
-    /**
-     * Private: RK4 integration step
-     */
-    _rk4Step(position, velocity, acceleration, dt, bodies) {
-        const pos0 = position.clone();
-        const vel0 = velocity.clone();
-        const acc0 = acceleration;
-
-        // k1
-        const k1v = acc0.clone().multiplyScalar(dt);
-        const k1p = vel0.clone().multiplyScalar(dt);
-
-        // k2
-        const pos1 = pos0.clone().addScaledVector(k1p, 0.5);
-        const vel1 = vel0.clone().addScaledVector(k1v, 0.5);
-        const acc1 = this._computeGravitationalAcceleration(pos1, bodies);
-        const k2v = acc1.clone().multiplyScalar(dt);
-        const k2p = vel1.clone().multiplyScalar(dt);
-
-        // k3
-        const pos2 = pos0.clone().addScaledVector(k2p, 0.5);
-        const vel2 = vel0.clone().addScaledVector(k2v, 0.5);
-        const acc2 = this._computeGravitationalAcceleration(pos2, bodies);
-        const k3v = acc2.clone().multiplyScalar(dt);
-        const k3p = vel2.clone().multiplyScalar(dt);
-
-        // k4
-        const pos3 = pos0.clone().add(k3p);
-        const vel3 = vel0.clone().add(k3v);
-        const acc3 = this._computeGravitationalAcceleration(pos3, bodies);
-        const k4v = acc3.clone().multiplyScalar(dt);
-        const k4p = vel3.clone().multiplyScalar(dt);
-
-        // Final position and velocity
-        const finalPos = pos0
-            .addScaledVector(k1p, 1 / 6)
-            .addScaledVector(k2p, 1 / 3)
-            .addScaledVector(k3p, 1 / 3)
-            .addScaledVector(k4p, 1 / 6);
-
-        const finalVel = vel0
-            .addScaledVector(k1v, 1 / 6)
-            .addScaledVector(k2v, 1 / 3)
-            .addScaledVector(k3v, 1 / 3)
-            .addScaledVector(k4v, 1 / 6);
-
-        return { position: finalPos, velocity: finalVel };
-    }
 
     /**
      * Private: Generate cache key for trajectory

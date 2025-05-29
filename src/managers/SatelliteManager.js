@@ -13,7 +13,7 @@
 
 import * as THREE from 'three';
 import { Satellite } from '../components/Satellite/Satellite.js';
-import { OrbitPath } from '../components/Satellite/OrbitPath.js';
+// import { OrbitPath } from '../components/Satellite/OrbitPath.js'; // Removed - using SatelliteOrbitManager
 import { Constants } from '../utils/Constants.js';
 import {
     createSatelliteFromLatLon as createSatFromLatLonInternal,
@@ -250,16 +250,16 @@ export class SatelliteManager {
                 periodS = baseP * effP;
                 pts = ptsPerPeriod > 0
                     ? Math.ceil(ptsPerPeriod * effP)
-                        : sat.orbitPath?._maxOrbitPoints ?? 180;
+                        : 180; // Default orbit points
                 }
 
             if (r > satSOI) pts = Math.max(10, Math.ceil(pts * 0.2));
-                pts = Math.min(pts, OrbitPath.CAPACITY - 1);
+                pts = Math.min(pts, 2000); // Max points limit
 
             try {
                 const posKm = sat.position.clone();
 
-                sat.orbitPath?.update(posKm, sat.velocity, sat.id, thirds, periodS, pts, true);
+                // Orbit path updates now handled by SatelliteOrbitManager
                 sat.groundTrackPath?.update(epochMs, posKm, sat.velocity, sat.id, thirds, periodS, pts);
 
                 updated = true;

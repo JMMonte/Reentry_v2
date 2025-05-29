@@ -96,3 +96,21 @@ The project uses Vercel for deployment with a static build approach. See `VERCEL
 - UI updates should be throttled to maintain 60 FPS
 - Use Web Workers for computationally intensive operations
 - Ground track calculations use separate worker threads
+
+### Coordinate System Details
+
+- Three.js uses Y-up by default, but this project uses Z-up configuration
+- All celestial positions are relative to Solar System Barycenter
+- Frame transformations handled in `src/utils/FrameTransforms.js`
+
+### Performance Considerations
+
+- Satellite orbit paths are pre-calculated in workers
+- Display settings can be toggled via `DisplaySettingsManager`
+- Large satellite counts (>100) may require reduced visual fidelity
+
+### Data Sources
+
+- Planetary ephemeris from astronomy-engine library
+- Body physical properties in `src/physics/bodies/`
+- Ground stations and spaceports in `src/config/`

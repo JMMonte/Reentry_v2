@@ -122,7 +122,7 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
  * @param {number} e - Eccentricity.
  * @returns {number} Eccentric anomaly E (radians).
  */
-function solveKeplerEquation(M, e) {
+export function solveKeplerEquation(M, e) {
     let E = M; // Initial guess
     if (e > 0.8) E = Math.PI; // Better initial guess for high eccentricity
 

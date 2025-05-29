@@ -5,6 +5,7 @@ import { StateVectorCalculator } from './StateVectorCalculator.js';
 import { PositionManager } from './PositionManager.js';
 import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 import { Constants } from '../utils/Constants.js';
+import { integrateRK4 } from './integrators/OrbitalIntegrators.js';
 
 // Extract the functions we need from the Astronomy module
 const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector } = Astronomy;
@@ -682,7 +683,7 @@ export class PhysicsEngine {
         }
         
         // Debug logging for extreme cases
-        const debugAccel = satellite.position.length() < 10000; // Debug if within 10,000 km of central body
+        const debugAccel = false; // Disabled - was causing excessive logging for normal satellites
 
         // === GRAVITATIONAL ACCELERATION FROM SIGNIFICANT BODIES ONLY ===
         // Apply sphere of influence filtering to avoid computational issues
@@ -721,10 +722,10 @@ export class PhysicsEngine {
                 if (allBodyAccels[bodyId]) {
                     a_bodies[bodyId] = [allBodyAccels[bodyId].x, allBodyAccels[bodyId].y, allBodyAccels[bodyId].z];
                     
-                    // Debug large accelerations
+                    // Debug large accelerations only if truly suspicious (> 100 km/s² which would be extreme)
                     const accVec = allBodyAccels[bodyId];
-                    if (accVec.length() > 0.1 || debugAccel) {
-                        console.warn(`[PhysicsEngine] Large/suspicious acceleration from ${body.name} (${bodyId}):`);
+                    if (accVec.length() > 100) {
+                        console.warn(`[PhysicsEngine] Extremely large acceleration from ${body.name} (${bodyId}):`);
                         console.warn(`  Type: ${body.type || 'unknown'}`);
                         console.warn(`  Acceleration: ${accVec.length().toExponential(3)} km/s²`);
                         console.warn(`  Distance: ${body.position.distanceTo(satGlobalPos).toFixed(1)} km`);
@@ -1065,7 +1066,6 @@ export class PhysicsEngine {
 
         const pos0 = satellite.position.clone(); // planet-centric
         const vel0 = satellite.velocity.clone();
-        const acc0 = acceleration;
         
         // Debug: Check for extreme accelerations
         const accMag = acceleration.length();
@@ -1073,50 +1073,27 @@ export class PhysicsEngine {
             console.warn(`[PhysicsEngine] EXTREME ACCELERATION DETECTED for satellite ${satellite.id}: ${accMag.toFixed(3)} km/s²`);
             console.warn(`  Position: ${pos0.toArray().map(v => v.toFixed(1)).join(', ')} km`);
             console.warn(`  Velocity: ${vel0.toArray().map(v => v.toFixed(3)).join(', ')} km/s (mag: ${vel0.length().toFixed(3)})`);
-            console.warn(`  Acceleration: ${acc0.toArray().map(v => v.toFixed(6)).join(', ')} km/s²`);
+            console.warn(`  Acceleration: ${acceleration.toArray().map(v => v.toFixed(6)).join(', ')} km/s²`);
             console.warn(`  dt: ${dt} seconds`);
             console.warn(`  Central body: ${centralBody.name} (${satellite.centralBodyNaifId})`);
         }
 
-        // k1
-        const k1v = acc0.clone().multiplyScalar(dt);
-        const k1p = vel0.clone().multiplyScalar(dt);
+        // Create acceleration function for the integrator
+        const accelerationFunc = (position, velocity) => {
+            return this._computeSatelliteAcceleration({ ...satellite, position, velocity });
+        };
 
-        // k2
-        const pos1 = pos0.clone().addScaledVector(k1p, 0.5);
-        const vel1 = vel0.clone().addScaledVector(k1v, 0.5);
-        // Compute acceleration at pos1 (convert to global)
-        const acc1 = this._computeSatelliteAcceleration({ ...satellite, position: pos1 });
-        const k2v = acc1.clone().multiplyScalar(dt);
-        const k2p = vel1.clone().multiplyScalar(dt);
+        // Use centralized RK4 integration
+        const { position: newPosition, velocity: newVelocity } = integrateRK4(
+            satellite.position,
+            satellite.velocity,
+            accelerationFunc,
+            dt
+        );
 
-        // k3
-        const pos2 = pos0.clone().addScaledVector(k2p, 0.5);
-        const vel2 = vel0.clone().addScaledVector(k2v, 0.5);
-        const acc2 = this._computeSatelliteAcceleration({ ...satellite, position: pos2 });
-        const k3v = acc2.clone().multiplyScalar(dt);
-        const k3p = vel2.clone().multiplyScalar(dt);
-
-        // k4
-        const pos3 = pos0.clone().add(k3p);
-        const vel3 = vel0.clone().add(k3v);
-        const acc3 = this._computeSatelliteAcceleration({ ...satellite, position: pos3 });
-        const k4v = acc3.clone().multiplyScalar(dt);
-        const k4p = vel3.clone().multiplyScalar(dt);
-
-        // Final update (planet-centric)
-        satellite.position.copy(pos0)
-            .addScaledVector(k1p, 1 / 6)
-            .addScaledVector(k2p, 1 / 3)
-            .addScaledVector(k3p, 1 / 3)
-            .addScaledVector(k4p, 1 / 6);
-
-        satellite.velocity.copy(vel0)
-            .addScaledVector(k1v, 1 / 6)
-            .addScaledVector(k2v, 1 / 3)
-            .addScaledVector(k3v, 1 / 3)
-            .addScaledVector(k4v, 1 / 6);
-
+        // Update satellite state
+        satellite.position.copy(newPosition);
+        satellite.velocity.copy(newVelocity);
         satellite.acceleration.copy(acceleration);
         
         // Track velocity changes

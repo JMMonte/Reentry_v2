@@ -17,4 +17,5 @@ export class Constants {
     // Sun constants
     static sunMass = 1.9885e30; // Sun mass in kg
     static sunGravitationalParameter = Constants.G * Constants.sunMass; // km^3/s^2
+    static ECLIPIC_J2000_JD = 2451545.0; // Julian date of J2000 epoch
 }

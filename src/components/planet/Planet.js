@@ -1,7 +1,6 @@
 /* Planet.js */
 import * as THREE from 'three';
 import { Constants } from '../../utils/Constants.js';
-import { SatelliteCoordinates } from '../../utils/SatelliteCoordinates.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
 import atmosphereMeshVertexShader from '../../shaders/atmosphereMesh.vert?raw';
 import atmosphereMeshFragmentShader from '../../shaders/atmosphereMesh.frag?raw';
@@ -13,8 +12,6 @@ import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
-// import { KeplerianPropagator } from '../../physics/KeplerianPropagator.js';
-// import SunConfig from '../../physics/bodies/planets/Sun.js';
 
 /*
  * Planet.js
@@ -493,32 +490,6 @@ export class Planet {
      */
     setTargetOrientation(worldOrientationQuaternion) {
         this.targetOrientation.copy(worldOrientationQuaternion);
-    }
-
-    /**
-     * Convert planet-centered inertial position to ground coordinates.
-     * Generic for any celestial body.
-     * @param {THREE.Vector3} posPCI - Position in planet-centered inertial frame
-     * @param {Date} time - Time for transformation
-     * @returns {{latitude: number, longitude: number, altitude: number}} Ground coordinates
-     */
-    convertPCIToGround(posPCI, time = new Date()) {
-        const position = [posPCI.x, posPCI.y, posPCI.z];
-        const velocity = [0, 0, 0];
-        
-        // Transform from planet-centered inertial to planet-fixed
-        const result = SatelliteCoordinates.transformCoordinates(
-            position, velocity, 'PCI', 'PF', this, time
-        );
-        
-        // Convert to geographic coordinates
-        const geo = SatelliteCoordinates.planetFixedToLatLonAlt(result.position, this);
-        
-        return {
-            latitude: geo[0],
-            longitude: geo[1],
-            altitude: geo[2]
-        };
     }
 
     /**

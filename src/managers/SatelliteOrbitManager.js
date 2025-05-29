@@ -5,7 +5,8 @@
  * Coordinates workers, caching, and Three.js rendering
  */
 import * as THREE from 'three';
-import { NumericalPropagator } from '../physics/NumericalPropagator.js';
+import { analyzeOrbit } from '../physics/integrators/OrbitalIntegrators.js';
+import { Constants } from '../utils/Constants.js';
 
 export class SatelliteOrbitManager {
     constructor(app) {
@@ -24,8 +25,7 @@ export class SatelliteOrbitManager {
         this.orbitLines = new Map(); // lineKey -> THREE.Line
         this.orbitSegmentCounts = new Map(); // satelliteId -> number of segments
         
-        // Propagator for orbit analysis
-        this.propagator = null;
+        // No longer need a separate propagator
         
         // Update throttling
         this.updateQueue = new Set();
@@ -61,9 +61,8 @@ export class SatelliteOrbitManager {
         console.log('[SatelliteOrbitManager] Display settings available:', !!this.displaySettings);
         
         if (this.physicsEngine) {
-            this.propagator = new NumericalPropagator(this.physicsEngine);
             this._updateWorkersPhysicsState();
-            console.log('[SatelliteOrbitManager] Propagator initialized');
+            console.log('[SatelliteOrbitManager] Physics engine initialized');
         }
         
         // Set up event listeners for satellite lifecycle
@@ -125,8 +124,8 @@ export class SatelliteOrbitManager {
      * Process queued orbit updates
      */
     _processUpdateQueue() {
-        if (!this.propagator || !this.physicsEngine) {
-            console.warn('[SatelliteOrbitManager] Cannot process queue - propagator or physics not ready');
+        if (!this.physicsEngine) {
+            console.warn('[SatelliteOrbitManager] Cannot process queue - physics not ready');
             return;
         }
 
@@ -150,7 +149,12 @@ export class SatelliteOrbitManager {
 
             console.log(`[SatelliteOrbitManager] Analyzing orbit for satellite ${satelliteId}`);
             // Analyze orbit to determine propagation parameters
-            const orbitParams = this.propagator.analyzeOrbit(satellite);
+            const centralBody = this.physicsEngine.bodies[satellite.centralBodyNaifId];
+            if (!centralBody) {
+                console.error(`[SatelliteOrbitManager] Central body ${satellite.centralBodyNaifId} not found`);
+                continue;
+            }
+            const orbitParams = analyzeOrbit(satellite, centralBody, Constants.G);
             
             // Get display settings
             const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 2;

@@ -66,25 +66,6 @@ Creates a satellite from latitude/longitude for a circular orbit.
 
 ---
 
-### `getVisibleLocationsFromOrbitalElements(params)`
-
-Computes visible ground locations over time based on orbital elements by sampling the orbit and testing horizon visibility for each location.
-
-- **Parameters:**
-  - `semiMajorAxis` (number, required)
-  - `eccentricity` (number, required)
-  - `inclination` (number, required)
-  - `raan` (number, required)
-  - `argumentOfPeriapsis` (number, required)
-  - `trueAnomaly` (number, required)
-  - `referenceFrame` (string, 'inertial' or 'equatorial', required)
-  - `locations` (Array<{lat: number, lon: number}>, required)
-  - `numPoints` (number, optional, default 180)
-  - `numPeriods` (number, optional, default 1)
-- **Returns:** Array of `{ lat, lon, time }` timestamps where each location is visible.
-
----
-
 ## Tool Call Mapping (for AI/Socket Integration)
 
 When a tool call is received, the following mapping is used (see `src/components/ui/chat/useChatSocket.js`):
@@ -103,13 +84,6 @@ When a tool call is received, the following mapping is used (see `src/components
 
   - Requires: `latitude`, `longitude`, `altitude`, `azimuth`
   - Calls: `window.api.createSatellite({ ...parsedArgs, mode: 'circular' })`
-
-- `getVisibleLocationsFromOrbitalElements`
-
-  - Requires: `semiMajorAxis`, `eccentricity`, `inclination`, `raan`, `argumentOfPeriapsis`, `trueAnomaly`, `referenceFrame`, `locations`, `numPoints`, `numPeriods`
-  - Calls: `window.api.getVisibleLocationsFromOrbitalElements(params)`
-
----
 
 ## Example Usage
 

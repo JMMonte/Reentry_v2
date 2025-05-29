@@ -1,4 +1,7 @@
-import { adaptiveIntegrate } from './OrbitIntegrator.js';
+import { integrateRK45 } from '../physics/integrators/OrbitalIntegrators.js';
+import { GravityCalculator } from '../physics/core/GravityCalculator.js';
+import { AtmosphericModels } from '../physics/core/AtmosphericModels.js';
+import * as THREE from 'three';
 
 /**
  * Find the next periapsis or apoapsis after the given state.
@@ -21,9 +24,23 @@ export function findNextApsis(pos0, vel0, bodies, perturbationScale, type = 'per
     let apsisTime = null;
 
     while (t < maxLookaheadSec) {
-        const { pos: newPos, vel: newVel } = adaptiveIntegrate(pos, vel, dt, bodies, perturbationScale);
-        pos = newPos;
-        vel = newVel;
+        // Create acceleration function for integration
+        const accelerationFunc = (p, v) => {
+            const grav = GravityCalculator.computeAcceleration(p, bodies);
+            // Could add drag here if needed
+            return grav;
+        };
+        
+        const state = integrateRK45(
+            new THREE.Vector3(...pos),
+            new THREE.Vector3(...vel),
+            accelerationFunc,
+            dt,
+            { absTol: 1e-6, relTol: 1e-6 }
+        );
+        
+        pos = state.position.toArray();
+        vel = state.velocity.toArray();
         t += dt;
         const r = Math.sqrt(pos[0]**2 + pos[1]**2 + pos[2]**2);
         if (wasDecreasing !== null) {
