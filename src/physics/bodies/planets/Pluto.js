@@ -34,8 +34,8 @@ export default {
     orbitalElements: {
         semiMajorAxis: 2126.7, // km - distance from Pluto center to barycenter
         eccentricity: 0.0,     // Circular orbit (tidally locked)
-        inclination: 96.168,   // Same as Charon's orbit
-        longitudeOfAscendingNode: 223.046, // Same as Charon
+        inclination: 0.001,   // Same as Charon's orbit
+        longitudeOfAscendingNode: 43.0, // Same as Charon
         argumentOfPeriapsis: 180.0, // Opposite side from Charon
         meanAnomalyAtEpoch: 180.0,  // Opposite phase from Charon
         epoch: 2451545.0,           // J2000.0

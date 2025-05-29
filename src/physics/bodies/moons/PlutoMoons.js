@@ -13,12 +13,12 @@ export default [
         rotationPeriod: 6.387230 * 24 * 3600, // Synchronous with Pluto
         orbitalPeriod: 6.387230 * 24 * 3600, // Same as Pluto's rotation
         orbitalElements: {
-            semiMajorAxis: 19591.4,
-            eccentricity: 0.000,
-            inclination: 96.145,
+            semiMajorAxis: 17536,
+            eccentricity: 0.00016,
+            inclination: 0.080,
             longitudeOfAscendingNode: 223.046,
-            argumentOfPeriapsis: 0.0,
-            meanAnomalyAtEpoch: 0.0,
+            argumentOfPeriapsis: 180.0,
+            meanAnomalyAtEpoch: 180.0,
             epoch: 2451545.0,
             referenceFrame: 'pluto_equatorial'
         },
@@ -57,10 +57,10 @@ export default [
         orbitalElements: {
             semiMajorAxis: 48694.0,
             eccentricity: 0.002,
-            inclination: 96.2,
+            inclination: 0.133,
             longitudeOfAscendingNode: 223.1,
-            argumentOfPeriapsis: 0.0,
-            meanAnomalyAtEpoch: 0.0,
+            argumentOfPeriapsis: 180.0,
+            meanAnomalyAtEpoch: 180.0,
             epoch: 2451545.0,
             referenceFrame: 'pluto_equatorial'
         },
@@ -99,10 +99,10 @@ export default [
         orbitalElements: {
             semiMajorAxis: 64738.0,
             eccentricity: 0.005,
-            inclination: 96.4,
+            inclination: 0.242,
             longitudeOfAscendingNode: 223.2,
-            argumentOfPeriapsis: 0.0,
-            meanAnomalyAtEpoch: 0.0,
+            argumentOfPeriapsis: 180.0,
+            meanAnomalyAtEpoch: 180.0,
             epoch: 2451545.0,
             referenceFrame: 'pluto_equatorial'
         },
@@ -142,10 +142,10 @@ export default [
         orbitalElements: {
             semiMajorAxis: 57783.0,
             eccentricity: 0.003,
-            inclination: 96.3,
+            inclination: 0.389,
             longitudeOfAscendingNode: 223.15,
-            argumentOfPeriapsis: 0.0,
-            meanAnomalyAtEpoch: 0.0,
+            argumentOfPeriapsis: 180.0,
+            meanAnomalyAtEpoch: 180.0,
             epoch: 2451545.0,
             referenceFrame: 'pluto_equatorial'
         },
@@ -185,10 +185,10 @@ export default [
         orbitalElements: {
             semiMajorAxis: 42656.0,
             eccentricity: 0.005,
-            inclination: 96.1,
+            inclination: 0.81,
             longitudeOfAscendingNode: 223.0,
-            argumentOfPeriapsis: 0.0,
-            meanAnomalyAtEpoch: 0.0,
+            argumentOfPeriapsis: 180.0,
+            meanAnomalyAtEpoch: 180.0,
             epoch: 2451545.0,
             referenceFrame: 'pluto_equatorial'
         },
