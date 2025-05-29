@@ -61,7 +61,7 @@ export const RENDER_ORDER = {
     SOI: 0,
     SURFACE: 0,
     CLOUDS: 0,
-    ATMOSPHERE: 1,
+    ATMOSPHERE: 100, // Much higher to ensure it renders after planet
     POI: 3,
     RINGS: 4
 };

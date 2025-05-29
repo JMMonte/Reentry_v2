@@ -1,0 +1,109 @@
+// Atmosphere Depth Integration Patch
+// This file describes the changes needed to integrate local depth mapping for atmospheres
+
+// 1. Modify Planet.js to optionally use enhanced atmospheres
+// In Planet.js constructor, around line 663, replace:
+/*
+this.atmosphereComponent = new AtmosphereComponent(
+    this,
+    configWithComputedAtmo,
+    {
+        vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
+        fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
+    }
+);
+*/
+
+// With:
+/*
+import { AtmosphereEnhanced } from './AtmosphereEnhanced.js';
+
+// Check if we need enhanced atmosphere (multiple planets visible)
+const useEnhanced = atm.useEnhancedDepth || this.scene.userData.multiplePlanetsVisible;
+
+if (useEnhanced) {
+    this.atmosphereComponent = new AtmosphereEnhanced(
+        this,
+        configWithComputedAtmo,
+        {
+            vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
+            fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
+        },
+        {
+            multiplePlanetsVisible: this.scene.userData.multiplePlanetsVisible
+        }
+    );
+} else {
+    this.atmosphereComponent = new AtmosphereComponent(
+        this,
+        configWithComputedAtmo,
+        {
+            vertexShader: atm.vertexShader || atmosphereMeshVertexShader,
+            fragmentShader: atm.fragmentShader || atmosphereMeshFragmentShader
+        }
+    );
+}
+*/
+
+// 2. Modify App3D.js tick() method to handle enhanced atmosphere updates
+// In App3D.js, around line 688, add enhanced atmosphere update:
+/*
+// Atmosphere uniforms
+if (typeof body.updateAtmosphereUniforms === 'function') {
+    if (cameraMoved || sunMoved || planetMoved) {
+        body.updateAtmosphereUniforms(this.camera, this.sun);
+    }
+}
+
+// NEW: Enhanced atmosphere depth update
+if (body.atmosphereComponent && body.atmosphereComponent.updateWithDepth) {
+    body.atmosphereComponent.updateWithDepth(this.renderer, this.scene, this.camera, this.sun);
+}
+*/
+
+// 3. Add visibility tracking to SceneManager
+// In SceneManager or App3D, track how many planets are visible:
+/*
+updateVisiblePlanets() {
+    let visibleCount = 0;
+    const planets = [];
+    
+    this.scene.traverse((obj) => {
+        if (obj.userData.isPlanet && obj.visible) {
+            const planet = obj.userData.planetInstance;
+            if (planet && planet.distantComponent && !planet.distantComponent.isShowingDot) {
+                visibleCount++;
+                planets.push(planet);
+            }
+        }
+    });
+    
+    // Update scene user data
+    this.scene.userData.multiplePlanetsVisible = visibleCount > 1;
+    
+    // Notify planets to update atmosphere mode if needed
+    planets.forEach(planet => {
+        if (planet.atmosphereComponent && planet.atmosphereComponent.setMultiplePlanetsVisible) {
+            planet.atmosphereComponent.setMultiplePlanetsVisible(visibleCount > 1);
+        }
+    });
+}
+*/
+
+// 4. Configure specific bodies to use enhanced atmospheres
+// In body configuration files (e.g., Earth.js, Titan.js), add:
+/*
+atmosphere: {
+    // ... existing atmosphere config ...
+    useEnhancedDepth: true, // Enable for bodies with thick atmospheres
+    maxRenderDistance: 2e6, // 2 million km for Earth
+    minPixelSize: 2 // Minimum pixel size before culling
+}
+*/
+
+// 5. Add shader includes to webpack/vite config if needed
+// Ensure the new shader files are properly imported:
+/*
+import atmosphereLocalDepthVert from './shaders/atmosphereLocalDepth.vert?raw';
+import atmosphereLocalDepthFrag from './shaders/atmosphereLocalDepth.frag?raw';
+*/

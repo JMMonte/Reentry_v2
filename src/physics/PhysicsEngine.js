@@ -149,6 +149,12 @@ export class PhysicsEngine {
             const bodyConfig = solarSystemDataManager.getBodyByNaif(body.naif_id) || solarSystemDataManager.getBodyByName(body.name);
             if (bodyConfig) {
                 body.type = bodyConfig.type;
+                // Copy physics-related properties
+                body.J2 = bodyConfig.J2;
+                body.atmosphericModel = bodyConfig.atmosphericModel;
+                body.GM = bodyConfig.GM;
+                body.soiRadius = bodyConfig.soiRadius;
+                body.rotationPeriod = bodyConfig.rotationPeriod;
                 // Don't modify barycenter mass/GM - let them keep original values for orbital calculations
                 // Physics filtering will handle excluding them from gravitational forces
             }
@@ -500,6 +506,43 @@ export class PhysicsEngine {
             }]
         };
         
+        // Check SOI placement - always find the most appropriate central body
+        const centralBody = this.bodies[satellite.centralBodyNaifId];
+        if (centralBody) {
+            // Calculate global position
+            const globalPos = satData.position.clone().add(centralBody.position);
+            const globalVel = satData.velocity.clone().add(centralBody.velocity);
+            
+            // Find the appropriate central body
+            const appropriateCentralBodyId = this._findAppropriateSOI(globalPos);
+            
+            if (appropriateCentralBodyId !== satellite.centralBodyNaifId) {
+                const distanceFromCentral = satData.position.length();
+                const soiRadius = centralBody.soiRadius || 1e12;
+                const newCentralBody = this.bodies[appropriateCentralBodyId];
+                
+                if (distanceFromCentral > soiRadius) {
+                    console.log(`[PhysicsEngine.addSatellite] Satellite outside ${centralBody.name} SOI (${distanceFromCentral.toFixed(0)} km > ${soiRadius.toFixed(0)} km)`);
+                } else {
+                    console.log(`[PhysicsEngine.addSatellite] Satellite is within ${newCentralBody?.name || 'SSB'} SOI despite being within ${centralBody.name} SOI`);
+                }
+                
+                console.log(`[PhysicsEngine.addSatellite] Switching central body from ${centralBody.name} to ${newCentralBody?.name || 'SSB'}`);
+                
+                // Convert to new reference frame
+                satData.centralBodyNaifId = appropriateCentralBodyId;
+                if (appropriateCentralBodyId === 0) {
+                    // SSB reference
+                    satData.position.copy(globalPos);
+                    satData.velocity.copy(globalVel);
+                } else {
+                    // New body reference
+                    satData.position.copy(globalPos).sub(newCentralBody.position);
+                    satData.velocity.copy(globalVel).sub(newCentralBody.velocity);
+                }
+            }
+        }
+        
         // Validate initial state
         this._validateSatelliteState(satData, "on creation");
         
@@ -654,75 +697,62 @@ export class PhysicsEngine {
             }
         }
         
+        // First pass: Calculate accelerations from ALL bodies for consistency
+        const allBodyAccels = {};
         for (const [bodyId, body] of Object.entries(this.bodies)) {
-            // Only compute forces from significant bodies or the central body
+            // Skip barycenters and invalid bodies
+            if (body.type === 'barycenter') continue;
+            if (!body.position || !body.mass || body.mass <= 0) continue;
+            
+            const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
+            const distance = r.length();
+            
+            if (distance > 1e-6) { // Avoid near-zero distances
+                const gravAccel = (Constants.G * body.mass) / (distance * distance);
+                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
+                totalAccel.add(accVec);
+                allBodyAccels[bodyId] = accVec.clone();
+            }
+        }
+        
+        // Second pass: Store only significant bodies for visualization
+        for (const [bodyId, body] of Object.entries(this.bodies)) {
             if (bodyId == satellite.centralBodyNaifId || significantBodies.has(Number(bodyId))) {
-                // Skip barycenters - they should not produce gravitational effects
-                if (body.type === 'barycenter') {
-                    if (debugAccel) {
-                        console.log(`[PhysicsEngine] Skipping barycenter ${body.name} (${bodyId}) - no gravitational effect`);
-                    }
-                    // Don't store anything for barycenters
-                    continue;
-                }
-                
-                let accVec = new THREE.Vector3();
-                
-                // Skip if body doesn't have valid data
-                if (!body.position || !body.mass || body.mass <= 0) {
-                    console.warn(`[PhysicsEngine] Skipping body ${bodyId} - invalid position or mass`);
-                    continue;
-                }
-                
-                const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
-                const distance = r.length();
-                
-                if (distance > 1e-6) { // Avoid near-zero distances
-                    const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-                    accVec.copy(r).multiplyScalar(gravAccel);
-                    totalAccel.add(accVec);
+                if (allBodyAccels[bodyId]) {
+                    a_bodies[bodyId] = [allBodyAccels[bodyId].x, allBodyAccels[bodyId].y, allBodyAccels[bodyId].z];
                     
-                    // Debug large accelerations or barycenters
-                    if (accVec.length() > 0.1 || body.type === 'barycenter' || debugAccel) {
+                    // Debug large accelerations
+                    const accVec = allBodyAccels[bodyId];
+                    if (accVec.length() > 0.1 || debugAccel) {
                         console.warn(`[PhysicsEngine] Large/suspicious acceleration from ${body.name} (${bodyId}):`);
                         console.warn(`  Type: ${body.type || 'unknown'}`);
-                        console.warn(`  Acceleration: ${accVec.length().toFixed(6)} km/s²`);
-                        console.warn(`  Distance: ${distance.toFixed(1)} km`);
+                        console.warn(`  Acceleration: ${accVec.length().toExponential(3)} km/s²`);
+                        console.warn(`  Distance: ${body.position.distanceTo(satGlobalPos).toFixed(1)} km`);
                         console.warn(`  Mass: ${body.mass.toExponential(3)} kg`);
                         console.warn(`  GM: ${(Constants.G * body.mass).toExponential(3)} km³/s²`);
-                        console.warn(`  Position vector: [${r.toArray().map(v => v.toFixed(1)).join(', ')}] km`);
-                        if (body.type === 'barycenter') {
-                            console.error(`  ERROR: Barycenter ${body.name} should not have mass or produce gravity!`);
-                        }
                     }
-                } else if (distance > 0) {
-                    console.warn(`[PhysicsEngine] NEAR-ZERO DISTANCE detected: ${distance} km between satellite and ${body.name}`);
                 }
-                
-                // Store acceleration vector only for bodies that contribute forces
-                a_bodies[bodyId] = [accVec.x, accVec.y, accVec.z];
             }
-            // Note: We don't store anything for non-significant bodies or barycenters
         }
 
         // === COMPUTE CENTRAL BODY'S ACCELERATION (for reference frame correction) ===
-        // Only compute from the same significant bodies to maintain consistency
+        // CRITICAL: Must include ALL bodies, not just significant ones, for consistency
         const centralAccel = new THREE.Vector3();
         for (const [bodyId, body] of Object.entries(this.bodies)) {
             if (bodyId == satellite.centralBodyNaifId) continue; // skip self
             
-            // Only include significant bodies in central body acceleration calculation  
-            if (significantBodies.has(Number(bodyId))) {
-                // Skip barycenters in central body acceleration too
-                if (body.type === 'barycenter') continue;
-                
-                const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
-                const distance = r.length();
-                if (distance > 0) {
-                    const gravAccel = (Constants.G * body.mass) / (distance * distance * distance);
-                    const accVec = r.clone().multiplyScalar(gravAccel);
-                    centralAccel.add(accVec);
-                }
+            // Skip barycenters
+            if (body.type === 'barycenter') continue;
+            
+            // Skip invalid bodies
+            if (!body.position || !body.mass || body.mass <= 0) continue;
+            
+            const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
+            const distance = r.length();
+            if (distance > 1e-6) { // Avoid near-zero distances
+                const gravAccel = (Constants.G * body.mass) / (distance * distance);
+                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
+                centralAccel.add(accVec);
             }
         }
 
@@ -860,9 +890,10 @@ export class PhysicsEngine {
         const area = satellite.crossSectionalArea || 10; // m² cross-sectional area
         const Cd = satellite.dragCoefficient || 2.2; // Drag coefficient
 
+        // Calculate atmosphere velocity due to body rotation
+        const atmosphereVel = this._calculateAtmosphereVelocity(satellite.position, centralBody);
+        
         // Velocity relative to rotating atmosphere
-        // For simplicity, assume atmosphere rotates with the planet
-        const atmosphereVel = new THREE.Vector3(0, 0, 0); // Simplified: no atmosphere rotation
         const relativeVel = satellite.velocity.clone().sub(atmosphereVel);
         const velMag = relativeVel.length() * 1000; // Convert km/s to m/s
         
@@ -873,11 +904,88 @@ export class PhysicsEngine {
         // Drag force magnitude: F = -0.5 * rho * v² * Cd * A
         const dragMag = 0.5 * density * velMag * velMag * Cd * area / mass;
         
-        // Drag direction is opposite to velocity
+        // Drag direction is opposite to relative velocity
         const dragDirection = relativeVel.clone().normalize().multiplyScalar(-1);
         
         // Convert back to km/s²
         return dragDirection.multiplyScalar(dragMag / 1000);
+    }
+
+    /**
+     * Calculate atmosphere velocity at a given position due to body rotation
+     * @param {THREE.Vector3} position - Position relative to body center (km)
+     * @param {Object} body - The celestial body
+     * @returns {THREE.Vector3} - Atmosphere velocity (km/s)
+     */
+    _calculateAtmosphereVelocity(position, body) {
+        // Get rotation period (convert from seconds to days if needed)
+        const rotationPeriod = body.rotationPeriod || (body.spin ? 360 / body.spin : Constants.siderialDay);
+        
+        if (!rotationPeriod || rotationPeriod === 0) {
+            return new THREE.Vector3(0, 0, 0);
+        }
+        
+        // Angular velocity (rad/s)
+        const omega = (2 * Math.PI) / rotationPeriod;
+        
+        // Get body's rotation axis (pole direction)
+        let rotationAxis = new THREE.Vector3(0, 0, 1); // Default to Z-axis
+        
+        if (body.quaternion) {
+            // Transform Z-axis by body's quaternion to get actual rotation axis
+            const q = body.quaternion;
+            rotationAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(
+                new THREE.Quaternion(q.x, q.y, q.z, q.w)
+            );
+        } else if (body.northPole) {
+            rotationAxis = body.northPole.clone().normalize();
+        }
+        
+        // Calculate velocity = omega × r
+        // Project position onto plane perpendicular to rotation axis
+        const projectedPos = position.clone().sub(
+            rotationAxis.clone().multiplyScalar(position.dot(rotationAxis))
+        );
+        
+        // Velocity is perpendicular to both rotation axis and projected position
+        // v = omega × r_perp
+        const atmosphereVel = new THREE.Vector3()
+            .crossVectors(rotationAxis, projectedPos)
+            .multiplyScalar(omega);
+        
+        // Convert from km/s to km/s (omega is in rad/s, position in km)
+        // No conversion needed as the result is already in km/s
+        
+        return atmosphereVel;
+    }
+
+    /**
+     * Find the appropriate SOI for a given global position
+     * Returns the NAIF ID of the body whose SOI contains the position
+     */
+    _findAppropriateSOI(globalPos) {
+        let bestBody = 0; // Default to SSB
+        let smallestSOI = Infinity;
+        
+        // Check all bodies to find which SOI we're in
+        for (const [naifId, body] of Object.entries(this.bodies)) {
+            // Skip barycenters
+            if (body.type === 'barycenter') continue;
+            
+            const distance = globalPos.distanceTo(body.position);
+            const soiRadius = body.soiRadius || Infinity;
+            
+            // We're inside this body's SOI
+            if (distance < soiRadius) {
+                // Choose the smallest SOI that contains us (most specific)
+                if (soiRadius < smallestSOI) {
+                    bestBody = Number(naifId);
+                    smallestSOI = soiRadius;
+                }
+            }
+        }
+        
+        return bestBody;
     }
 
     /**

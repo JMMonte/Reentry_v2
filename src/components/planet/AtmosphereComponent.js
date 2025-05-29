@@ -7,11 +7,17 @@ export class AtmosphereComponent {
     constructor(planet, config, shaders) {
         // Save planet reference for update
         this.planet = planet;
-        // Create outer atmosphere shell mesh
-        const outer = planet.materials.createAtmosphereMesh(config, shaders);
+        // Create outer atmosphere shell mesh with LOD support
+        const atmosphereOptions = {
+            ...shaders,
+            lodLevels: planet.lodLevels, // Use the same LOD levels as the planet
+            defaultResolution: planet.atmosphereRes || 64,
+            renderOrder: planet.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE
+        };
+        const outer = planet.materials.createAtmosphereMesh(config, atmosphereOptions);
         if (!outer) return;
-        // Use both sides so atmosphere is visible when camera is outside or inside
-        outer.material.side = THREE.DoubleSide;
+        // Keep the side as configured in PlanetMaterials (FrontSide for proper depth testing)
+        // outer.material.side = THREE.DoubleSide; // Removed - this was overriding the depth fix
 
         // Apply oblateness and atmosphere thickness scaling directly to the mesh
         const equR = planet.radius;
@@ -24,18 +30,43 @@ export class AtmosphereComponent {
 
         // const yScale = equAtm === 0 ? 1 : polAtm / equAtm; // Old
         // outer.scale.set(1, yScale, 1); // Old, for pre-scaled geometry
-        outer.scale.set(equAtm, polAtm, equAtm); // New, for radius 1 geometry from PlanetMaterials
+        // Scale atmosphere to its proper size (handle both Mesh and LOD)
+        if (outer instanceof THREE.LOD) {
+            // For LOD, scale each level
+            outer.levels.forEach(level => {
+                if (level.object) {
+                    level.object.scale.set(equAtm, polAtm, equAtm);
+                }
+            });
+        } else {
+            // For single mesh
+            outer.scale.set(equAtm, polAtm, equAtm);
+        }
 
-        // Pass actual radii for vertex shader scaling
-        if (outer.material.uniforms) { // Check if uniforms exist
-            outer.material.uniforms.uEquatorialAtmRadiusForScaling = { value: equAtm };
-            outer.material.uniforms.uPolarAtmRadiusForScaling = { value: polAtm };
+        // Pass actual radii for vertex shader scaling (handle both Mesh and LOD)
+        const updateUniforms = (material) => {
+            if (material?.uniforms) {
+                material.uniforms.uEquatorialAtmRadiusForScaling = { value: equAtm };
+                material.uniforms.uPolarAtmRadiusForScaling = { value: polAtm };
+            }
+        };
+        
+        if (outer instanceof THREE.LOD) {
+            // For LOD, update uniforms for each level
+            outer.levels.forEach(level => {
+                if (level.object?.material) {
+                    updateUniforms(level.object.material);
+                }
+            });
+        } else if (outer.material) {
+            // For single mesh
+            updateUniforms(outer.material);
         }
 
         // const yScale = equAtm === 0 ? 1 : polAtm / equAtm; // Old
         // outer.scale.set(1, yScale, 1); // Commented out, direct scale above
         // Render order for the atmosphere mesh
-        outer.renderOrder = planet.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
+        // Render order is now set in createAtmosphereMesh
         planet.rotationGroup.add(outer);
         this.mesh = outer;
         // Preallocate temporaries
@@ -105,14 +136,31 @@ export class AtmosphereComponent {
         }
         const lutTex = new THREE.DataTexture(data, lutSize, lutSize, THREE.RGBAFormat, THREE.FloatType);
         lutTex.needsUpdate = true;
-        // Attach LUT to material
-        outer.material.uniforms.uOpticalDepthLUT = { value: lutTex };
-
+        
         // Add scale height multiplier uniform
         const scaleHeightMultiplier = config.atmosphere && typeof config.atmosphere.scaleHeightMultiplier === 'number' 
             ? config.atmosphere.scaleHeightMultiplier 
             : 5.0; // Default to 5.0 if not specified in config
-        outer.material.uniforms.uScaleHeightMultiplier = { value: scaleHeightMultiplier };
+        
+        // Attach LUT and multiplier to material (handle both Mesh and LOD)
+        const attachUniformsToMaterial = (material) => {
+            if (material?.uniforms) {
+                material.uniforms.uOpticalDepthLUT = { value: lutTex };
+                material.uniforms.uScaleHeightMultiplier = { value: scaleHeightMultiplier };
+            }
+        };
+        
+        if (outer instanceof THREE.LOD) {
+            // For LOD, attach to all levels
+            outer.levels.forEach(level => {
+                if (level.object?.material) {
+                    attachUniformsToMaterial(level.object.material);
+                }
+            });
+        } else if (outer.material) {
+            // For single mesh
+            attachUniformsToMaterial(outer.material);
+        }
     }
 
     // This update is called by Planet's component loop, handles planet-state-dependent scaling
@@ -126,21 +174,55 @@ export class AtmosphereComponent {
         const newEquAtm = equR + newAtmHeight;
         const newPolAtm = polR + newAtmHeight;
 
-        this.mesh.scale.set(newEquAtm, newPolAtm, newEquAtm);
-
-        // Update uniforms for vertex shader scaling
-        const mat = this.mesh.material;
-        if (mat.uniforms.uEquatorialAtmRadiusForScaling) {
-            mat.uniforms.uEquatorialAtmRadiusForScaling.value = newEquAtm;
+        // Update scale (handle both Mesh and LOD)
+        if (this.mesh instanceof THREE.LOD) {
+            this.mesh.levels.forEach(level => {
+                if (level.object) {
+                    level.object.scale.set(newEquAtm, newPolAtm, newEquAtm);
+                }
+            });
+        } else {
+            this.mesh.scale.set(newEquAtm, newPolAtm, newEquAtm);
         }
-        if (mat.uniforms.uPolarAtmRadiusForScaling) {
-            mat.uniforms.uPolarAtmRadiusForScaling.value = newPolAtm;
+
+        // Update uniforms for vertex shader scaling (handle both Mesh and LOD)
+        const updateRadiiUniforms = (material) => {
+            if (material?.uniforms) {
+                if (material.uniforms.uEquatorialAtmRadiusForScaling) {
+                    material.uniforms.uEquatorialAtmRadiusForScaling.value = newEquAtm;
+                }
+                if (material.uniforms.uPolarAtmRadiusForScaling) {
+                    material.uniforms.uPolarAtmRadiusForScaling.value = newPolAtm;
+                }
+            }
+        };
+        
+        if (this.mesh instanceof THREE.LOD) {
+            this.mesh.levels.forEach(level => {
+                if (level.object?.material) {
+                    updateRadiiUniforms(level.object.material);
+                }
+            });
+        } else if (this.mesh.material) {
+            updateRadiiUniforms(this.mesh.material);
         }
     }
 
     // This update is called from App3D.tick AFTER planet and camera positions are finalized
     updateUniforms(camera, sun) { // camera is the main app camera, sun is the main app sun
-        if (!this.mesh || !this.mesh.material?.uniforms) return;
+        if (!this.mesh) return;
+        
+        // Get the material to update (handle both Mesh and LOD)
+        let material;
+        if (this.mesh instanceof THREE.LOD) {
+            // For LOD, update the currently visible level's material
+            const currentLevel = this.mesh.levels.find(level => level.object?.visible);
+            material = currentLevel?.object?.material;
+        } else {
+            material = this.mesh.material;
+        }
+        
+        if (!material?.uniforms) return;
         
         // Ensure the planet's own matrixWorld is up-to-date after its lerp
         // This should already be true if Planet.update() updated its transforms
@@ -170,10 +252,9 @@ export class AtmosphereComponent {
         // Relative sun
         const sunRel = this._sunPos.clone().sub(this._planetPos);
         
-        const mat = this.mesh.material;
-
-        mat.uniforms.uCameraPosition.value.copy(this._camRel);
-        mat.uniforms.uSunPosition.value.copy(sunRel);
+        // Update uniforms using the material we found
+        material.uniforms.uCameraPosition.value.copy(this._camRel);
+        material.uniforms.uSunPosition.value.copy(sunRel);
 
         // Planet frame rotation
         // The atmosphere mesh is added to planet.rotationGroup, which has the planet's axial tilt.
@@ -181,22 +262,37 @@ export class AtmosphereComponent {
         this.planet.rotationGroup.getWorldQuaternion(this._worldQuat);
         this._worldQuat.invert(); // Shader wants world-to-local
         this._invMat.makeRotationFromQuaternion(this._worldQuat);
-        mat.uniforms.uPlanetFrame.value.setFromMatrix4(this._invMat);
+        material.uniforms.uPlanetFrame.value.setFromMatrix4(this._invMat);
 
         // Sun intensity
         const dist = this._planetPos.distanceTo(this._sunPos); // Distance between planet center and sun center
         const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU : 149597870.7;
         const BASE = 10.6; // Base sun intensity factor
         const EPS = 1e-6;
-        mat.uniforms.uSunIntensity.value = BASE * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
+        material.uniforms.uSunIntensity.value = BASE * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);
 
         // Planet center & radius for shader
-        mat.uniforms.uPlanetPositionWorld.value.copy(this._planetPos); // This is planet's world center
-        if (mat.uniforms.uPlanetRadius) mat.uniforms.uPlanetRadius.value = this.planet.radius;
-        if (mat.uniforms.uAtmosphereHeight) {
+        material.uniforms.uPlanetPositionWorld.value.copy(this._planetPos); // This is planet's world center
+        if (material.uniforms.uPlanetRadius) material.uniforms.uPlanetRadius.value = this.planet.radius;
+        if (material.uniforms.uAtmosphereHeight) {
             const thickness = this.planet.atmosphereThickness;
-            const fudge = mat.uniforms.uLimbFudgeFactor ? mat.uniforms.uLimbFudgeFactor.value : 0;
-            mat.uniforms.uAtmosphereHeight.value = thickness * (1.0 + fudge);
+            const fudge = material.uniforms.uLimbFudgeFactor ? material.uniforms.uLimbFudgeFactor.value : 0;
+            material.uniforms.uAtmosphereHeight.value = thickness * (1.0 + fudge);
+        }
+        
+        // If LOD, we should update all levels' uniforms to ensure smooth transitions
+        if (this.mesh instanceof THREE.LOD) {
+            this.mesh.levels.forEach(level => {
+                if (level.object?.material?.uniforms && level.object.material !== material) {
+                    const mat = level.object.material;
+                    // Copy uniform values from the active material
+                    Object.keys(material.uniforms).forEach(key => {
+                        if (mat.uniforms[key]) {
+                            mat.uniforms[key].value = material.uniforms[key].value;
+                        }
+                    });
+                }
+            });
         }
     }
 
@@ -206,15 +302,36 @@ export class AtmosphereComponent {
             if (this.mesh.parent) {
                 this.mesh.parent.remove(this.mesh);
             }
-            // Dispose geometry
-            if (this.mesh.geometry) this.mesh.geometry.dispose();
-            // Dispose material and LUT texture if present
-            if (this.mesh.material) {
-                if (this.mesh.material.uniforms?.uOpticalDepthLUT?.value) {
-                    this.mesh.material.uniforms.uOpticalDepthLUT.value.dispose();
+            
+            // Dispose resources (handle both Mesh and LOD)
+            if (this.mesh instanceof THREE.LOD) {
+                // For LOD, dispose all levels
+                this.mesh.levels.forEach(level => {
+                    if (level.object) {
+                        // Dispose geometry
+                        if (level.object.geometry) level.object.geometry.dispose();
+                        // Dispose material and LUT texture if present
+                        if (level.object.material) {
+                            if (level.object.material.uniforms?.uOpticalDepthLUT?.value) {
+                                level.object.material.uniforms.uOpticalDepthLUT.value.dispose();
+                            }
+                            level.object.material.dispose();
+                        }
+                    }
+                });
+            } else {
+                // For single mesh
+                // Dispose geometry
+                if (this.mesh.geometry) this.mesh.geometry.dispose();
+                // Dispose material and LUT texture if present
+                if (this.mesh.material) {
+                    if (this.mesh.material.uniforms?.uOpticalDepthLUT?.value) {
+                        this.mesh.material.uniforms.uOpticalDepthLUT.value.dispose();
+                    }
+                    this.mesh.material.dispose();
                 }
-                this.mesh.material.dispose();
             }
+            
             this.mesh = null;
         }
     }

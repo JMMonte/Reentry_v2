@@ -2,13 +2,15 @@
 // Vertex shader for planet atmosphere mesh
 
 varying vec3 vFragPositionPlanetLocal; // Vertex position in planet's local, scaled frame
-// varying vec3 vNormal; // Original, seems unused by current frag shader
-
-// uniform vec3 uPlanetPositionWorld; // Not needed here for the new varying
+varying vec3 vWorldPosition; // World position for depth calculations
 
 // Uniforms for scaling if geometry is unit sphere
 uniform float uEquatorialAtmRadiusForScaling;
 uniform float uPolarAtmRadiusForScaling;
+
+// Three.js includes for logarithmic depth buffer
+#include <common>
+#include <logdepthbuf_pars_vertex>
 
 void main() {
     // 'position' attribute is from a (likely unit) SphereGeometry.
@@ -19,8 +21,12 @@ void main() {
         position.z * uEquatorialAtmRadiusForScaling
     );
 
-    // gl_Position must still be computed for rendering.
-    // modelMatrix already includes the scaling set on 'outer.scale' in JS,
-    // so modelMatrix * vec4(position, 1.0) correctly transforms the unit sphere vertex.
-    gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+    // Standard transformation
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPos.xyz;
+    gl_Position = projectionMatrix * mvPosition;
+    
+    // Handle logarithmic depth buffer
+    #include <logdepthbuf_vertex>
 }

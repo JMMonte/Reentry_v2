@@ -33,9 +33,14 @@ uniform mat3 uPlanetFrame;      // World-to-Local rotation matrix for planet til
 // Varyings from vertex shader
 // varying vec3 vWorldPositionFromPlanetCenter; // OLD
 varying vec3 vFragPositionPlanetLocal; // NEW - fragment position in planet's local, body-fixed, scaled frame
+varying vec3 vWorldPosition; // World position for depth calculations
 // varying vec3 vNormal;        // OLD - Fragment normal in world space, unused
 
-const float PI = 3.141592653589793;
+// Three.js includes for logarithmic depth buffer
+#include <common>
+#include <logdepthbuf_pars_fragment>
+
+// PI is already defined in <common>, no need to redefine
 
 // --- Reused Helper Functions from atmosphereRaymarch.frag --- 
 
@@ -113,6 +118,9 @@ vec3 calculateOpticalDepthEllipsoid(
 // --- Main Raymarching Logic (adapted for mesh) --- 
 
 void main() {
+    // Handle logarithmic depth buffer
+    #include <logdepthbuf_fragment>
+    
     // uCameraPosition from JS is (camera_world - planet_world_center)
     // uSunPosition from JS is (sun_world - planet_world_center)
     // uPlanetFrame transforms these world-oriented relative vectors to planet's local rotated frame.
@@ -240,5 +248,10 @@ void main() {
     float meanTrans = (accumulatedTransmittance.x + accumulatedTransmittance.y + accumulatedTransmittance.z) / 3.0;
     // Apply haze intensity multiplier to scattered color
     accumulatedColor *= uHazeIntensity;
-    gl_FragColor = vec4(accumulatedColor, 1.0 - meanTrans); // Corrected alpha for transmittance
+    
+    // For proper volumetric depth, we'd need to calculate where atmosphere becomes significant
+    // and output depth at that point. However, this is complex with logarithmic depth buffers.
+    // For now, we'll let the default depth handling work.
+    
+    gl_FragColor = vec4(accumulatedColor, 1.0 - meanTrans);
 } 

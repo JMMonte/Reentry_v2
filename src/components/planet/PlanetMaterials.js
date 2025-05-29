@@ -253,10 +253,10 @@ export class PlanetMaterials {
     }
 
     /**
-     * Create a THREE.Mesh for the planet's atmosphere, with correct oblateness and shader material.
+     * Create a THREE.Mesh or THREE.LOD for the planet's atmosphere, with correct oblateness and shader material.
      * @param {object} config - The planet config (must include .radius, .oblateness, .atmosphere)
-     * @param {object} options - Extra options (e.g. shaders, sun ref, app ref)
-     * @returns {THREE.Mesh|null}
+     * @param {object} options - Extra options (e.g. shaders, sun ref, app ref, lodLevels)
+     * @returns {THREE.Mesh|THREE.LOD|null}
      */
     createAtmosphereMesh(config, options = {}) {
         if (!config.atmosphere || !config.radius) return null;
@@ -268,10 +268,6 @@ export class PlanetMaterials {
         const thickness = atm.thickness || 0;
         // Add a slight fudge to the limb to avoid black gaps
         const fudgeFactor = atm.limbFudgeFactor !== undefined ? atm.limbFudgeFactor : 0.2;
-        const extra = thickness * fudgeFactor;
-        // Geometry radius includes fudge
-        const radius = equR + thickness + extra;
-        const geometry = new THREE.SphereGeometry(radius, 16, 8);
         // Use provided shaders if present, else fallback to default
         const vertexShader = options.vertexShader;
         const fragmentShader = options.fragmentShader;
@@ -303,18 +299,46 @@ export class PlanetMaterials {
             uniforms,
             vertexShader,
             fragmentShader,
-            side: THREE.BackSide,
-            transparent: true,
-            depthWrite: true,
-            depthTest: false,
-            blending: THREE.AdditiveBlending
+            side: THREE.DoubleSide, // Render both sides to ensure visibility
+            transparent: true, // Back to transparent for proper atmosphere look
+            depthWrite: false, // Transparent objects shouldn't write depth
+            depthTest: true, // Test depth to be occluded by objects in front
+            blending: THREE.AdditiveBlending, // Additive for atmosphere glow
+            // Use polygon offset to render atmosphere slightly in front
+            polygonOffset: true,
+            polygonOffsetFactor: -5, // Large negative value to push forward
+            polygonOffsetUnits: -5
         });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.name = `atmosphere_${config.name}`;
-        mesh.scale.set(1, coreY, 1);
-        // mesh.renderOrder = PlanetMaterials.SURFACE_RENDER_ORDER - 1;
-        mesh.frustumCulled = true;
-        return mesh;
+        // Check if we should create LOD or single mesh
+        const lodLevels = options.lodLevels || config.lodLevels;
+        const defaultResolution = options.defaultResolution || 64;
+        const renderOrder = options.renderOrder || 0;
+        
+        if (lodLevels?.length) {
+            // Create LOD object with multiple resolutions
+            const lod = new THREE.LOD();
+            lod.name = `atmosphere_${config.name}_lod`;
+            
+            for (const { meshRes, distance } of lodLevels) {
+                const geometry = new THREE.SphereGeometry(1, meshRes, Math.floor(meshRes / 2));
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.scale.set(1, coreY, 1);
+                mesh.renderOrder = renderOrder;
+                mesh.frustumCulled = true;
+                lod.addLevel(mesh, distance);
+            }
+            
+            return lod;
+        } else {
+            // Create single mesh with default resolution
+            const geometry = new THREE.SphereGeometry(1, defaultResolution, Math.floor(defaultResolution / 2));
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.name = `atmosphere_${config.name}`;
+            mesh.scale.set(1, coreY, 1);
+            mesh.renderOrder = renderOrder;
+            mesh.frustumCulled = true;
+            return mesh;
+        }
     }
 
     /**

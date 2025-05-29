@@ -50,6 +50,86 @@ vi.mock('../src/physics/PositionManager.js', () => ({
 vi.mock('../src/physics/bodies/PlanetaryDataManager.js', () => ({
     planetaryDataManager: {
         getAllBodies: () => []
+    },
+    solarSystemDataManager: {
+        initialized: true,
+        initialize: vi.fn(),
+        naifToBody: {
+            399: {
+                name: 'earth',
+                naif_id: 399,
+                type: 'planet',
+                mass: 5.972e24,
+                radius: 6371,
+                GM: 398600.44,
+                J2: 0.00108263,
+                soiRadius: 925000,
+                atmosphericModel: {
+                    maxAltitude: 1000,
+                    minAltitude: 0,
+                    referenceAltitude: 200,
+                    referenceDensity: 2.789e-10,
+                    scaleHeight: 50,
+                    getDensity: function(altitude) {
+                        if (altitude > 1000 || altitude < 0) return 0;
+                        const h0 = 200;
+                        const rho0 = 2.789e-10;
+                        const H = 50;
+                        return rho0 * Math.exp(-(altitude - h0) / H);
+                    }
+                },
+                rotationPeriod: 86164
+            },
+            301: {
+                name: 'moon',
+                naif_id: 301,
+                type: 'moon',
+                mass: 7.342e22,
+                radius: 1737.4,
+                GM: 4902.8,
+                soiRadius: 66100
+            }
+        },
+        getBodyByNaif: vi.fn((naif) => {
+            const bodies = {
+                399: {
+                    name: 'earth',
+                    naif_id: 399,
+                    type: 'planet',
+                    mass: 5.972e24,
+                    radius: 6371,
+                    GM: 398600.44,
+                    J2: 0.00108263,
+                    soiRadius: 925000,
+                    atmosphericModel: {
+                        maxAltitude: 1000,
+                        minAltitude: 0,
+                        referenceAltitude: 200,
+                        referenceDensity: 2.789e-10,
+                        scaleHeight: 50,
+                        getDensity: function(altitude) {
+                            if (altitude > 1000 || altitude < 0) return 0;
+                            const h0 = 200;
+                            const rho0 = 2.789e-10;
+                            const H = 50;
+                            return rho0 * Math.exp(-(altitude - h0) / H);
+                        }
+                    },
+                    rotationPeriod: 86164
+                },
+                301: {
+                    name: 'moon',
+                    naif_id: 301,
+                    type: 'moon',
+                    mass: 7.342e22,
+                    radius: 1737.4,
+                    GM: 4902.8,
+                    soiRadius: 66100
+                }
+            };
+            return bodies[naif];
+        }),
+        getBodyByName: vi.fn(() => null)
     }
 }));
 
@@ -202,6 +282,22 @@ describe('PhysicsEngine Satellite Perturbations', () => {
                 GM: 398600.44,
                 radius: 6371,
                 J2: 0.00108263,
+                soiRadius: 925000,
+                atmosphericModel: {
+                    maxAltitude: 1000,
+                    minAltitude: 0,
+                    referenceAltitude: 200,
+                    referenceDensity: 2.789e-10,
+                    scaleHeight: 50,
+                    getDensity: function(altitude) {
+                        if (altitude > 1000 || altitude < 0) return 0;
+                        const h0 = 200;
+                        const rho0 = 2.789e-10;
+                        const H = 50;
+                        return rho0 * Math.exp(-(altitude - h0) / H);
+                    }
+                },
+                rotationPeriod: 86164,
                 position: new THREE.Vector3(150000000, 0, 0), // 150M km from Sun
                 velocity: new THREE.Vector3(0, 30, 0), // 30 km/s orbital velocity
                 quaternion: { x: 0, y: 0, z: 0, w: 1 },
@@ -219,6 +315,7 @@ describe('PhysicsEngine Satellite Perturbations', () => {
                 mass: 7.342e22,
                 GM: 4902.8,
                 radius: 1737,
+                soiRadius: 66100,
                 position: new THREE.Vector3(150384400, 0, 0), // 384400 km from Earth
                 velocity: new THREE.Vector3(0, 31.022, 0), // Earth velocity + Moon orbital velocity
                 quaternion: { x: 0, y: 0, z: 0, w: 1 }
@@ -401,8 +498,8 @@ describe('PhysicsEngine Satellite Perturbations', () => {
                 position: [6571, 0, 0], // 200 km altitude
                 velocity: [0, 7.8, 0],
                 mass: 1000,
-                area: 10, // 10 m² cross section
-                dragCoeff: 2.2
+                crossSectionalArea: 10, // 10 m² cross section
+                dragCoefficient: 2.2
             };
 
             physicsEngine.addSatellite(satellite);

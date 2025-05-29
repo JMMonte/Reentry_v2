@@ -1,6 +1,6 @@
 import * as Astronomy from 'astronomy-engine';
 import { KeplerianPropagator, dateToJd } from './KeplerianPropagator.js';
-import { planetaryDataManager } from './bodies/PlanetaryDataManager.js';
+import { planetaryDataManager, solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
 import { Constants } from '../utils/Constants.js';

@@ -23,6 +23,7 @@ import Stats from 'stats.js';
 import { Constants } from './utils/Constants.js';
 import { TimeUtils } from './utils/TimeUtils.js';
 import { TextureManager } from './managers/textureManager.js';
+// Removed atmosphere fixing imports - simplified material handles depth properly
 
 // Managers & engines
 import { SatelliteManager } from './managers/SatelliteManager.js';
@@ -200,6 +201,8 @@ class App3D extends EventTarget {
             
             // Only initialize scene objects locally (no backend connection)
             await this._initializeLocalScene();
+            
+            // Atmospheres now use simplified depth handling in PlanetMaterials.js
 
             // Enable axis and vector visualization for all planets
             this.planetVectors = [];
