@@ -85,38 +85,101 @@ export class SatelliteCoordinates {
      * Create satellite from orbital elements using planet's gravitational parameter
      * @param {Object} params - Orbital element parameters
      * @param {Object} planet - Planet object with GM and physical properties
-     * @param {Date} time - Current simulation time  
      * @returns {Object} - { position: [x,y,z], velocity: [vx,vy,vz] } in planet-centric inertial coordinates
      */
     static createFromOrbitalElements(params, planet) {
         const {
             semiMajorAxis, eccentricity, inclination,
-            argumentOfPeriapsis, raan, trueAnomaly
+            argumentOfPeriapsis, raan, trueAnomaly,
+            referenceFrame = 'equatorial' // 'equatorial' or 'ecliptic'
         } = params;
 
         // Get gravitational parameter with fallback
         const GM = planet.GM || (planet.mass * Constants.G); // km³/s²
         
-        // console.log(`[SatelliteCoordinates] Creating from orbital elements: a=${semiMajorAxis}km, e=${eccentricity}, i=${inclination}°, ω=${argumentOfPeriapsis}°, Ω=${raan}°, f=${trueAnomaly}°`);
-        // console.log(`[SatelliteCoordinates] Using GM=${GM} km³/s² for ${planet.name || 'planet'}`);
+        console.log(`[SatelliteCoordinates] Creating from orbital elements: a=${semiMajorAxis}km, e=${eccentricity}, i=${inclination}°, ω=${argumentOfPeriapsis}°, Ω=${raan}°, f=${trueAnomaly}°, frame=${referenceFrame}`);
+        console.log(`[SatelliteCoordinates] Using GM=${GM} km³/s² for ${planet.name || 'planet'}`);
 
         if (!GM || isNaN(GM) || GM <= 0) {
             throw new Error(`Invalid gravitational parameter GM=${GM} for planet: ${planet.name || 'unknown'}`);
         }
 
-        // 1. Calculate orbital state vectors in standard orbital plane (PCI frame)
+        // 1. Calculate orbital state vectors in the requested reference frame
         const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
             semiMajorAxis, eccentricity, inclination,
             argumentOfPeriapsis, raan, trueAnomaly, GM
         );
 
-        // 2. The result is already in Planet-Centered Inertial frame
-        const position = [positionECI.x, positionECI.y, positionECI.z];
-        const velocity = [velocityECI.x, velocityECI.y, velocityECI.z];
+        // 2. Transform based on reference frame
+        let position, velocity;
         
-        // console.log(`[SatelliteCoordinates] Final PCI coordinates: pos=[${position.map(p => p.toFixed(2)).join(', ')}] km, vel=[${velocity.map(v => v.toFixed(3)).join(', ')}] km/s`);
+        if (referenceFrame === 'ecliptic') {
+            // Ecliptic mode: 0° inclination = ecliptic plane (scene's XY plane)
+            // Use coordinates directly - already relative to scene's coordinate system
+            position = [positionECI.x, positionECI.y, positionECI.z];
+            velocity = [velocityECI.x, velocityECI.y, velocityECI.z];
+            console.log(`[SatelliteCoordinates] Using ecliptic reference frame (scene coordinates)`);
+        } else {
+            // Equatorial mode: 0° inclination = planet's equatorial plane
+            // Transform from ecliptic to planet's equatorial frame
+            const { position: posEq, velocity: velEq } = SatelliteCoordinates._transformEclipticToEquatorial(
+                positionECI, velocityECI, planet
+            );
+            position = posEq;
+            velocity = velEq;
+            console.log(`[SatelliteCoordinates] Using equatorial reference frame (planet's equator)`);
+        }
+        
+        console.log(`[SatelliteCoordinates] Final coordinates: pos=[${position.map(p => p.toFixed(2)).join(', ')}] km, vel=[${velocity.map(v => v.toFixed(3)).join(', ')}] km/s`);
 
         return { position, velocity };
+    }
+
+    /**
+     * Transform orbital coordinates from ecliptic frame to planet's equatorial frame
+     * This rotates the coordinate system so that 0° inclination aligns with planet's equator
+     */
+    static _transformEclipticToEquatorial(positionECI, velocityECI, planet) {
+        // Get the transformation from ecliptic to planet's equatorial plane
+        // This is the inverse of the planet's orientation (equatorialGroup transformation)
+        const equatorialTransform = SatelliteCoordinates._getEclipticToEquatorialTransform(planet);
+        
+        // Apply transformation to position and velocity
+        const positionEq_vec = positionECI.clone().applyQuaternion(equatorialTransform);
+        const velocityEq_vec = velocityECI.clone().applyQuaternion(equatorialTransform);
+        
+        const position = [positionEq_vec.x, positionEq_vec.y, positionEq_vec.z];
+        const velocity = [velocityEq_vec.x, velocityEq_vec.y, velocityEq_vec.z];
+        
+        return { position, velocity };
+    }
+
+    /**
+     * Get transformation from ecliptic coordinates to planet's equatorial coordinates
+     */
+    static _getEclipticToEquatorialTransform(planet) {
+        // The equatorialGroup contains the rotation that aligns planet's equator with the ecliptic
+        // We need the inverse to go from ecliptic to equatorial
+        if (planet.equatorialGroup?.quaternion) {
+            console.log(`[SatelliteCoordinates] Using equatorialGroup inverse quaternion for ${planet.name}`);
+            return planet.equatorialGroup.quaternion.clone().invert();
+        }
+        
+        // Fallback: for Earth, the equatorial plane is rotated ~23.5° from ecliptic
+        // This is the obliquity of the ecliptic
+        if (planet.name === 'Earth' || planet.naifId === 399) {
+            const obliquity = THREE.MathUtils.degToRad(23.44); // Earth's obliquity
+            const earthEquatorialTransform = new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(1, 0, 0), // Rotate around X-axis
+                obliquity
+            );
+            console.log(`[SatelliteCoordinates] Using Earth obliquity transformation (${(obliquity * 180 / Math.PI).toFixed(2)}°)`);
+            return earthEquatorialTransform;
+        }
+        
+        // For other planets, fallback to identity (no transformation)
+        console.warn(`[SatelliteCoordinates] No equatorial transformation available for ${planet.name || 'unknown'}, using identity`);
+        return new THREE.Quaternion(); // Identity
     }
 
     /**
@@ -231,33 +294,95 @@ export class SatelliteCoordinates {
     }
 
     /**
+     * Transform orbital coordinates (relative to vernal equinox) to planet's inertial frame
+     * This accounts for the planet's orientation but NOT its current rotation
+     */
+    static _transformOrbitalToInertial(positionECI, velocityECI, planet) {
+        // Get planet's base orientation (without current rotation)
+        const baseQuaternion = SatelliteCoordinates._getPlanetBaseOrientation(planet);
+        
+        // Transform position and velocity from standard orbital frame to planet's inertial frame
+        const positionInertial_vec = positionECI.clone().applyQuaternion(baseQuaternion);
+        const velocityInertial_vec = velocityECI.clone().applyQuaternion(baseQuaternion);
+        
+        const position = [positionInertial_vec.x, positionInertial_vec.y, positionInertial_vec.z];
+        const velocity = [velocityInertial_vec.x, velocityInertial_vec.y, velocityInertial_vec.z];
+        
+        return { position, velocity };
+    }
+
+    /**
+     * Get planet's base orientation (orientation + equatorial alignment, but no daily rotation)
+     * This represents the vernal equinox direction for the planet
+     */
+    static _getPlanetBaseOrientation(planet) {
+        // Get base orientation without daily rotation
+        if (planet.orientationGroup && planet.equatorialGroup) {
+            // Compose orientation and equatorial alignment, but skip rotation
+            const orientationQ = planet.orientationGroup.quaternion.clone();
+            const equatorialQ = planet.equatorialGroup.quaternion.clone();
+            
+            const baseQ = new THREE.Quaternion().multiplyQuaternions(orientationQ, equatorialQ);
+            
+            console.log(`[SatelliteCoordinates] Using base orientation for ${planet.name} (orientation * equatorial, no rotation)`);
+            return baseQ;
+        }
+
+        // Fallback: try to get from physics engine (should not include rotation)
+        if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
+            const [x, y, z, w] = planet.quaternion;
+            console.log(`[SatelliteCoordinates] Using physics engine base quaternion for ${planet.name}`);
+            return new THREE.Quaternion(x, y, z, w);
+        }
+        
+        // Ultimate fallback: identity (no transformation)
+        console.warn(`[SatelliteCoordinates] No base orientation available for planet ${planet.name || 'unknown'}, using identity`);
+        return new THREE.Quaternion();
+    }
+
+    /**
      * Get planet's current quaternion from physics engine or calculate from Astronomy Engine
      */
     static _getPlanetQuaternion(planet) {
-        // 1. Try to get quaternion from physics engine (preferred)
-        if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
-            // Convert [x, y, z, w] to THREE.Quaternion
-            const [x, y, z, w] = planet.quaternion;
-            // console.log(`[SatelliteCoordinates] Using physics engine quaternion for ${planet.name}: [${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}, ${w.toFixed(3)}]`);
-            return new THREE.Quaternion(x, y, z, w);
+        // Get the complete transformation from planet surface to inertial space
+        // This requires composing: orientationGroup * equatorialGroup * rotationGroup
+        
+        if (planet.orientationGroup && planet.equatorialGroup && planet.rotationGroup) {
+            // Compose the complete transformation
+            const orientationQ = planet.orientationGroup.quaternion.clone();
+            const equatorialQ = planet.equatorialGroup.quaternion.clone();
+            const rotationQ = planet.rotationGroup.quaternion.clone();
+            
+            // Apply transformations in order: rotation * equatorial * orientation
+            const composedQ = new THREE.Quaternion()
+                .multiplyQuaternions(orientationQ, equatorialQ)
+                .multiply(rotationQ);
+            
+            console.log(`[SatelliteCoordinates] Using composed quaternion for ${planet.name} (orientation * equatorial * rotation)`);
+            return composedQ;
         }
 
-        // 2. Try to get from Three.js object if available
-        if (planet.mesh?.quaternion) {
-            // console.log(`[SatelliteCoordinates] Using Three.js mesh quaternion for ${planet.name}`);
-            return planet.mesh.quaternion.clone();
-        }
-
-        // 3. Try to get from planet's rotation group
+        // Fallback: Try to get from planet's rotation group (current daily rotation position)
         if (planet.getRotationGroup?.()?.quaternion) {
-            // console.log(`[SatelliteCoordinates] Using rotation group quaternion for ${planet.name}`);
+            console.log(`[SatelliteCoordinates] Using current rotation group quaternion for ${planet.name}`);
             return planet.getRotationGroup().quaternion.clone();
         }
 
-        // 4. For now, skip Astronomy Engine (it's causing NaN issues)
-        // TODO: Implement proper Astronomy Engine quaternion conversion
+        // Fallback: Try to get from planet's rotation group directly
+        if (planet.rotationGroup?.quaternion) {
+            console.log(`[SatelliteCoordinates] Using current rotationGroup quaternion for ${planet.name}`);
+            return planet.rotationGroup.quaternion.clone();
+        }
+
+        // Fallback: Try to get quaternion from physics engine (may not include current rotation)
+        if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
+            // Convert [x, y, z, w] to THREE.Quaternion
+            const [x, y, z, w] = planet.quaternion;
+            console.log(`[SatelliteCoordinates] Using physics engine quaternion for ${planet.name}: [${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}, ${w.toFixed(3)}]`);
+            return new THREE.Quaternion(x, y, z, w);
+        }
         
-        // 5. Ultimate fallback: identity quaternion (no rotation)
+        // Ultimate fallback: identity quaternion (no rotation)
         console.warn(`[SatelliteCoordinates] No quaternion available for planet ${planet.name || 'unknown'}, using identity`);
         return new THREE.Quaternion(); // Identity quaternion
     }

@@ -50,10 +50,10 @@ export class Satellite {
 
     _initVisuals() {
         this.visualizer = new SatelliteVisualizer(this.color, undefined, this.app3d);
-        if (this.planetConfig && typeof this.planetConfig.getRotationGroup === 'function') {
-            const group = this.planetConfig.getRotationGroup();
-            group.add(this.visualizer.mesh);
-            console.log(`[Satellite] Added mesh for satellite ${this.id} to planetConfig.getRotationGroup()`, group.name || group, this.visualizer.mesh);
+        if (this.planetConfig && this.planetConfig.orbitGroup) {
+            // Add to orbitGroup so satellite moves in inertial space relative to planet
+            this.planetConfig.orbitGroup.add(this.visualizer.mesh);
+            console.log(`[Satellite] Added mesh for satellite ${this.id} to planetConfig.orbitGroup`, this.planetConfig.orbitGroup.name || this.planetConfig.orbitGroup, this.visualizer.mesh);
         } else {
             this.visualizer.addToScene(this.scene);
             console.warn(`[Satellite] Added mesh for satellite ${this.id} directly to scene (no valid planetConfig)`, this.visualizer.mesh);

@@ -323,8 +323,8 @@ export class SatelliteOrbitManager {
             
             // Get the planet mesh group to add orbit to
             const planet = this.app.celestialBodies?.find(b => b.naifId === parseInt(bodyId));
-            // Use rotationGroup instead of orbitGroup for orbits around the planet
-            const parentGroup = planet?.rotationGroup || planet?.orbitGroup || this.app.sceneManager?.scene;
+            // Use orbitGroup to match where satellite mesh is added (see Satellite.js _initVisuals)
+            const parentGroup = planet?.orbitGroup || this.app.sceneManager?.scene;
             
             console.log(`[SatelliteOrbitManager] Looking for body ${bodyId}, found: ${planet?.name || 'none'}`);
             console.log(`[SatelliteOrbitManager] Planet has rotationGroup:`, !!planet?.rotationGroup);
