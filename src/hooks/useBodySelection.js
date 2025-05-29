@@ -5,7 +5,7 @@ import {
     getPlanetOptions,
     getSatelliteOptions
 } from '../utils/BodySelectionUtils';
-import { planetaryDataManager } from '../physics/bodies/PlanetaryDataManager.js';
+import { solarSystemDataManager } from '../physics/bodies/PlanetaryDataManager.js';
 
 
 /**
@@ -90,7 +90,7 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
     
     // Use imported PlanetaryDataManager
     
-    if (planetaryDataManager) {
+    if (solarSystemDataManager) {
         // Use dynamic hierarchy from PlanetaryDataManager
         planetOrder.forEach(planetName => {
             const planetObj = planetOptions.find(o => o.value === planetName);
@@ -102,7 +102,7 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
             
             // Find moons that orbit this planet's barycenter using PlanetaryDataManager
             const moonObjs = [];
-            const allBodies = Array.from(planetaryDataManager.bodies.values());
+            const allBodies = Array.from(solarSystemDataManager.bodies.values());
             for (const config of allBodies) {
                 if (config.type === 'moon' && config.parent === barycenterKey) {
                     const moonObj = planetOptions.find(o => o.value === config.name);

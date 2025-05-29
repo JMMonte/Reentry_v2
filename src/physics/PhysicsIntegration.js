@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
 import { KeplerianPropagator } from './KeplerianPropagator.js';
-import { planetaryDataManager } from './bodies/PlanetaryDataManager.js';
+import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 
 /**
  * Integration manager that bridges the new physics engine with existing codebase.
@@ -433,10 +433,10 @@ export class PhysicsIntegration {
                 // Update target position (Planet class expects this)
                 if (celestialBody.targetPosition && Array.isArray(bodyState.position)) {
                     // Check if this body has a parent in the hierarchy
-                    const bodyConfig = planetaryDataManager.getBodyByNaif(naifId);
+                    const bodyConfig = solarSystemDataManager.getBodyByNaif(naifId);
                     let parentNaifId = null;
                     if (bodyConfig && bodyConfig.parent) {
-                        const parentConfig = planetaryDataManager.getBodyByName(bodyConfig.parent);
+                        const parentConfig = solarSystemDataManager.getBodyByName(bodyConfig.parent);
                         if (parentConfig && parentConfig.naifId !== undefined) {
                             parentNaifId = parentConfig.naifId;
                         }
@@ -539,10 +539,10 @@ export class PhysicsIntegration {
                     // Update target position for rendering
                     if (body.targetPosition) {
                         // Check if this body has a parent in the hierarchy
-                        const bodyConfig2 = planetaryDataManager.getBodyByNaif(parseInt(naifId));
+                        const bodyConfig2 = solarSystemDataManager.getBodyByNaif(parseInt(naifId));
                         let parentNaifId2 = null;
                         if (bodyConfig2 && bodyConfig2.parent) {
-                            const parentConfig2 = planetaryDataManager.getBodyByName(bodyConfig2.parent);
+                            const parentConfig2 = solarSystemDataManager.getBodyByName(bodyConfig2.parent);
                             if (parentConfig2 && parentConfig2.naifId !== undefined) {
                                 parentNaifId2 = parentConfig2.naifId;
                             }
@@ -701,11 +701,11 @@ export class PhysicsIntegration {
     _findParentBody(bodies, body) {
         if (!body) return null;
 
-        // Use PlanetaryDataManager to find the parent NAIF ID
-        const planetaryDataManager = this.planetaryDataManager || (this.app?.planetaryDataManager);
+        // Use SolarSystemDataManager to find the parent NAIF ID
+        const solarSystemDataManagerRef = this.solarSystemDataManager || (this.app?.solarSystemDataManager);
         let parentNaifId = null;
-        if (planetaryDataManager && body.naifId !== undefined) {
-            const config = planetaryDataManager.getBodyByNaif(body.naifId);
+        if (solarSystemDataManagerRef && body.naifId !== undefined) {
+            const config = solarSystemDataManagerRef.getBodyByNaif(body.naifId);
             if (config && config.parent !== undefined && config.parent !== null) {
                 parentNaifId = config.parent;
             }

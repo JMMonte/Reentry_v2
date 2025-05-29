@@ -681,7 +681,7 @@ export class StateVectorCalculator {
         }
 
         // Get all children of this barycenter
-        const children = planetaryDataManager.getChildren(parentBody.name);
+        const children = solarSystemDataManager.getChildren(parentBody.name);
 
         // Special cases for known multi-body systems
         // These are systems where the barycenter is significantly displaced from the primary body
@@ -692,7 +692,7 @@ export class StateVectorCalculator {
 
         if (knownMultiBodySystems.includes(parentId)) {
             // Check if this specific body is one of the children
-            const body = planetaryDataManager.getBodyByNaif(bodyId);
+            const body = solarSystemDataManager.getBodyByNaif(bodyId);
             if (body && children.includes(body.name)) {
                 return true;
             }

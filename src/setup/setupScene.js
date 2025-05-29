@@ -24,7 +24,7 @@ import { PlanetVectors } from '../components/planet/PlanetVectors.js';
 import { textureDefinitions } from '../config/textureRegistry.js';
 
 import { OrbitManager } from '../managers/OrbitManager.js';
-import { PlanetaryDataManager } from '../physics/bodies/PlanetaryDataManager.js';
+import { SolarSystemDataManager } from '../physics/bodies/PlanetaryDataManager.js';
 import { SolarSystemHierarchy } from '../physics/SolarSystemHierarchy.js';
 
 // Scene-wide rendering settings (moved from celestialBodiesConfig.js)
@@ -81,7 +81,7 @@ const setupPostProcessing = (app) => {
 };
 
 // At the top-level of your module (outside any function)
-const planetaryDataManager = new PlanetaryDataManager();
+const solarSystemDataManager = new SolarSystemDataManager();
 
 /**
  * Creates and initializes all celestial bodies and related managers.
@@ -134,15 +134,15 @@ export async function createSceneObjects(app) {
     // --- Create background stars ---
     app.backgroundStars = new BackgroundStars(scene, camera);
 
-    // 1. Initialize planetary data
-    await planetaryDataManager.initialize();
+    // 1. Initialize solar system data
+    await solarSystemDataManager.initialize();
 
     // 2. Build hierarchy from config data
-    const hierarchy = new SolarSystemHierarchy(planetaryDataManager.naifToBody);
+    const hierarchy = new SolarSystemHierarchy(solarSystemDataManager.naifToBody);
     app.hierarchy = hierarchy;
 
     // 3. Create all celestial bodies from config
-    for (const [, config] of planetaryDataManager.naifToBody.entries()) {
+    for (const [, config] of solarSystemDataManager.naifToBody.entries()) {
         let bodyObj = null;
         if (config.type === 'star') {
             bodyObj = new Sun(scene, timeUtils, config, textureManager);
@@ -190,7 +190,7 @@ export async function createSceneObjects(app) {
     // Generate all planetary and moon orbits after establishing hierarchy
     if (app.orbitManager && app.physicsIntegration?.physicsEngine) {
         console.log('Generating planetary and moon orbits...');
-        app.orbitManager.renderPlanetaryOrbits();
+        app.orbitManager.renderSolarSystemOrbits();
     }
 
     // Add top-level objects (those with no parent in the config, or whose parent wasn't found) to the scene
@@ -262,7 +262,7 @@ export async function createSceneObjects(app) {
     console.log('[setupScene] Initialized SatelliteVectors');
 
     // --- Parent moons to their planet's equatorialGroup ---
-    for (const [, config] of planetaryDataManager.naifToBody.entries()) {
+    for (const [, config] of solarSystemDataManager.naifToBody.entries()) {
         if (config.type === 'moon') {
             const moonObj = app.bodiesByNaifId[config.naifId];
             const parentPlanet = app.bodiesByNaifId[config.parent];

@@ -3,7 +3,7 @@ import * as Astronomy from 'astronomy-engine';
 import { SolarSystemHierarchy } from './SolarSystemHierarchy.js';
 import { StateVectorCalculator } from './StateVectorCalculator.js';
 import { PositionManager } from './PositionManager.js';
-import { planetaryDataManager } from './bodies/PlanetaryDataManager.js';
+import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 import { Constants } from '../utils/Constants.js';
 
 // Extract the functions we need from the Astronomy module
@@ -43,12 +43,12 @@ export class PhysicsEngine {
      * Initialize the physics engine
      */
     async initialize(initialTime = new Date()) {
-        if (!planetaryDataManager.initialized) {
-            await planetaryDataManager.initialize();
+        if (!solarSystemDataManager.initialized) {
+            await solarSystemDataManager.initialize();
         }
 
         // Initialize core modules with the loaded config
-        this.hierarchy = new SolarSystemHierarchy(planetaryDataManager.naifToBody);
+        this.hierarchy = new SolarSystemHierarchy(solarSystemDataManager.naifToBody);
         // Debug: print parent for each major planet
         // const majorPlanets = [199, 299, 399, 499, 599, 699, 799, 899]; // Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune
         // for (const naifId of majorPlanets) {
@@ -57,7 +57,7 @@ export class PhysicsEngine {
         //         console.log(`[HierarchyDebug] ${info.name} (NAIF ${naifId}) parent: ${info.parent}`);
         //     }
         // }
-        this.stateCalculator = new StateVectorCalculator(this.hierarchy, planetaryDataManager.naifToBody);
+        this.stateCalculator = new StateVectorCalculator(this.hierarchy, solarSystemDataManager.naifToBody);
         this.positionManager = new PositionManager(this.hierarchy, this.stateCalculator);
 
         this.simulationTime = new Date(initialTime.getTime());
@@ -131,7 +131,7 @@ export class PhysicsEngine {
      */
     async _updateAllBodies() {
         // Get all body configurations from PlanetaryDataManager
-        const bodyConfigs = planetaryDataManager.naifToBody;
+        const bodyConfigs = solarSystemDataManager.naifToBody;
 
         // Use PositionManager to update all positions hierarchically
         const updatedBodies = this.positionManager.updateAllPositions(this.simulationTime, bodyConfigs);
@@ -146,7 +146,7 @@ export class PhysicsEngine {
             body.northPole = orientation.northPole;
             
             // Ensure type information is preserved from body configuration
-            const bodyConfig = planetaryDataManager.getBodyByNaif(body.naif_id) || planetaryDataManager.getBodyByName(body.name);
+            const bodyConfig = solarSystemDataManager.getBodyByNaif(body.naif_id) || solarSystemDataManager.getBodyByName(body.name);
             if (bodyConfig) {
                 body.type = bodyConfig.type;
                 // Don't modify barycenter mass/GM - let them keep original values for orbital calculations
@@ -168,8 +168,8 @@ export class PhysicsEngine {
             }
 
             let actualBodyNameForAE = bodyIdentifier;
-            const bodyConfig = planetaryDataManager.getBodyByName(bodyIdentifier) ||
-                planetaryDataManager.getBodyByNaif(parseInt(bodyIdentifier));
+            const bodyConfig = solarSystemDataManager.getBodyByName(bodyIdentifier) ||
+                solarSystemDataManager.getBodyByNaif(parseInt(bodyIdentifier));
             if (bodyConfig && bodyConfig.astronomyEngineName) {
                 actualBodyNameForAE = bodyConfig.astronomyEngineName;
             }
@@ -882,7 +882,7 @@ export class PhysicsEngine {
 
     /**
      * Determine which bodies have significant gravitational influence on the satellite
-     * This prevents computational issues from distant planetary perturbations
+     * This prevents computational issues from distant solar system body perturbations
      */
     _getSignificantBodies(satellite, centralBody) {
         const significantBodies = new Set();

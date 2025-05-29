@@ -1,7 +1,7 @@
 /**
- * Planetary Data Manager
+ * Solar System Data Manager
  * 
- * Centralized system for managing all planetary data including:
+ * Centralized system for managing all solar system body data including:
  * - Physical properties (mass, radius, etc.)
  * - Orbital mechanics data
  * - Rendering configurations
@@ -11,7 +11,7 @@
 
 import { Planet } from '../../components/planet/Planet.js';
 
-export class PlanetaryDataManager {
+export class SolarSystemDataManager {
     constructor() {
         this.bodies = new Map();
         this.naifToBody = new Map();
@@ -20,13 +20,13 @@ export class PlanetaryDataManager {
     }
 
     /**
-     * Initialize the planetary data manager
+     * Initialize the solar system data manager
      */
     async initialize() {
         if (this.initialized) return;
 
-        // Load all planetary configurations
-        await this._loadPlanetaryConfigurations();
+        // Load all solar system body configurations
+        await this._loadSolarSystemConfigurations();
 
         // Build hierarchy relationships
         this._buildHierarchyTree();
@@ -152,9 +152,9 @@ export class PlanetaryDataManager {
     }
 
     /**
-     * Private: Load all planetary configurations
+     * Private: Load all solar system body configurations
      */
-    async _loadPlanetaryConfigurations() {
+    async _loadSolarSystemConfigurations() {
         // Import all individual planet configurations
         const configs = await Promise.all([
             import('./planets/Sun.js'),
@@ -280,7 +280,7 @@ export class PlanetaryDataManager {
         });
 
         if (errors.length > 0) {
-            console.warn('Planetary configuration validation errors:', errors);
+            console.warn('Solar system configuration validation errors:', errors);
         }
 
         return errors.length === 0;
@@ -288,4 +288,6 @@ export class PlanetaryDataManager {
 }
 
 // Singleton instance
-export const planetaryDataManager = new PlanetaryDataManager(); 
+export const solarSystemDataManager = new SolarSystemDataManager();
+// Backward compatibility alias
+export const planetaryDataManager = solarSystemDataManager; 

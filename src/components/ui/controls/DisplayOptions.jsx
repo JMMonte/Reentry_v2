@@ -83,7 +83,7 @@ export const defaultSettings = {
     description: 'Multiplier for sample points on hyperbolic trajectories to improve tail resolution.'
   },
   showSOI: { value: false, name: 'SOI Sphere', icon: Circle, description: 'Show the sphere of influence rim glow around planets.' },
-  showPlanetOrbits: { value: true, name: 'Planet Orbits', icon: Circle, description: 'Show planetary orbit paths.' },
+  showPlanetOrbits: { value: true, name: 'Planet Orbits', icon: Circle, description: 'Show solar system orbit paths.' },
   realTimePlanetOrbits: { value: true, name: 'Real-time Planet Orbits', icon: Circle, description: 'Update planet orbits every frame for real-time visualization. Disable for better performance.' },
 };
 

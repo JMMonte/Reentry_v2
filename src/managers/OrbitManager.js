@@ -52,9 +52,9 @@ export class OrbitManager {
     }
 
     /**
-     * Render all hierarchical planetary orbits based on physics engine data
+     * Render all hierarchical solar system orbits based on physics engine data
      */
-    renderPlanetaryOrbits() {
+    renderSolarSystemOrbits() {
         // Clear existing orbit lines
         this.clearOrbits();
 
@@ -335,7 +335,7 @@ export class OrbitManager {
     forceUpdate() {
         this._lastOrbitUpdate = 0; // Reset timer
         this._lastSimTime = null; // Reset sim time tracking
-        this.renderPlanetaryOrbits();
+        this.renderSolarSystemOrbits();
     }
 
     /**
@@ -357,7 +357,7 @@ export class OrbitManager {
     update() {
         // Check if we need to regenerate orbits (e.g., significant time change)
         if (this.shouldUpdateOrbits()) {
-            this.renderPlanetaryOrbits();
+            this.renderSolarSystemOrbits();
         }
     }
 
