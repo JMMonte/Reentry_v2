@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
 import { KeplerianPropagator } from './KeplerianPropagator.js';
+import { planetaryDataManager } from './bodies/PlanetaryDataManager.js';
 
 /**
  * Integration manager that bridges the new physics engine with existing codebase.
@@ -391,89 +392,10 @@ export class PhysicsIntegration {
     _isMultiBodySystem(bodyNaifId, parentNaifId) {
         // Known multi-body systems where the barycenter is significantly displaced
         const knownMultiBodySystems = [
-            3,  // Earth-Moon Barycenter (EMB)
-            9   // Pluto System Barycenter (Pluto-Charon)
+            3  // Earth-Moon Barycenter (EMB)
         ];
         
         return knownMultiBodySystems.includes(parentNaifId);
-    }
-
-    /**
-     * Private: Get parent NAIF ID from hierarchy
-     */
-    _getParentNaifId(naifId) {
-        // Define parent relationships based on NAIF ID conventions
-        const parentMap = {
-            // Planets to their barycenters
-            199: 1,   // Mercury -> Mercury Barycenter
-            299: 2,   // Venus -> Venus Barycenter
-            399: 3,   // Earth -> Earth-Moon Barycenter
-            499: 4,   // Mars -> Mars Barycenter
-            599: 5,   // Jupiter -> Jupiter Barycenter
-            699: 6,   // Saturn -> Saturn Barycenter
-            799: 7,   // Uranus -> Uranus Barycenter
-            899: 8,   // Neptune -> Neptune Barycenter
-            999: 9,   // Pluto -> Pluto Barycenter
-            
-            // Dwarf planets to their barycenters
-            2000001: 100001,  // Ceres -> Ceres Barycenter
-            136199: 100002,   // Eris -> Eris Barycenter
-            136472: 100003,   // Makemake -> Makemake Barycenter
-            136108: 100004,   // Haumea -> Haumea Barycenter
-            
-            // Moons to their parent barycenters
-            301: 3,   // Moon -> Earth-Moon Barycenter
-            401: 4,   // Phobos -> Mars Barycenter
-            402: 4,   // Deimos -> Mars Barycenter
-            
-            // Jupiter moons
-            501: 5,   // Io -> Jupiter Barycenter
-            502: 5,   // Europa -> Jupiter Barycenter
-            503: 5,   // Ganymede -> Jupiter Barycenter
-            504: 5,   // Callisto -> Jupiter Barycenter
-            505: 5,   // Amalthea -> Jupiter Barycenter
-            506: 5,   // Himalia -> Jupiter Barycenter
-            507: 5,   // Elara -> Jupiter Barycenter
-            508: 5,   // Pasiphae -> Jupiter Barycenter
-            509: 5,   // Sinope -> Jupiter Barycenter
-            510: 5,   // Lysithea -> Jupiter Barycenter
-            511: 5,   // Carme -> Jupiter Barycenter
-            512: 5,   // Ananke -> Jupiter Barycenter
-            513: 5,   // Leda -> Jupiter Barycenter
-            514: 5,   // Thebe -> Jupiter Barycenter
-            
-            // Saturn moons
-            601: 6,   // Mimas -> Saturn Barycenter
-            602: 6,   // Enceladus -> Saturn Barycenter
-            603: 6,   // Tethys -> Saturn Barycenter
-            604: 6,   // Dione -> Saturn Barycenter
-            605: 6,   // Rhea -> Saturn Barycenter
-            606: 6,   // Titan -> Saturn Barycenter
-            607: 6,   // Hyperion -> Saturn Barycenter
-            608: 6,   // Iapetus -> Saturn Barycenter
-            609: 6,   // Phoebe -> Saturn Barycenter
-            
-            // Uranus moons
-            701: 7,   // Ariel -> Uranus Barycenter
-            702: 7,   // Umbriel -> Uranus Barycenter
-            703: 7,   // Titania -> Uranus Barycenter
-            704: 7,   // Oberon -> Uranus Barycenter
-            705: 7,   // Miranda -> Uranus Barycenter
-            
-            // Neptune moons
-            801: 8,   // Triton -> Neptune Barycenter
-            802: 8,   // Nereid -> Neptune Barycenter
-            803: 8,   // Naiad -> Neptune Barycenter
-            
-            // Pluto moons
-            901: 9,   // Charon -> Pluto Barycenter
-            902: 9,   // Nix -> Pluto Barycenter
-            903: 9,   // Hydra -> Pluto Barycenter
-            904: 9,   // Kerberos -> Pluto Barycenter
-            905: 9    // Styx -> Pluto Barycenter
-        };
-        
-        return parentMap[naifId] || null;
     }
 
     /**
@@ -511,7 +433,14 @@ export class PhysicsIntegration {
                 // Update target position (Planet class expects this)
                 if (celestialBody.targetPosition && Array.isArray(bodyState.position)) {
                     // Check if this body has a parent in the hierarchy
-                    const parentNaifId = this._getParentNaifId(naifId);
+                    const bodyConfig = planetaryDataManager.getBodyByNaif(naifId);
+                    let parentNaifId = null;
+                    if (bodyConfig && bodyConfig.parent) {
+                        const parentConfig = planetaryDataManager.getBodyByName(bodyConfig.parent);
+                        if (parentConfig && parentConfig.naifId !== undefined) {
+                            parentNaifId = parentConfig.naifId;
+                        }
+                    }
                     
                     // For single-planet systems (like dwarf planets), the planet position IS the absolute position
                     // For multi-body systems (like Earth-Moon, Pluto-Charon), calculate relative to parent
@@ -610,11 +539,18 @@ export class PhysicsIntegration {
                     // Update target position for rendering
                     if (body.targetPosition) {
                         // Check if this body has a parent in the hierarchy
-                        const parentNaifId = this._getParentNaifId(parseInt(naifId));
+                        const bodyConfig2 = planetaryDataManager.getBodyByNaif(parseInt(naifId));
+                        let parentNaifId2 = null;
+                        if (bodyConfig2 && bodyConfig2.parent) {
+                            const parentConfig2 = planetaryDataManager.getBodyByName(bodyConfig2.parent);
+                            if (parentConfig2 && parentConfig2.naifId !== undefined) {
+                                parentNaifId2 = parentConfig2.naifId;
+                            }
+                        }
                         
-                        if (parentNaifId && state.bodies[parentNaifId]) {
+                        if (parentNaifId2 && state.bodies[parentNaifId2]) {
                             // Calculate relative position to parent
-                            const parentState = state.bodies[parentNaifId];
+                            const parentState = state.bodies[parentNaifId2];
                             body.targetPosition.set(
                                 bodyState.position[0] - parentState.position[0],
                                 bodyState.position[1] - parentState.position[1],
