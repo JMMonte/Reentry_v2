@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 /**
- * ManeuverNodeVisualization - Pure visualization component for maneuver nodes
+ * ManeuverNodeRenderer - Pure visualization component for maneuver nodes
  * 
  * This class handles only the 3D rendering of maneuver nodes, with no physics
  * calculations or state management. It creates and manages the visual elements:
@@ -11,7 +11,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
  * - Orbit path line
  * - Optional labels
  */
-export class ManeuverNodeVisualization {
+export class ManeuverNodeRenderer {
     constructor(params) {
         const {
             scene,

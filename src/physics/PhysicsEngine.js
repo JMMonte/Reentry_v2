@@ -1278,6 +1278,19 @@ export class PhysicsEngine {
                 velocity: body.velocity.toArray(),
                 mass: body.mass,
                 radius: body.radius,
+                soiRadius: body.soiRadius, // Include SOI radius for orbit calculations
+                type: body.type,
+                J2: body.J2,
+                atmosphericModel: body.atmosphericModel ? {
+                    maxAltitude: body.atmosphericModel.maxAltitude,
+                    minAltitude: body.atmosphericModel.minAltitude,
+                    referenceAltitude: body.atmosphericModel.referenceAltitude,
+                    referenceDensity: body.atmosphericModel.referenceDensity,
+                    scaleHeight: body.atmosphericModel.scaleHeight
+                    // Exclude getDensity function - can't be serialized for workers
+                } : null,
+                GM: body.GM,
+                rotationPeriod: body.rotationPeriod,
                 quaternion: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w],
                 poleRA: body.poleRA,
                 poleDec: body.poleDec,

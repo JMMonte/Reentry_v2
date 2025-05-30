@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { Constants } from '../utils/Constants.js';
 import { OrbitCalculator } from './orbit/OrbitCalculator.js';
 import { OrbitRenderer } from './orbit/OrbitRenderer.js';
 import { OrbitHierarchy } from './orbit/OrbitHierarchy.js';
 import { planetaryDataManager } from '../physics/bodies/PlanetaryDataManager.js';
+import { PhysicsAPI } from '../physics/PhysicsAPI.js';
 
 /**
  * OrbitManager orchestrates hierarchical planetary orbit visualization
@@ -124,15 +124,17 @@ export class OrbitManager {
             if (bodyConfig.orbitalPeriod) {
                 periodSeconds = bodyConfig.orbitalPeriod;
             } else if (orbitalElements.a || orbitalElements.semiMajorAxis) {
-                // Estimate period using Kepler's third law: T = 2π√(a³/GM)
+                // Use centralized Kepler's Third Law calculation from PhysicsAPI
                 const a = orbitalElements.a || orbitalElements.semiMajorAxis; // km
                 const parentConfig = calculator._getFullBodyConfig(parentNaif);
-                let GM = parentConfig?.GM;
-                if (!GM && parentConfig?.mass) {
-                    GM = Constants.G * parentConfig.mass; // Convert to km³/s²
-                }
-                if (GM) {
-                    periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(a, 3) / GM);
+                
+                if (parentConfig) {
+                    try {
+                        periodSeconds = PhysicsAPI.calculateOrbitalPeriodFromSMA(a, parentConfig);
+                    } catch (error) {
+                        console.warn(`[OrbitManager] Could not calculate period for ${naifNum}:`, error);
+                        periodSeconds = 24 * 3600; // Default to 1 day
+                    }
                 } else {
                     periodSeconds = 24 * 3600; // Default to 1 day
                 }
@@ -230,7 +232,8 @@ export class OrbitManager {
 
         // Generate orbit points
         const numPoints = this.calculator.calculateOptimalResolution(elements, parentNaif);
-        const points = this.calculator.generateOrbitPoints(elements, Constants.G * relativeMotion.parentMass, numPoints);
+        const mu = PhysicsAPI.getGravitationalParameter({ mass: relativeMotion.parentMass });
+        const points = this.calculator.generateOrbitPoints(elements, mu, numPoints);
 
         if (points.length === 0) {
             return false;

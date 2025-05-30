@@ -128,25 +128,94 @@ export class GravityCalculator {
     }
 
     /**
-     * Compute escape velocity from a body's surface
-     * @param {Object} body - Body with mass and radius
+     * Compute escape velocity from a body's surface or given distance
+     * @param {Object|number} bodyOrGM - Body with mass/GM or GM value directly
+     * @param {number} distance - Distance from center (km, optional - uses body.radius if not provided)
      * @returns {number} - Escape velocity (km/s)
      */
-    static computeEscapeVelocity(body) {
-        if (!body.radius || !body.mass) return 0;
-        return Math.sqrt(2 * Constants.G * body.mass / body.radius);
+    static computeEscapeVelocity(bodyOrGM, distance = null) {
+        let mu, r;
+        
+        if (typeof bodyOrGM === 'number') {
+            mu = bodyOrGM;
+            if (!distance) {
+                console.warn('[GravityCalculator] Distance required when GM is passed directly');
+                return 0;
+            }
+            r = distance;
+        } else {
+            mu = bodyOrGM.GM || bodyOrGM.mu || (Constants.G * bodyOrGM.mass);
+            r = distance || bodyOrGM.radius;
+        }
+        
+        if (!mu || mu <= 0 || !r || r <= 0) return 0;
+        return Math.sqrt(2 * mu / r);
     }
 
     /**
-     * Compute orbital velocity at a given distance
-     * @param {Object} centralBody - Central body with mass
+     * Compute circular orbital velocity at a given distance
+     * @param {Object|number} centralBodyOrGM - Central body with mass/GM or GM value directly
      * @param {number} distance - Distance from center (km)
      * @returns {number} - Circular orbital velocity (km/s)
      */
-    static computeOrbitalVelocity(centralBody, distance) {
+    static computeOrbitalVelocity(centralBodyOrGM, distance) {
         if (distance <= 0) return 0;
-        const mu = centralBody.mu || (Constants.G * centralBody.mass);
+        
+        let mu;
+        if (typeof centralBodyOrGM === 'number') {
+            mu = centralBodyOrGM; // GM passed directly
+        } else {
+            mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (Constants.G * centralBodyOrGM.mass);
+        }
+        
+        if (!mu || mu <= 0) {
+            console.warn('[GravityCalculator] Invalid gravitational parameter for orbital velocity calculation');
+            return 0;
+        }
+        
         return Math.sqrt(mu / distance);
+    }
+    
+    /**
+     * Compute orbital velocity for multiple orbit types using vis-viva equation
+     * @param {Object|number} centralBodyOrGM - Central body or GM value
+     * @param {number} semiMajorAxis - Semi-major axis (km)
+     * @param {number} eccentricity - Orbital eccentricity (0-1)
+     * @param {number} currentRadius - Current distance from center (km, optional)
+     * @returns {Object} - Velocity components {circular, apoapsis, periapsis, current?}
+     */
+    static computeOrbitalVelocities(centralBodyOrGM, semiMajorAxis, eccentricity = 0, currentRadius = null) {
+        let mu;
+        if (typeof centralBodyOrGM === 'number') {
+            mu = centralBodyOrGM;
+        } else {
+            mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (Constants.G * centralBodyOrGM.mass);
+        }
+        
+        if (!mu || mu <= 0 || semiMajorAxis <= 0) {
+            return { circular: 0, apoapsis: 0, periapsis: 0 };
+        }
+        
+        const result = {
+            circular: Math.sqrt(mu / semiMajorAxis),
+            apoapsis: 0,
+            periapsis: 0
+        };
+        
+        if (eccentricity >= 0 && eccentricity < 1) {
+            const ra = semiMajorAxis * (1 + eccentricity); // Apoapsis
+            const rp = semiMajorAxis * (1 - eccentricity); // Periapsis
+            
+            // Vis-viva equation: v = sqrt(mu * (2/r - 1/a))
+            result.apoapsis = Math.sqrt(mu * (2 / ra - 1 / semiMajorAxis));
+            result.periapsis = Math.sqrt(mu * (2 / rp - 1 / semiMajorAxis));
+        }
+        
+        if (currentRadius && currentRadius > 0) {
+            result.current = Math.sqrt(mu * (2 / currentRadius - 1 / semiMajorAxis));
+        }
+        
+        return result;
     }
 
     /**

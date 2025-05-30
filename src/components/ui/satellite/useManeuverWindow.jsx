@@ -133,12 +133,13 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     const [isAdding, setIsAdding] = useState(false);
 
     // Computed magnitude of delta-V using PhysicsAPI
+    // Convert from m/s (UI) to km/s (backend) for calculation, then back to m/s for display
     const dvMag = useMemo(
         () => PhysicsAPI.calculateDeltaVMagnitude(
-            parseFloat(vx) || 0,
-            parseFloat(vy) || 0,
-            parseFloat(vz) || 0
-        ),
+            (parseFloat(vx) || 0) / 1000, // Convert m/s to km/s
+            (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
+            (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
+        ) * 1000, // Convert result back to m/s for display
         [vx, vy, vz]
     );
 
@@ -192,18 +193,48 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     const computeNextPeriapsis = useCallback(() => {
         // Chain off existing node if in editing/adding mode
         if ((selectedIndex != null || isAdding) && nodes.length > 0) {
-            const baseNode = selectedIndex != null
-                ? nodes[selectedIndex].node3D
-                : nodes[nodes.length - 1].node3D;
-            const baselineTime = baseNode.time;
-            const periodSec = baseNode.predictedOrbit?._orbitPeriod || 0;
+            // For editing: use the selected node
+            // For adding: use the last node in the sequence
+            const baseNodeIndex = selectedIndex != null ? selectedIndex : nodes.length - 1;
+            const baseNode = nodes[baseNodeIndex].node3D;
+            
+            // Use the correct time property from DTO structure
+            const baselineTime = baseNode.executionTime || baseNode.time;
+            if (!baselineTime) {
+                console.error('[useManeuverWindow] No execution time found for base node');
+                return new Date(simulationTime.getTime() + 3600 * 1000); // Default to 1 hour
+            }
+            
+            // For nested nodes, we need to use the orbit they'll be executed in
+            // If this is the first node (index 0), use satellite's current orbit
+            // Otherwise, use the previous node's post-burn orbit
+            let periodSec = 0;
+            if (baseNodeIndex === 0 || !nodes[baseNodeIndex - 1]) {
+                // First node: use satellite's current orbital period
+                // Calculate period from current position/velocity using PhysicsAPI
+                // Get the correct gravitational parameter for the satellite's central body
+                const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
+                const currentOrbitPeriod = PhysicsAPI.calculateOrbitalPeriod(
+                    satellite.position,
+                    satellite.velocity,
+                    mu
+                );
+                periodSec = currentOrbitPeriod || 0;
+            } else {
+                // Subsequent node: use previous node's post-burn orbit period
+                const prevNode = nodes[baseNodeIndex - 1].node3D;
+                periodSec = prevNode.predictedOrbit?._orbitPeriod || 0;
+            }
+            
             return new Date(baselineTime.getTime() + periodSec * 1000);
         }
-        // Use PhysicsAPI for calculation
+        // Use PhysicsAPI for calculation from current satellite state
+        // Get the correct gravitational parameter for the satellite's central body
+        const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
         return PhysicsAPI.calculateNextPeriapsis(
             satellite.position,
             satellite.velocity,
-            Constants.earthGravitationalParameter,
+            mu,
             simulationTime
         );
     }, [satellite, simulationTime, nodes, selectedIndex, isAdding]);
@@ -211,18 +242,50 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Next apoapsis calculation using PhysicsAPI
     const computeNextApoapsis = useCallback(() => {
         if ((selectedIndex != null || isAdding) && nodes.length > 0) {
-            const baseNode = selectedIndex != null
-                ? nodes[selectedIndex].node3D
-                : nodes[nodes.length - 1].node3D;
-            const baselineTime = baseNode.time;
-            const halfPeriod = (baseNode.predictedOrbit?._orbitPeriod || 0) * 1000 / 2;
+            // For editing: use the selected node
+            // For adding: use the last node in the sequence
+            const baseNodeIndex = selectedIndex != null ? selectedIndex : nodes.length - 1;
+            const baseNode = nodes[baseNodeIndex].node3D;
+            
+            // Use the correct time property from DTO structure
+            const baselineTime = baseNode.executionTime || baseNode.time;
+            if (!baselineTime) {
+                console.error('[useManeuverWindow] No execution time found for base node');
+                return new Date(simulationTime.getTime() + 1800 * 1000); // Default to 30 minutes
+            }
+            
+            // For nested nodes, we need to use the orbit they'll be executed in
+            // If this is the first node (index 0), use satellite's current orbit
+            // Otherwise, use the previous node's post-burn orbit
+            let periodSec = 0;
+            if (baseNodeIndex === 0 || !nodes[baseNodeIndex - 1]) {
+                // First node: use satellite's current orbital period
+                // Calculate period from current position/velocity using PhysicsAPI
+                // Get the correct gravitational parameter for the satellite's central body
+                const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
+                const currentOrbitPeriod = PhysicsAPI.calculateOrbitalPeriod(
+                    satellite.position,
+                    satellite.velocity,
+                    mu
+                );
+                periodSec = currentOrbitPeriod || 0;
+            } else {
+                // Subsequent node: use previous node's post-burn orbit period
+                const prevNode = nodes[baseNodeIndex - 1].node3D;
+                periodSec = prevNode.predictedOrbit?._orbitPeriod || 0;
+            }
+            
+            // Apoapsis is half a period from periapsis
+            const halfPeriod = periodSec * 1000 / 2;
             return new Date(baselineTime.getTime() + halfPeriod);
         }
-        // Use PhysicsAPI for calculation
+        // Use PhysicsAPI for calculation from current satellite state
+        // Get the correct gravitational parameter for the satellite's central body
+        const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
         return PhysicsAPI.calculateNextApoapsis(
             satellite.position,
             satellite.velocity,
-            Constants.earthGravitationalParameter,
+            mu,
             simulationTime
         );
     }, [satellite, simulationTime, nodes, selectedIndex, isAdding]);
@@ -272,9 +335,9 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         );
         const dtSec = (execTime.getTime() - timeUtils.getSimulatedTime().getTime()) / 1000;
         const dv = PhysicsAPI.calculateDeltaVMagnitude(
-            parseFloat(vx) || 0,
-            parseFloat(vy) || 0,
-            parseFloat(vz) || 0
+            (parseFloat(vx) || 0) / 1000, // Convert m/s to km/s
+            (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
+            (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
         );
 
         // Get predicted orbit details from the preview node in app3d
@@ -397,9 +460,9 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             setTimeMode('datetime');
             const t = nodes[selectedIndex].time;
             setHours(t.getUTCHours()); setMinutes(t.getUTCMinutes()); setSeconds(t.getUTCSeconds()); setMilliseconds(t.getUTCMilliseconds());
-            // Use stored localDV for editing
+            // Use stored localDV for editing - convert from km/s (backend) to m/s (UI)
             const local = nodes[selectedIndex].localDV || new THREE.Vector3();
-            setVx(local.x.toFixed(2)); setVy(local.y.toFixed(2)); setVz(local.z.toFixed(2));
+            setVx((local.x * 1000).toFixed(0)); setVy((local.y * 1000).toFixed(0)); setVz((local.z * 1000).toFixed(0));
         } else {
             setTimeMode('offset'); setOffsetSec('0');
             setHours(simulationTime.getUTCHours()); setMinutes(simulationTime.getUTCMinutes()); setSeconds(simulationTime.getUTCSeconds()); setMilliseconds(simulationTime.getUTCMilliseconds());
@@ -428,8 +491,12 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         } else {
             execTime = ManeuverUtils.computeExecutionTime(simulationTime, { timeMode, offsetSec, hours, minutes, seconds, milliseconds });
         }
-        // Delta-V vector
-        const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
+        // Delta-V vector - convert from m/s (UI) to km/s (backend)
+        const dvLocal = new THREE.Vector3(
+            (parseFloat(vx) || 0) / 1000, // Convert m/s to km/s
+            (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
+            (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
+        );
         // Replace existing node if editing
         if (selectedIndex != null) {
             const existing = nodes[selectedIndex].node3D;

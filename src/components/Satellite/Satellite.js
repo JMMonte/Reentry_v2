@@ -4,7 +4,7 @@ import { ApsisVisualizer } from '../ApsisVisualizer.js';
 // import { OrbitPath } from './OrbitPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { GroundtrackPath } from './GroundtrackPath.js';
-import { ManeuverNodeVisualizer } from './ManeuverNodeVisualizer.js';
+import { ManeuverVisualizationManager } from './ManeuverNodeVisualizer.js';
 import { createManeuverNodeDTO, createManeuverVisualizationDTO } from '../../types/DataTransferObjects.js';
 import { PhysicsAPI } from '../../physics/PhysicsAPI.js';
 
@@ -42,7 +42,7 @@ export class Satellite {
         this.centralBodyNaifId = centralBodyNaifId;
         this._initVisuals();
         this.maneuverNodes = [];
-        this.maneuverNodeVisualizer = new ManeuverNodeVisualizer(scene, this);
+        this.maneuverNodeVisualizer = new ManeuverVisualizationManager(scene, this);
         
         // Listen for maneuver events from physics engine
         this._setupManeuverEventListeners();
@@ -61,7 +61,6 @@ export class Satellite {
         if (this.planetConfig && this.planetConfig.orbitGroup) {
             // Add to orbitGroup so satellite moves in inertial space relative to planet
             this.planetConfig.orbitGroup.add(this.visualizer.mesh);
-            console.log(`[Satellite] Added mesh for satellite ${this.id} to planetConfig.orbitGroup`, this.planetConfig.orbitGroup.name || this.planetConfig.orbitGroup, this.visualizer.mesh);
         } else {
             this.visualizer.addToScene(this.scene);
             console.warn(`[Satellite] Added mesh for satellite ${this.id} directly to scene (no valid planetConfig)`, this.visualizer.mesh);
@@ -231,20 +230,16 @@ export class Satellite {
         }
         if (parentBody.getOrbitGroup) {
             parentBody.getOrbitGroup().add(this.visualizer.mesh);
-            console.log(`[Satellite] setCentralBody: mesh parented to getOrbitGroup() of`, parentBody.name || parentBody, this.visualizer.mesh);
         } else if (parentBody instanceof THREE.Group) {
             parentBody.add(this.visualizer.mesh);
-            console.log(`[Satellite] setCentralBody: mesh parented to THREE.Group`, parentBody.name || parentBody, this.visualizer.mesh);
         } else if (parentBody.getMesh) {
             parentBody.getMesh().add(this.visualizer.mesh);
-            console.log(`[Satellite] setCentralBody: mesh parented to getMesh() of`, parentBody.name || parentBody, this.visualizer.mesh);
         } else {
             console.warn(`[Satellite] setCentralBody: no valid parent group for naifId ${naifId}`);
         }
         // Log mesh world position after parenting
         const meshWorldPos = new THREE.Vector3();
         this.visualizer.mesh.getWorldPosition(meshWorldPos);
-        console.log(`[Satellite] Mesh world position after parenting:`, meshWorldPos);
     }
 
     getMesh() {
@@ -291,7 +286,6 @@ export class Satellite {
      * Update visualization for a maneuver node
      */
     _updateManeuverVisualization(maneuverNode) {
-        console.log(`[Satellite] _updateManeuverVisualization called for satellite ${this.id}`, maneuverNode);
         
         if (!this.position || !this.velocity) {
             console.warn(`[Satellite] No position or velocity for satellite ${this.id}`);
@@ -301,7 +295,6 @@ export class Satellite {
         // Request maneuver node visualization from orbit manager
         // This will calculate position at maneuver time and post-maneuver orbit
         if (this.app3d?.satelliteOrbitManager) {
-            console.log(`[Satellite] Requesting maneuver node visualization from orbit manager`);
             this.app3d.satelliteOrbitManager.requestManeuverNodeVisualization(
                 this.id,
                 maneuverNode
@@ -315,7 +308,6 @@ export class Satellite {
      * Add a maneuver node (delegates to physics engine)
      */
     addManeuverNode(executionTime, deltaVLocal) {
-        console.log(`[Satellite] addManeuverNode called for satellite ${this.id}`, { executionTime, deltaVLocal });
         
         if (!this.app3d?.physicsIntegration?.physicsEngine) {
             console.error('[Satellite] Physics engine not available');

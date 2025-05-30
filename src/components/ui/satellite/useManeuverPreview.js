@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
-import { ManeuverNodeVisualization } from '../../Satellite/ManeuverNodeVisualization.js';
+import { ManeuverNodeRenderer } from '../../Satellite/ManeuverNodeRenderer.js';
 
 /**
  * useManeuverPreview - Hook for managing maneuver node previews
@@ -80,7 +80,7 @@ export function useManeuverPreview({
 
         if (!viz) {
             // Create new visualization
-            viz = new ManeuverNodeVisualization({
+            viz = new ManeuverNodeRenderer({
                 scene: satellite.app3d.scene,
                 satellite,
                 nodeData: previewData,

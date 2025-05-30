@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { stateToKeplerian, getPositionAtTrueAnomaly } from '../../utils/KeplerianUtils.js';
 import { Constants } from '../../utils/Constants.js';
+import { PhysicsAPI } from '../../physics/PhysicsAPI.js';
 
 /**
  * OrbitCalculator handles pure orbital mechanics calculations
@@ -23,7 +24,7 @@ export class OrbitCalculator {
      * Calculate orbital elements from position and velocity
      */
     calculateOrbitalElements(relativePosition, relativeVelocity, parentMass, bodyName = '', parentNaif = 0) {
-        const mu = Constants.G * parentMass;
+        const mu = PhysicsAPI.getGravitationalParameter({ mass: parentMass });
 
         // Transform to planet's equatorial coordinates if this is a moon orbiting a planet
         const { transformedPos, transformedVel } = this.transformToParentEquatorial(
@@ -184,7 +185,7 @@ export class OrbitCalculator {
      */
     correctEarthOrbit(originalElements, relativePosition, mu) {
         const orbitalRadius = relativePosition.length();
-        const circularVelocity = Math.sqrt(mu / orbitalRadius);
+        const circularVelocity = PhysicsAPI.calculateCircularVelocity(mu, orbitalRadius);
 
         // Create a circular velocity vector perpendicular to position
         const posNormalized = relativePosition.clone().normalize();

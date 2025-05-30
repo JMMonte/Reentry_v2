@@ -27,7 +27,6 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
             if (isAdding) {
                 // Create a simple preview visualization
                 // We'll use the satellite's maneuverNodeVisualizer to show a preview
-                console.log('[usePreviewNodes] Creating manual preview visualization');
                 
                 // Store a flag that we're in preview mode
                 satellite._isPreviewingManeuver = true;
@@ -156,11 +155,13 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
         
         if (isAdding && satellite._isPreviewingManeuver) {
             // Create/update preview visualization
+            // Convert from m/s (UI) to km/s (backend)
             const deltaV = new THREE.Vector3(
-                parseFloat(vx) || 0,
-                parseFloat(vy) || 0,
-                parseFloat(vz) || 0
+                (parseFloat(vx) || 0) / 1000,
+                (parseFloat(vy) || 0) / 1000,
+                (parseFloat(vz) || 0) / 1000
             );
+            
             
             // Create a preview DTO with a stable ID
             const previewNode = {
@@ -176,7 +177,6 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
             
             // Request visualization through the orbit manager
             if (satellite.app3d?.satelliteOrbitManager) {
-                console.log('[usePreviewNodes] Requesting preview visualization');
                 satellite.app3d.satelliteOrbitManager.requestManeuverNodeVisualization(
                     satellite.id,
                     previewNode

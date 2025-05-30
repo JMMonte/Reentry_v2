@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 import { integrateRK4 } from './integrators/OrbitalIntegrators.js';
-import { solveKeplerEquation } from '../utils/KeplerianUtils.js';
+import { solveKeplerEquation, stateToKeplerian } from '../utils/KeplerianUtils.js';
 
 // Julian date utilities
 export function dateToJd(date) {
@@ -142,7 +142,7 @@ export class KeplerianPropagator {
      * @param {number} timeStep - Integration time step for system evolution
      * @returns {Array} Array of THREE.Vector3 positions with proper reference frame corrections
      */
-    generateOrbitPath(body, parent, allBodies = null, numPoints = 360, timeSpan = null, timeStep = 3600) {
+    generateOrbitPath(body, parent, allBodies = null, numPoints = 360, timeSpan = null) {
         // If no complete solar system provided, fall back to simple Keplerian orbit
         if (!allBodies) {
             return this._generateSimpleKeplerianOrbit(body, parent, numPoints, timeSpan);
@@ -167,7 +167,6 @@ export class KeplerianPropagator {
         let currentBodies = JSON.parse(JSON.stringify(allBodies));
         
         // Get initial relative position
-        let currentBodyPos = new THREE.Vector3().fromArray(currentBodies[body.naif]?.position || body.position);
         let currentParentPos = new THREE.Vector3().fromArray(currentBodies[parent.naif]?.position || parent.position);
         
         for (let i = 0; i <= numPoints; i++) {
@@ -357,66 +356,24 @@ export class KeplerianPropagator {
 
         const mu = parent.mu || (Constants.G * parent.mass);
 
-        // Position and velocity magnitudes
-        const rMag = r.length();
-        const vMag = v.length();
+        // Basic validation
+        if (r.length() === 0 || v.length() === 0) return null;
 
-        if (rMag === 0 || vMag === 0) return null;
-
-        // Specific angular momentum
-        const h = new THREE.Vector3().crossVectors(r, v);
-        const hMag = h.length();
-
-        // Eccentricity vector
-        const eVec = new THREE.Vector3()
-            .crossVectors(v, h)
-            .divideScalar(mu)
-            .sub(r.clone().divideScalar(rMag));
-        const eccentricity = eVec.length();
-
-        // Semi-major axis
-        const specificEnergy = 0.5 * vMag * vMag - mu / rMag;
-        const semiMajorAxis = -mu / (2 * specificEnergy);
-
-        // Inclination
-        const inclination = Math.acos(h.z / hMag);
-
-        // Longitude of ascending node
-        const nVec = new THREE.Vector3().crossVectors(
-            new THREE.Vector3(0, 0, 1),
-            h
-        );
-        const nMag = nVec.length();
-
-        let longitudeOfAscendingNode = 0;
-        if (nMag > 0) {
-            longitudeOfAscendingNode = Math.acos(nVec.x / nMag);
-            if (nVec.y < 0) longitudeOfAscendingNode = 2 * Math.PI - longitudeOfAscendingNode;
-        }
-
-        // Argument of periapsis
-        let argumentOfPeriapsis = 0;
-        if (nMag > 0 && eccentricity > 0) {
-            argumentOfPeriapsis = Math.acos(nVec.dot(eVec) / (nMag * eccentricity));
-            if (eVec.z < 0) argumentOfPeriapsis = 2 * Math.PI - argumentOfPeriapsis;
-        }
-
-        // True anomaly
-        let trueAnomaly = 0;
-        if (eccentricity > 0) {
-            trueAnomaly = Math.acos(eVec.dot(r) / (eccentricity * rMag));
-            if (r.dot(v) < 0) trueAnomaly = 2 * Math.PI - trueAnomaly;
-        }
-
+        // Use centralized KeplerianUtils implementation
+        const elements = stateToKeplerian(r, v, mu, 0, parent.radius || 0);
+        
+        if (!elements) return null;
+        
+        // Return in the format expected by this class (with radians)
         return {
-            semiMajorAxis,
-            eccentricity,
-            inclination,
-            longitudeOfAscendingNode,
-            argumentOfPeriapsis,
-            trueAnomaly,
-            specificAngularMomentum: hMag,
-            specificEnergy
+            semiMajorAxis: elements.semiMajorAxis,
+            eccentricity: elements.eccentricity,
+            inclination: THREE.MathUtils.degToRad(elements.inclination),
+            longitudeOfAscendingNode: THREE.MathUtils.degToRad(elements.longitudeOfAscendingNode),
+            argumentOfPeriapsis: THREE.MathUtils.degToRad(elements.argumentOfPeriapsis),
+            trueAnomaly: THREE.MathUtils.degToRad(elements.trueAnomaly),
+            specificAngularMomentum: elements.specificAngularMomentum,
+            specificEnergy: elements.specificOrbitalEnergy
         };
     }
 

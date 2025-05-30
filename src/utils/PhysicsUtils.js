@@ -13,6 +13,7 @@
 
 import { Constants } from './Constants.js';
 import * as THREE from 'three';
+import { stateToKeplerian } from './KeplerianUtils.js';
 
 /*─────────────────────────────────────────────────────────────────────┐
 │  0.  GLOBAL AXES & EARTH TILT                                       │
@@ -43,8 +44,18 @@ export class PhysicsUtils {
     static calculateGravitationalForce(m1, m2, r) {
         return r === 0 ? 0 : Constants.G * (m1 * m2) / (r * r);
     }
-    static calculateOrbitalVelocity(mass, r) { return Math.sqrt(Constants.G * mass / r); }
-    static calculateEscapeVelocity(mass, r) { return Math.sqrt(2 * Constants.G * mass / r); }
+    // DEPRECATED: Use GravityCalculator.computeOrbitalVelocity() instead
+    static calculateOrbitalVelocity(mass, r) { 
+        console.warn('[PhysicsUtils.calculateOrbitalVelocity] DEPRECATED: Use GravityCalculator.computeOrbitalVelocity() instead');
+        const gm = Constants.G * mass;
+        return Math.sqrt(gm / r); 
+    }
+    // DEPRECATED: Use GravityCalculator.computeEscapeVelocity() instead
+    static calculateEscapeVelocity(mass, r) { 
+        console.warn('[PhysicsUtils.calculateEscapeVelocity] DEPRECATED: Use GravityCalculator.computeEscapeVelocity() instead');
+        const gm = Constants.G * mass;
+        return Math.sqrt(2 * gm / r); 
+    }
     static calculateGravityAcceleration(mass, r) { return Constants.G * mass / (r * r); }
     static calculateAcceleration(force, mass) { return force / mass; }
 
@@ -259,24 +270,22 @@ export class PhysicsUtils {
     /*───────────────────────── 4.  ORBITAL MATH (unchanged) ─────────────*/
 
     /* 4.1  Classical elements from state-vectors */
+    // DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead
     static calculateOrbitalElements(position, velocity, mu) {
-        const r = position.length();
-        const vr = velocity.dot(position) / r;
-        const hVec = position.clone().cross(velocity);
-        const h = hVec.length();
-        const i = Math.acos(hVec.z / h);
-        const nVec = new THREE.Vector3(-hVec.y, hVec.x, 0);
-        const n = nVec.length();
-        const eVec = velocity.clone().cross(hVec).divideScalar(mu)
-            .sub(position.clone().divideScalar(r));
-        const e = eVec.length();
-        let Ω = Math.acos(nVec.x / n);
-        if (nVec.y < 0) Ω = 2 * Math.PI - Ω;
-        let ω = Math.acos(nVec.dot(eVec) / (n * e));
-        if (eVec.z < 0) ω = 2 * Math.PI - ω;
-        let θ = Math.acos(eVec.dot(position) / (e * r));
-        if (vr < 0) θ = 2 * Math.PI - θ;
-        return { h, e, i, omega: Ω, w: ω, trueAnomaly: θ };
+        console.warn('[PhysicsUtils.calculateOrbitalElements] DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead');
+        
+        // Delegate to centralized implementation
+        const elements = stateToKeplerian(position, velocity, mu);
+        
+        // Return in legacy format for backward compatibility
+        return {
+            h: elements.h,
+            e: elements.e,
+            i: THREE.MathUtils.degToRad(elements.inclination),
+            omega: THREE.MathUtils.degToRad(elements.omega),
+            w: THREE.MathUtils.degToRad(elements.w),
+            trueAnomaly: THREE.MathUtils.degToRad(elements.trueAnomaly)
+        };
     }
 
     /* 4.2  Orbit sampler (ECI) */
@@ -457,93 +466,15 @@ export class PhysicsUtils {
 
     // REMOVED: propagateOrbit - use OrbitalIntegrators.integrateRK4 instead
 
-    static calculateDetailedOrbitalElements(pos, vel, mu, radius) {
-        const r = pos.length();
-        const v2 = vel.lengthSq();
-        const ε = v2 / 2 - mu / r;
-        const hVec = new THREE.Vector3().crossVectors(pos, vel);
-        const h = hVec.length();
-
-        const sma = -mu / (2 * ε);
-        const ev = vel.clone().cross(hVec).divideScalar(mu)
-            .sub(pos.clone().divideScalar(r));
-        const ecc = ev.length();
-        const inc = Math.acos(hVec.z / h) * (180 / Math.PI);
-
-        const nVec = new THREE.Vector3(0, 0, 1).cross(hVec);
-        const n = nVec.length();
-
-        let Ω = Math.acos(nVec.x / n) * (180 / Math.PI);
-        if (nVec.y < 0) Ω = 360 - Ω;
-
-        let ω = Math.acos(nVec.dot(ev) / (n * ecc)) * (180 / Math.PI);
-        if (ev.z < 0) ω = 360 - ω;
-
-        let f = Math.acos(ev.dot(pos) / (ecc * r)) * (180 / Math.PI);
-        if (pos.dot(vel) < 0) f = 360 - f;
-
-        const period = 2 * Math.PI * Math.sqrt(Math.pow(sma, 3) / mu);
-        const rp = sma * (1 - ecc);
-        const ra = sma * (1 + ecc);
-
-        return {
-            semiMajorAxis: sma,
-            eccentricity: ecc,
-            inclination: inc,
-            longitudeOfAscendingNode: Ω,
-            argumentOfPeriapsis: ω,
-            trueAnomaly: f,
-            period,
-            specificAngularMomentum: h,
-            specificOrbitalEnergy: ε,
-            periapsisAltitude: (rp - radius),
-            apoapsisAltitude: (ra - radius),
-            periapsisRadial: rp,
-            apoapsisRadial: ra
-        };
+    // DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead
+    static calculateDetailedOrbitalElements(pos, vel, mu, radius = 0) {
+        console.warn('[PhysicsUtils.calculateDetailedOrbitalElements] DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead');
+        
+        // Delegate to centralized implementation
+        return stateToKeplerian(pos, vel, mu, 0, radius);
     }
 
-    /* Hohmann manoeuvres */
-    static calculateHohmannOrbitRaiseDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
-        const v1 = Math.sqrt(mu / r1);
-        const vT1 = Math.sqrt(mu * (2 / r1 - 1 / ((r1 + r2) / 2)));
-        const vT2 = Math.sqrt(mu * (2 / r2 - 1 / ((r1 + r2) / 2)));
-        const v2 = Math.sqrt(mu / r2);
-        const Δv1 = vT1 - v1;
-        const Δv2 = v2 - vT2;
-        return { deltaV1: Δv1, deltaV2: Δv2, totalDeltaV: Δv1 + Δv2 };
-    }
-
-    static calculateHohmannInterceptDeltaV(r1, r2, mu = Constants.earthGravitationalParameter) {
-        const aT = (r1 + r2) / 2;
-        const v1 = Math.sqrt(mu / r1);
-        const vT1 = Math.sqrt(mu * (2 / r1 - 1 / aT));
-        const vT2 = Math.sqrt(mu * (2 / r2 - 1 / aT));
-        const v2 = Math.sqrt(mu / r2);
-        const Δv1 = vT1 - v1;
-        const Δv2 = v2 - vT2;
-        return { deltaV1: Δv1, deltaV2: Δv2, totalDeltaV: Δv1 + Δv2 };
-    }
-
-    static calculateHohmannTransferNodes(r1, r2, els, mu = Constants.earthGravitationalParameter) {
-        const { deltaV1: Δv1, deltaV2: Δv2 } =
-            PhysicsUtils.calculateHohmannOrbitRaiseDeltaV(r1, r2, mu);
-
-        const f1 = els.trueAnomaly;
-        const f2 = f1 + Math.PI;
-
-        const burnNode1 = {
-            trueAnomaly: f1,
-            deltaV: Δv1,
-            direction: new THREE.Vector3(1, 0, 0)     // prograde
-        };
-        const burnNode2 = {
-            trueAnomaly: f2,
-            deltaV: Δv2,
-            direction: new THREE.Vector3(1, 0, 0)
-        };
-        return { burnNode1, burnNode2 };
-    }
+    /* Hohmann manoeuvres - All deprecated methods removed. Use PhysicsAPI.calculateHohmannTransfer() instead */
 
     /*───────────────────────── 5.  DEBUG helper ─────────────────────────*/
     static eciTiltToLatLon(positionECI, gmst, inclinationDeg) {

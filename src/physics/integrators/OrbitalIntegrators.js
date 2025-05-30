@@ -357,26 +357,27 @@ export function analyzeOrbit(satellite, centralBody, G) {
 
 /**
  * Calculate duration to reach SOI boundary or max distance
+ * Currently unused but kept for future escape trajectory calculations
  */
-function calculateEscapeDuration(r, v, centralBody) {
-    const AU = 149597870.7; // km
-    const soiRadius = centralBody.soiRadius || 1e9; // Default to large value
-    const maxRadius = centralBody.naifId === 10 ? 500 * AU : soiRadius;
-    
-    const currentRadius = r.length();
-    const radialVelocity = r.dot(v) / currentRadius;
-    
-    if (radialVelocity <= 0) {
-        // Not escaping
-        return 86400; // 1 day default
-    }
-    
-    const distanceToBoundary = maxRadius - currentRadius;
-    const estimatedTime = distanceToBoundary / radialVelocity;
-    
-    // Cap at reasonable values
-    return Math.min(Math.max(estimatedTime, 3600), 86400 * 365); // 1 hour to 1 year
-}
+// function calculateEscapeDuration(r, v, centralBody) {
+//     const AU = 149597870.7; // km
+//     const soiRadius = centralBody.soiRadius || 1e9; // Default to large value
+//     const maxRadius = centralBody.naifId === 10 ? 500 * AU : soiRadius;
+//     
+//     const currentRadius = r.length();
+//     const radialVelocity = r.dot(v) / currentRadius;
+//     
+//     if (radialVelocity <= 0) {
+//         // Not escaping
+//         return 86400; // 1 day default
+//     }
+//     
+//     const distanceToBoundary = maxRadius - currentRadius;
+//     const estimatedTime = distanceToBoundary / radialVelocity;
+//     
+//     // Cap at reasonable values
+//     return Math.min(Math.max(estimatedTime, 3600), 86400 * 365); // 1 hour to 1 year
+// }
 
 /**
  * Integration method selector
@@ -429,10 +430,28 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
     let vel = vel0.slice();
 
     // Check if orbit is hyperbolic
+    // Find the dominant gravitational body at the initial position
+    const position = new THREE.Vector3(...pos0);
+    let dominantBody = bodies[0]; // Default to first body
+    let maxInfluence = 0;
+    
+    for (const body of bodies) {
+        if (!body.mass || !body.position) continue;
+        const bodyPos = new THREE.Vector3(...(body.position.toArray ? body.position.toArray() : body.position));
+        const distance = position.distanceTo(bodyPos);
+        const influence = body.mass / (distance * distance);
+        if (influence > maxInfluence) {
+            maxInfluence = influence;
+            dominantBody = body;
+        }
+    }
+    
+    // Use the dominant body's gravitational parameter
+    const mu = dominantBody.GM || (Constants.G * dominantBody.mass);
     const oe = PhysicsUtils.calculateDetailedOrbitalElements(
         new THREE.Vector3(...pos0),
         new THREE.Vector3(...vel0),
-        Constants.earthGravitationalParameter
+        mu
     );
     const hyperbolic = oe && oe.eccentricity >= 1;
 

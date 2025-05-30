@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 
 /**
- * ManeuverNodeVisualizer - Handles only 3D visualization of maneuver nodes
+ * ManeuverVisualizationManager - Manages 3D visualization of maneuver nodes
  * 
- * This class is responsible for creating and updating the visual representation
- * of maneuver nodes in the 3D scene. It does not handle any physics calculations.
+ * This class coordinates the creation and updating of visual representations
+ * of maneuver nodes in the 3D scene. It manages multiple node visualizations
+ * and handles their lifecycle. It does not handle any physics calculations.
  */
-export class ManeuverNodeVisualizer {
+export class ManeuverVisualizationManager {
     constructor(scene, satellite) {
         this.scene = scene;
         this.satellite = satellite;
@@ -229,4 +230,4 @@ export class ManeuverNodeVisualizer {
     }
 }
 
-export default ManeuverNodeVisualizer;
+export default ManeuverVisualizationManager;

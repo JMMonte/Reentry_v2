@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
-// import { Constants } from '../utils/Constants.js';
+import { Constants } from '../utils/Constants.js';
 import { ApsisCalculator } from './core/ApsisCalculator.js';
+import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 
 /**
  * PhysicsAPI - Clean interface for physics calculations
@@ -15,41 +16,76 @@ export class PhysicsAPI {
      * Calculate orbital elements from position and velocity
      * @param {THREE.Vector3} position - Position vector in km
      * @param {THREE.Vector3} velocity - Velocity vector in km/s
-     * @param {number} mu - Gravitational parameter in km³/s²
+     * @param {number|Object} muOrBody - Gravitational parameter (km³/s²) or central body object
+     * @param {number} bodyRadius - Central body radius for altitude calculations (km, optional)
      * @returns {Object} Orbital elements including a, e, i, lan, argp, nu, period
      */
-    static calculateOrbitalElements(position, velocity, mu) {
-        return PhysicsUtils.calculateDetailedOrbitalElements(position, velocity, mu);
+    static calculateOrbitalElements(position, velocity, muOrBody, bodyRadius = 0) {
+        // Use centralized OrbitalMechanics implementation
+        return OrbitalMechanics.calculateOrbitalElements(position, velocity, muOrBody, bodyRadius);
+    }
+    
+    /**
+     * Get gravitational parameter for a body
+     * @param {number|string|Object} bodyIdentifier - Body object, NAIF ID, or name
+     * @returns {number} Gravitational parameter in km³/s²
+     */
+    static getGravitationalParameter(bodyIdentifier) {
+        return OrbitalMechanics.getGravitationalParameter(bodyIdentifier);
+    }
+    
+    /**
+     * Calculate circular velocity at a given radius
+     * @param {Object|number} centralBodyOrGM - Central body object or GM value
+     * @param {number} radius - Distance from center in km
+     * @returns {number} Circular velocity in km/s
+     */
+    static calculateCircularVelocity(centralBodyOrGM, radius) {
+        return OrbitalMechanics.calculateCircularVelocity(centralBodyOrGM, radius);
+    }
+    
+    /**
+     * Get body rotation period
+     * @param {Object} body - Body object
+     * @returns {number} Rotation period in seconds
+     */
+    static getBodyRotationPeriod(body) {
+        // Already stored in body config
+        return body.rotationPeriod || Constants.siderialDay;
+    }
+    
+    /**
+     * Get body rotation rate
+     * @param {Object} body - Body object
+     * @returns {number} Rotation rate in rad/s
+     */
+    static getBodyRotationRate(body) {
+        const period = this.getBodyRotationPeriod(body);
+        return (2 * Math.PI) / Math.abs(period);
     }
 
     /**
      * Calculate time to next periapsis
      * @param {THREE.Vector3} position - Current position in km
      * @param {THREE.Vector3} velocity - Current velocity in km/s
-     * @param {number} mu - Gravitational parameter in km³/s²
+     * @param {number|Object} muOrBody - Gravitational parameter or central body
      * @param {Date} currentTime - Current simulation time
      * @returns {Date} Time of next periapsis
      */
-    static calculateNextPeriapsis(position, velocity, mu, currentTime) {
-        const result = ApsisCalculator.findNextApsisAnalytical(
-            position, velocity, mu, 'periapsis', currentTime
-        );
-        return result.time;
+    static calculateNextPeriapsis(position, velocity, muOrBody, currentTime) {
+        return OrbitalMechanics.calculateNextApsis(position, velocity, muOrBody, 'periapsis', currentTime);
     }
 
     /**
      * Calculate time to next apoapsis
      * @param {THREE.Vector3} position - Current position in km
      * @param {THREE.Vector3} velocity - Current velocity in km/s
-     * @param {number} mu - Gravitational parameter in km³/s²
+     * @param {number|Object} muOrBody - Gravitational parameter or central body
      * @param {Date} currentTime - Current simulation time
      * @returns {Date} Time of next apoapsis
      */
-    static calculateNextApoapsis(position, velocity, mu, currentTime) {
-        const result = ApsisCalculator.findNextApsisAnalytical(
-            position, velocity, mu, 'apoapsis', currentTime
-        );
-        return result.time;
+    static calculateNextApoapsis(position, velocity, muOrBody, currentTime) {
+        return OrbitalMechanics.calculateNextApsis(position, velocity, muOrBody, 'apoapsis', currentTime);
     }
 
     /**
@@ -72,8 +108,8 @@ export class PhysicsAPI {
 
         // Calculate target orbital elements
         const r_pe = bodyRadius + targetPeriapsis;
-        const r_ap = bodyRadius + targetApoapsis;
-        const a_target = (r_pe + r_ap) / 2;
+        // const r_ap = bodyRadius + targetApoapsis;
+        // const a_target = (r_pe + r_ap) / 2;
         // const e_target = (r_ap - r_pe) / (r_ap + r_pe);
 
         // Calculate current orbital elements
@@ -94,11 +130,16 @@ export class PhysicsAPI {
         // Transfer orbit semi-major axis (Hohmann)
         const a_transfer = (r_current + r_pe) / 2;
         
-        // Velocities at current position
-        // const v_circular = Math.sqrt(mu / r_current);
-        const v_transfer_depart = Math.sqrt(mu * (2 / r_current - 1 / a_transfer));
-        const v_transfer_arrive = Math.sqrt(mu * (2 / r_pe - 1 / a_transfer));
-        const v_final = Math.sqrt(mu * (2 / r_pe - 1 / a_target));
+        // Use centralized orbital mechanics for velocity calculations
+        const velocities = OrbitalMechanics.calculateHohmannTransfer({
+            centralBody: { GM: mu },
+            currentRadius: r_current,
+            targetRadius: r_pe
+        });
+        
+        const v_transfer_depart = velocities.velocities.transferDeparture;
+        const v_transfer_arrive = velocities.velocities.transferArrival;
+        const v_final = OrbitalMechanics.calculateCircularVelocity(mu, r_pe);
 
         // Delta-V calculations
         const dv1 = Math.abs(v_transfer_depart - v_current);
@@ -169,14 +210,7 @@ export class PhysicsAPI {
      * @returns {THREE.Vector3} Delta-V in world coordinates
      */
     static localToWorldDeltaV(localDV, position, velocity) {
-        const prograde = velocity.clone().normalize();
-        const radial = position.clone().normalize();
-        const normal = new THREE.Vector3().crossVectors(radial, prograde).normalize();
-
-        return new THREE.Vector3()
-            .addScaledVector(prograde, localDV.x)
-            .addScaledVector(normal, localDV.y)
-            .addScaledVector(radial, localDV.z);
+        return OrbitalMechanics.localToWorldDeltaV(localDV, position, velocity);
     }
 
     /**
@@ -187,15 +221,7 @@ export class PhysicsAPI {
      * @returns {THREE.Vector3} Delta-V in local frame (prograde, normal, radial)
      */
     static worldToLocalDeltaV(worldDV, position, velocity) {
-        const prograde = velocity.clone().normalize();
-        const radial = position.clone().normalize();
-        const normal = new THREE.Vector3().crossVectors(radial, prograde).normalize();
-
-        return new THREE.Vector3(
-            worldDV.dot(prograde),
-            worldDV.dot(normal),
-            worldDV.dot(radial)
-        );
+        return OrbitalMechanics.worldToLocalDeltaV(worldDV, position, velocity);
     }
 
     /**
@@ -262,7 +288,7 @@ export class PhysicsAPI {
      * @returns {number} Magnitude
      */
     static calculateDeltaVMagnitude(vx, vy, vz) {
-        return Math.sqrt(vx * vx + vy * vy + vz * vz);
+        return OrbitalMechanics.calculateDeltaVMagnitude(vx, vy, vz);
     }
 
     /**
@@ -339,20 +365,47 @@ export class PhysicsAPI {
      */
     static calculateHohmannTransferNodes(currentPosition, currentVelocity, targetRadius, mu) {
         const r1 = currentPosition.length();
-        const elements = this.calculateOrbitalElements(currentPosition, currentVelocity, mu);
+        const r2 = targetRadius;
         
-        // Use existing PhysicsUtils method
-        const { burnNode1, burnNode2 } = PhysicsUtils.calculateHohmannTransferNodes(
-            r1, targetRadius, elements, mu
-        );
+        // Calculate transfer orbit semi-major axis
+        const a_transfer = (r1 + r2) / 2;
         
-        // Calculate transfer time
-        const transferTime = Math.PI * Math.sqrt(Math.pow((r1 + targetRadius) / 2, 3) / mu);
+        // Calculate velocities
+        const v1_circular = Math.sqrt(mu / r1);  // Current circular velocity
+        const v2_circular = Math.sqrt(mu / r2);  // Target circular velocity
+        
+        // Transfer orbit velocities
+        const v1_transfer = Math.sqrt(mu * (2/r1 - 1/a_transfer));  // Departure velocity
+        const v2_transfer = Math.sqrt(mu * (2/r2 - 1/a_transfer));  // Arrival velocity
+        
+        // Delta-V calculations
+        const dv1 = Math.abs(v1_transfer - v1_circular);  // First burn
+        const dv2 = Math.abs(v2_circular - v2_transfer);  // Second burn
+        
+        // Transfer time (half period of transfer ellipse)
+        const transferTime = Math.PI * Math.sqrt(Math.pow(a_transfer, 3) / mu);
+        
+        // Create burn nodes
+        const burnNode1 = {
+            deltaV: dv1,
+            direction: r2 > r1 ? 'prograde' : 'retrograde',
+            position: currentPosition.clone(),
+            velocity: currentVelocity.clone(),
+            anomaly: 0  // At current position
+        };
+        
+        const burnNode2 = {
+            deltaV: dv2,
+            direction: r2 > r1 ? 'prograde' : 'retrograde',
+            // Position and velocity would need orbital propagation to determine
+            anomaly: Math.PI  // 180 degrees later in transfer orbit
+        };
         
         return {
             burn1: burnNode1,
             burn2: burnNode2,
-            transferTime: transferTime
+            transferTime: transferTime,
+            totalDeltaV: dv1 + dv2
         };
     }
 
@@ -364,14 +417,7 @@ export class PhysicsAPI {
      * @returns {Object} Periapsis and apoapsis altitudes
      */
     static orbitalElementsToAltitudes(semiMajorAxis, eccentricity, bodyRadius) {
-        const periapsisRadius = semiMajorAxis * (1 - eccentricity);
-        const apoapsisRadius = semiMajorAxis * (1 + eccentricity);
-        return {
-            periapsis: periapsisRadius - bodyRadius,
-            apoapsis: apoapsisRadius - bodyRadius,
-            periapsisRadius: periapsisRadius,
-            apoapsisRadius: apoapsisRadius
-        };
+        return OrbitalMechanics.orbitalElementsToApsides(semiMajorAxis, eccentricity, bodyRadius);
     }
 
     /**
@@ -382,14 +428,7 @@ export class PhysicsAPI {
      * @returns {Object} Semi-major axis and eccentricity
      */
     static altitudesToOrbitalElements(periapsisAltitude, apoapsisAltitude, bodyRadius) {
-        const rp = bodyRadius + periapsisAltitude;
-        const ra = bodyRadius + apoapsisAltitude;
-        const semiMajorAxis = (rp + ra) / 2;
-        const eccentricity = (ra - rp) / (ra + rp);
-        return {
-            semiMajorAxis: semiMajorAxis,
-            eccentricity: eccentricity
-        };
+        return OrbitalMechanics.apsidesToOrbitalElements(periapsisAltitude, apoapsisAltitude, bodyRadius);
     }
 
     /**
@@ -447,5 +486,31 @@ export class PhysicsAPI {
         };
         
         return PhysicsUtils.calculateDeltaVAtAnomaly(curEls, tgtEls, THREE.MathUtils.degToRad(anomaly), mu);
+    }
+
+    /**
+     * Calculate orbital period from position and velocity
+     * @param {THREE.Vector3|Array} position - Position vector in km
+     * @param {THREE.Vector3|Array} velocity - Velocity vector in km/s
+     * @param {number|Object} muOrBody - Gravitational parameter (km³/s²) or central body
+     * @returns {number} Orbital period in seconds (returns 0 for non-elliptical orbits)
+     */
+    static calculateOrbitalPeriod(position, velocity, muOrBody) {
+        return OrbitalMechanics.calculateOrbitalPeriod(position, velocity, muOrBody);
+    }
+
+    /**
+     * Calculate orbital period from semi-major axis using Kepler's Third Law
+     * @param {number} semiMajorAxis - Semi-major axis in km
+     * @param {number|Object} muOrBody - Gravitational parameter (km³/s²) or central body
+     * @returns {number} Orbital period in seconds
+     */
+    static calculateOrbitalPeriodFromSMA(semiMajorAxis, muOrBody) {
+        const mu = typeof muOrBody === 'number' 
+            ? muOrBody 
+            : this.getGravitationalParameter(muOrBody);
+        
+        // Kepler's Third Law: T = 2π√(a³/GM)
+        return 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis, 3) / mu);
     }
 }

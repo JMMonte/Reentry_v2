@@ -138,8 +138,8 @@ export class ManeuverPreviewManager {
             targetApoapsis,
             targetInclination,
             targetLAN,
-            bodyRadius: satellite.app3d.physicsEngine.getBodyRadius(satellite.centralBodyNaifId),
-            mu: satellite.app3d.physicsEngine.getBodyGM(satellite.centralBodyNaifId)
+            bodyRadius: PhysicsAPI.getBodyRadius ? PhysicsAPI.getBodyRadius(satellite.centralBodyNaifId) : satellite.app3d.physicsEngine.getBodyRadius(satellite.centralBodyNaifId),
+            mu: PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId)
         });
 
         // Determine burn times
@@ -151,7 +151,7 @@ export class ManeuverPreviewManager {
             burn1Time = PhysicsAPI.calculateNextPeriapsis(
                 currentState.position,
                 currentState.velocity,
-                satellite.app3d.physicsEngine.getBodyGM(satellite.centralBodyNaifId),
+                PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId),
                 currentState.time
             );
         }

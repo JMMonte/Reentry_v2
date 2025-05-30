@@ -6,7 +6,6 @@
  */
 import * as THREE from 'three';
 import { analyzeOrbit } from '../physics/integrators/OrbitalIntegrators.js';
-import { Constants } from '../utils/Constants.js';
 import { PhysicsAPI } from '../physics/PhysicsAPI.js';
 
 export class SatelliteOrbitManager {
@@ -60,34 +59,54 @@ export class SatelliteOrbitManager {
      * Initialize propagator when physics engine is ready
      */
     initialize() {
-        console.log('[SatelliteOrbitManager] Initializing...');
-        console.log('[SatelliteOrbitManager] Physics engine available:', !!this.physicsEngine);
-        console.log('[SatelliteOrbitManager] Display settings available:', !!this.displaySettings);
         
         if (this.physicsEngine) {
+            // Check if physics engine has bodies loaded
+            const state = this.physicsEngine.getSimulationState?.();
             this._updateWorkersPhysicsState();
-            console.log('[SatelliteOrbitManager] Physics engine initialized');
+        } else {
+            console.warn('[SatelliteOrbitManager] No physics engine available during initialization');
         }
         
         // Set up event listeners for satellite lifecycle
         this._setupEventListeners();
         
         // Check initial orbit visibility setting
-        const initialVisibility = this.displaySettings?.getSetting('showOrbits') ?? true;
-        console.log('[SatelliteOrbitManager] Initial orbit visibility:', initialVisibility);
+        this.displaySettings?.getSetting('showOrbits') ?? true;
     }
 
     /**
      * Update physics state in all workers with complete solar system data
      */
     _updateWorkersPhysicsState() {
-        if (!this.physicsEngine) return;
+        if (!this.physicsEngine) {
+            console.warn('[SatelliteOrbitManager] Cannot update workers - no physics engine');
+            return;
+        }
 
         const state = this.physicsEngine.getSimulationState();
+        if (!state || !state.bodies) {
+            console.warn('[SatelliteOrbitManager] Cannot update workers - no simulation state');
+            return;
+        }
+        
         const simplifiedBodies = {};
         
         // Extract complete body data for solar system propagation
         for (const [id, body] of Object.entries(state.bodies)) {
+            // Handle atmospheric model - can't send functions to workers
+            let atmosphericModel = null;
+            if (body.atmosphericModel) {
+                atmosphericModel = {
+                    maxAltitude: body.atmosphericModel.maxAltitude,
+                    minAltitude: body.atmosphericModel.minAltitude,
+                    referenceAltitude: body.atmosphericModel.referenceAltitude,
+                    referenceDensity: body.atmosphericModel.referenceDensity,
+                    scaleHeight: body.atmosphericModel.scaleHeight
+                    // Exclude getDensity function - worker will use its own implementation
+                };
+            }
+            
             simplifiedBodies[id] = {
                 naif: parseInt(id),
                 position: body.position.toArray ? body.position.toArray() : body.position,
@@ -98,13 +117,12 @@ export class SatelliteOrbitManager {
                 type: body.type,
                 // Include properties needed for perturbations
                 J2: body.J2,
-                atmosphericModel: body.atmosphericModel,
-                GM: body.GM || (Constants.G * body.mass),
+                atmosphericModel: atmosphericModel,
+                GM: PhysicsAPI.getGravitationalParameter(body), // Use centralized GM calculation
                 rotationPeriod: body.rotationPeriod
             };
         }
 
-        console.log('[SatelliteOrbitManager] Updating workers with complete solar system state:', Object.keys(simplifiedBodies).length, 'bodies');
 
         // Send to all workers with current simulation time
         this.workers.forEach(worker => {
@@ -123,7 +141,6 @@ export class SatelliteOrbitManager {
      * Request orbit update for a satellite
      */
     updateSatelliteOrbit(satelliteId) {
-        console.log(`[SatelliteOrbitManager] Orbit update requested for satellite ${satelliteId}`);
         this.updateQueue.add(satelliteId);
         
         // Debounce updates
@@ -141,7 +158,6 @@ export class SatelliteOrbitManager {
      * This will calculate the position at maneuver time and post-maneuver orbit
      */
     requestManeuverNodeVisualization(satelliteId, maneuverNode) {
-        console.log(`[SatelliteOrbitManager] Maneuver node visualization requested for satellite ${satelliteId}`);
         
         const satellite = this.physicsEngine?.satellites.get(satelliteId);
         if (!satellite) {
@@ -187,30 +203,24 @@ export class SatelliteOrbitManager {
             nodeIndex = orbitData.points.length - 1;
         }
         
+        
         // Calculate world delta-V at the maneuver point
         const position = new THREE.Vector3(...nodePoint.position);
         const velocity = new THREE.Vector3(...(nodePoint.velocity || satellite.velocity.toArray()));
         
-        console.log(`[SatelliteOrbitManager] Maneuver node at position:`, position, `velocity:`, velocity);
-        console.log(`[SatelliteOrbitManager] Delta-V local:`, maneuverNode.deltaV);
-        
-        const worldDeltaV = PhysicsAPI.localToWorldDeltaV(
-            new THREE.Vector3(
-                maneuverNode.deltaV.prograde,
-                maneuverNode.deltaV.normal,
-                maneuverNode.deltaV.radial
-            ),
-            position,
-            velocity
+        const localDeltaV = new THREE.Vector3(
+            maneuverNode.deltaV.prograde,
+            maneuverNode.deltaV.normal,
+            maneuverNode.deltaV.radial
         );
         
-        console.log(`[SatelliteOrbitManager] World delta-V:`, worldDeltaV);
+        const worldDeltaV = PhysicsAPI.localToWorldDeltaV(localDeltaV, position, velocity);
         
         // Create visualization data
         const visualData = {
             nodeId: maneuverNode.id,
             position: nodePoint.position,
-            deltaVDirection: worldDeltaV.normalize().toArray(),
+            deltaVDirection: worldDeltaV.clone().normalize().toArray(), // Use clone() to avoid modifying original
             deltaVMagnitude: maneuverNode.deltaMagnitude,
             color: satellite.color || 0xffffff,
             scale: 1,
@@ -241,8 +251,9 @@ export class SatelliteOrbitManager {
      */
     _requestPostManeuverOrbit(satelliteId, maneuverPoint, worldDeltaV, maneuverNode) {
         // Apply delta-V to velocity
-        const postManeuverVelocity = new THREE.Vector3(...maneuverPoint.velocity)
-            .add(worldDeltaV);
+        const preManeuverVel = new THREE.Vector3(...maneuverPoint.velocity);
+        const postManeuverVelocity = preManeuverVel.clone().add(worldDeltaV);
+        
         
         // Start a new propagation job for post-maneuver orbit
         const satellite = this.physicsEngine.satellites.get(satelliteId);
@@ -255,7 +266,7 @@ export class SatelliteOrbitManager {
             centralBodyNaifId: maneuverPoint.centralBodyId
         };
         
-        const orbitParams = analyzeOrbit(tempSat, centralBody, Constants.G);
+        const orbitParams = analyzeOrbit(tempSat, centralBody, PhysicsAPI.getGravitationalParameter(centralBody));
         const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
         const pointsPerPeriod = this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
         
@@ -270,6 +281,7 @@ export class SatelliteOrbitManager {
         
         // Create a unique ID for this maneuver prediction
         const predictionId = `${satelliteId}_maneuver_${maneuverNode.id}`;
+        
         
         // Start propagation for post-maneuver orbit
         this._startPropagationJob({
@@ -300,7 +312,6 @@ export class SatelliteOrbitManager {
             return;
         }
 
-        console.log(`[SatelliteOrbitManager] Processing update queue with ${this.updateQueue.size} satellites`);
 
         for (const satelliteId of this.updateQueue) {
             const satellite = this.physicsEngine.satellites.get(satelliteId);
@@ -318,44 +329,29 @@ export class SatelliteOrbitManager {
             const cachedPeriods = cached?.maxPeriods || 0;
             const needsExtension = cached && !stateChanged && requestedPeriods > cachedPeriods;
             
-            // Debug logging
-            if (cached) {
-                console.log(`[SatelliteOrbitManager] Cache check for satellite ${satelliteId}:`, {
-                    stateChanged,
-                    cachedPeriods,
-                    requestedPeriods,
-                    needsExtension,
-                    cachedPoints: cached.points?.length || 0
-                });
-            }
             
             // Check if there's an active job in progress
             const activeJob = this.activeJobs.get(satelliteId);
             if (activeJob && activeJob.points.length > 0) {
-                console.log(`[SatelliteOrbitManager] Using ${activeJob.points.length} points from active job for satellite ${satelliteId}`);
                 this._updateOrbitVisualization(satelliteId, activeJob.points, activeJob.soiTransitions);
                 continue;
             }
             
             if (!stateChanged && cached && cached.points) {
                 if (requestedPeriods <= cachedPeriods) {
-                    console.log(`[SatelliteOrbitManager] Using cached orbit for satellite ${satelliteId} (${cachedPeriods} periods cached)`);
                     // Just update the visualization with different settings
                     this._updateOrbitVisualization(satelliteId, cached.points);
                     continue;
-                } else {
-                    console.log(`[SatelliteOrbitManager] Need to extend orbit: ${requestedPeriods} > ${cachedPeriods} periods`);
                 }
             }
 
-            console.log(`[SatelliteOrbitManager] Analyzing orbit for satellite ${satelliteId}`);
             // Analyze orbit to determine propagation parameters
             const centralBody = this.physicsEngine.bodies[satellite.centralBodyNaifId];
             if (!centralBody) {
                 console.error(`[SatelliteOrbitManager] Central body ${satellite.centralBodyNaifId} not found`);
                 continue;
             }
-            const orbitParams = analyzeOrbit(satellite, centralBody, Constants.G);
+            const orbitParams = analyzeOrbit(satellite, centralBody, PhysicsAPI.getGravitationalParameter(centralBody));
             
             // Get display settings
             const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
@@ -375,7 +371,6 @@ export class SatelliteOrbitManager {
                     const additionalPeriods = targetPeriods - cachedPeriods;
                     maxDuration = orbitParams.period * additionalPeriods;
                     maxPoints = pointsPerPeriod * additionalPeriods;
-                    console.log(`[SatelliteOrbitManager] Extending by ${additionalPeriods.toFixed(1)} periods`);
                 } else {
                     // Fresh calculation
                     maxDuration = orbitParams.period * targetPeriods;
@@ -425,7 +420,6 @@ export class SatelliteOrbitManager {
                 propagationVelocity = lastPoint.velocity || satellite.velocity.toArray();
                 startTime = lastPoint.time || 0;
                 existingPoints = interruptedCache.points;
-                console.log(`[SatelliteOrbitManager] Continuing from ${interruptedCache.points.length} partial points at time ${startTime}s`);
             } else if (needsExtension && cached.points && cached.points.length > 0) {
                 // Extension: start from the last cached point
                 const lastPoint = cached.points[cached.points.length - 1];
@@ -433,12 +427,10 @@ export class SatelliteOrbitManager {
                 propagationVelocity = lastPoint.velocity || satellite.velocity.toArray();
                 startTime = lastPoint.time || (cachedPeriods * orbitParams.period);
                 existingPoints = cached.points;
-                console.log(`[SatelliteOrbitManager] Extending from ${cached.points.length} existing points at time ${startTime}s`);
             } else if (cached && cached.initialPosition && !stateChanged) {
                 // Recalculation but state hasn't changed - use original initial state
                 propagationPosition = cached.initialPosition;
                 propagationVelocity = cached.initialVelocity;
-                console.log(`[SatelliteOrbitManager] Using cached initial state for recalculation`);
             } else {
                 // Fresh calculation from current state
                 propagationPosition = satellite.position.toArray();
@@ -494,6 +486,7 @@ export class SatelliteOrbitManager {
             points: params.existingPoints || [], // Start with existing points if extending
             startTime: Date.now()
         });
+        
 
         // Send propagation request with satellite properties for drag calculation
         worker.postMessage({
@@ -522,11 +515,13 @@ export class SatelliteOrbitManager {
     _handleWorkerMessage(event) {
         const { type, satelliteId, points, isComplete, soiTransitions } = event.data;
 
-        console.log(`[SatelliteOrbitManager] Worker message received: type=${type}, satelliteId=${satelliteId}, points=${points?.length || 0}, isComplete=${isComplete}, soiTransitions=${soiTransitions?.length || 0}`);
 
         const job = this.activeJobs.get(satelliteId);
         if (!job) {
-            console.warn(`[SatelliteOrbitManager] No active job found for satellite ${satelliteId}`);
+            // For 'complete' messages, this is normal since the job may have been cleaned up by 'chunk' with isComplete
+            if (type !== 'complete') {
+                console.warn(`[SatelliteOrbitManager] No active job found for satellite ${satelliteId}`);
+            }
             return;
         }
 
@@ -539,13 +534,11 @@ export class SatelliteOrbitManager {
                 if (soiTransitions && soiTransitions.length > 0) {
                     job.soiTransitions.push(...soiTransitions);
                 }
-                console.log(`[SatelliteOrbitManager] Accumulated ${job.points.length} points and ${job.soiTransitions.length} transitions for satellite ${satelliteId}`);
                 
                 // Update visualization progressively
                 this._updateOrbitVisualization(satelliteId, job.points, job.soiTransitions);
                 
                 if (isComplete) {
-                    console.log(`[SatelliteOrbitManager] Orbit calculation complete for satellite ${satelliteId} with ${job.points.length} total points`);
                     
                     // Handle maneuver predictions differently
                     if (job.params.isManeuverPrediction) {
@@ -581,7 +574,6 @@ export class SatelliteOrbitManager {
                         // Process any queued maneuver visualizations
                         const queuedManeuvers = this.maneuverQueue.get(satelliteId);
                         if (queuedManeuvers && queuedManeuvers.length > 0) {
-                            console.log(`[SatelliteOrbitManager] Processing ${queuedManeuvers.length} queued maneuver visualizations`);
                             queuedManeuvers.forEach(maneuverNode => {
                                 this.requestManeuverNodeVisualization(satelliteId, maneuverNode);
                             });
@@ -597,7 +589,7 @@ export class SatelliteOrbitManager {
 
             case 'complete':
                 // Job completed - do nothing here since we already handled cleanup in 'chunk' with isComplete
-                console.log(`[SatelliteOrbitManager] Received complete message for satellite ${satelliteId}`);
+                // The job may have already been deleted by a 'chunk' message with isComplete: true
                 break;
 
             case 'error':
@@ -622,7 +614,6 @@ export class SatelliteOrbitManager {
      */
     _updateOrbitVisualization(satelliteId, points, workerTransitions = []) {
         if (points.length < 2) {
-            console.warn(`[SatelliteOrbitManager] Not enough points (${points.length}) to visualize orbit for satellite ${satelliteId}`);
             return;
         }
 
@@ -635,13 +626,12 @@ export class SatelliteOrbitManager {
         if (!satellite) return;
         
         const centralBody = this.physicsEngine.bodies[satellite.centralBodyNaifId];
-        const orbitParams = analyzeOrbit(satellite, centralBody, Constants.G);
+        const orbitParams = analyzeOrbit(satellite, centralBody, PhysicsAPI.getGravitationalParameter(centralBody));
         
         // For now, just show all points - the orbit should be continuous
         // The physics engine will handle showing the correct portion based on time
         const displayPoints = points;
         
-        console.log(`[SatelliteOrbitManager] Displaying ${displayPoints.length} of ${points.length} cached points for satellite ${satelliteId}`);
 
         // Group points by central body AND SOI transitions to create discontinuous segments
         const orbitSegments = [];
@@ -678,17 +668,14 @@ export class SatelliteOrbitManager {
             orbitSegments.push(currentSegment);
         }
         
-        console.log(`[SatelliteOrbitManager] Created ${orbitSegments.length} orbit segments from ${displayPoints.length} points`);
 
         // Use worker-provided transitions if available, otherwise find them in points
         let soiTransitions;
         if (workerTransitions && workerTransitions.length > 0) {
             soiTransitions = workerTransitions;
-            console.log(`[SatelliteOrbitManager] Using ${soiTransitions.length} SOI transitions from worker`);
         } else {
             // Find SOI transitions to create ghost planets
             soiTransitions = this._findSOITransitions(displayPoints);
-            console.log(`[SatelliteOrbitManager] Found ${soiTransitions.length} SOI transitions from points`);
         }
         
         // Create or update ghost planets for future SOI encounters
@@ -700,24 +687,18 @@ export class SatelliteOrbitManager {
             const lineKey = `${satelliteId}_${segmentIndex}`;
             let line = this.orbitLines.get(lineKey);
             
-            console.log(`[SatelliteOrbitManager] Processing segment ${segmentIndex} for body ${segment.centralBodyId} with ${segment.points.length} points (isAfterSOITransition: ${segment.isAfterSOITransition})`);
             
             // Get the planet mesh group to add orbit to
             const planet = this.app.celestialBodies?.find(b => b.naifId === parseInt(segment.centralBodyId));
             // Use orbitGroup to match where satellite mesh is added (see Satellite.js _initVisuals)
             const parentGroup = planet?.orbitGroup || this.app.sceneManager?.scene;
             
-            console.log(`[SatelliteOrbitManager] Looking for body ${segment.centralBodyId}, found: ${planet?.name || 'none'}`);
-            console.log(`[SatelliteOrbitManager] Planet has rotationGroup:`, !!planet?.rotationGroup);
-            console.log(`[SatelliteOrbitManager] Planet has orbitGroup:`, !!planet?.orbitGroup);
-            console.log(`[SatelliteOrbitManager] Available celestial bodies:`, this.app.celestialBodies?.map(b => ({ name: b.name, naifId: b.naifId })));
             
             if (!parentGroup) {
                 console.warn(`[SatelliteOrbitManager] No parent group found for body ${segment.centralBodyId}`);
                 continue;
             }
             
-            console.log(`[SatelliteOrbitManager] Using parent group: ${parentGroup.name || parentGroup.type} (from ${planet ? planet.name : 'scene'})`);
             
             if (!line) {
                 // Create new line
@@ -748,8 +729,6 @@ export class SatelliteOrbitManager {
                 parentGroup.add(line);
                 this.orbitLines.set(lineKey, line);
                 
-                console.log(`[SatelliteOrbitManager] Created new orbit line and added to parent group`);
-                console.log(`[SatelliteOrbitManager] Line parent after add:`, line.parent?.name || line.parent);
             }
 
             // Update geometry with positions relative to parent body
@@ -772,16 +751,7 @@ export class SatelliteOrbitManager {
                 line.computeLineDistances();
             }
             
-            console.log(`[SatelliteOrbitManager] Updated orbit segment ${segmentIndex} with ${segment.points.length} points`);
-            console.log(`[SatelliteOrbitManager] First point: [${positions[0]}, ${positions[1]}, ${positions[2]}]`);
-            console.log(`[SatelliteOrbitManager] Line parent: ${line.parent?.name || line.parent || 'none'}`);
-            console.log(`[SatelliteOrbitManager] Line parent is Group:`, line.parent instanceof THREE.Group);
-            console.log(`[SatelliteOrbitManager] Parent group children count:`, parentGroup.children.length);
             
-            // Log orbit bounds for debugging
-            if (line.geometry.boundingSphere) {
-                console.log(`[SatelliteOrbitManager] Orbit bounds - center:`, line.geometry.boundingSphere.center.toArray(), 'radius:', line.geometry.boundingSphere.radius);
-            }
             
             segmentIndex++;
         }
@@ -791,22 +761,11 @@ export class SatelliteOrbitManager {
         
         // Update visibility based on display settings
         const visible = this.displaySettings?.getSetting('showOrbits') ?? true;
-        console.log(`[SatelliteOrbitManager] Setting orbit visibility to ${visible} for ${segmentIndex} segments`);
         
         for (let i = 0; i < segmentIndex; i++) {
             const line = this.orbitLines.get(`${satelliteId}_${i}`);
             if (line) {
                 line.visible = visible;
-                console.log(`[SatelliteOrbitManager] Segment ${i} visible: ${line.visible}, parent: ${line.parent?.name || 'none'}, in scene: ${line.parent !== null}`);
-                
-                // Check if line is properly in the scene graph
-                let parent = line.parent;
-                let depth = 0;
-                while (parent && depth < 10) {
-                    console.log(`[SatelliteOrbitManager]   Parent at depth ${depth}: ${parent.name || parent.type}`);
-                    parent = parent.parent;
-                    depth++;
-                }
             }
         }
     }
@@ -819,7 +778,6 @@ export class SatelliteOrbitManager {
         if (job) {
             // If we have partial results and want to preserve them, cache them first
             if (preservePartialResults && job.points && job.points.length > 0) {
-                console.log(`[SatelliteOrbitManager] Preserving ${job.points.length} partial points for satellite ${satelliteId}`);
                 this.orbitCache.set(satelliteId, {
                     points: job.points,
                     timestamp: Date.now(),
@@ -848,7 +806,6 @@ export class SatelliteOrbitManager {
         // Instead, check if we're still on the same orbit by comparing central body
         // and checking if a maneuver has occurred
         if (satellite.centralBodyNaifId !== cached.centralBodyNaifId) {
-            console.log(`[SatelliteOrbitManager] Central body changed`);
             return true;
         }
         
@@ -856,7 +813,6 @@ export class SatelliteOrbitManager {
         // This would be set by the physics engine when a maneuver executes
         if (satellite.lastManeuverTime && (!cached.lastManeuverTime || 
             satellite.lastManeuverTime > cached.lastManeuverTime)) {
-            console.log(`[SatelliteOrbitManager] Maneuver detected`);
             return true;
         }
         
@@ -1174,7 +1130,6 @@ export class SatelliteOrbitManager {
                 // This is the exact position of the planet at the moment of SOI transition
                 let futurePosition = transition.targetBodyPosition || transition.centralBodyPosition;
                 
-                console.log(`[SatelliteOrbitManager] Ghost planet ${targetPlanet.name} at transition time +${transition.time}s:`, futurePosition);
                 
                 // Create a semi-transparent copy of the planet at the future position
                 const ghostGroup = new THREE.Group();
@@ -1265,7 +1220,6 @@ export class SatelliteOrbitManager {
      * Update maneuver prediction visualization
      */
     _updateManeuverPredictionVisualization(satelliteId, maneuverNodeId, orbitPoints) {
-        console.log(`[SatelliteOrbitManager] Updating maneuver prediction for satellite ${satelliteId}, node ${maneuverNodeId} with ${orbitPoints.length} points`);
         
         // Get the satellite object
         const satellite = this.app.satellites?.satellites.get(satelliteId);

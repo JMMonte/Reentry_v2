@@ -45,7 +45,7 @@ export class ApsisCalculator {
 
         while (t < maxTime && !apsisData) {
             // Create acceleration function including all perturbations
-            const accelerationFunc = (p, v) => {
+            const accelerationFunc = (p) => {
                 return GravityCalculator.computeAcceleration(p, bodies);
             };
 

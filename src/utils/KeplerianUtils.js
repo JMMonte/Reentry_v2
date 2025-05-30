@@ -1,6 +1,7 @@
 // src/utils/KeplerianUtils.js
 
 import { Constants } from './Constants.js';
+import * as THREE from 'three';
 
 // Basic vector operations for {x, y, z} objects
 export const VectorOps = {
@@ -25,24 +26,27 @@ const KEPPLER_EPSILON = 1e-9; // Tolerance for Newton-Raphson iteration
 
 /**
  * Converts state vectors (position, velocity) to Keplerian orbital elements.
- * Assumes inputs are in a consistent system of units (e.g., km, km/s, km^3/s^2 for mu).
- * Reference frame for r_vec, v_vec is assumed to be inertial (e.g., Ecliptic J2000).
- * Angles are in radians.
- * @param {{x,y,z}} r_vec - Position vector relative to the central body.
- * @param {{x,y,z}} v_vec - Velocity vector relative to the central body.
- * @param {number} mu - Gravitational parameter of the central body (G * M_central).
- * @param {number} epochJD - Julian Date of the state vectors.
- * @returns {object} Keplerian elements: { a, e, i, lan, arg_p, M0, epochJD, period, nu }
+ * This is the centralized, authoritative implementation for all Keplerian element calculations.
+ * 
+ * @param {THREE.Vector3|{x,y,z}} r_vec - Position vector relative to the central body (km)
+ * @param {THREE.Vector3|{x,y,z}} v_vec - Velocity vector relative to the central body (km/s)
+ * @param {number} mu - Gravitational parameter of the central body (km³/s²)
+ * @param {number} epochJD - Julian Date of the state vectors (optional)
+ * @param {number} bodyRadius - Central body radius for altitude calculations (km, optional)
+ * @returns {object} Complete orbital elements with both classical and detailed parameters
  */
-export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
-    const r = VectorOps.magnitude(r_vec);
-    const v_sq = VectorOps.dot(v_vec, v_vec);
+export function stateToKeplerian(r_vec, v_vec, mu, epochJD = 0, bodyRadius = 0) {
+    // Convert THREE.Vector3 to object format if needed
+    const r_obj = r_vec.isVector3 ? { x: r_vec.x, y: r_vec.y, z: r_vec.z } : r_vec;
+    const v_obj = v_vec.isVector3 ? { x: v_vec.x, y: v_vec.y, z: v_vec.z } : v_vec;
+    const r = VectorOps.magnitude(r_obj);
+    const v_sq = VectorOps.dot(v_obj, v_obj);
     const energy = v_sq / 2 - mu / r;
     const a = -mu / (2 * energy);
     // Debug log
     // console.log('[KeplerianDebug] r:', r, 'v_sq:', v_sq, 'energy:', energy, 'a:', a, 'mu:', mu);
 
-    const h_vec = VectorOps.cross(r_vec, v_vec); // Specific angular momentum vector
+    const h_vec = VectorOps.cross(r_obj, v_obj); // Specific angular momentum vector
     const h = VectorOps.magnitude(h_vec);
 
     // Defensive: skip degenerate orbits
@@ -54,8 +58,8 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
     const n = VectorOps.magnitude(n_vec);
 
     // Eccentricity vector
-    const e_vec_term1 = VectorOps.scale(VectorOps.cross(v_vec, h_vec), 1 / mu);
-    const e_vec_term2 = VectorOps.scale(r_vec, 1 / r);
+    const e_vec_term1 = VectorOps.scale(VectorOps.cross(v_obj, h_vec), 1 / mu);
+    const e_vec_term2 = VectorOps.scale(r_obj, 1 / r);
     const e_vec = VectorOps.sub(e_vec_term1, e_vec_term2);
     const e = VectorOps.magnitude(e_vec); // Eccentricity
 
@@ -78,7 +82,7 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
     } else if (Math.abs(i) < KEPPLER_EPSILON || Math.abs(i - Math.PI) < KEPPLER_EPSILON) { // Equatorial non-circular
         // Use longitude of periapsis (varpi = LAN + arg_p), LAN is 0
         arg_p = Math.atan2(e_vec.y, e_vec.x);
-        if (VectorOps.cross(r_vec, v_vec).z < 0) arg_p = 2 * Math.PI - arg_p; // Retrograde handling
+        if (VectorOps.cross(r_obj, v_obj).z < 0) arg_p = 2 * Math.PI - arg_p; // Retrograde handling
     }
     else {
         arg_p = safeAcos(VectorOps.dot(n_vec, e_vec) / (n * e));
@@ -86,15 +90,15 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
     }
 
     // True Anomaly (nu)
-    let nu = safeAcos(VectorOps.dot(e_vec, r_vec) / (e * r));
-    if (VectorOps.dot(r_vec, v_vec) < 0) nu = 2 * Math.PI - nu; // If object is moving towards central body
+    let nu = safeAcos(VectorOps.dot(e_vec, r_obj) / (e * r));
+    if (VectorOps.dot(r_obj, v_obj) < 0) nu = 2 * Math.PI - nu; // If object is moving towards central body
 
     if (Math.abs(e) < KEPPLER_EPSILON) { // Circular orbit
         if (Math.abs(i) < KEPPLER_EPSILON || Math.abs(i - Math.PI) < KEPPLER_EPSILON) { // Circular equatorial
-            nu = Math.atan2(r_vec.y, r_vec.x); // True longitude
-            if (VectorOps.cross(r_vec, v_vec).z < 0) nu = 2 * Math.PI - nu; // retrograde
+            nu = Math.atan2(r_obj.y, r_obj.x); // True longitude
+            if (VectorOps.cross(r_obj, v_obj).z < 0) nu = 2 * Math.PI - nu; // retrograde
         } else { // Circular inclined
-            nu = Math.atan2(VectorOps.dot(r_vec, VectorOps.cross(h_vec, n_vec)) / h, VectorOps.dot(r_vec, n_vec) / n); // Argument of Latitude u = arg_p + nu. Here arg_p=0
+            nu = Math.atan2(VectorOps.dot(r_obj, VectorOps.cross(h_vec, n_vec)) / h, VectorOps.dot(r_obj, n_vec) / n); // Argument of Latitude u = arg_p + nu. Here arg_p=0
         }
         if (nu < 0) nu += 2 * Math.PI;
     }
@@ -113,7 +117,59 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD) {
         period = 2 * Math.PI * Math.sqrt(Math.pow(a, 3) / mu);
     }
 
-    return { a, e, i, lan, arg_p, M0, epochJD, period, nu };
+    // Calculate additional detailed parameters
+    const specificOrbitalEnergy = energy;
+    const specificAngularMomentum = h;
+    
+    // Calculate apsides
+    let periapsisRadial = 0;
+    let apoapsisRadial = 0;
+    let periapsisAltitude = 0;
+    let apoapsisAltitude = 0;
+    
+    if (e < 1.0 && a > 0) { // Elliptical orbit
+        periapsisRadial = a * (1 - e);
+        apoapsisRadial = a * (1 + e);
+        if (bodyRadius > 0) {
+            periapsisAltitude = periapsisRadial - bodyRadius;
+            apoapsisAltitude = apoapsisRadial - bodyRadius;
+        }
+    }
+    
+    // Return comprehensive orbital elements compatible with all existing APIs
+    return {
+        // Classical Keplerian elements
+        a,
+        e,
+        i,
+        lan,
+        arg_p,
+        M0,
+        epochJD,
+        period,
+        nu,
+        
+        // Additional standard names for compatibility
+        semiMajorAxis: a,
+        eccentricity: e,
+        inclination: THREE.MathUtils.radToDeg(i), // Convert to degrees for PhysicsUtils compatibility
+        longitudeOfAscendingNode: THREE.MathUtils.radToDeg(lan),
+        argumentOfPeriapsis: THREE.MathUtils.radToDeg(arg_p),
+        trueAnomaly: THREE.MathUtils.radToDeg(nu),
+        
+        // Detailed parameters
+        specificOrbitalEnergy,
+        specificAngularMomentum,
+        periapsisRadial,
+        apoapsisRadial,
+        periapsisAltitude,
+        apoapsisAltitude,
+        
+        // Legacy names for backward compatibility
+        omega: THREE.MathUtils.radToDeg(lan), // For PhysicsUtils compatibility
+        w: THREE.MathUtils.radToDeg(arg_p),   // For PhysicsUtils compatibility
+        h: h // For PhysicsUtils compatibility
+    };
 }
 
 /**
