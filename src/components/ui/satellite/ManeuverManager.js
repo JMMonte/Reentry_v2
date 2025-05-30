@@ -22,8 +22,30 @@ export class ManeuverManager {
     buildNodeModels(currentSimTime) {
         return this.sat.maneuverNodes
             .slice()
-            .sort((a, b) => a.time.getTime() - b.time.getTime())
-            .map(n => new ManeuverNodeModel(n, this.sat, currentSimTime));
+            .sort((a, b) => a.executionTime.getTime() - b.executionTime.getTime())
+            .map(n => {
+                const localDV = new THREE.Vector3(n.deltaV.prograde, n.deltaV.normal, n.deltaV.radial);
+                // Calculate worldDV if we have position and velocity
+                // For now, just use the magnitude from the DTO
+                const worldDV = new THREE.Vector3(n.deltaMagnitude, 0, 0);
+                
+                return {
+                    node: n,
+                    time: n.executionTime,
+                    localDV: localDV,
+                    worldDV: worldDV,
+                    node3D: {
+                        ...n,
+                        predictedOrbit: {
+                            _orbitPeriod: n.predictedOrbit?.period || 0,
+                            _currentVelocity: null,
+                            orbitLine: { material: { color: { set: () => {} }, opacity: 0.7, transparent: true } }
+                        },
+                        satellite: this.sat,
+                        update: () => {} // No-op for compatibility
+                    }
+                };
+            });
     }
 
     /**
@@ -43,11 +65,7 @@ export class ManeuverManager {
         }
 
         const newNode = this.sat.addManeuverNode(executeTime, dvLocal.clone());
-        newNode.localDV = dvLocal.clone();
-        newNode.update();
-
-        // Keep nodes sorted
-        this.sat.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
+        // newNode is now a DTO, no need to set localDV or call update()
         return newNode;
     }
 
@@ -157,12 +175,9 @@ export class ManeuverManager {
         const burn2Time = new Date(burnTime.getTime() + transferTime * 1000);
         // Add maneuver nodes
         const node1 = this.sat.addManeuverNode(burnTime, new THREE.Vector3(dv1, 0, 0));
-        node1.localDV = new THREE.Vector3(dv1, 0, 0);
-        node1.update();
         const node2 = this.sat.addManeuverNode(burn2Time, new THREE.Vector3(dv2, 0, 0));
-        node2.localDV = new THREE.Vector3(dv2, 0, 0);
-        node2.update();
-        this.sat.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
+        // Nodes are now DTOs, no need to set localDV or call update()
+        // Sorting is done by PhysicsEngine
         return { node1, node2, burnTime, burn2Time, dv1, dv2, dv_plane, transferTime };
     }
 
@@ -170,7 +185,8 @@ export class ManeuverManager {
      * Remove a maneuver node and keep list sorted.
      */
     deleteNode(node3D) {
+        // node3D is now a DTO or a compatibility shim
         this.sat.removeManeuverNode(node3D);
-        this.sat.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
+        // Sorting is no longer needed as PhysicsEngine maintains order
     }
 } 

@@ -76,12 +76,16 @@ export class ManeuverNodeVisualizer {
     _createNodeVisual(visualData) {
         const group = new THREE.Group();
         
+        // Check if this is a preview node
+        const isPreview = visualData.nodeId && visualData.nodeId.startsWith('preview_');
+        
         // Create node sphere
         const sphereGeometry = new THREE.SphereGeometry(0.5, 16, 16);
         const sphereMaterial = new THREE.MeshBasicMaterial({
-            color: visualData.color || 0xffffff,
+            color: isPreview ? 0xffffff : (visualData.color || 0xffffff),
             transparent: true,
-            opacity: 0.8
+            opacity: isPreview ? 0.5 : 0.8,
+            wireframe: isPreview
         });
         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
         group.add(sphere);
@@ -166,9 +170,12 @@ export class ManeuverNodeVisualizer {
         visual.arrow.setDirection(new THREE.Vector3(...visualData.deltaVDirection));
         visual.arrow.setLength(arrowLength, arrowLength * 0.3, arrowLength * 0.2);
 
-        // Update color
-        visual.sphere.material.color.setHex(parseInt(visualData.color.replace('#', '0x')));
-        visual.arrow.setColor(new THREE.Color(visualData.color));
+        // Update color (handle both hex string and number formats)
+        const color = typeof visualData.color === 'string' 
+            ? parseInt(visualData.color.replace('#', '0x'))
+            : visualData.color;
+        visual.sphere.material.color.setHex(color);
+        visual.arrow.setColor(new THREE.Color(color));
 
         // Update scale based on camera distance
         if (this._cameraRef) {

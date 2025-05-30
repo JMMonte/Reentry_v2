@@ -383,10 +383,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Refresh and rebuild node models on satellite change, updating 3D nodes in time order for nested orbits
     useEffect(() => {
         // Update all real node predicted orbits sequentially
-        satellite.maneuverNodes
-            .slice()
-            .sort((a, b) => a.time.getTime() - b.time.getTime())
-            .forEach(n3d => n3d.update());
+        // DTOs don't have update() - visualization updates happen through events
+        // satellite.maneuverNodes are already sorted by the physics engine
         // Ensure selection remains valid
         if (selectedIndex != null && selectedIndex >= nodes.length) {
             setSelectedIndex(null);
@@ -408,22 +406,9 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             setVx('0'); setVy('0'); setVz('0');
         }
 
-        // Style predictedOrbit of selected node as preview (white), revert others to default style
-        nodes.forEach((nodeModel, idx) => {
-            const orbitLine = nodeModel.node3D.predictedOrbit.orbitLine;
-            if (selectedIndex === idx) {
-                orbitLine.material.color.set(0xffffff);
-                orbitLine.material.opacity = 0.8;
-                orbitLine.material.transparent = true;
-            } else {
-                orbitLine.material.color.set(nodeModel.node3D.satellite.color);
-                orbitLine.material.opacity = 0.7;
-                orbitLine.material.transparent = true;
-            }
-            if (orbitLine.material.needsUpdate !== undefined) {
-                orbitLine.material.needsUpdate = true;
-            }
-        });
+        // Style visualization of selected node as preview (white), revert others to default style
+        // This should be handled through events or visualization manager, not direct access
+        // TODO: Implement proper visualization update through ManeuverNodeVisualizer
     }, [selectedIndex]);
 
     // Compute additional details for Moon TLI
@@ -450,12 +435,19 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             const existing = nodes[selectedIndex].node3D;
             manager.deleteNode(existing);
         }
+        // Clear any preview before adding the actual node
+        if (manager.sat._isPreviewingManeuver && manager.sat._currentPreviewNode) {
+            if (manager.sat.maneuverNodeVisualizer) {
+                manager.sat.maneuverNodeVisualizer.removeNodeVisualization(manager.sat._currentPreviewNode.id);
+            }
+            delete manager.sat._currentPreviewNode;
+            delete manager.sat._isPreviewingManeuver;
+        }
+        
         // Add new maneuver node
         const newNode = manager.sat.addManeuverNode(execTime, dvLocal.clone());
-        newNode.localDV = dvLocal.clone();
-        newNode.update();
-        // Keep nodes sorted
-        manager.sat.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
+        // newNode is now a DTO, no need to set localDV or call update()
+        // The physics engine and visualization will handle updates through events
         // Reset selection and add-mode
         setSelectedIndex(null);
         setIsAdding(false);

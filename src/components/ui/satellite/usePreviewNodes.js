@@ -25,9 +25,12 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
 
         if (maneuverMode === 'manual' && (isAdding || selectedIndex != null)) {
             if (isAdding) {
-                // TODO: Create preview using new architecture
-                // For now, skip preview node creation until ManeuverNodeVisualizer is fully integrated
-                console.log('Preview node creation temporarily disabled during refactoring');
+                // Create a simple preview visualization
+                // We'll use the satellite's maneuverNodeVisualizer to show a preview
+                console.log('[usePreviewNodes] Creating manual preview visualization');
+                
+                // Store a flag that we're in preview mode
+                satellite._isPreviewingManeuver = true;
             } else {
                 // Edit existing node: preview the selected node and its followers
                 const model = nodes[selectedIndex];
@@ -97,6 +100,16 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
 
         // Cleanup on unmount or before next mode change
         return () => {
+            // Clear preview visualization
+            if (satellite._isPreviewingManeuver && satellite._currentPreviewNode) {
+                // Remove the preview visualization
+                if (satellite.maneuverNodeVisualizer) {
+                    satellite.maneuverNodeVisualizer.removeNodeVisualization(satellite._currentPreviewNode.id);
+                }
+                delete satellite._currentPreviewNode;
+                delete satellite._isPreviewingManeuver;
+            }
+            
             // Remove manual preview
             if (manualNodeRef.current) {
                 manualNodeRef.current.dispose();
@@ -126,7 +139,9 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
 
     // Update preview node execution time when time inputs or mode change (including apsis modes)
     useEffect(() => {
-        if (maneuverMode !== 'manual' || !manualNodeRef.current) return;
+        if (maneuverMode !== 'manual') return;
+        
+        // Calculate execution time
         let execTime;
         if (timeMode === 'nextPeriapsis') {
             execTime = computeNextPeriapsis();
@@ -138,28 +153,49 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
                 { timeMode, offsetSec, hours, minutes, seconds, milliseconds }
             );
         }
-        // Force update of preview node
-        const node = manualNodeRef.current;
-        node.time = execTime;
-        node._lastPredTime = 0;
-        if (node.predictedOrbit?.orbitLine) node.predictedOrbit.orbitLine.visible = true;
-    }, [maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, isAdding, selectedIndex, currentTime, computeNextPeriapsis, computeNextApoapsis]);
+        
+        if (isAdding && satellite._isPreviewingManeuver) {
+            // Create/update preview visualization
+            const deltaV = new THREE.Vector3(
+                parseFloat(vx) || 0,
+                parseFloat(vy) || 0,
+                parseFloat(vz) || 0
+            );
+            
+            // Create a preview DTO with a stable ID
+            const previewNode = {
+                id: 'preview_manual_' + satellite.id,
+                executionTime: execTime,
+                deltaV: {
+                    prograde: deltaV.x,
+                    normal: deltaV.y,
+                    radial: deltaV.z
+                },
+                deltaMagnitude: deltaV.length()
+            };
+            
+            // Request visualization through the orbit manager
+            if (satellite.app3d?.satelliteOrbitManager) {
+                console.log('[usePreviewNodes] Requesting preview visualization');
+                satellite.app3d.satelliteOrbitManager.requestManeuverNodeVisualization(
+                    satellite.id,
+                    previewNode
+                );
+                
+                // Store preview reference
+                satellite._currentPreviewNode = previewNode;
+            }
+        } else if (manualNodeRef.current) {
+            // Update existing node preview
+            const node = manualNodeRef.current;
+            node.time = execTime;
+            node._lastPredTime = 0;
+            if (node.predictedOrbit?.orbitLine) node.predictedOrbit.orbitLine.visible = true;
+        }
+    }, [maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, isAdding, selectedIndex, currentTime, computeNextPeriapsis, computeNextApoapsis, vx, vy, vz, satellite]);
 
     // Update preview node delta-V when DV inputs change
-    useEffect(() => {
-        if (maneuverMode !== 'manual' || !manualNodeRef.current) return;
-        // Apply new local DV and mirror to deltaV for arrow length
-        const dv = new THREE.Vector3(
-            parseFloat(vx) || 0,
-            parseFloat(vy) || 0,
-            parseFloat(vz) || 0
-        );
-        const node = manualNodeRef.current;
-        node.localDV = dv;
-        node.deltaV = dv.clone();
-        node._lastPredTime = 0;
-        if (node.predictedOrbit?.orbitLine) node.predictedOrbit.orbitLine.visible = true;
-    }, [maneuverMode, vx, vy, vz, isAdding, selectedIndex]);
+    // This is now handled in the time effect hook for isAdding case
 
     // Update Hohmann preview when parameters change
     useEffect(() => {

@@ -311,7 +311,7 @@ function computeAtmosphericDrag(satellite, centralBody) {
 }
 
 
-// Simplified SOI transition logic
+// Simplified SOI transition logic for orbit visualization
 function checkSOITransition(position, velocity, centralBodyId, currentBodies) {
     const centralBody = currentBodies[centralBodyId];
     if (!centralBody) return null;
@@ -319,16 +319,23 @@ function checkSOITransition(position, velocity, centralBodyId, currentBodies) {
     const distToCentral = position.length();
     const soiRadius = centralBody.soiRadius || 1e12;
     
-    // If outside SOI, find parent body
+    // Log current state periodically for debugging (only if we're close to SOI boundary)
+    if (distToCentral > soiRadius * 0.9 && Math.random() < 0.1) { // 10% of the time when near SOI
+        console.log(`[orbitPropagationWorker] Body ${centralBodyId}: distance=${distToCentral.toFixed(0)} km, SOI=${soiRadius.toFixed(0)} km`);
+    }
+    
+    // For orbit visualization, we just mark when we exit SOI
+    // The actual transition handling is done by the physics engine during real-time simulation
     if (distToCentral > soiRadius) {
-        // Simplified: switch to SSB for now (could be improved with hierarchy)
-        const globalPos = position.clone().add(new THREE.Vector3().fromArray(centralBody.position));
-        const globalVel = velocity.clone().add(new THREE.Vector3().fromArray(centralBody.velocity));
+        console.log(`[orbitPropagationWorker] Orbit exits SOI of body ${centralBodyId} at distance ${distToCentral.toFixed(0)} km (SOI: ${soiRadius.toFixed(0)} km)`);
         
+        // For visualization purposes, mark this as an SOI exit
+        // We don't actually change reference frames here since the orbit line
+        // is already parented to the correct body
         return {
-            newCentralBodyId: 0, // SSB
-            newPosition: globalPos,
-            newVelocity: globalVel
+            exitedSOI: true,
+            distance: distToCentral,
+            soiRadius: soiRadius
         };
     }
     
@@ -397,8 +404,21 @@ function propagateOrbit(params) {
         timeStep,
         position: posArray,
         velocity: velArray,
-        bodyCount: Object.keys(physicsState.bodies).length
+        bodyCount: Object.keys(physicsState.bodies).length,
+        propagateSolarSystem
     });
+    
+    // Verify we have the central body
+    if (!physicsState.bodies[centralBodyNaifId]) {
+        console.error(`[orbitPropagationWorker] Central body ${centralBodyNaifId} not found in physics state!`);
+        self.postMessage({
+            type: 'error',
+            satelliteId,
+            error: `Central body ${centralBodyNaifId} not found`
+        });
+        isRunning = false;
+        return;
+    }
 
     currentCentralBodyId = centralBodyNaifId;
     let position = new THREE.Vector3().fromArray(posArray);
@@ -440,30 +460,65 @@ function propagateOrbit(params) {
     };
 
     for (let i = 0; i < numSteps && isRunning; i++) {
-        // CRITICAL FIX: Propagate the entire solar system first (if enabled)
-        if (propagateSolarSystem) {
-            currentBodies = propagateSolarSystemBodies(currentBodies, timeStep);
+        try {
+            // CRITICAL FIX: Propagate the entire solar system first (if enabled)
+            if (propagateSolarSystem) {
+                currentBodies = propagateSolarSystemBodies(currentBodies, timeStep);
+            }
+            
+            // Now propagate satellite in the context of the evolved solar system
+            const accelerationFunc = createAccelerationFunction(currentCentralBodyId, satelliteProperties, currentBodies, propagateSolarSystem);
+            const result = integrateRK4(position, velocity, accelerationFunc, timeStep);
+            
+            // Validate result
+            if (!result || !result.position || !result.velocity) {
+                throw new Error('Invalid integration result');
+            }
+            
+            position = result.position;
+            velocity = result.velocity;
+            currentTime += timeStep;
+        } catch (error) {
+            console.error(`[orbitPropagationWorker] Error at step ${i}:`, error);
+            console.error('Position:', position.toArray());
+            console.error('Velocity:', velocity.toArray());
+            console.error('Central body:', currentCentralBodyId);
+            break;
+        }
+
+        // Check SOI boundary for orbit visualization
+        let soiCheck = null;
+        try {
+            soiCheck = checkSOITransition(position, velocity, currentCentralBodyId, currentBodies);
+        } catch (error) {
+            console.error(`[orbitPropagationWorker] Error checking SOI:`, error);
         }
         
-        // Now propagate satellite in the context of the evolved solar system
-        const accelerationFunc = createAccelerationFunction(currentCentralBodyId, satelliteProperties, currentBodies, propagateSolarSystem);
-        const result = integrateRK4(position, velocity, accelerationFunc, timeStep);
-        position = result.position;
-        velocity = result.velocity;
-        currentTime += timeStep;
-
-        // Check SOI transition using current solar system state
-        const transition = checkSOITransition(position, velocity, currentCentralBodyId, currentBodies);
-        if (transition) {
-            currentCentralBodyId = transition.newCentralBodyId;
-            position = transition.newPosition;
-            velocity = transition.newVelocity;
+        // For orbit visualization without solar system propagation,
+        // we stop at SOI boundary since we can't properly transform to another frame
+        if (soiCheck && soiCheck.exitedSOI && !propagateSolarSystem) {
+            console.log(`[orbitPropagationWorker] Stopping propagation at SOI boundary`);
             
+            // Add final point at SOI boundary
+            points.push({
+                position: position.toArray(),
+                velocity: velocity.toArray(),
+                time: currentTime,
+                centralBodyId: currentCentralBodyId,
+                centralBodyPosition: currentBodies[currentCentralBodyId]?.position || [0, 0, 0],
+                isSOIExit: true
+            });
+            
+            // Mark as SOI transition for visualization
             soiTransitions.push({
                 time: currentTime,
                 fromBody: currentCentralBodyId,
-                toBody: transition.newCentralBodyId
+                toBody: null, // Unknown without propagation
+                distance: soiCheck.distance,
+                soiRadius: soiCheck.soiRadius
             });
+            
+            break; // Stop propagation
         }
 
         // Store point with reference frame information
@@ -474,7 +529,10 @@ function propagateOrbit(params) {
             time: currentTime,
             centralBodyId: currentCentralBodyId,
             // Include central body position at this time for debugging
-            centralBodyPosition: currentBodies[currentCentralBodyId]?.position || [0, 0, 0]
+            centralBodyPosition: currentBodies[currentCentralBodyId]?.position || [0, 0, 0],
+            // Mark if this point is at SOI boundary
+            isSOIEntry: false, // No actual transitions without solar system propagation
+            isSOIExit: soiCheck && soiCheck.exitedSOI
         });
 
         // Optionally track major body evolution for debugging

@@ -32,6 +32,9 @@ export class SatelliteOrbitManager {
         this.updateQueue = new Set();
         this.updateTimer = null;
         
+        // Maneuver visualization queue
+        this.maneuverQueue = new Map(); // satelliteId -> maneuverNode[]
+        
         this._initializeWorkers();
     }
 
@@ -150,9 +153,13 @@ export class SatelliteOrbitManager {
         const orbitData = this.orbitCache.get(satelliteId);
         if (!orbitData || !orbitData.points || orbitData.points.length === 0) {
             console.warn(`[SatelliteOrbitManager] No orbit data available for satellite ${satelliteId}`);
+            // Queue maneuver visualization for after orbit is calculated
+            if (!this.maneuverQueue.has(satelliteId)) {
+                this.maneuverQueue.set(satelliteId, []);
+            }
+            this.maneuverQueue.get(satelliteId).push(maneuverNode);
             // Request orbit calculation first
             this.updateSatelliteOrbit(satelliteId);
-            // TODO: Queue maneuver visualization for after orbit is calculated
             return;
         }
         
@@ -184,6 +191,9 @@ export class SatelliteOrbitManager {
         const position = new THREE.Vector3(...nodePoint.position);
         const velocity = new THREE.Vector3(...(nodePoint.velocity || satellite.velocity.toArray()));
         
+        console.log(`[SatelliteOrbitManager] Maneuver node at position:`, position, `velocity:`, velocity);
+        console.log(`[SatelliteOrbitManager] Delta-V local:`, maneuverNode.deltaV);
+        
         const worldDeltaV = PhysicsAPI.localToWorldDeltaV(
             new THREE.Vector3(
                 maneuverNode.deltaV.prograde,
@@ -193,6 +203,8 @@ export class SatelliteOrbitManager {
             position,
             velocity
         );
+        
+        console.log(`[SatelliteOrbitManager] World delta-V:`, worldDeltaV);
         
         // Create visualization data
         const visualData = {
@@ -213,9 +225,11 @@ export class SatelliteOrbitManager {
         };
         
         // Update the satellite's maneuver node visualizer
-        const satObj = this.scene?.getMeshByName(satelliteId);
+        const satObj = this.app.satellites?.satellites.get(satelliteId);
         if (satObj?.maneuverNodeVisualizer) {
             satObj.maneuverNodeVisualizer.updateNodeVisualization(visualData);
+        } else {
+            console.warn(`[SatelliteOrbitManager] Could not find satellite visualizer for ${satelliteId}`);
         }
         
         // Request post-maneuver orbit propagation
@@ -319,7 +333,7 @@ export class SatelliteOrbitManager {
             const activeJob = this.activeJobs.get(satelliteId);
             if (activeJob && activeJob.points.length > 0) {
                 console.log(`[SatelliteOrbitManager] Using ${activeJob.points.length} points from active job for satellite ${satelliteId}`);
-                this._updateOrbitVisualization(satelliteId, activeJob.points);
+                this._updateOrbitVisualization(satelliteId, activeJob.points, activeJob.soiTransitions);
                 continue;
             }
             
@@ -506,9 +520,9 @@ export class SatelliteOrbitManager {
      * Handle worker messages
      */
     _handleWorkerMessage(event) {
-        const { type, satelliteId, points, isComplete } = event.data;
+        const { type, satelliteId, points, isComplete, soiTransitions } = event.data;
 
-        console.log(`[SatelliteOrbitManager] Worker message received: type=${type}, satelliteId=${satelliteId}, points=${points?.length || 0}, isComplete=${isComplete}`);
+        console.log(`[SatelliteOrbitManager] Worker message received: type=${type}, satelliteId=${satelliteId}, points=${points?.length || 0}, isComplete=${isComplete}, soiTransitions=${soiTransitions?.length || 0}`);
 
         const job = this.activeJobs.get(satelliteId);
         if (!job) {
@@ -520,10 +534,15 @@ export class SatelliteOrbitManager {
             case 'chunk':
                 // Accumulate points
                 job.points.push(...points);
-                console.log(`[SatelliteOrbitManager] Accumulated ${job.points.length} points for satellite ${satelliteId}`);
+                // Also accumulate SOI transitions
+                if (!job.soiTransitions) job.soiTransitions = [];
+                if (soiTransitions && soiTransitions.length > 0) {
+                    job.soiTransitions.push(...soiTransitions);
+                }
+                console.log(`[SatelliteOrbitManager] Accumulated ${job.points.length} points and ${job.soiTransitions.length} transitions for satellite ${satelliteId}`);
                 
                 // Update visualization progressively
-                this._updateOrbitVisualization(satelliteId, job.points);
+                this._updateOrbitVisualization(satelliteId, job.points, job.soiTransitions);
                 
                 if (isComplete) {
                     console.log(`[SatelliteOrbitManager] Orbit calculation complete for satellite ${satelliteId} with ${job.points.length} total points`);
@@ -558,6 +577,16 @@ export class SatelliteOrbitManager {
                         
                         // Final visualization update
                         this._updateOrbitVisualization(satelliteId, job.points);
+                        
+                        // Process any queued maneuver visualizations
+                        const queuedManeuvers = this.maneuverQueue.get(satelliteId);
+                        if (queuedManeuvers && queuedManeuvers.length > 0) {
+                            console.log(`[SatelliteOrbitManager] Processing ${queuedManeuvers.length} queued maneuver visualizations`);
+                            queuedManeuvers.forEach(maneuverNode => {
+                                this.requestManeuverNodeVisualization(satelliteId, maneuverNode);
+                            });
+                            this.maneuverQueue.delete(satelliteId);
+                        }
                     }
                     
                     // Return worker to pool
@@ -591,7 +620,7 @@ export class SatelliteOrbitManager {
     /**
      * Update Three.js visualization
      */
-    _updateOrbitVisualization(satelliteId, points) {
+    _updateOrbitVisualization(satelliteId, points, workerTransitions = []) {
         if (points.length < 2) {
             console.warn(`[SatelliteOrbitManager] Not enough points (${points.length}) to visualize orbit for satellite ${satelliteId}`);
             return;
@@ -614,37 +643,77 @@ export class SatelliteOrbitManager {
         
         console.log(`[SatelliteOrbitManager] Displaying ${displayPoints.length} of ${points.length} cached points for satellite ${satelliteId}`);
 
-        // Group points by central body
-        const pointsByBody = new Map();
-        for (const point of displayPoints) {
-            if (!pointsByBody.has(point.centralBodyId)) {
-                pointsByBody.set(point.centralBodyId, []);
+        // Group points by central body AND SOI transitions to create discontinuous segments
+        const orbitSegments = [];
+        let currentSegment = null;
+        let currentBodyId = null;
+        
+        for (let i = 0; i < displayPoints.length; i++) {
+            const point = displayPoints[i];
+            
+            // Start a new segment if:
+            // 1. This is the first point
+            // 2. The central body changed
+            // 3. This point is marked as SOI entry
+            if (!currentSegment || currentBodyId !== point.centralBodyId || point.isSOIEntry) {
+                // Save previous segment if it exists
+                if (currentSegment && currentSegment.points.length > 0) {
+                    orbitSegments.push(currentSegment);
+                }
+                
+                // Start new segment
+                currentSegment = {
+                    centralBodyId: point.centralBodyId,
+                    points: [],
+                    isAfterSOITransition: point.isSOIEntry || false
+                };
+                currentBodyId = point.centralBodyId;
             }
-            pointsByBody.get(point.centralBodyId).push(point);
+            
+            currentSegment.points.push(point);
         }
+        
+        // Don't forget the last segment
+        if (currentSegment && currentSegment.points.length > 0) {
+            orbitSegments.push(currentSegment);
+        }
+        
+        console.log(`[SatelliteOrbitManager] Created ${orbitSegments.length} orbit segments from ${displayPoints.length} points`);
 
-        console.log(`[SatelliteOrbitManager] Points grouped by ${pointsByBody.size} bodies`);
+        // Use worker-provided transitions if available, otherwise find them in points
+        let soiTransitions;
+        if (workerTransitions && workerTransitions.length > 0) {
+            soiTransitions = workerTransitions;
+            console.log(`[SatelliteOrbitManager] Using ${soiTransitions.length} SOI transitions from worker`);
+        } else {
+            // Find SOI transitions to create ghost planets
+            soiTransitions = this._findSOITransitions(displayPoints);
+            console.log(`[SatelliteOrbitManager] Found ${soiTransitions.length} SOI transitions from points`);
+        }
+        
+        // Create or update ghost planets for future SOI encounters
+        this._updateGhostPlanets(satelliteId, soiTransitions, displayPoints);
 
-        // Create or update orbit segments for each body
+        // Create or update orbit segments
         let segmentIndex = 0;
-        for (const [bodyId, bodyPoints] of pointsByBody) {
+        for (const segment of orbitSegments) {
             const lineKey = `${satelliteId}_${segmentIndex}`;
             let line = this.orbitLines.get(lineKey);
             
-            console.log(`[SatelliteOrbitManager] Processing segment ${segmentIndex} for body ${bodyId} with ${bodyPoints.length} points`);
+            console.log(`[SatelliteOrbitManager] Processing segment ${segmentIndex} for body ${segment.centralBodyId} with ${segment.points.length} points (isAfterSOITransition: ${segment.isAfterSOITransition})`);
             
             // Get the planet mesh group to add orbit to
-            const planet = this.app.celestialBodies?.find(b => b.naifId === parseInt(bodyId));
+            const planet = this.app.celestialBodies?.find(b => b.naifId === parseInt(segment.centralBodyId));
             // Use orbitGroup to match where satellite mesh is added (see Satellite.js _initVisuals)
             const parentGroup = planet?.orbitGroup || this.app.sceneManager?.scene;
             
-            console.log(`[SatelliteOrbitManager] Looking for body ${bodyId}, found: ${planet?.name || 'none'}`);
+            console.log(`[SatelliteOrbitManager] Looking for body ${segment.centralBodyId}, found: ${planet?.name || 'none'}`);
             console.log(`[SatelliteOrbitManager] Planet has rotationGroup:`, !!planet?.rotationGroup);
             console.log(`[SatelliteOrbitManager] Planet has orbitGroup:`, !!planet?.orbitGroup);
             console.log(`[SatelliteOrbitManager] Available celestial bodies:`, this.app.celestialBodies?.map(b => ({ name: b.name, naifId: b.naifId })));
             
             if (!parentGroup) {
-                console.warn(`[SatelliteOrbitManager] No parent group found for body ${bodyId}`);
+                console.warn(`[SatelliteOrbitManager] No parent group found for body ${segment.centralBodyId}`);
                 continue;
             }
             
@@ -656,11 +725,20 @@ export class SatelliteOrbitManager {
                 const satellite = this.physicsEngine.satellites.get(satelliteId);
                 const color = satellite?.color || 0xffff00;
                 
-                const material = new THREE.LineBasicMaterial({
-                    color: color,
-                    opacity: 0.6,
-                    transparent: true
-                });
+                // Use dashed line for segments after SOI transitions
+                const material = segment.isAfterSOITransition ? 
+                    new THREE.LineDashedMaterial({
+                        color: color,
+                        opacity: 0.6,
+                        transparent: true,
+                        dashSize: 10,
+                        gapSize: 5
+                    }) :
+                    new THREE.LineBasicMaterial({
+                        color: color,
+                        opacity: 0.6,
+                        transparent: true
+                    });
                 
                 line = new THREE.Line(geometry, material);
                 line.frustumCulled = false;
@@ -675,10 +753,10 @@ export class SatelliteOrbitManager {
             }
 
             // Update geometry with positions relative to parent body
-            const positions = new Float32Array(bodyPoints.length * 3);
+            const positions = new Float32Array(segment.points.length * 3);
             
-            for (let i = 0; i < bodyPoints.length; i++) {
-                const point = bodyPoints[i];
+            for (let i = 0; i < segment.points.length; i++) {
+                const point = segment.points[i];
                 // Positions are already relative to central body
                 positions[i * 3] = point.position[0];
                 positions[i * 3 + 1] = point.position[1];
@@ -686,10 +764,15 @@ export class SatelliteOrbitManager {
             }
 
             line.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            line.geometry.setDrawRange(0, bodyPoints.length);
+            line.geometry.setDrawRange(0, segment.points.length);
             line.geometry.computeBoundingSphere();
             
-            console.log(`[SatelliteOrbitManager] Updated orbit segment ${segmentIndex} with ${bodyPoints.length} points`);
+            // Compute line distances for dashed lines
+            if (segment.isAfterSOITransition) {
+                line.computeLineDistances();
+            }
+            
+            console.log(`[SatelliteOrbitManager] Updated orbit segment ${segmentIndex} with ${segment.points.length} points`);
             console.log(`[SatelliteOrbitManager] First point: [${positions[0]}, ${positions[1]}, ${positions[2]}]`);
             console.log(`[SatelliteOrbitManager] Line parent: ${line.parent?.name || line.parent || 'none'}`);
             console.log(`[SatelliteOrbitManager] Line parent is Group:`, line.parent instanceof THREE.Group);
@@ -896,6 +979,23 @@ export class SatelliteOrbitManager {
             }
         }
         this.orbitSegmentCounts.delete(satelliteId);
+        
+        // Remove ghost planets for this satellite
+        if (this.ghostPlanets) {
+            const ghosts = this.ghostPlanets.get(satelliteId);
+            if (ghosts) {
+                for (const [key, ghost] of ghosts) {
+                    if (ghost.group) {
+                        this.app.scene.remove(ghost.group);
+                        ghost.group.traverse(child => {
+                            if (child.geometry) child.geometry.dispose();
+                            if (child.material) child.material.dispose();
+                        });
+                    }
+                }
+                this.ghostPlanets.delete(satelliteId);
+            }
+        }
     }
 
     /**
@@ -919,6 +1019,22 @@ export class SatelliteOrbitManager {
         // Clear all visualizations
         for (const satelliteId of this.orbitSegmentCounts.keys()) {
             this.removeSatelliteOrbit(satelliteId);
+        }
+        
+        // Clear ghost planets
+        if (this.ghostPlanets) {
+            for (const [satelliteId, ghosts] of this.ghostPlanets) {
+                for (const [key, ghost] of ghosts) {
+                    if (ghost.group) {
+                        this.app.scene.remove(ghost.group);
+                        ghost.group.traverse(child => {
+                            if (child.geometry) child.geometry.dispose();
+                            if (child.material) child.material.dispose();
+                        });
+                    }
+                }
+            }
+            this.ghostPlanets.clear();
         }
 
         // Clear cache
@@ -976,13 +1092,183 @@ export class SatelliteOrbitManager {
     }
     
     /**
+     * Find SOI transitions in orbit points
+     */
+    _findSOITransitions(points) {
+        const transitions = [];
+        let lastBodyId = null;
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            if (lastBodyId !== null && point.centralBodyId !== lastBodyId) {
+                // Found a transition
+                transitions.push({
+                    index: i,
+                    time: point.time,
+                    fromBody: lastBodyId,
+                    toBody: point.centralBodyId,
+                    position: point.position,
+                    velocity: point.velocity,
+                    centralBodyPosition: point.centralBodyPosition,
+                    // Target body position might be included if this came from a worker transition
+                    targetBodyPosition: point.targetBodyPosition
+                });
+            }
+            lastBodyId = point.centralBodyId;
+        }
+        
+        return transitions;
+    }
+    
+    /**
+     * Create or update ghost planets for SOI transitions
+     */
+    _updateGhostPlanets(satelliteId, transitions, points) {
+        // Store ghost planets for this satellite
+        if (!this.ghostPlanets) {
+            this.ghostPlanets = new Map();
+        }
+        
+        let satelliteGhosts = this.ghostPlanets.get(satelliteId);
+        if (!satelliteGhosts) {
+            satelliteGhosts = new Map();
+            this.ghostPlanets.set(satelliteId, satelliteGhosts);
+        }
+        
+        // Remove old ghost planets not in current transitions
+        const currentTransitionKeys = new Set(transitions.map(t => `${t.fromBody}_${t.toBody}_${t.time}`));
+        for (const [key, ghost] of satelliteGhosts) {
+            if (!currentTransitionKeys.has(key)) {
+                // Remove ghost planet
+                if (ghost.group) {
+                    this.app.scene.remove(ghost.group);
+                    ghost.group.traverse(child => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) child.material.dispose();
+                    });
+                }
+                satelliteGhosts.delete(key);
+            }
+        }
+        
+        // Create new ghost planets for transitions
+        for (const transition of transitions) {
+            const key = `${transition.fromBody}_${transition.toBody}_${transition.time}`;
+            
+            if (!satelliteGhosts.has(key)) {
+                // Create ghost planet visualization
+                const targetPlanet = this.app.celestialBodies?.find(b => b.naifId === parseInt(transition.toBody));
+                if (!targetPlanet) {
+                    console.warn(`[SatelliteOrbitManager] Target body ${transition.toBody} not found for ghost planet`);
+                    continue;
+                }
+                
+                // Get the physics body to access orbital data
+                const targetPhysicsBody = this.physicsEngine?.bodies[transition.toBody];
+                if (!targetPhysicsBody) {
+                    console.warn(`[SatelliteOrbitManager] Physics body ${transition.toBody} not found for ghost planet`);
+                    continue;
+                }
+                
+                // Use the target body position calculated by the worker during propagation
+                // This is the exact position of the planet at the moment of SOI transition
+                let futurePosition = transition.targetBodyPosition || transition.centralBodyPosition;
+                
+                console.log(`[SatelliteOrbitManager] Ghost planet ${targetPlanet.name} at transition time +${transition.time}s:`, futurePosition);
+                
+                // Create a semi-transparent copy of the planet at the future position
+                const ghostGroup = new THREE.Group();
+                ghostGroup.name = `ghost_${targetPlanet.name}_${key}`;
+                
+                // Create ghost sphere
+                const radius = targetPlanet.radius || 1000; // km
+                const geometry = new THREE.SphereGeometry(radius, 32, 16);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    opacity: 0.2,
+                    transparent: true,
+                    wireframe: true
+                });
+                
+                const ghostMesh = new THREE.Mesh(geometry, material);
+                ghostGroup.add(ghostMesh);
+                
+                // Add SOI sphere
+                if (targetPlanet.soiRadius) {
+                    const soiGeometry = new THREE.SphereGeometry(targetPlanet.soiRadius, 16, 8);
+                    const soiMaterial = new THREE.MeshBasicMaterial({
+                        color: 0x00ff00,
+                        opacity: 0.1,
+                        transparent: true,
+                        wireframe: true
+                    });
+                    const soiMesh = new THREE.Mesh(soiGeometry, soiMaterial);
+                    ghostGroup.add(soiMesh);
+                }
+                
+                // Add label to show time until SOI entry
+                const timeToSOI = transition.time; // seconds
+                const hoursToSOI = (timeToSOI / 3600).toFixed(1);
+                const labelGeometry = new THREE.PlaneGeometry(radius * 2, radius * 0.5);
+                const labelCanvas = document.createElement('canvas');
+                labelCanvas.width = 512;
+                labelCanvas.height = 128;
+                const ctx = labelCanvas.getContext('2d');
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, 512, 128);
+                ctx.fillStyle = 'white';
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`${targetPlanet.name} in ${hoursToSOI}h`, 256, 64);
+                const labelTexture = new THREE.CanvasTexture(labelCanvas);
+                const labelMaterial = new THREE.MeshBasicMaterial({
+                    map: labelTexture,
+                    transparent: true,
+                    opacity: 0.8,
+                    side: THREE.DoubleSide
+                });
+                const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
+                labelMesh.position.y = radius * 1.5;
+                labelMesh.lookAt(this.app.camera.position);
+                ghostGroup.add(labelMesh);
+                
+                // Position at the future position
+                if (futurePosition) {
+                    ghostGroup.position.set(
+                        futurePosition[0],
+                        futurePosition[1],
+                        futurePosition[2]
+                    );
+                }
+                
+                this.app.scene.add(ghostGroup);
+                
+                satelliteGhosts.set(key, {
+                    group: ghostGroup,
+                    transition: transition,
+                    planet: targetPlanet,
+                    labelMesh: labelMesh
+                });
+            }
+        }
+        
+        // Update label orientations to face camera
+        for (const [key, ghost] of satelliteGhosts) {
+            if (ghost.labelMesh && this.app.camera) {
+                ghost.labelMesh.lookAt(this.app.camera.position);
+            }
+        }
+    }
+
+    /**
      * Update maneuver prediction visualization
      */
     _updateManeuverPredictionVisualization(satelliteId, maneuverNodeId, orbitPoints) {
         console.log(`[SatelliteOrbitManager] Updating maneuver prediction for satellite ${satelliteId}, node ${maneuverNodeId} with ${orbitPoints.length} points`);
         
         // Get the satellite object
-        const satellite = this.scene?.getMeshByName(satelliteId);
+        const satellite = this.app.satellites?.satellites.get(satelliteId);
         if (!satellite || !satellite.maneuverNodeVisualizer) {
             console.warn(`[SatelliteOrbitManager] Satellite or visualizer not found for ${satelliteId}`);
             return;
@@ -1012,19 +1298,31 @@ export class SatelliteOrbitManager {
             // Create new orbit line
             const positions = orbitPoints.map(p => new THREE.Vector3(...p.position));
             const geometry = new THREE.BufferGeometry().setFromPoints(positions);
+            
+            // Check if this is a preview
+            const isPreview = maneuverNodeId && maneuverNodeId.startsWith('preview_');
+            
             const material = new THREE.LineDashedMaterial({
-                color: satellite.color || 0xffffff,
-                dashSize: 5,
-                gapSize: 5,
+                color: isPreview ? 0xffffff : (satellite.color || 0xffffff),
+                dashSize: isPreview ? 8 : 5,
+                gapSize: isPreview ? 8 : 5,
                 linewidth: 2,
                 transparent: true,
-                opacity: 0.7
+                opacity: isPreview ? 0.5 : 0.7
             });
             
             const orbitLine = new THREE.Line(geometry, material);
             orbitLine.computeLineDistances();
             orbitLine.frustumCulled = false;
-            this.scene.add(orbitLine);
+            
+            // Add to the appropriate parent group (same as regular orbits)
+            const planet = this.app.celestialBodies?.find(b => b.naifId === parseInt(satellite.centralBodyNaifId));
+            const parentGroup = planet?.orbitGroup || this.app.sceneManager?.scene;
+            if (parentGroup) {
+                parentGroup.add(orbitLine);
+            } else {
+                console.warn(`[SatelliteOrbitManager] No parent group found for predicted orbit`);
+            }
             
             nodeVisuals.orbitLine = orbitLine;
         }

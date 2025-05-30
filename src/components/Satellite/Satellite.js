@@ -291,17 +291,23 @@ export class Satellite {
      * Update visualization for a maneuver node
      */
     _updateManeuverVisualization(maneuverNode) {
-        if (!this.position || !this.velocity) return;
+        console.log(`[Satellite] _updateManeuverVisualization called for satellite ${this.id}`, maneuverNode);
+        
+        if (!this.position || !this.velocity) {
+            console.warn(`[Satellite] No position or velocity for satellite ${this.id}`);
+            return;
+        }
         
         // Request maneuver node visualization from orbit manager
         // This will calculate position at maneuver time and post-maneuver orbit
         if (this.app3d?.satelliteOrbitManager) {
+            console.log(`[Satellite] Requesting maneuver node visualization from orbit manager`);
             this.app3d.satelliteOrbitManager.requestManeuverNodeVisualization(
                 this.id,
                 maneuverNode
             );
         } else {
-            console.warn('Orbit manager not available for maneuver node visualization');
+            console.warn('[Satellite] Orbit manager not available for maneuver node visualization');
         }
     }
     
@@ -309,8 +315,10 @@ export class Satellite {
      * Add a maneuver node (delegates to physics engine)
      */
     addManeuverNode(executionTime, deltaVLocal) {
-        if (!this.app3d?.physicsManager?.physicsEngine) {
-            console.error('Physics engine not available');
+        console.log(`[Satellite] addManeuverNode called for satellite ${this.id}`, { executionTime, deltaVLocal });
+        
+        if (!this.app3d?.physicsIntegration?.physicsEngine) {
+            console.error('[Satellite] Physics engine not available');
             return null;
         }
         
@@ -324,11 +332,15 @@ export class Satellite {
             }
         });
         
+        console.log(`[Satellite] Created maneuver node DTO:`, maneuverNode);
+        
         // Add to physics engine
-        const nodeId = this.app3d.physicsManager.physicsEngine.addManeuverNode(
+        const nodeId = this.app3d.physicsIntegration.physicsEngine.addManeuverNode(
             this.id,
             maneuverNode
         );
+        
+        console.log(`[Satellite] Physics engine returned nodeId:`, nodeId);
         
         if (nodeId) {
             this.maneuverNodes.push(maneuverNode);
@@ -341,13 +353,13 @@ export class Satellite {
      * Remove a maneuver node (delegates to physics engine)
      */
     removeManeuverNode(node) {
-        if (!this.app3d?.physicsManager?.physicsEngine) {
+        if (!this.app3d?.physicsIntegration?.physicsEngine) {
             console.error('Physics engine not available');
             return;
         }
         
         // Remove from physics engine
-        this.app3d.physicsManager.physicsEngine.removeManeuverNode(
+        this.app3d.physicsIntegration.physicsEngine.removeManeuverNode(
             this.id,
             node.id
         );
