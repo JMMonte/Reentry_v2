@@ -5,12 +5,95 @@ import { useSimulation } from '../../../simulation/SimulationContext.jsx';
 import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
 import formatTimeDelta from '../../../utils/FormatUtils.js';
 import { usePreviewNodes } from './usePreviewNodes.js';
-import { PhysicsUtils } from '../../../utils/PhysicsUtils.js';
+import { PhysicsAPI } from '../../../physics/PhysicsAPI.js';
 import { Constants } from '../../../utils/Constants.js';
+import { createManeuverNodeDTO } from '../../../types/DataTransferObjects.js';
 
 export function useManeuverWindow(satellite) {
     // Pull shared timeUtils from SimulationContext
     const { timeUtils } = useSimulation();
+    
+    // Handle case where timeUtils is not yet available
+    if (!timeUtils) {
+        return {
+            isAdding: false,
+            setIsAdding: () => {},
+            currentSimTime: new Date(),
+            simTime: new Date(),
+            timeUtils: null,
+            nodes: [],
+            selectedIndex: null,
+            setSelectedIndex: () => {},
+            // Return empty handlers
+            handleSave: () => {},
+            handleDelete: () => {},
+            // Return default values for all other properties
+            timeMode: 'offset',
+            setTimeMode: () => {},
+            offsetSec: '0',
+            setOffsetSec: () => {},
+            hours: 0,
+            setHours: () => {},
+            minutes: 0,
+            setMinutes: () => {},
+            seconds: 0,
+            setSeconds: () => {},
+            milliseconds: 0,
+            setMilliseconds: () => {},
+            vx: '0',
+            setVx: () => {},
+            vy: '0',
+            setVy: () => {},
+            vz: '0',
+            setVz: () => {},
+            dvMag: 0,
+            manualDetails: { execTime: new Date(), dtSec: 0, dv: 0, predictedPeriod: 0, predictedVelocity: 0 },
+            formatTimeDelta: () => '',
+            computeMoonTransferDetails: () => {},
+            getCompositePath: () => null,
+            maneuverMode: 'manual',
+            setManeuverMode: () => {},
+            shapeType: 'circular',
+            setShapeType: () => {},
+            targetSmaKm: '6578',
+            setTargetSmaKm: () => {},
+            targetEcc: '0',
+            setTargetEcc: () => {},
+            targetIncDeg: '28.5',
+            setTargetIncDeg: () => {},
+            targetLANDeg: '0',
+            setTargetLANDeg: () => {},
+            targetArgPDeg: '0',
+            setTargetArgPDeg: () => {},
+            generateHohmann: () => {},
+            hohmannDetails: null,
+            hohmannPreviewDetails: null,
+            computeNextPeriapsis: () => new Date(),
+            computeNextApoapsis: () => new Date(),
+            manualBurnTime: null,
+            setManualBurnTime: () => {},
+            findBestBurnTime: () => new Date(),
+            findNextPeriapsis: () => new Date(),
+            findNextApoapsis: () => new Date(),
+            multOffset: '1',
+            setMultOffset: () => {},
+            multH: '1',
+            setMultH: () => {},
+            multMin: '1',
+            setMultMin: () => {},
+            multSVal: '1',
+            setMultSVal: () => {},
+            multMsVal: '1',
+            setMultMsVal: () => {},
+            multP: '1',
+            setMultP: () => {},
+            multA: '1',
+            setMultA: () => {},
+            multN: '1',
+            setMultN: () => {}
+        };
+    }
+    
     const manager = useMemo(() => new ManeuverManager(satellite, timeUtils), [satellite, timeUtils]);
     const [currentSimTime, setCurrentSimTime] = useState(timeUtils.getSimulatedTime());
 
@@ -42,9 +125,13 @@ export function useManeuverWindow(satellite) {
     const [selectedIndex, setSelectedIndex] = useState(null);
     const [isAdding, setIsAdding] = useState(false);
 
-    // Computed magnitude of delta-V
+    // Computed magnitude of delta-V using PhysicsAPI
     const dvMag = useMemo(
-        () => ManeuverUtils.computeDeltaVMagnitude(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0),
+        () => PhysicsAPI.calculateDeltaVMagnitude(
+            parseFloat(vx) || 0,
+            parseFloat(vy) || 0,
+            parseFloat(vz) || 0
+        ),
         [vx, vy, vz]
     );
 
@@ -61,51 +148,42 @@ export function useManeuverWindow(satellite) {
     // State to hold Hohmann transfer summary details
     const [hohmannDetails, setHohmannDetails] = useState(null);
 
-    // Generate Hohmann preview data helper (no node creation)
+    // Generate Hohmann preview data using PhysicsAPI
     const getHohmannPreviewData = useCallback(() => {
-        // Convert classical elements to periapsis/apoapsis altitudes (km above surface)
-        const a_m = (parseFloat(targetSmaKm) || 0);
+        // Convert classical elements to periapsis/apoapsis altitudes
+        const a_m = parseFloat(targetSmaKm) || 0;
         const e_val = parseFloat(targetEcc) || 0;
         const r_pe = a_m * (1 - e_val);
         const r_ap = a_m * (1 + e_val);
-        const ellPeriKm = ((r_pe - Constants.earthRadius)).toString();
-        const ellApoKm = ((r_ap - Constants.earthRadius)).toString();
-        // Compute full plane-change angle from current to target orbit (inclination + RAAN)
-        const details = PhysicsUtils.calculateDetailedOrbitalElements(
-            satellite.position,
-            satellite.velocity,
-            Constants.earthGravitationalParameter
-        );
-        const currentInc = details.inclination;
-        const currentLAN = details.longitudeOfAscendingNode;
-        const i1 = THREE.MathUtils.degToRad(currentInc);
-        const lan1 = THREE.MathUtils.degToRad(currentLAN);
-        const i2 = THREE.MathUtils.degToRad(parseFloat(targetIncDeg));
-        const lan2 = THREE.MathUtils.degToRad(parseFloat(targetLANDeg));
-        const h1 = new THREE.Vector3(
-            Math.sin(lan1) * Math.sin(i1),
-            -Math.cos(lan1) * Math.sin(i1),
-            Math.cos(i1)
-        );
-        const h2 = new THREE.Vector3(
-            Math.sin(lan2) * Math.sin(i2),
-            -Math.cos(lan2) * Math.sin(i2),
-            Math.cos(i2)
-        );
-        const dotH = THREE.MathUtils.clamp(h1.dot(h2), -1, 1);
-        const planeChangeDeg = THREE.MathUtils.radToDeg(Math.acos(dotH));
+        const targetPeriapsis = r_pe - Constants.earthRadius;
+        const targetApoapsis = r_ap - Constants.earthRadius;
+        
+        // Get Hohmann transfer parameters from PhysicsAPI
+        const transferParams = PhysicsAPI.calculateHohmannTransfer({
+            currentPosition: satellite.position,
+            currentVelocity: satellite.velocity,
+            targetPeriapsis,
+            targetApoapsis,
+            targetInclination: parseFloat(targetIncDeg) || 0,
+            targetLAN: parseFloat(targetLANDeg) || 0,
+            targetArgP: parseFloat(targetArgPDeg) || 0,
+            bodyRadius: Constants.earthRadius,
+            mu: Constants.earthGravitationalParameter
+        });
+        
+        // Still need to call manager for now to maintain compatibility
         return manager.calculateHohmannPreview({
             shapeType: 'elliptical',
-            ellPeriKm,
-            ellApoKm,
+            ellPeriKm: targetPeriapsis.toString(),
+            ellApoKm: targetApoapsis.toString(),
             targetIncDeg,
             targetLANDeg,
             targetArgPDeg,
-            planeChangeDeg
+            planeChangeDeg: transferParams.planeChangeAngle
         });
     }, [manager, targetSmaKm, targetEcc, targetIncDeg, targetLANDeg, targetArgPDeg, satellite.position, satellite.velocity]);
 
-    // Next periapsis calculation: solve Kepler's equation for current orbit (fallback to chain-based node period)
+    // Next periapsis calculation using PhysicsAPI
     const computeNextPeriapsis = useCallback(() => {
         // Chain off existing node if in editing/adding mode
         if ((selectedIndex != null || isAdding) && nodes.length > 0) {
@@ -116,26 +194,16 @@ export function useManeuverWindow(satellite) {
             const periodSec = baseNode.predictedOrbit?._orbitPeriod || 0;
             return new Date(baselineTime.getTime() + periodSec * 1000);
         }
-        // Compute using current orbital elements
-        const simNow = timeUtils.getSimulatedTime();
-        const details = PhysicsUtils.calculateDetailedOrbitalElements(
+        // Use PhysicsAPI for calculation
+        return PhysicsAPI.calculateNextPeriapsis(
             satellite.position,
             satellite.velocity,
-            Constants.earthGravitationalParameter
+            Constants.earthGravitationalParameter,
+            timeUtils.getSimulatedTime()
         );
-        const f0 = THREE.MathUtils.degToRad(details.trueAnomaly);
-        const e = details.eccentricity;
-        // Compute mean anomaly at current position
-        const M0 = PhysicsUtils.meanAnomalyFromTrueAnomaly(f0, e);
-        const T = details.period;
-        const n = 2 * Math.PI / T;
-        // Time until mean anomaly wraps to 2π (periapsis)
-        const dM = ((2 * Math.PI - M0) + 2 * Math.PI) % (2 * Math.PI);
-        const dtSec = dM / n;
-        return new Date(simNow.getTime() + dtSec * 1000);
     }, [satellite, timeUtils, nodes, selectedIndex, isAdding]);
 
-    // Next apoapsis calculation: solve Kepler's equation for current orbit (fallback to half-period chain)
+    // Next apoapsis calculation using PhysicsAPI
     const computeNextApoapsis = useCallback(() => {
         if ((selectedIndex != null || isAdding) && nodes.length > 0) {
             const baseNode = selectedIndex != null
@@ -145,52 +213,26 @@ export function useManeuverWindow(satellite) {
             const halfPeriod = (baseNode.predictedOrbit?._orbitPeriod || 0) * 1000 / 2;
             return new Date(baselineTime.getTime() + halfPeriod);
         }
-        const simNow = timeUtils.getSimulatedTime();
-        const details = PhysicsUtils.calculateDetailedOrbitalElements(
+        // Use PhysicsAPI for calculation
+        return PhysicsAPI.calculateNextApoapsis(
             satellite.position,
             satellite.velocity,
-            Constants.earthGravitationalParameter
+            Constants.earthGravitationalParameter,
+            timeUtils.getSimulatedTime()
         );
-        const f0 = THREE.MathUtils.degToRad(details.trueAnomaly);
-        const e = details.eccentricity;
-        const M0 = PhysicsUtils.meanAnomalyFromTrueAnomaly(f0, e);
-        const T = details.period;
-        const n = 2 * Math.PI / T;
-        const M_target = Math.PI;
-        const dM = ((M_target - M0) + 2 * Math.PI) % (2 * Math.PI);
-        const dtSec = dM / n;
-        return new Date(simNow.getTime() + dtSec * 1000);
     }, [satellite, timeUtils, nodes, selectedIndex, isAdding]);
 
     // --- Hohmann manual burn time state and helpers ---
     const [manualBurnTime, setManualBurnTime] = useState(null);
     const findBestBurnTime = useCallback(() => {
-        const simNow = timeUtils.getSimulatedTime();
-        // Compute current orbital elements and anomalies
-        const details = PhysicsUtils.calculateDetailedOrbitalElements(
-            satellite.position,
-            satellite.velocity,
-            Constants.earthGravitationalParameter
-        );
-        const e = details.eccentricity;
-        const f0 = THREE.MathUtils.degToRad(details.trueAnomaly);
-        const M0 = PhysicsUtils.meanAnomalyFromTrueAnomaly(f0, e);
-        // Use all classical elements for the target
-        // Target true anomaly: periapsis (0) or user-specified ArgP
-        let fTarget = 0; // default periapsis
-        if (parseFloat(targetArgPDeg) !== 0) {
-            fTarget = THREE.MathUtils.degToRad(targetArgPDeg);
-        }
-        // Solve for corresponding eccentric anomaly
-        const sqrtTerm = Math.sqrt((1 - e) / (1 + e));
-        const Et = 2 * Math.atan(sqrtTerm * Math.tan(fTarget / 2));
-        const Mt = Et - e * Math.sin(Et);
-        // Compute time until next Mt
-        const T = details.period;
-        const n = 2 * Math.PI / T;
-        const dM = ((Mt - M0) + 2 * Math.PI) % (2 * Math.PI);
-        const dt = dM / n;
-        return new Date(simNow.getTime() + dt * 1000);
+        // Use PhysicsAPI for optimal burn time calculation
+        return PhysicsAPI.findOptimalBurnTime({
+            currentPosition: satellite.position,
+            currentVelocity: satellite.velocity,
+            targetArgP: parseFloat(targetArgPDeg) || 0,
+            mu: Constants.earthGravitationalParameter,
+            currentTime: timeUtils.getSimulatedTime()
+        });
     }, [timeUtils, satellite, targetArgPDeg]);
     const findNextPeriapsis = useCallback(() => computeNextPeriapsis(), [computeNextPeriapsis]);
     const findNextApoapsis = useCallback(() => computeNextApoapsis(), [computeNextApoapsis]);
@@ -282,46 +324,37 @@ export function useManeuverWindow(satellite) {
         satellite.app3d.previewNodes
     ]);
 
-    // Generate Hohmann transfer nodes via ManeuverManager
+    // Generate Hohmann transfer nodes using PhysicsAPI
     const generateHohmann = useCallback(() => {
         // Convert classical elements to periapsis/apoapsis altitudes
-        const a_m = (parseFloat(targetSmaKm) || 0);
+        const a_m = parseFloat(targetSmaKm) || 0;
         const e_val = parseFloat(targetEcc) || 0;
         const r_pe = a_m * (1 - e_val);
         const r_ap = a_m * (1 + e_val);
-        const ellPeriKm = ((r_pe - Constants.earthRadius)).toString();
-        const ellApoKm = ((r_ap - Constants.earthRadius)).toString();
-        // Compute full plane-change angle from current to target orbit (inclination + RAAN)
-        const details = PhysicsUtils.calculateDetailedOrbitalElements(
-            satellite.position,
-            satellite.velocity,
-            Constants.earthGravitationalParameter
-        );
-        const currentInc = details.inclination;
-        const currentLAN = details.longitudeOfAscendingNode;
-        const i1 = THREE.MathUtils.degToRad(currentInc);
-        const lan1 = THREE.MathUtils.degToRad(currentLAN);
-        const i2 = THREE.MathUtils.degToRad(parseFloat(targetIncDeg));
-        const lan2 = THREE.MathUtils.degToRad(parseFloat(targetLANDeg));
-        const h1 = new THREE.Vector3(
-            Math.sin(lan1) * Math.sin(i1),
-            -Math.cos(lan1) * Math.sin(i1),
-            Math.cos(i1)
-        );
-        const h2 = new THREE.Vector3(
-            Math.sin(lan2) * Math.sin(i2),
-            -Math.cos(lan2) * Math.sin(i2),
-            Math.cos(i2)
-        );
-        const dotH = THREE.MathUtils.clamp(h1.dot(h2), -1, 1);
-        const planeChangeDeg = THREE.MathUtils.radToDeg(Math.acos(dotH));
+        const targetPeriapsis = r_pe - Constants.earthRadius;
+        const targetApoapsis = r_ap - Constants.earthRadius;
+        
+        // Get transfer parameters from PhysicsAPI
+        const transferParams = PhysicsAPI.calculateHohmannTransfer({
+            currentPosition: satellite.position,
+            currentVelocity: satellite.velocity,
+            targetPeriapsis,
+            targetApoapsis,
+            targetInclination: parseFloat(targetIncDeg) || 0,
+            targetLAN: parseFloat(targetLANDeg) || 0,
+            targetArgP: parseFloat(targetArgPDeg) || 0,
+            bodyRadius: Constants.earthRadius,
+            mu: Constants.earthGravitationalParameter
+        });
+        
+        // Use manager to create the actual nodes (will be refactored later)
         const summary = manager.generateHohmannTransfer({
-            ellPeriKm,
-            ellApoKm,
+            ellPeriKm: targetPeriapsis.toString(),
+            ellApoKm: targetApoapsis.toString(),
             targetIncDeg,
             targetLANDeg,
             targetArgPDeg,
-            planeChangeDeg,
+            planeChangeDeg: transferParams.planeChangeAngle,
             manualBurnTime
         });
         setHohmannDetails(summary);

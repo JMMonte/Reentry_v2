@@ -3,7 +3,7 @@ import { ManeuverNodeModel } from '../../../models/ManeuverNodeModel.js';
 import { Constants } from '../../../utils/Constants.js';
 import { PhysicsUtils } from '../../../utils/PhysicsUtils.js';
 import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
-import { findNextApsis } from '../../../utils/ApsisFinder.js';
+import { PhysicsAPI } from '../../../physics/PhysicsAPI.js';
 
 /**
  * Encapsulates maneuver operations for a satellite (manual burns, transfers).
@@ -108,13 +108,13 @@ export class ManeuverManager {
         const r1 = r1Vec.length();
         // Target orbit radius
         const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
-        // Find next periapsis for first burn
-        let burnTime = simNow;
-        const posArr = [r1Vec.x, r1Vec.y, r1Vec.z];
-        const velArr = [v1Vec.x, v1Vec.y, v1Vec.z];
-        const bodies = [{ position: { x: 0, y: 0, z: 0 }, mass: Constants.earthMass }];
-        const dtToPeri = findNextApsis(posArr, velArr, bodies, 1.0, 'periapsis', 86400);
-        if (dtToPeri != null) burnTime = new Date(simNow.getTime() + dtToPeri * 1000);
+        // Find next periapsis for first burn using PhysicsAPI
+        let burnTime = PhysicsAPI.calculateNextPeriapsis(
+            r1Vec,
+            v1Vec,
+            mu,
+            simNow
+        );
 
         // Compute transfer orbit parameters
         const aTrans = (r1 + r_target) / 2;

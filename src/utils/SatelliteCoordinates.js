@@ -409,7 +409,7 @@ export class SatelliteCoordinates {
                 .multiplyQuaternions(orientationQ, equatorialQ)
                 .multiply(rotationQ);
             
-            console.log(`[SatelliteCoordinates] Using composed quaternion for ${planet.name} (orientation * equatorial * rotation)`);
+            // console.log(`[SatelliteCoordinates] Using composed quaternion for ${planet.name} (orientation * equatorial * rotation)`);
             return composedQ;
         }
 

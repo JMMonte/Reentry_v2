@@ -6,6 +6,7 @@ import { PositionManager } from './PositionManager.js';
 import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 import { Constants } from '../utils/Constants.js';
 import { integrateRK4 } from './integrators/OrbitalIntegrators.js';
+import { PhysicsAPI } from './PhysicsAPI.js';
 
 // Extract the functions we need from the Astronomy module
 const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector } = Astronomy;
@@ -35,6 +36,9 @@ export class PhysicsEngine {
 
         // Satellite tracking (unchanged from original)
         this.satellites = new Map();
+        
+        // Maneuver node tracking
+        this.maneuverNodes = new Map(); // Map<satelliteId, ManeuverNodeDTO[]>
 
         // Barycenter calculations
         this.barycenters = new Map();
@@ -588,6 +592,115 @@ export class PhysicsEngine {
         }
     }
 
+    /**
+     * Add a maneuver node for a satellite
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} maneuverNode - Maneuver node DTO
+     * @returns {string} Node ID
+     */
+    addManeuverNode(satelliteId, maneuverNode) {
+        if (!this.satellites.has(satelliteId)) {
+            console.error(`Satellite ${satelliteId} not found`);
+            return null;
+        }
+        
+        if (!this.maneuverNodes.has(satelliteId)) {
+            this.maneuverNodes.set(satelliteId, []);
+        }
+        
+        const nodes = this.maneuverNodes.get(satelliteId);
+        nodes.push(maneuverNode);
+        
+        // Sort by execution time
+        nodes.sort((a, b) => a.executionTime.getTime() - b.executionTime.getTime());
+        
+        // Dispatch event for UI update
+        this._dispatchSatelliteEvent('maneuverNodeAdded', {
+            satelliteId,
+            nodeId: maneuverNode.id,
+            maneuverNode
+        });
+        
+        return maneuverNode.id;
+    }
+    
+    /**
+     * Remove a maneuver node
+     * @param {string} satelliteId - Satellite ID
+     * @param {string} nodeId - Node ID to remove
+     */
+    removeManeuverNode(satelliteId, nodeId) {
+        const nodes = this.maneuverNodes.get(satelliteId);
+        if (!nodes) return;
+        
+        const index = nodes.findIndex(n => n.id === nodeId);
+        if (index !== -1) {
+            nodes.splice(index, 1);
+            
+            // Dispatch event for UI update
+            this._dispatchSatelliteEvent('maneuverNodeRemoved', {
+                satelliteId,
+                nodeId
+            });
+        }
+    }
+    
+    /**
+     * Get maneuver nodes for a satellite
+     * @param {string} satelliteId - Satellite ID
+     * @returns {Array} Maneuver nodes
+     */
+    getManeuverNodes(satelliteId) {
+        return this.maneuverNodes.get(satelliteId) || [];
+    }
+    
+    /**
+     * Execute maneuver if time has passed
+     * @param {Object} satellite - Satellite object
+     * @param {Date} currentTime - Current simulation time
+     */
+    _checkAndExecuteManeuvers(satellite, currentTime) {
+        const nodes = this.maneuverNodes.get(satellite.id);
+        if (!nodes || nodes.length === 0) return;
+        
+        // Check first node (they're sorted by time)
+        const nextNode = nodes[0];
+        if (currentTime >= nextNode.executionTime) {
+            // Execute the maneuver
+            console.log(`[PhysicsEngine] Executing maneuver for satellite ${satellite.id}`);
+            console.log(`  Delta-V: P=${nextNode.deltaV.prograde}, N=${nextNode.deltaV.normal}, R=${nextNode.deltaV.radial} km/s`);
+            
+            // Convert local delta-V to world coordinates
+            const worldDeltaV = PhysicsAPI.localToWorldDeltaV(
+                new THREE.Vector3(
+                    nextNode.deltaV.prograde,
+                    nextNode.deltaV.normal,
+                    nextNode.deltaV.radial
+                ),
+                satellite.position,
+                satellite.velocity
+            );
+            
+            // Apply delta-V
+            satellite.velocity.add(worldDeltaV);
+            
+            // Remove executed node
+            nodes.shift();
+            
+            // Dispatch event
+            this._dispatchSatelliteEvent('maneuverExecuted', {
+                satelliteId: satellite.id,
+                nodeId: nextNode.id,
+                executionTime: nextNode.executionTime,
+                deltaV: worldDeltaV.toArray(),
+                newVelocity: satellite.velocity.toArray()
+            });
+            
+            // Validate new state
+            this._validateSatelliteState(satellite, "after maneuver execution");
+        }
+    }
+
     // Satellite integration methods (copied from original PhysicsEngine)
     async _integrateSatellites(deltaTime) {
         // Debug: Log integration call (every 10 seconds)
@@ -597,6 +710,8 @@ export class PhysicsEngine {
         }
         
         for (const [, satellite] of this.satellites) {
+            // Check for maneuvers before integration
+            this._checkAndExecuteManeuvers(satellite, this.simulationTime);
             // Check velocity BEFORE computing acceleration
             const velBeforeAccel = satellite.velocity.length();
             if (velBeforeAccel > 50) {

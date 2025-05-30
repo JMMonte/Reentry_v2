@@ -45,8 +45,27 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
         manualBurnTime, setManualBurnTime,
         findBestBurnTime,
         findNextPeriapsis,
-        findNextApoapsis
+        findNextApoapsis,
+        timeUtils
     } = useManeuverWindow(satellite);
+    
+    // Show loading state if timeUtils is not available yet
+    if (!timeUtils) {
+        return (
+            <DraggableModal
+                title={`Maneuver Planning - ${satellite.name}`}
+                onClose={onClose}
+                initialPosition={{ x: window.innerWidth - 580, y: 100 }}
+                width={560}
+                height={400}
+                resizable={false}
+            >
+                <div className="flex items-center justify-center h-full">
+                    <p className="text-gray-500">Loading simulation data...</p>
+                </div>
+            </DraggableModal>
+        );
+    }
 
     // Resizable mission plan state
     const [missionPlanHeight, setMissionPlanHeight] = useState(180); // px

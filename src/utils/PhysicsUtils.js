@@ -515,29 +515,6 @@ export class PhysicsUtils {
         return pts;
     }
 
-    static calculateApsidesFromElements(els, mu) {
-        if (!els) return null;
-        const { h, e } = els;
-        const rp = (h * h) / (mu * (1 + e));
-        const ra = e < 1 ? (h * h) / (mu * (1 - e)) : null;
-        return { rPeriapsis: rp, rApoapsis: ra };
-    }
-
-    static calculateApsis(pos, vel, mu, radius) {
-        const els = PhysicsUtils.calculateOrbitalElements(pos, vel, mu);
-        if (!els) return null;
-        const aps = PhysicsUtils.calculateApsidesFromElements(els, mu);
-        if (!aps) return null;
-        const { rPeriapsis: rp, rApoapsis: ra } = aps;
-        return {
-            orbitalElements: els,
-            rPeriapsis: rp,
-            rApoapsis: ra,
-            periapsisAltitude: (rp - radius),
-            apoapsisAltitude: ra !== null ? (ra - radius) : null
-        };
-    }
-
     static calculateDetailedOrbitalElements(pos, vel, mu, radius) {
         const r = pos.length();
         const v2 = vel.lengthSq();
