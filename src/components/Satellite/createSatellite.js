@@ -139,8 +139,7 @@ export async function createSatelliteFromOrbitalElements(app, params = {}) {
     if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
 
     // Use improved coordinate calculation with planet quaternion
-    const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
-    const { position, velocity } = SatelliteCoordinates.createFromOrbitalElements(params, planet, currentTime);
+    const { position, velocity } = SatelliteCoordinates.createFromOrbitalElements(params, planet);
 
     const sat = await createSatellite(app, {
         ...params,

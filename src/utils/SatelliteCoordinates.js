@@ -91,6 +91,17 @@ export class SatelliteCoordinates {
             argumentOfPeriapsis, raan, trueAnomaly,
             referenceFrame = 'equatorial' // 'equatorial' or 'ecliptic'
         } = params;
+        
+        // Validate orbital elements
+        if (semiMajorAxis <= 0) {
+            throw new Error(`Invalid semi-major axis: ${semiMajorAxis} km (must be > 0)`);
+        }
+        if (eccentricity < 0) {
+            throw new Error(`Invalid eccentricity: ${eccentricity} (must be >= 0)`);
+        }
+        if (eccentricity >= 1) {
+            console.warn(`[SatelliteCoordinates] Hyperbolic/parabolic orbit (e=${eccentricity}) - orbit will not be closed`);
+        }
 
         // Get gravitational parameter with fallback
         const GM = planet.GM || (planet.mass * Constants.G); // km³/s²
@@ -156,11 +167,11 @@ export class SatelliteCoordinates {
      * Get transformation from ecliptic coordinates to planet's equatorial coordinates
      */
     static _getEclipticToEquatorialTransform(planet) {
-        // The equatorialGroup contains the rotation that aligns planet's equator with the ecliptic
-        // We need the inverse to go from ecliptic to equatorial
-        if (planet.equatorialGroup?.quaternion) {
-            console.log(`[SatelliteCoordinates] Using equatorialGroup inverse quaternion for ${planet.name}`);
-            return planet.equatorialGroup.quaternion.clone().invert();
+        // For orbital calculations, we need the planet's axial tilt without the Y-up to Z-up conversion
+        // The orientationGroup contains the planet's true orientation (axial tilt)
+        if (planet.orientationGroup?.quaternion) {
+            console.log(`[SatelliteCoordinates] Using orientationGroup quaternion for ${planet.name}`);
+            return planet.orientationGroup.quaternion.clone();
         }
         
         // Fallback: for Earth, the equatorial plane is rotated ~23.5° from ecliptic
