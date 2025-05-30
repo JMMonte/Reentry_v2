@@ -84,7 +84,7 @@ describe('Satellite Perturbations and Propagation', () => {
     let physicsEngine;
     let hierarchy;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         // Create minimal hierarchy for tests
         hierarchy = {
             getBodyInfo: (naifId) => {
@@ -100,10 +100,8 @@ describe('Satellite Perturbations and Propagation', () => {
             needsRelativePositioning: () => false
         };
 
-        physicsEngine = new PhysicsEngine(hierarchy, {
-            startDate: new Date('2025-01-01T00:00:00Z')
-        });
-        physicsEngine.initialize();
+        physicsEngine = new PhysicsEngine();
+        await physicsEngine.initialize(new Date('2025-01-01T00:00:00Z'));
     });
 
     describe('Orbital Decay (Atmospheric Drag)', () => {

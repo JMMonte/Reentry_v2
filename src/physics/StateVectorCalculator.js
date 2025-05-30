@@ -1,5 +1,6 @@
 import * as Astronomy from 'astronomy-engine';
-import { KeplerianPropagator, dateToJd } from './KeplerianPropagator.js';
+import { OrbitalMechanics } from './core/OrbitalMechanics.js';
+import { dateToJd } from '../utils/TimeUtils.js';
 import { planetaryDataManager, solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
@@ -197,11 +198,10 @@ export class StateVectorCalculator {
             }
 
             if (!GM) {
-                console.warn(`No GM found for parent ${parentId} of body ${naifId}`);
+                console.warn(`No GM found for parent ${parentId} of body ${naifId}. Parent config:`, parentFullConfig);
                 return null;
             }
-
-            const propagator = new KeplerianPropagator();
+            
             const jd = dateToJd(time);
 
             // Prepare orbital elements with proper epoch
@@ -215,8 +215,8 @@ export class StateVectorCalculator {
                 epoch: orbitalElements.epoch ?? 2451545.0 // J2000.0 as default
             };
 
-            // Calculate state vector
-            const state = propagator.orbitalElementsToStateVector(elementsWithEpoch, jd, GM);
+            // Calculate state vector using OrbitalMechanics
+            const state = OrbitalMechanics.orbitalElementsToStateVector(elementsWithEpoch, jd, GM);
 
             // DIAGNOSTIC: Check for NaN/Inf in Neptune system moons
             if (parentFullConfig && parentFullConfig.name === 'neptune_barycenter') {

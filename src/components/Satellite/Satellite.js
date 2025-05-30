@@ -40,6 +40,11 @@ export class Satellite {
         this.color = color;
         this.planetConfig = planetConfig;
         this.centralBodyNaifId = centralBodyNaifId;
+        
+        // Pre-allocate vectors for updateVisualsFromState to avoid GC pressure
+        this._oldPosition = new THREE.Vector3();
+        this._oldVelocity = new THREE.Vector3();
+        
         this._initVisuals();
         this.maneuverNodes = [];
         this.maneuverNodeVisualizer = new ManeuverVisualizationManager(scene, this);
@@ -137,20 +142,36 @@ export class Satellite {
             satState.position[2]
         );
         
-        // Store physics state for other components
-        const oldPos = this.position ? this.position.clone() : null;
-        const oldVel = this.velocity ? this.velocity.clone() : null;
+        // Store old state for comparison
+        if (this.position) {
+            this._oldPosition.copy(this.position);
+        }
+        if (this.velocity) {
+            this._oldVelocity.copy(this.velocity);
+        }
         
-        this.position = new THREE.Vector3(...satState.position);
-        this.velocity = new THREE.Vector3(...satState.velocity);
+        // Update current state - avoid creating new Vector3 if they already exist
+        if (!this.position) {
+            this.position = new THREE.Vector3();
+        }
+        this.position.set(satState.position[0], satState.position[1], satState.position[2]);
+        
+        if (!this.velocity) {
+            this.velocity = new THREE.Vector3();
+        }
+        this.velocity.set(satState.velocity[0], satState.velocity[1], satState.velocity[2]);
+        
         if (satState.acceleration) {
-            this.acceleration = new THREE.Vector3(...satState.acceleration);
+            if (!this.acceleration) {
+                this.acceleration = new THREE.Vector3();
+            }
+            this.acceleration.set(satState.acceleration[0], satState.acceleration[1], satState.acceleration[2]);
         }
         
         // Check if orbit needs update (significant change in state)
-        if (this.app3d?.satelliteOrbitManager && oldPos && oldVel) {
-            const posDiff = this.position.distanceTo(oldPos);
-            const velDiff = this.velocity.distanceTo(oldVel);
+        if (this.app3d?.satelliteOrbitManager && this._oldPosition.lengthSq() > 0) {
+            const posDiff = this.position.distanceTo(this._oldPosition);
+            const velDiff = this.velocity.distanceTo(this._oldVelocity);
             
             // Update orbit if position changed by >10km or velocity by >0.1km/s
             if (posDiff > 10 || velDiff > 0.1) {

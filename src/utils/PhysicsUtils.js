@@ -13,7 +13,6 @@
 
 import { Constants } from './Constants.js';
 import * as THREE from 'three';
-import { stateToKeplerian } from './KeplerianUtils.js';
 
 /*─────────────────────────────────────────────────────────────────────┐
 │  0.  GLOBAL AXES & EARTH TILT                                       │
@@ -43,18 +42,6 @@ export class PhysicsUtils {
     /*───────────────────────── 1.1  Newtonian helpers ───────────────────*/
     static calculateGravitationalForce(m1, m2, r) {
         return r === 0 ? 0 : Constants.G * (m1 * m2) / (r * r);
-    }
-    // DEPRECATED: Use GravityCalculator.computeOrbitalVelocity() instead
-    static calculateOrbitalVelocity(mass, r) { 
-        console.warn('[PhysicsUtils.calculateOrbitalVelocity] DEPRECATED: Use GravityCalculator.computeOrbitalVelocity() instead');
-        const gm = Constants.G * mass;
-        return Math.sqrt(gm / r); 
-    }
-    // DEPRECATED: Use GravityCalculator.computeEscapeVelocity() instead
-    static calculateEscapeVelocity(mass, r) { 
-        console.warn('[PhysicsUtils.calculateEscapeVelocity] DEPRECATED: Use GravityCalculator.computeEscapeVelocity() instead');
-        const gm = Constants.G * mass;
-        return Math.sqrt(2 * gm / r); 
     }
     static calculateGravityAcceleration(mass, r) { return Constants.G * mass / (r * r); }
     static calculateAcceleration(force, mass) { return force / mass; }
@@ -200,21 +187,6 @@ export class PhysicsUtils {
         return { positionECEF: posECEF, velocityECEF: velECEF, positionECI, velocityECI };
     }
 
-    static calculatePositionAndVelocityCircular(
-        latitude, longitude, altitude,
-        azimuth, angleOfAttack,
-        radius, polarRadius, GM,
-        tiltQ, earthQuaternion
-    ) {
-        const r = radius + altitude;
-        const vCirc = Math.sqrt(GM / r);
-        return PhysicsUtils.calculatePositionAndVelocity(
-            latitude, longitude, altitude,
-            vCirc, azimuth, angleOfAttack,
-            radius, polarRadius,
-            tiltQ, earthQuaternion
-        );
-    }
 
     /*───────────────────────── 3.  ORBITAL ELEMENTS  ─────────────────────*/
     static calculatePositionAndVelocityFromOrbitalElements(
@@ -269,24 +241,7 @@ export class PhysicsUtils {
 
     /*───────────────────────── 4.  ORBITAL MATH (unchanged) ─────────────*/
 
-    /* 4.1  Classical elements from state-vectors */
-    // DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead
-    static calculateOrbitalElements(position, velocity, mu) {
-        console.warn('[PhysicsUtils.calculateOrbitalElements] DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead');
-        
-        // Delegate to centralized implementation
-        const elements = stateToKeplerian(position, velocity, mu);
-        
-        // Return in legacy format for backward compatibility
-        return {
-            h: elements.h,
-            e: elements.e,
-            i: THREE.MathUtils.degToRad(elements.inclination),
-            omega: THREE.MathUtils.degToRad(elements.omega),
-            w: THREE.MathUtils.degToRad(elements.w),
-            trueAnomaly: THREE.MathUtils.degToRad(elements.trueAnomaly)
-        };
-    }
+    /* 4.1  Classical elements from state-vectors - REMOVED: Use KeplerianUtils.stateToKeplerian() instead */
 
     /* 4.2  Orbit sampler (ECI) */
     static computeOrbit({ h, e, i, omega, w }, mu, numPoints = 100) {
@@ -466,13 +421,6 @@ export class PhysicsUtils {
 
     // REMOVED: propagateOrbit - use OrbitalIntegrators.integrateRK4 instead
 
-    // DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead
-    static calculateDetailedOrbitalElements(pos, vel, mu, radius = 0) {
-        console.warn('[PhysicsUtils.calculateDetailedOrbitalElements] DEPRECATED: Use KeplerianUtils.stateToKeplerian() instead');
-        
-        // Delegate to centralized implementation
-        return stateToKeplerian(pos, vel, mu, 0, radius);
-    }
 
     /* Hohmann manoeuvres - All deprecated methods removed. Use PhysicsAPI.calculateHohmannTransfer() instead */
 

@@ -98,7 +98,7 @@ export class PhysicsAPI {
             currentPosition,
             currentVelocity,
             targetPeriapsis,  // km above surface
-            targetApoapsis,   // km above surface
+            // targetApoapsis,   // km above surface
             targetInclination,  // degrees
             targetLAN,       // degrees
             // targetArgP,      // degrees
@@ -513,4 +513,11 @@ export class PhysicsAPI {
         // Kepler's Third Law: T = 2π√(a³/GM)
         return 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis, 3) / mu);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // TIME WARP AND SIMULATION CONTROL
+    // ─────────────────────────────────────────────────────────────────────
+
+    // Note: Time warp and simulation control methods moved to SimulationController
+    // for better separation of concerns. Use simulationController.setTimeWarp() instead.
 }

@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { analyzeOrbit } from '../physics/integrators/OrbitalIntegrators.js';
+import { Constants } from '../utils/Constants.js';
 import { PhysicsAPI } from '../physics/PhysicsAPI.js';
 
 export class SatelliteOrbitManager {
@@ -14,10 +15,12 @@ export class SatelliteOrbitManager {
         this.physicsEngine = app.physicsIntegration?.physicsEngine;
         this.displaySettings = app.displaySettingsManager;
         
-        // Worker management
+        // Worker management - scale based on hardware
         this.workers = [];
         this.workerPool = [];
-        this.maxWorkers = 4;
+        // Use hardware concurrency but cap at 8 to avoid overwhelming the system
+        this.maxWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
+        console.log(`[SatelliteOrbitManager] Using ${this.maxWorkers} workers (hardware concurrency: ${navigator.hardwareConcurrency})`);
         this.activeJobs = new Map();
         
         // Orbit data cache
@@ -118,7 +121,7 @@ export class SatelliteOrbitManager {
                 // Include properties needed for perturbations
                 J2: body.J2,
                 atmosphericModel: atmosphericModel,
-                GM: PhysicsAPI.getGravitationalParameter(body), // Use centralized GM calculation
+                GM: body.GM || PhysicsAPI.getGravitationalParameter(body), // Use existing GM or centralized calculation
                 rotationPeriod: body.rotationPeriod
             };
         }
@@ -266,9 +269,11 @@ export class SatelliteOrbitManager {
             centralBodyNaifId: maneuverPoint.centralBodyId
         };
         
-        const orbitParams = analyzeOrbit(tempSat, centralBody, PhysicsAPI.getGravitationalParameter(centralBody));
-        const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
-        const pointsPerPeriod = this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
+        const orbitParams = analyzeOrbit(tempSat, centralBody, Constants.G);
+        // Use per-satellite simulation properties if available, otherwise fall back to global settings
+        const satelliteProps = satellite.orbitSimProperties || {};
+        const orbitPeriods = satelliteProps.periods || this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
+        const pointsPerPeriod = satelliteProps.pointsPerPeriod || this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
         
         let duration, timeStep;
         if (orbitParams.type === 'elliptical') {
@@ -325,7 +330,9 @@ export class SatelliteOrbitManager {
             const stateChanged = this._hasStateChanged(satellite, cached);
             
             // Check if we need more points than currently cached
-            const requestedPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
+            // Use per-satellite properties if available, otherwise fall back to global settings
+            const satelliteProps = satellite.orbitSimProperties || {};
+            const requestedPeriods = satelliteProps.periods || this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
             const cachedPeriods = cached?.maxPeriods || 0;
             const needsExtension = cached && !stateChanged && requestedPeriods > cachedPeriods;
             
@@ -351,11 +358,11 @@ export class SatelliteOrbitManager {
                 console.error(`[SatelliteOrbitManager] Central body ${satellite.centralBodyNaifId} not found`);
                 continue;
             }
-            const orbitParams = analyzeOrbit(satellite, centralBody, PhysicsAPI.getGravitationalParameter(centralBody));
+            const orbitParams = analyzeOrbit(satellite, centralBody, Constants.G);
             
-            // Get display settings
-            const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
-            const pointsPerPeriod = this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
+            // Get per-satellite simulation properties, fall back to global display settings
+            const orbitPeriods = satelliteProps.periods || this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
+            const pointsPerPeriod = satelliteProps.pointsPerPeriod || this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
             
             // Calculate maximum reasonable duration for propagation
             let maxDuration;
@@ -617,16 +624,17 @@ export class SatelliteOrbitManager {
             return;
         }
 
-        // Get current display settings
-        const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
-        const pointsPerPeriod = this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
-        
         // Determine how many points to actually display
         const satellite = this.physicsEngine.satellites.get(satelliteId);
         if (!satellite) return;
         
+        // Get per-satellite simulation properties, fall back to global display settings
+        const satelliteProps = satellite.orbitSimProperties || {};
+        const orbitPeriods = satelliteProps.periods || this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
+        const pointsPerPeriod = satelliteProps.pointsPerPeriod || this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
+        
         const centralBody = this.physicsEngine.bodies[satellite.centralBodyNaifId];
-        const orbitParams = analyzeOrbit(satellite, centralBody, PhysicsAPI.getGravitationalParameter(centralBody));
+        const orbitParams = analyzeOrbit(satellite, centralBody, Constants.G);
         
         // For now, just show all points - the orbit should be continuous
         // The physics engine will handle showing the correct portion based on time
@@ -873,10 +881,26 @@ export class SatelliteOrbitManager {
             }
         };
         
+        this._boundSatelliteSimPropertiesChanged = (e) => {
+            const { satelliteId, property, value, allProperties } = e.detail;
+            console.log(`[SatelliteOrbitManager] Received sim properties change for satellite ${satelliteId}: ${property} = ${value}`);
+            
+            // Get the satellite from physics engine
+            const satellite = this.physicsEngine?.satellites.get(satelliteId);
+            if (satellite) {
+                // Update the satellite's properties
+                satellite.orbitSimProperties = allProperties;
+                
+                // Trigger orbit recalculation
+                this.updateSatelliteOrbit(satelliteId);
+            }
+        };
+        
         // Listen for satellite lifecycle events
         window.addEventListener('satelliteAdded', this._boundSatelliteAdded);
         window.addEventListener('satelliteRemoved', this._boundSatelliteRemoved);
         window.addEventListener('satellitePropertyUpdated', this._boundSatellitePropertyUpdated);
+        document.addEventListener('satelliteSimPropertiesChanged', this._boundSatelliteSimPropertiesChanged);
 
         // Store display setting callbacks
         this._boundShowOrbitsCallback = () => {
@@ -1013,6 +1037,9 @@ export class SatelliteOrbitManager {
             window.removeEventListener('satelliteAdded', this._boundSatelliteAdded);
             window.removeEventListener('satelliteRemoved', this._boundSatelliteRemoved);
             window.removeEventListener('satellitePropertyUpdated', this._boundSatellitePropertyUpdated);
+        }
+        if (this._boundSatelliteSimPropertiesChanged) {
+            document.removeEventListener('satelliteSimPropertiesChanged', this._boundSatelliteSimPropertiesChanged);
         }
         
         // Remove display settings listeners

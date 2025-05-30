@@ -54,6 +54,12 @@ export default [
             referenceFrame: 'earth_equatorial'
         },
 
+        // Orbit visualization configuration
+        orbitVisualization: {
+            useSpecialEMBHandling: true, // Use special EMB handling for Moon around EMB
+            orbitPoints: 720 // High resolution for Moon-EMB orbit
+        },
+
         // Rendering properties
         materials: {
             surfaceConfig: {

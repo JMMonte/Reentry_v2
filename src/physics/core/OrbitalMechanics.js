@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PhysicsConstants } from './PhysicsConstants.js';
 import { GravityCalculator } from './GravityCalculator.js';
-import { stateToKeplerian } from '../../utils/KeplerianUtils.js';
+import { stateToKeplerian, solveKeplerEquation } from '../../utils/KeplerianUtils.js';
 
 /**
  * Centralized orbital mechanics calculations for any celestial body
@@ -94,6 +94,91 @@ export class OrbitalMechanics {
         
         // Surface-relative velocity needed
         return Math.max(0, vInertial - rotationContribution);
+    }
+    
+    /**
+     * Convert orbital elements to Cartesian state vector
+     * @param {Object} elements - Orbital elements {a, e, i, Omega, omega, M0, epoch}
+     * @param {number} julianDate - Current Julian date
+     * @param {number} GM - Gravitational parameter (km³/s²)
+     * @returns {Object} {position: Vector3, velocity: Vector3} in km and km/s
+     */
+    static orbitalElementsToStateVector(elements, julianDate, GM) {
+        const DEG_TO_RAD = Math.PI / 180.0;
+        const { a, e, i, Omega, omega, M0, epoch } = elements;
+
+        // Convert to radians
+        const i_rad = i * DEG_TO_RAD;
+        const Omega_rad = Omega * DEG_TO_RAD;
+        const omega_rad = omega * DEG_TO_RAD;
+        const M0_rad = M0 * DEG_TO_RAD;
+
+        // Time since epoch (days)
+        const deltaT = julianDate - epoch;
+
+        // Mean motion (rad/day)
+        const n = Math.sqrt(GM / (a * a * a)) * 86400; // rad/s to rad/day
+
+        // Current mean anomaly
+        const M = M0_rad + n * deltaT;
+
+        // Solve Kepler's equation for eccentric anomaly
+        const E = solveKeplerEquation(M, e);
+
+        // True anomaly
+        const cosnu = (Math.cos(E) - e) / (1 - e * Math.cos(E));
+        const sinnu = Math.sqrt(1 - e * e) * Math.sin(E) / (1 - e * Math.cos(E));
+        const nu = Math.atan2(sinnu, cosnu);
+
+        // Distance from central body
+        const r = a * (1 - e * Math.cos(E));
+
+        // Position in orbital plane
+        const x_orb = r * Math.cos(nu);
+        const y_orb = r * Math.sin(nu);
+        const z_orb = 0;
+
+        // Velocity in orbital plane
+        const p = a * (1 - e * e);
+        const h = Math.sqrt(GM * p); // angular momentum
+        const vx_orb = -(h / r) * Math.sin(nu);
+        const vy_orb = (h / r) * (e + Math.cos(nu));
+        const vz_orb = 0;
+
+        // Rotation matrices for 3D transformation
+        const cosOmega = Math.cos(Omega_rad);
+        const sinOmega = Math.sin(Omega_rad);
+        const cosomega = Math.cos(omega_rad);
+        const sinomega = Math.sin(omega_rad);
+        const cosi = Math.cos(i_rad);
+        const sini = Math.sin(i_rad);
+
+        // Transform to 3D coordinates (ECLIPJ2000)
+        const P11 = cosOmega * cosomega - sinOmega * sinomega * cosi;
+        const P12 = -cosOmega * sinomega - sinOmega * cosomega * cosi;
+        const P13 = sinOmega * sini;
+
+        const P21 = sinOmega * cosomega + cosOmega * sinomega * cosi;
+        const P22 = -sinOmega * sinomega + cosOmega * cosomega * cosi;
+        const P23 = -cosOmega * sini;
+
+        const P31 = sinomega * sini;
+        const P32 = cosomega * sini;
+        const P33 = cosi;
+
+        // Apply rotation
+        const x = P11 * x_orb + P12 * y_orb + P13 * z_orb;
+        const y = P21 * x_orb + P22 * y_orb + P23 * z_orb;
+        const z = P31 * x_orb + P32 * y_orb + P33 * z_orb;
+
+        const vx = P11 * vx_orb + P12 * vy_orb + P13 * vz_orb;
+        const vy = P21 * vx_orb + P22 * vy_orb + P23 * vz_orb;
+        const vz = P31 * vx_orb + P32 * vy_orb + P33 * vz_orb;
+
+        return {
+            position: new THREE.Vector3(x, y, z),
+            velocity: new THREE.Vector3(vx, vy, vz)
+        };
     }
     
     /**

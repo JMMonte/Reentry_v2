@@ -2,6 +2,15 @@
 import * as THREE from 'three';
 import { Constants } from './Constants.js';
 
+/**
+ * Convert JavaScript Date to Julian Date
+ * @param {Date} date - JavaScript Date object
+ * @returns {number} Julian Date
+ */
+export function dateToJd(date) {
+    return (date.getTime() / 86400000) + Constants.ECLIPIC_J2000_JD;
+}
+
 export class TimeUtils {
     constructor(settings) {
         this.simulatedTime = new Date(settings.simulatedTime);

@@ -42,16 +42,16 @@ export default {
     // Atmospheric properties
     atmosphere: {
         limbFudgeFactor: 1,
-        hazeIntensity: 3,
-        scaleHeightMultiplier: 6.0,
-        thickness: 100, // km - effective atmosphere thickness
-        densityScaleHeight: 100.9, // km
-        rayleighScaleHeight: 190.9, // km
+        hazeIntensity: 2,
+        scaleHeightMultiplier: 2.0,
+        thickness: 200, // km - effective atmosphere thickness
+        densityScaleHeight: 10.9, // km
+        rayleighScaleHeight: 30.9, // km
         mieScaleHeight: 28, // km
-        rayleighScatteringCoeff: [0.005, 0.007, 0.012],
+        rayleighScatteringCoeff: [0.05, 0.07, 0.12],
         mieScatteringCoeff: 0.015,
-        mieAnisotropy: 0.7,
-        numLightSteps: 2,
+        mieAnisotropy: 7.7,
+        numLightSteps: 1,
         sunIntensity: 5,
         equatorialRadius: 71_492,
         polarRadius: 66_854,

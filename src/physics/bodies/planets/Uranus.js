@@ -35,17 +35,16 @@ export default {
 
     // Atmospheric properties (ice giant)
     atmosphere: {
-        limbFudgeFactor: 1.0,
-        hazeIntensity: 1,
-        scaleHeightMultiplier: 4.0,
-        thickness: 50, // km (effective visual thickness)
+        hazeIntensity: 19,
+        scaleHeightMultiplier: 1.0,
+        thickness: 150, // km (effective visual thickness)
         densityScaleHeight: 27.7, // km
         rayleighScaleHeight: 25, // km
-        mieScaleHeight: 5,  // km (methane ice clouds/haze)
-        rayleighScatteringCoeff: [0.001, 0.005, 0.010], // Cyan/blue
-        mieScatteringCoeff: 0.002,
-        mieAnisotropy: 0.5,
-        numLightSteps: 2,
+        mieScaleHeight: 15,  // km (methane ice clouds/haze)
+        rayleighScatteringCoeff: [0.01, 0.05, 0.10], // Cyan/blue
+        mieScatteringCoeff: 0.02,
+        mieAnisotropy: 100.5,
+        numLightSteps: 1,
         sunIntensity: 5,
         equatorialRadius: 25559,
         polarRadius: 24973,

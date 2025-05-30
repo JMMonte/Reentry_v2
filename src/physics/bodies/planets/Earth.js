@@ -104,13 +104,13 @@ export default {
     atmosphere: {
         thickness: 70, // km
         densityScaleHeight: 10, // km
-        hazeIntensity: 0.4,
-        scaleHeightMultiplier: 10.0,
+        hazeIntensity: 0.7,
+        scaleHeightMultiplier: 1.0,
         rayleighScaleHeight: 10, // km
         mieScaleHeight: 1.2, // km - height at which mie scattering is significant
-        rayleighScatteringCoeff: [0.0015, 0.004, 0.012],
-        mieScatteringCoeff: 0.00015,
-        mieAnisotropy: 0.75, // mie's anisotropy factor - how much light is scattered in the forward direction
+        rayleighScatteringCoeff: [0.015, 0.04, 0.12],
+        mieScatteringCoeff: 0.0015, // - 100x less than rayleigh
+        mieAnisotropy: 7.75, // mie's anisotropy factor - how much light is scattered in the forward direction
         numLightSteps: 1,
         sunIntensity: 1,
         equatorialRadius: earthRadius, // km
@@ -203,6 +203,12 @@ export default {
         longitudeOfAscendingNode: -11.26064, // degrees
         argumentOfPeriapsis: 114.20783, // degrees
         meanAnomalyAtEpoch: 358.617 // degrees at J2000.0
+    },
+
+    // Orbit visualization configuration
+    orbitVisualization: {
+        useSpecialEMBHandling: true, // Use special EMB handling for Earth around EMB
+        orbitPoints: 720 // High resolution for Earth-EMB orbit
     },
 
     // Climate zones for atmospheric modeling

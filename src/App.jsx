@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useRef, useContext } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ThemeProvider } from './components/ui/theme-provider';
 import { Layout } from './components/ui/Layout';
 import { defaultSettings } from './components/ui/controls/DisplayOptions';
@@ -7,90 +7,19 @@ import { useSimulationState } from './simulation/useSimulationState';
 import { SimulationStateManager } from './managers/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
-import LZString from 'lz-string';
 import { SimulationProvider } from './simulation/SimulationContext';
 import { useBodySelection } from './hooks/useBodySelection';
-import PropTypes from 'prop-types';
 import { usePhysicsSatellites } from './hooks/usePhysicsSatellites';
 import { PhysicsStateProvider } from './providers/PhysicsStateContext.jsx';
 import { CelestialBodiesProvider } from './providers/CelestialBodiesContext.jsx';
 
-// --- Toast Context and Hook ---
-const ToastContext = createContext(null);
-export function useToast() {
-  return useContext(ToastContext);
-}
-
-const Toast = React.forwardRef((props, ref) => {
-  const [visible, setVisible] = React.useState(false);
-  const [internalMessage, setInternalMessage] = React.useState('');
-  const hideTimeout = React.useRef();
-  React.useImperativeHandle(ref, () => ({
-    showToast: (msg) => {
-      setInternalMessage(msg);
-      setVisible(true);
-      if (hideTimeout.current) clearTimeout(hideTimeout.current);
-      hideTimeout.current = setTimeout(() => {
-        setVisible(false);
-        hideTimeout.current = setTimeout(() => setInternalMessage(''), 500);
-      }, 2000);
-    }
-  }), []);
-  React.useEffect(() => {
-    return () => hideTimeout.current && clearTimeout(hideTimeout.current);
-  }, []);
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 32,
-        display: 'flex',
-        justifyContent: 'center',
-        zIndex: 10000,
-        pointerEvents: 'none',
-      }}
-    >
-      {internalMessage && (
-        <div
-          className={`transition-all duration-500 ease-in-out transform ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} shadow-lg`}
-          style={{
-            background: 'linear-gradient(90deg, #232526 0%, #414345 100%)',
-            color: '#fff',
-            padding: '14px 36px',
-            borderRadius: 12,
-            fontSize: 17,
-            fontWeight: 500,
-            boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
-            minWidth: 220,
-            textAlign: 'center',
-            letterSpacing: 0.2,
-            pointerEvents: 'auto',
-          }}
-        >
-          {internalMessage}
-        </div>
-      )}
-    </div>
-  );
-});
-Toast.displayName = 'Toast';
-
-// --- Toast Provider ---
-function ToastProvider({ children }) {
-  const toastRef = useRef();
-  const showToast = (msg) => toastRef.current?.showToast(msg);
-  return (
-    <ToastContext.Provider value={{ showToast }}>
-      {children}
-      <Toast ref={toastRef} />
-    </ToastContext.Provider>
-  );
-}
-ToastProvider.propTypes = {
-  children: PropTypes.node.isRequired,
-};
+// Custom hooks
+import { useModalState } from './hooks/useAppState';
+import { useSimulationSharing } from './hooks/useSimulationSharing';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useSimulationEvents } from './hooks/useSimulationEvents';
+import { ToastProvider, useToast } from './components/ui/Toast';
+import { buildNavbarProps, buildModalProps } from './utils/propsBuilder';
 
 function getInitialDisplaySettings(importedState) {
   const loaded = importedState?.displaySettings || {};
@@ -102,37 +31,38 @@ function getInitialDisplaySettings(importedState) {
 }
 
 function App3DMain() {
-  const [isChatVisible, setIsChatVisible] = useState(false);
-  const [isSatelliteListVisible, setIsSatelliteListVisible] = useState(false);
-  const [debugWindows, setDebugWindows] = useState([]);
-  const [displaySettings, setDisplaySettings] = useState(() => getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash()));
-  const [isDisplayOptionsOpen, setIsDisplayOptionsOpen] = useState(false);
-  const [isSatelliteModalOpen, setIsSatelliteModalOpen] = useState(false);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [shareUrl, setShareUrl] = useState('');
-  const [shareCopied, setShareCopied] = useState(false);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isSimulationOpen, setIsSimulationOpen] = useState(false);
-  const [isGroundtrackOpen, setIsGroundtrackOpen] = useState(false);
+  // Core state
+  const [displaySettings, setDisplaySettings] = useState(() => 
+    getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash())
+  );
   const [authMode, setAuthMode] = useState('signin');
-  const [importedState, setImportedState] = useState(() => SimulationStateManager.decodeFromUrlHash());
+  const [importedState, setImportedState] = useState(() => 
+    SimulationStateManager.decodeFromUrlHash()
+  );
   const [simTime, setSimTime] = useState(() => new Date());
-  const { controller, ready } = useApp3D(importedState);
-  const app3d = controller?.app3d;
   const [checkedInitialState, setCheckedInitialState] = useState(false);
-  const ignoreNextHashChange = React.useRef(false);
-  const toastRef = useRef();
-  const [openPointModals, setOpenPointModals] = useState([]);
   const [isAssetsLoaded, setIsAssetsLoaded] = useState(false);
   const [isSimReady, setIsSimReady] = useState(false);
   const [timeWarpLoading, setTimeWarpLoading] = useState(false);
+  
+  // Refs
+  const toastRef = useRef();
+  
+  // Custom hooks for state management
+  const modalState = useModalState();
+  const { controller, ready } = useApp3D(importedState);
+  const app3d = controller?.app3d;
+  
+  // Custom hooks for business logic
+  const sharingHooks = useSimulationSharing(app3d, toastRef);
+  const { showToast } = useToast();
+  
+  // Satellite data
   const satellitesPhysics = usePhysicsSatellites(app3d);
   const satellitesUI = app3d?.satellites?.getSatellitesMap?.() || new Map();
-  // Merge physics and UI data for each satellite
   const satellites = Object.values(satellitesPhysics)
     .map(satState => {
       const satUI = satellitesUI.get(satState.id);
-      // Only include satellites that have UI counterparts
       if (!satUI) return null;
       return {
         ...satState,
@@ -142,98 +72,9 @@ function App3DMain() {
         delete: satUI.delete?.bind(satUI)
       };
     })
-    .filter(Boolean); // Remove null entries
+    .filter(Boolean);
 
-  useEffect(() => { setCheckedInitialState(true); }, []);
-  useEffect(() => {
-    const onHashChange = () => {
-      if (ignoreNextHashChange.current) {
-        ignoreNextHashChange.current = false;
-        return;
-      }
-      setImportedState(SimulationStateManager.decodeFromUrlHash());
-    };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
-  useSimulationState(controller, importedState);
-  useEffect(() => {
-    if (importedState && importedState.displaySettings) {
-      setDisplaySettings(getInitialDisplaySettings(importedState));
-    }
-  }, [importedState]);
-
-  useEffect(() => {
-    if (app3d && app3d.displaySettingsManager && typeof app3d.displaySettingsManager.applyAll === 'function') {
-      app3d.displaySettingsManager.applyAll();
-    }
-  }, [app3d]);
-  useEffect(() => {
-    if (app3d && app3d.sessionId) {
-      // This call ensures that when a session ID first becomes available,
-      // the simulation is synced with the current simTime established by initialState or defaults.
-      // It should NOT run every time simTime changes, only when sessionId becomes available.
-      setSimTime(app3d.timeUtils.getSimulatedTime());
-    }
-  }, [app3d?.sessionId]);
-  // High-frequency UI updates for smooth time display
-  useEffect(() => {
-    if (!app3d?.timeUtils) return;
-    
-    // Update UI at 20Hz for smooth time display without affecting physics
-    const uiUpdateInterval = setInterval(() => {
-      const currentTime = app3d.timeUtils.getSimulatedTime();
-      setSimTime(new Date(currentTime));
-    }, 50); // 50ms = 20Hz
-    
-    return () => clearInterval(uiUpdateInterval);
-  }, [app3d]);
-  
-  // Simplified UI updates - now just listen to physics-driven time events
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.detail?.simulatedTime) {
-        setSimTime(new Date(e.detail.simulatedTime));
-      }
-      // Also update timeWarp if provided in the event
-      if (e.detail?.timeWarp !== undefined) {
-        setTimeWarpLoading(false); // Clear loading state when we get an update
-      }
-    };
-    document.addEventListener('timeUpdate', handler);
-    
-    // Set initial state from app3d timeUtils
-    if (app3d?.timeUtils?.getSimulatedTime) {
-      setSimTime(app3d.timeUtils.getSimulatedTime());
-    }
-    
-    return () => document.removeEventListener('timeUpdate', handler);
-  }, [app3d]);
-  const handleSimulatedTimeChange = (newTime) => {
-    console.log('[App.jsx] handleSimulatedTimeChange called with newTime:', newTime);
-    setSimTime(new Date(newTime));
-    
-    // Check if we're using local physics or (legacy) remote session
-    const sessionId = app3d?.sessionId || controller?.sessionId;
-    const physicsProviderType = app3d?.physicsProviderType;
-    
-    if (sessionId && physicsProviderType === 'remote') {
-      // (Legacy) remote physics - use API call
-      console.log('[App.jsx] handleSimulatedTimeChange - Using backend API for remote physics');
-      setSimTime(new Date(newTime));
-    } else if (app3d?.timeUtils) {
-      // Local physics - update time directly
-      console.log('[App.jsx] handleSimulatedTimeChange - Using local time management');
-      app3d.timeUtils.setSimulatedTime(newTime);
-      
-      // Also update physics integration if available
-      if (app3d.physicsIntegration) {
-        app3d.physicsIntegration.setSimulationTime(new Date(newTime));
-      }
-    } else {
-      console.warn('[App.jsx] handleSimulatedTimeChange - No timeUtils found, cannot update simulation time');
-    }
-  };
+  // Body selection
   const {
     selectedBody,
     handleBodyChange,
@@ -248,19 +89,88 @@ function App3DMain() {
     ready
   });
 
-  // Handle satellite deletion
+  // Custom hooks for events and shortcuts
+  useKeyboardShortcuts(app3d, sharingHooks.saveSimulationState);
+  useSimulationEvents({
+    setSimTime,
+    setTimeWarpLoading,
+    setIsSimReady,
+    setIsAssetsLoaded,
+    setOpenPointModals: modalState.setOpenPointModals,
+    app3d
+  });
+
+  // One-time initialization
+  useEffect(() => { setCheckedInitialState(true); }, []);
+
+  // Hash change handling
+  useEffect(() => {
+    const onHashChange = () => {
+      if (sharingHooks.ignoreNextHashChange.current) {
+        sharingHooks.ignoreNextHashChange.current = false;
+        return;
+      }
+      setImportedState(SimulationStateManager.decodeFromUrlHash());
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [sharingHooks.ignoreNextHashChange]);
+
+  // Simulation state management
+  useSimulationState(controller, importedState);
+
+  // Display settings sync
+  useEffect(() => {
+    if (importedState && importedState.displaySettings) {
+      setDisplaySettings(getInitialDisplaySettings(importedState));
+    }
+  }, [importedState]);
+
+  useEffect(() => {
+    if (app3d && app3d.displaySettingsManager && typeof app3d.displaySettingsManager.applyAll === 'function') {
+      app3d.displaySettingsManager.applyAll();
+    }
+  }, [app3d]);
+
+  // Session sync
+  useEffect(() => {
+    if (app3d && app3d.sessionId) {
+      setSimTime(app3d.timeUtils.getSimulatedTime());
+    }
+  }, [app3d?.sessionId]);
+
+  // Time handling
+  const handleSimulatedTimeChange = (newTime) => {
+    setSimTime(new Date(newTime));
+    
+    const sessionId = app3d?.sessionId || controller?.sessionId;
+    const physicsProviderType = app3d?.physicsProviderType;
+    
+    if (sessionId && physicsProviderType === 'remote') {
+      console.log('[App.jsx] handleSimulatedTimeChange - Using backend API for remote physics');
+      setSimTime(new Date(newTime));
+    } else if (app3d?.timeUtils) {
+      console.log('[App.jsx] handleSimulatedTimeChange - Using local time management');
+      app3d.timeUtils.setSimulatedTime(newTime);
+      
+      if (app3d.physicsIntegration) {
+        app3d.physicsIntegration.setSimulationTime(new Date(newTime));
+      }
+    } else {
+      console.warn('[App.jsx] handleSimulatedTimeChange - No timeUtils found, cannot update simulation time');
+    }
+  };
+
+  // Satellite deletion handling
   useEffect(() => {
     const handleSatelliteDeleted = (e) => {
       const deletedSatelliteId = e.detail?.id;
       if (deletedSatelliteId) {
-        // Close any debug windows for this satellite
-        setDebugWindows(prev => prev.filter(w => w.id !== deletedSatelliteId));
+        modalState.setDebugWindows(prev => prev.filter(w => w.id !== deletedSatelliteId));
         
-        // Check if the deleted satellite was the currently selected body
         if (selectedBody) {
           if (selectedBody.id === deletedSatelliteId || 
               (typeof selectedBody === 'string' && selectedBody.includes(deletedSatelliteId))) {
-            // Switch camera to 'none' selection
             handleBodyChange('none');
           }
         }
@@ -269,8 +179,9 @@ function App3DMain() {
     
     document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
     return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
-  }, [selectedBody, handleBodyChange]);
+  }, [selectedBody, handleBodyChange, modalState]);
 
+  // Selected body updates
   useEffect(() => {
     if (
       controller?.app3d?.updateSelectedBody &&
@@ -282,6 +193,7 @@ function App3DMain() {
     }
   }, [selectedBody, controller, ready]);
 
+  // Satellite creation
   const onCreateSatellite = async (params) => {
     try {
       let result;
@@ -295,8 +207,7 @@ function App3DMain() {
       
       const satellite = result?.satellite || result;
       if (satellite) {
-        setIsSatelliteModalOpen(false);
-        // Focus on the new satellite in the navbar body selector
+        modalState.setIsSatelliteModalOpen(false);
         handleBodyChange(satellite);
         app3d?.createDebugWindow?.(satellite);
       }
@@ -304,151 +215,34 @@ function App3DMain() {
       console.error('Error creating satellite:', error);
     }
   };
-  const handleCopyShareUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 1500);
-    } catch (err) {
-      alert('Failed to copy URL: ' + err.message);
-    }
-  };
-  const handleShareViaEmail = () => {
-    const subject = encodeURIComponent('Check out this simulation state!');
-    const body = encodeURIComponent(`Open this link to load the simulation state:
-${shareUrl}`);
-    window.open(`mailto:?subject=${subject}&body=${body}`);
-  };
+
+  // POI modal handling
   useEffect(() => {
-    const onKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        if (!app3d) return;
-        const state = app3d.exportSimulationState();
-        const json = JSON.stringify(state);
-        const compressed = LZString.compressToEncodedURIComponent(json);
-        ignoreNextHashChange.current = true;
-        window.location.hash = `state=${compressed}`;
-        toastRef.current?.showToast('Sim saved');
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [app3d, toastRef]);
-  const handleImportState = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const state = JSON.parse(e.target.result);
-        const app = app3d;
-        if (!app) return;
-        if (typeof app.importSimulationState === 'function') {
-          app.importSimulationState(state);
-        }
-        if (state.displaySettings) {
-          setDisplaySettings(getInitialDisplaySettings(state));
-        }
-        // Update imported state so the body-selection hook can restore focus
-        setImportedState(state);
-        const json = JSON.stringify(state);
-        const compressed = LZString.compressToEncodedURIComponent(json);
-        ignoreNextHashChange.current = true;
-        window.location.hash = `state=${compressed}`;
-        toastRef.current?.showToast('Sim saved');
-      } catch (err) {
-        alert('Failed to import simulation state: ' + err.message);
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-  };
-  // Toggle modals on point click: open or close per feature & category
-  useEffect(() => {
-    const onPointClick = (e) => {
-      const { feature, category } = e.detail;
-      setOpenPointModals(prev => {
-        const isSame = prev.length === 1 && prev[0].feature === feature && prev[0].category === category;
-        // toggle off if clicking the same, else open only the new one
-        return isSame ? [] : [{ feature, category }];
-      });
-    };
-    window.addEventListener('earthPointClick', onPointClick);
-    return () => window.removeEventListener('earthPointClick', onPointClick);
-  }, []);
-  // Notify App3D when a POI modal is open/closed
-  useEffect(() => {
-    const open = openPointModals.length > 0;
-    const feature = openPointModals[0]?.feature;
-    const category = openPointModals[0]?.category;
+    const open = modalState.openPointModals.length > 0;
+    const feature = modalState.openPointModals[0]?.feature;
+    const category = modalState.openPointModals[0]?.category;
     window.dispatchEvent(new CustomEvent('poiModal', {
       detail: { open, feature, category }
     }));
-  }, [openPointModals]);
-  // Make the 3D app globally available for UI components
+  }, [modalState.openPointModals]);
+
+  // Global app3d reference
   useEffect(() => {
     if (app3d) {
       window.app3d = app3d;
     }
   }, [app3d]);
 
-  // Listen for the custom event from simulation init
-  useEffect(() => {
-    const handleSceneReady = () => {
-      setIsSimReady(true);
-      console.log('[App.jsx] sceneReady event received, hiding spinner.');
-    };
-    window.addEventListener('sceneReadyFromBackend', handleSceneReady);
-    return () => {
-      window.removeEventListener('sceneReadyFromBackend', handleSceneReady);
-    };
-  }, []);
-
-  // Listen for assets loaded event
-  useEffect(() => {
-    const handleAssetsLoaded = () => setIsAssetsLoaded(true);
-    window.addEventListener('assetsLoaded', handleAssetsLoaded);
-    return () => window.removeEventListener('assetsLoaded', handleAssetsLoaded);
-  }, []);
-
-  // Build availableBodies from app3d.celestialBodies (use instantiated body objects, preserving all properties)
-  let availableBodies = [];
-  if (Array.isArray(app3d?.celestialBodies)) {
-    availableBodies = app3d.celestialBodies
-      .filter(b => b && (b.naifId !== undefined && b.naifId !== null))
-      .map(b => ({ ...b, naifId: b.naifId ?? b.naif_id }));
-  }
-  if (availableBodies.length === 0) {
-    availableBodies = [{ name: 'Earth', naifId: 399, type: 'planet' }];
-  }
-
-  const { showToast } = useToast();
-  React.useEffect(() => {
-    function handleLost() {
-      showToast('Simulation connection lost');
-    }
-    function handleRestored() {
-      showToast('Simulation connection restored');
-    }
-    window.addEventListener('sim-connection-lost', handleLost);
-    window.addEventListener('sim-connection-restored', handleRestored);
-    return () => {
-      window.removeEventListener('sim-connection-lost', handleLost);
-      window.removeEventListener('sim-connection-restored', handleRestored);
-    };
-  }, [showToast]);
-
-  const isLoadingInitialData = !isAssetsLoaded || !isSimReady;
-
+  // Debug window management
   useEffect(() => {
     if (!app3d) return;
+    
     app3d.createDebugWindow = (satellite) => {
       if (!satellite || satellite.id === undefined || satellite.id === null) {
         console.error("createDebugWindow called with invalid satellite or satellite.id", satellite);
         return;
       }
-      setDebugWindows(prev => {
+      modalState.setDebugWindows(prev => {
         if (prev.some(w => w.id === satellite.id)) return prev;
         console.log(`Creating debug window for satellite ${satellite.id}`);
         return [
@@ -465,149 +259,125 @@ ${shareUrl}`);
         ];
       });
     };
+    
     app3d.removeDebugWindow = (id) => {
-      setDebugWindows(prev => prev.filter(w => w.id !== id));
+      modalState.setDebugWindows(prev => prev.filter(w => w.id !== id));
     };
+    
     return () => {
       delete app3d.createDebugWindow;
       delete app3d.removeDebugWindow;
     };
-  }, [app3d, handleBodyChange]);
+  }, [app3d, handleBodyChange, modalState]);
+
+  // Connection status toasts
+  useEffect(() => {
+    function handleLost() {
+      showToast('Simulation connection lost');
+    }
+    function handleRestored() {
+      showToast('Simulation connection restored');
+    }
+    window.addEventListener('sim-connection-lost', handleLost);
+    window.addEventListener('sim-connection-restored', handleRestored);
+    return () => {
+      window.removeEventListener('sim-connection-lost', handleLost);
+      window.removeEventListener('sim-connection-restored', handleRestored);
+    };
+  }, [showToast]);
 
   if (!checkedInitialState) return null;
-  // Build props for Layout
-  const navbarProps = {
-    onChatToggle: () => setIsChatVisible(!isChatVisible),
-    onSatelliteListToggle: () => setIsSatelliteListVisible(!isSatelliteListVisible),
-    onDisplayOptionsToggle: () => setIsDisplayOptionsOpen(!isDisplayOptionsOpen),
-    onSatelliteCreatorToggle: () => setIsSatelliteModalOpen(!isSatelliteModalOpen),
-    onSimulationToggle: () => setIsSimulationOpen(!isSimulationOpen),
-    onGroundtrackToggle: () => setIsGroundtrackOpen(!isGroundtrackOpen),
-    isChatVisible,
-    isSatelliteListVisible,
-    isDisplayOptionsOpen,
-    isSatelliteModalOpen,
+
+  // Build available bodies
+  let availableBodies = [];
+  if (Array.isArray(app3d?.celestialBodies)) {
+    availableBodies = app3d.celestialBodies
+      .filter(b => b && (b.naifId !== undefined && b.naifId !== null))
+      .map(b => ({ ...b, naifId: b.naifId ?? b.naif_id }));
+  }
+  if (availableBodies.length === 0) {
+    availableBodies = [{ name: 'Earth', naifId: 399, type: 'planet' }];
+  }
+
+  const isLoadingInitialData = !isAssetsLoaded || !isSimReady;
+
+  // Build props using utility functions
+  const navbarProps = buildNavbarProps({
+    modalState,
     selectedBody,
-    onBodySelect: handleBodyChange,
+    handleBodyChange,
     groupedPlanetOptions,
     satelliteOptions,
     getDisplayValue,
-    timeWarp: app3d?.timeUtils?.getTimeWarp() ?? 1,
+    app3d,
     timeWarpLoading,
-    onTimeWarpChange: async (newWarp) => {
-      console.log('[App.jsx] onTimeWarpChange called with newWarp:', newWarp);
-      // Only use local time management for time warp
-      if (app3d?.timeUtils) {
-        app3d.timeUtils.setLocalTimeWarp(newWarp);
-        if (app3d.satellites?.physicsProvider?.setTimeWarp) {
-          app3d.satellites.physicsProvider.setTimeWarp(newWarp);
-        }
-      } else {
-        console.warn('[App.jsx] onTimeWarpChange - No timeUtils found, cannot update time warp');
-      }
-    },
-    simulatedTime: simTime,
-    onSimulatedTimeChange: handleSimulatedTimeChange,
-    app3DRef: { current: app3d },
-    satellites: Object.values(satellites),
-    onShareState: undefined,
-    onImportState: handleImportState,
-    shareModalOpen,
-    setShareModalOpen,
-    setShareUrl,
-    isAuthOpen,
-    setIsAuthOpen,
-    setAuthMode,
-    simulationOpen: isSimulationOpen,
-    setSimulationOpen: setIsSimulationOpen,
-    planetOptions,
-  };
-  const chatModalProps = {
-    isOpen: isChatVisible,
-    onClose: () => setIsChatVisible(false),
-    socket: controller?.app3d?.socketManager?.socket
-  };
-  const displayOptionsProps = {
-    settings: displaySettings,
-    onSettingChange: (key, value) => {
-      if (app3d) {
-        app3d.updateDisplaySetting(key, value);
-        setDisplaySettings(prev => ({ ...prev, [key]: value }));
-      }
-    },
-    isOpen: isDisplayOptionsOpen,
-    onOpenChange: setIsDisplayOptionsOpen,
-    app3DRef: { current: app3d },
-    physicsProviderType: app3d?.physicsProviderType || 'unknown',
-  };
-  const satelliteListWindowProps = {
+    simTime,
+    handleSimulatedTimeChange,
     satellites,
-    isOpen: isSatelliteListVisible,
-    setIsOpen: setIsSatelliteListVisible,
-    onBodySelect: handleBodyChange,
-    debugWindows,
-    app3d
-  };
-  const satelliteCreatorModalProps = {
-    isOpen: isSatelliteModalOpen,
-    onClose: () => setIsSatelliteModalOpen(false),
-    onCreate: onCreateSatellite,
-    availableBodies
-  };
-  const shareModalProps = {
-    isOpen: shareModalOpen,
-    onClose: () => setShareModalOpen(false),
-    shareUrl,
-    shareCopied,
-    onCopy: handleCopyShareUrl,
-    onShareEmail: handleShareViaEmail
-  };
-  const authModalProps = {
-    isOpen: isAuthOpen,
-    onClose: () => setIsAuthOpen(false),
-    mode: authMode,
-    setMode: setAuthMode,
-    onSignupSuccess: showToast
-  };
-  const earthPointModalProps = {
-    openModals: openPointModals,
-    onToggle: (feature, category) => {
-      setOpenPointModals(prev => {
-        const isSame = prev.length === 1 && prev[0].feature === feature && prev[0].category === category;
-        // toggle off if clicking the same, else open only the new one
-        return isSame ? [] : [{ feature, category }];
-      });
-    }
-  };
-  const groundTrackWindowProps = { isOpen: isGroundtrackOpen, onClose: () => setIsGroundtrackOpen(false), satellites: satellitesPhysics, planets: window.app3d?.planets || [] };
-  const simulationWindowProps = { isOpen: isSimulationOpen, onClose: () => setIsSimulationOpen(false), app3d };
+    handleImportState: (event) => sharingHooks.handleImportState(
+      event, setDisplaySettings, setImportedState, getInitialDisplaySettings
+    ),
+    shareModalOpen: modalState.shareModalOpen,
+    setShareModalOpen: modalState.setShareModalOpen,
+    setShareUrl: sharingHooks.setShareUrl,
+    isAuthOpen: modalState.isAuthOpen,
+    setIsAuthOpen: modalState.setIsAuthOpen,
+    setAuthMode,
+    isSimulationOpen: modalState.isSimulationOpen,
+    setIsSimulationOpen: modalState.setIsSimulationOpen,
+    planetOptions
+  });
+
+  const modalProps = buildModalProps({
+    modalState,
+    controller,
+    displaySettings,
+    setDisplaySettings,
+    app3d,
+    satellites,
+    handleBodyChange,
+    debugWindows: modalState.debugWindows,
+    onCreateSatellite,
+    availableBodies,
+    shareUrl: sharingHooks.shareUrl,
+    shareCopied: sharingHooks.shareCopied,
+    handleCopyShareUrl: sharingHooks.handleCopyShareUrl,
+    handleShareViaEmail: sharingHooks.handleShareViaEmail,
+    authMode,
+    setAuthMode,
+    showToast,
+    satellitesPhysics
+  });
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
-      <ToastProvider>
-        <SimulationProvider timeUtils={app3d?.timeUtils} displaySettings={displaySettings} simulatedTime={app3d?.timeUtils?.getSimulatedTime() ?? new Date()} timeWarp={app3d?.timeUtils?.getTimeWarp() ?? 1}>
-          <CelestialBodiesProvider>
-            <PhysicsStateProvider>
-              <Layout
+      <SimulationProvider 
+        timeUtils={app3d?.timeUtils} 
+        displaySettings={displaySettings} 
+        simulatedTime={app3d?.timeUtils?.getSimulatedTime() ?? new Date()} 
+        timeWarp={app3d?.timeUtils?.getTimeWarp() ?? 1}
+      >
+        <CelestialBodiesProvider>
+          <PhysicsStateProvider>
+            <Layout
               navbarProps={navbarProps}
-              chatModalProps={chatModalProps}
-              displayOptionsProps={displayOptionsProps}
-              debugWindows={debugWindows}
-              satelliteListWindowProps={satelliteListWindowProps}
-              satelliteCreatorModalProps={satelliteCreatorModalProps}
-              shareModalProps={shareModalProps}
-              authModalProps={authModalProps}
-              simulationWindowProps={simulationWindowProps}
-              groundTrackWindowProps={groundTrackWindowProps}
-              earthPointModalProps={earthPointModalProps}
+              chatModalProps={modalProps.chatModal}
+              displayOptionsProps={modalProps.displayOptions}
+              debugWindows={modalState.debugWindows}
+              satelliteListWindowProps={modalProps.satelliteListWindow}
+              satelliteCreatorModalProps={modalProps.satelliteCreatorModal}
+              shareModalProps={modalProps.shareModal}
+              authModalProps={modalProps.authModal}
+              simulationWindowProps={modalProps.simulationWindow}
+              groundTrackWindowProps={modalProps.groundTrackWindow}
+              earthPointModalProps={modalProps.earthPointModal}
               isLoadingInitialData={isLoadingInitialData}
             >
-              {/* Main app content (canvas, etc.) */}
               <canvas id="three-canvas" className="absolute inset-0 z-0" />
             </Layout>
-            </PhysicsStateProvider>
-          </CelestialBodiesProvider>
-        </SimulationProvider>
-      </ToastProvider>
+          </PhysicsStateProvider>
+        </CelestialBodiesProvider>
+      </SimulationProvider>
     </ThemeProvider>
   );
 }
@@ -615,7 +385,9 @@ ${shareUrl}`);
 function AppWithCanvas() {
   const [canvasReady, setCanvasReady] = useState(false);
   const [checkedInitialState, setCheckedInitialState] = useState(false);
+  
   useEffect(() => { setCheckedInitialState(true); }, []);
+  
   useEffect(() => {
     const check = () => {
       if (document.getElementById('three-canvas')) {
@@ -626,7 +398,9 @@ function AppWithCanvas() {
     };
     check();
   }, []);
+  
   if (!checkedInitialState) return null;
+  
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <div className="relative h-screen w-screen overflow-hidden">

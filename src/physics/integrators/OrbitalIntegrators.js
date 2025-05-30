@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { AtmosphericModels } from '../core/AtmosphericModels.js';
 import { GravityCalculator } from '../core/GravityCalculator.js';
-import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
+import { stateToKeplerian } from '../../utils/KeplerianUtils.js';
 import { Constants } from '../../utils/Constants.js';
 
 /**
@@ -448,7 +448,7 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
     
     // Use the dominant body's gravitational parameter
     const mu = dominantBody.GM || (Constants.G * dominantBody.mass);
-    const oe = PhysicsUtils.calculateDetailedOrbitalElements(
+    const oe = stateToKeplerian(
         new THREE.Vector3(...pos0),
         new THREE.Vector3(...vel0),
         mu

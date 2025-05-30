@@ -255,6 +255,43 @@ export class AtmosphereComponent {
         // Update uniforms using the material we found
         material.uniforms.uCameraPosition.value.copy(this._camRel);
         material.uniforms.uSunPosition.value.copy(sunRel);
+        
+        // Calculate LOD factor based on distance
+        const distance = this._camRel.length();
+        const planetRadius = this.planet.radius;
+        
+        // Calculate LOD factor: 1.0 when very close, 0.0 when far away
+        // Use distance in planet radii for scaling
+        const distanceInRadii = distance / planetRadius;
+        let lodFactor = 1.0;
+        
+        if (distanceInRadii > 100) {
+            // Very far: minimum quality
+            lodFactor = 0.0;
+        } else if (distanceInRadii > 20) {
+            // Far: interpolate between 0.0 and 0.5
+            lodFactor = 0.5 * (100 - distanceInRadii) / 80;
+        } else if (distanceInRadii > 5) {
+            // Medium: interpolate between 0.5 and 1.0
+            lodFactor = 0.5 + 0.5 * (20 - distanceInRadii) / 15;
+        } else {
+            // Close: maximum quality
+            lodFactor = 1.0;
+        }
+        
+        // Update LOD uniform
+        if (material.uniforms.uLODFactor) {
+            material.uniforms.uLODFactor.value = lodFactor;
+        }
+        
+        // If using LOD, update all levels with the same LOD factor
+        if (this.mesh instanceof THREE.LOD) {
+            this.mesh.levels.forEach(level => {
+                if (level.object?.material?.uniforms?.uLODFactor) {
+                    level.object.material.uniforms.uLODFactor.value = lodFactor;
+                }
+            });
+        }
 
         // Planet frame rotation
         // The atmosphere mesh is added to planet.rotationGroup, which has the planet's axial tilt.

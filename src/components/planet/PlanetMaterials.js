@@ -294,6 +294,8 @@ export class PlanetMaterials {
             uCameraPosition:       { value: new THREE.Vector3() },
             uPlanetPositionWorld:  { value: new THREE.Vector3() },
             uHazeIntensity:        { value: atm.hazeIntensity !== undefined ? atm.hazeIntensity : 1.0 },
+            // LOD factor for quality adjustment (0.0 = minimum, 1.0 = maximum)
+            uLODFactor:            { value: 1.0 },
         };
         const material = new THREE.ShaderMaterial({
             uniforms,

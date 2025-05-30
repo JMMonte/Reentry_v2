@@ -1,21 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "../button";
+import { Input } from "../input";
+import { Label } from "../label";
 import { DraggableModal } from "../modal/DraggableModal";
 import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
+import { PhysicsAPI } from '../../../physics/PhysicsAPI';
+import * as THREE from 'three';
+
+// Section component for collapsible sections
+const Section = ({ title, isOpen, onToggle, children }) => {
+  return (
+    <div className="border-b border-border/50 last:border-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          console.log(`[Section] Clicked ${title}, isOpen=${isOpen}`);
+          onToggle();
+        }}
+        className="w-full flex items-center justify-between py-2 px-1 hover:bg-accent/5 transition-colors cursor-pointer text-left"
+      >
+        <span className="text-xs font-semibold text-foreground/90">{title}</span>
+        <span className="text-xs text-muted-foreground">{isOpen ? '−' : '+'}</span>
+      </button>
+      {isOpen && (
+        <div className="pb-2 px-1 space-y-1">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
+Section.propTypes = {
+  title: PropTypes.string.isRequired,
+  isOpen: PropTypes.bool.isRequired,
+  onToggle: PropTypes.func.isRequired,
+  children: PropTypes.node
+};
 
 export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenManeuver, physics }) {
   const { celestialBodies } = useCelestialBodies();
   const [apsisData, setApsisData] = useState(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
-  // const [dragData, setDragData] = useState(null);
-  // const [perturbationData, setPerturbationData] = useState(null);
   const [simTime, setSimTime] = useState(null);
   const [lat, setLat] = useState(null);
   const [lon, setLon] = useState(null);
+  const [orbitalElements, setOrbitalElements] = useState(null);
+  
+  // Simulation properties state
+  const [orbitPeriods, setOrbitPeriods] = useState(satellite?.orbitSimProperties?.periods || 1);
+  const [pointsPerPeriod, setPointsPerPeriod] = useState(satellite?.orbitSimProperties?.pointsPerPeriod || 180);
+  
+  // Section visibility states
+  const [showCharacteristics, setShowCharacteristics] = useState(true);
+  const [showPosition, setShowPosition] = useState(true);
+  const [showStateVectors, setShowStateVectors] = useState(false);
+  const [showForces, setShowForces] = useState(false);
+  const [showOrbit, setShowOrbit] = useState(true);
+  const [showSimProperties, setShowSimProperties] = useState(false);
+  const [showPropagation, setShowPropagation] = useState(false);
+  
+  // Propagation data state
+  const [propagationData, setPropagationData] = useState(null);
+
+  // Update state when satellite changes
+  useEffect(() => {
+    if (satellite?.orbitSimProperties) {
+      setOrbitPeriods(satellite.orbitSimProperties.periods || 1);
+      setPointsPerPeriod(satellite.orbitSimProperties.pointsPerPeriod || 180);
+    }
+  }, [satellite?.orbitSimProperties]);
+
 
   // Only keep useEffect for non-physics debug data
   useEffect(() => {
@@ -47,6 +107,137 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     return () => document.removeEventListener('simulationDataUpdate', handleSimData);
   }, [satellite.id]);
 
+  // Calculate orbital elements from physics data
+  useEffect(() => {
+    if (!physics || !physics.position || !physics.velocity || !physics.centralBodyNaifId) return;
+    
+    try {
+      // Convert arrays to THREE.Vector3
+      const position = new THREE.Vector3(...physics.position);
+      const velocity = new THREE.Vector3(...physics.velocity);
+      
+      // Get central body from celestialBodies or use fallback
+      let centralBody = null;
+      let bodyRadius = 0;
+      
+      if (celestialBodies && celestialBodies.length > 0) {
+        centralBody = celestialBodies.find(b => 
+          b.naif_id === parseInt(physics.centralBodyNaifId) || b.naifId === parseInt(physics.centralBodyNaifId)
+        );
+      }
+      
+      // If not found in celestialBodies, try to get from physics engine or use defaults
+      if (!centralBody) {
+        // Try to get from app3d physics engine
+        const physicsBody = window.app3d?.physicsIntegration?.physicsEngine?.bodies?.[physics.centralBodyNaifId];
+        if (physicsBody) {
+          centralBody = physicsBody;
+          bodyRadius = physicsBody.radius || 0;
+        } else {
+          // Use default values for common bodies
+          const defaultBodies = {
+            399: { name: 'Earth', GM: 398600.4418, radius: 6371.0 }, // Earth
+            301: { name: 'Moon', GM: 4902.8, radius: 1737.4 },      // Moon
+            10: { name: 'Sun', GM: 132712440018, radius: 695700 }   // Sun
+          };
+          
+          const defaultBody = defaultBodies[physics.centralBodyNaifId];
+          if (defaultBody) {
+            centralBody = defaultBody;
+            bodyRadius = defaultBody.radius;
+          } else {
+            console.warn(`[SatelliteDebugWindow] Central body ${physics.centralBodyNaifId} not found, using Earth defaults`);
+            centralBody = defaultBodies[399]; // Default to Earth
+            bodyRadius = defaultBodies[399].radius;
+          }
+        }
+      } else {
+        bodyRadius = centralBody.radius || 0;
+      }
+      
+      // Calculate orbital elements using PhysicsAPI
+      const elements = PhysicsAPI.calculateOrbitalElements(
+        position,
+        velocity,
+        centralBody,
+        bodyRadius
+      );
+      
+      setOrbitalElements(elements);
+      setApsisData(elements); // Also set apsis data for backward compatibility
+      
+    } catch (error) {
+      console.error('[SatelliteDebugWindow] Error calculating orbital elements:', error);
+    }
+  }, [physics, celestialBodies]);
+
+  // Fetch propagation data from orbit manager
+  useEffect(() => {
+    if (!satellite || !window.app3d?.satelliteOrbitManager) return;
+    
+    const updatePropagationData = () => {
+      const orbitManager = window.app3d.satelliteOrbitManager;
+      const orbitData = orbitManager.orbitCache.get(satellite.id);
+      
+      if (orbitData && orbitData.points && orbitData.points.length > 0) {
+        // Calculate propagation duration
+        const lastPoint = orbitData.points[orbitData.points.length - 1];
+        const propagationDuration = lastPoint.time || 0; // seconds
+        
+        // Find SOI transitions
+        const soiTransitions = [];
+        let lastBodyId = null;
+        
+        for (let i = 0; i < orbitData.points.length; i++) {
+          const point = orbitData.points[i];
+          if (lastBodyId !== null && point.centralBodyId !== lastBodyId) {
+            soiTransitions.push({
+              index: i,
+              time: point.time,
+              fromBody: lastBodyId,
+              toBody: point.centralBodyId,
+              isEntry: point.isSOIEntry || false,
+              isExit: point.isSOIExit || false
+            });
+          }
+          lastBodyId = point.centralBodyId;
+        }
+        
+        setPropagationData({
+          duration: propagationDuration,
+          pointCount: orbitData.points.length,
+          maxPeriods: orbitData.maxPeriods,
+          soiTransitions: soiTransitions,
+          partial: orbitData.partial || false,
+          timestamp: orbitData.timestamp,
+          centralBodyId: orbitData.centralBodyNaifId
+        });
+      } else {
+        setPropagationData(null);
+      }
+    };
+    
+    // Initial update
+    updatePropagationData();
+    
+    // Listen for orbit updates
+    const handleOrbitUpdate = (e) => {
+      if (e.detail?.satelliteId === satellite.id) {
+        updatePropagationData();
+      }
+    };
+    
+    document.addEventListener('orbitUpdated', handleOrbitUpdate);
+    
+    // Periodic update to catch any changes
+    const intervalId = setInterval(updatePropagationData, 1000);
+    
+    return () => {
+      document.removeEventListener('orbitUpdated', handleOrbitUpdate);
+      clearInterval(intervalId);
+    };
+  }, [satellite?.id]);
+
   const handleFocus = () => {
     if (onBodySelect && satellite) {
       const formattedValue = formatBodySelection(satellite);
@@ -61,17 +252,42 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     }
   };
 
+  const handleSimPropertyChange = (property, value) => {
+    if (!satellite) return;
+    
+    // Update satellite's simulation properties
+    if (!satellite.orbitSimProperties) {
+      satellite.orbitSimProperties = {};
+    }
+    
+    satellite.orbitSimProperties[property] = value;
+    
+    // Emit event for Three.js layer to handle
+    console.log(`[SatelliteDebugWindow] Emitting satelliteSimPropertiesChanged event for satellite ${satellite.id}`);
+    
+    const event = new CustomEvent('satelliteSimPropertiesChanged', {
+      detail: {
+        satelliteId: satellite.id,
+        property: property,
+        value: value,
+        allProperties: satellite.orbitSimProperties
+      }
+    });
+    
+    document.dispatchEvent(event);
+  };
+
   const renderVector = (vector, label, isVelocity = false) => {
     if (!vector) return null;
     // Position is in km
     // Velocity is in km/s
     const unit = isVelocity ? 'km/s' : 'km';
     return (
-      <div className="grid grid-cols-4 gap-0.5">
-        <span className="text-[10px] font-mono text-muted-foreground">{label}:</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.x)} {unit}</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.y)} {unit}</span>
-        <span className="text-[10px] font-mono">{formatNumber(vector.z)} {unit}</span>
+      <div className="grid grid-cols-4 gap-1">
+        <span className="text-xs font-mono text-muted-foreground">{label}:</span>
+        <span className="text-xs font-mono">{formatNumber(vector.x)} {unit}</span>
+        <span className="text-xs font-mono">{formatNumber(vector.y)} {unit}</span>
+        <span className="text-xs font-mono">{formatNumber(vector.z)} {unit}</span>
       </div>
     );
   };
@@ -96,10 +312,41 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   //   );
   // };
 
-  const formatNumber = (num) => {
+  const formatNumber = (num, decimals = 2) => {
     if (num === undefined || num === null) return 'N/A';
-    return typeof num === 'number' ? num.toFixed(2) : num;
+    return typeof num === 'number' ? num.toFixed(decimals) : num;
   };
+
+  // Format duration from seconds to human-readable format
+  const formatDuration = (seconds) => {
+    if (!seconds || seconds < 0) return 'N/A';
+    
+    const years = Math.floor(seconds / (365.25 * 24 * 3600));
+    const days = Math.floor((seconds % (365.25 * 24 * 3600)) / (24 * 3600));
+    const hours = Math.floor((seconds % (24 * 3600)) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    const parts = [];
+    if (years > 0) parts.push(`${years}y`);
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
+    
+    return parts.join(' ');
+  };
+
+
+  // Data row component for consistent formatting
+  const DataRow = ({ label, value, unit = '', className = '' }) => (
+    <div className={`grid grid-cols-2 gap-1 ${className}`}>
+      <span className="text-xs text-muted-foreground truncate">{label}:</span>
+      <span className="text-xs font-mono text-foreground">
+        {value} {unit && <span className="text-muted-foreground">{unit}</span>}
+      </span>
+    </div>
+  );
 
   // const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -169,10 +416,32 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
 
   // Helper to get body name from NAIF ID using celestial bodies data
   const getBodyName = (naifId) => {
-    const body = celestialBodies.find(b => 
-      b.naif_id === parseInt(naifId) || b.naifId === parseInt(naifId)
-    );
-    return body?.name || `Body ${naifId}`;
+    // First try celestialBodies from context
+    if (celestialBodies && celestialBodies.length > 0) {
+      const body = celestialBodies.find(b => 
+        b.naif_id === parseInt(naifId) || b.naifId === parseInt(naifId)
+      );
+      if (body) return body.name;
+    }
+    
+    // Fallback to common body names
+    const commonBodies = {
+      10: 'Sun',
+      199: 'Mercury',
+      299: 'Venus',
+      399: 'Earth',
+      301: 'Moon',
+      499: 'Mars',
+      401: 'Phobos',
+      402: 'Deimos',
+      599: 'Jupiter',
+      699: 'Saturn',
+      799: 'Uranus',
+      899: 'Neptune',
+      999: 'Pluto'
+    };
+    
+    return commonBodies[parseInt(naifId)] || `Body ${naifId}`;
   };
 
   if (!satellite) return null;
@@ -204,12 +473,12 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       title={satellite.name || `Satellite ${satellite.id}`}
       isOpen={true}
       onClose={onClose}
-      defaultPosition={{ x: window.innerWidth - 350, y: 80 }}
+      defaultPosition={{ x: window.innerWidth - 380, y: 80 }}
       resizable={true}
-      defaultWidth={320}
-      defaultHeight={500}
-      minWidth={280}
-      minHeight={300}
+      defaultWidth={360}
+      defaultHeight={480}
+      minWidth={300}
+      minHeight={350}
       leftElement={
         <ColorPicker
           color={satellite.color}
@@ -230,239 +499,382 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         </div>
       }
     >
-      <div className="space-y-2">
+      <div className="space-y-0">
         {satellite && (
           <>
             {/* Satellite Characteristics Section */}
-            <div className="space-y-1">
-              <div className="text-[10px] font-semibold">Satellite Properties</div>
-              <div className='grid grid-cols-2 gap-0.5'>
-                <span className='text-[10px] font-mono text-muted-foreground'>ID:</span>
-                <span className='text-[10px] font-mono'>{satellite.id}</span>
-              </div>
-              <div className='grid grid-cols-2 gap-0.5'>
-                <span className='text-[10px] font-mono text-muted-foreground'>Mass:</span>
-                <span className='text-[10px] font-mono'>{formatNumber(physics?.mass || satellite.mass)} kg</span>
-              </div>
-              <div className='grid grid-cols-2 gap-0.5'>
-                <span className='text-[10px] font-mono text-muted-foreground'>Size:</span>
-                <span className='text-[10px] font-mono'>{formatNumber(physics?.size)} m</span>
-              </div>
-              <div className='grid grid-cols-2 gap-0.5'>
-                <span className='text-[10px] font-mono text-muted-foreground'>Cross Section:</span>
-                <span className='text-[10px] font-mono'>{formatNumber(physics?.crossSectionalArea)} m²</span>
-              </div>
-              <div className='grid grid-cols-2 gap-0.5'>
-                <span className='text-[10px] font-mono text-muted-foreground'>Drag Coeff:</span>
-                <span className='text-[10px] font-mono'>{formatNumber(physics?.dragCoefficient)}</span>
-              </div>
+            <Section
+              title="Satellite Properties"
+              isOpen={showCharacteristics}
+              onToggle={() => {
+                console.log('[Debug] Toggling characteristics from', showCharacteristics, 'to', !showCharacteristics);
+                setShowCharacteristics(!showCharacteristics);
+              }}
+            >
+              <DataRow label="ID" value={satellite.id} />
+              <DataRow label="Mass" value={formatNumber(physics?.mass || satellite.mass)} unit="kg" />
+              <DataRow label="Size" value={formatNumber(physics?.size)} unit="m" />
+              <DataRow label="Cross Section" value={formatNumber(physics?.crossSectionalArea)} unit="m²" />
+              <DataRow label="Drag Coeff" value={formatNumber(physics?.dragCoefficient)} />
               {physics?.ballisticCoefficient && (
-                <div className='grid grid-cols-2 gap-0.5'>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Ballistic Coeff:</span>
-                  <span className='text-[10px] font-mono'>{formatNumber(physics.ballisticCoefficient)} kg/m²</span>
-                </div>
+                <DataRow label="Ballistic Coeff" value={formatNumber(physics.ballisticCoefficient)} unit="kg/m²" />
               )}
-              <div className='grid grid-cols-2 gap-0.5'>
-                <span className='text-[10px] font-mono text-muted-foreground'>Central Body:</span>
-                <span className='text-[10px] font-mono'>{getBodyName(physics?.centralBodyNaifId || satellite.centralBodyNaifId)}</span>
-              </div>
-            </div>
+              <DataRow label="Central Body" value={getBodyName(physics?.centralBodyNaifId || satellite.centralBodyNaifId)} />
+            </Section>
 
             {/* Position and Time Section */}
-            <div className="space-y-1">
-              <div className="text-[10px] font-semibold">Position & Time</div>
-              {simTime && (
-                <div className='grid grid-cols-2 gap-0.5'>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Sim Time:</span>
-                  <span className='col-span-1 text-[10px] font-mono'>{simTime}</span>
+            <Section
+              title="Position & Time"
+              isOpen={showPosition}
+              onToggle={() => setShowPosition(!showPosition)}
+            >
+              {simTime && <DataRow label="Sim Time" value={simTime} />}
+              {physics?.lat !== undefined && physics?.lon !== undefined ? (
+                <div className="space-y-1">
+                  <DataRow label="Latitude" value={formatNumber(physics.lat)} unit="°" />
+                  <DataRow label="Longitude" value={formatNumber(physics.lon)} unit="°" />
                 </div>
-              )}
-              {lat != null && (
-                <div className='grid grid-cols-4 gap-0.5'>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Lat:</span>
-                  <span className='text-[10px] font-mono'>{formatNumber(lat)}°</span>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Lon:</span>
-                  <span className='text-[10px] font-mono'>{formatNumber(lon)}°</span>
+              ) : lat != null && lon != null ? (
+                <div className="space-y-1">
+                  <DataRow label="Latitude" value={formatNumber(lat)} unit="°" />
+                  <DataRow label="Longitude" value={formatNumber(lon)} unit="°" />
                 </div>
-              )}
+              ) : null}
               {physics?.altitude_surface !== undefined && (
-                <div className='grid grid-cols-2 gap-0.5'>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Surface Alt:</span>
-                  <span className='text-[10px] font-mono'>{formatNumber(physics.altitude_surface)} km</span>
-                </div>
+                <DataRow label="Surface Alt" value={formatNumber(physics.altitude_surface)} unit="km" />
               )}
               {physics?.altitude_radial !== undefined && (
-                <div className='grid grid-cols-2 gap-0.5'>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Radial Alt:</span>
-                  <span className='text-[10px] font-mono'>{formatNumber(physics.altitude_radial)} km</span>
-                </div>
+                <DataRow label="Radial Alt" value={formatNumber(physics.altitude_radial)} unit="km" />
               )}
-            </div>
+              {physics?.ground_track_velocity !== undefined && (
+                <DataRow label="Ground Speed" value={formatNumber(physics.ground_track_velocity * 3600)} unit="km/h" />
+              )}
+            </Section>
 
             {/* State Vectors Section */}
-            <div className="space-y-1">
-              <div className="text-[10px] font-semibold">State Vectors</div>
+            <Section
+              title="State Vectors"
+              isOpen={showStateVectors}
+              onToggle={() => setShowStateVectors(!showStateVectors)}
+            >
               {renderVector(physics && toVector3(physics.position), "Position")}
               {renderVector(physics && toVector3(physics.velocity), "Velocity", true)}
-              <div className="grid grid-cols-2 gap-0.5">
-                <span className="text-[10px] font-mono text-muted-foreground">Speed:</span>
-                <span className="text-[10px] font-mono">{formatNumber(physics?.speed || vectorLength(physics?.velocity))} km/s</span>
-              </div>
+              <DataRow label="Speed" value={formatNumber(physics?.speed || vectorLength(physics?.velocity))} unit="km/s" />
               {physics?.ground_velocity !== undefined && (
-                <div className='grid grid-cols-2 gap-0.5'>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Ground Vel:</span>
-                  <span className='text-[10px] font-mono'>{formatNumber(physics.ground_velocity)} km/s</span>
-                </div>
+                <DataRow label="Ground Vel" value={formatNumber(physics.ground_velocity)} unit="km/s" />
               )}
               {physics?.orbital_velocity !== undefined && (
-                <div className='grid grid-cols-2 gap-0.5'>
-                  <span className='text-[10px] font-mono text-muted-foreground'>Orbital Vel:</span>
-                  <span className='text-[10px] font-mono'>{formatNumber(physics.orbital_velocity)} km/s</span>
-                </div>
+                <DataRow label="Orbital Vel" value={formatNumber(physics.orbital_velocity)} unit="km/s" />
               )}
-            </div>
+              {physics?.radial_velocity !== undefined && (
+                <DataRow label="Radial Vel" value={formatNumber(physics.radial_velocity)} unit="km/s" />
+              )}
+              {physics?.angular_momentum !== undefined && (
+                <DataRow label="Angular Mom" value={formatNumber(vectorLength(physics.angular_momentum))} unit="km²/s" />
+              )}
+              {physics?.flight_path_angle !== undefined && (
+                <DataRow label="Flight Path" value={formatNumber(physics.flight_path_angle)} unit="°" />
+              )}
+            </Section>
 
             {/* Forces and Accelerations Section */}
             {physics?.a_total && (
-              <div className='space-y-1'>
-                <div className='text-[10px] font-semibold'>Forces & Accelerations</div>
-                
-                {/* Total Acceleration */}
-                <div className='grid grid-cols-5 gap-0.5 text-[9px]'>
-                  <span className='text-muted-foreground'>Total:</span>
-                  <span className='font-mono'>{vectorLength(physics.a_total).toExponential(2)}</span>
-                  <span className='font-mono'>{physics.a_total[0].toExponential(1)}</span>
-                  <span className='font-mono'>{physics.a_total[1].toExponential(1)}</span>
-                  <span className='font-mono'>{physics.a_total[2].toExponential(1)}</span>
+              <Section
+                title="Forces & Accelerations"
+                isOpen={showForces}
+                onToggle={() => setShowForces(!showForces)}
+              >
+                <div className="space-y-1">
+                  {/* Acceleration summary */}
+                  <div className="grid grid-cols-3 gap-1 text-xs font-mono">
+                    <span className="text-muted-foreground">Type</span>
+                    <span className="text-muted-foreground">Magnitude</span>
+                    <span className="text-muted-foreground">Direction</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-1 text-xs">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="font-mono">{vectorLength(physics.a_total).toExponential(2)}</span>
+                    <span className="font-mono text-[11px]">
+                      {physics.a_total[0].toExponential(1)}, 
+                      {physics.a_total[1].toExponential(1)}, 
+                      {physics.a_total[2].toExponential(1)}
+                    </span>
+                  </div>
+
+                  {physics.a_gravity_total && (
+                    <div className="grid grid-cols-3 gap-1 text-xs">
+                      <span className="text-muted-foreground">Gravity</span>
+                      <span className="font-mono">{vectorLength(physics.a_gravity_total).toExponential(2)}</span>
+                      <span className="font-mono text-[11px]">
+                        {physics.a_gravity_total[0].toExponential(1)}, 
+                        {physics.a_gravity_total[1].toExponential(1)}, 
+                        {physics.a_gravity_total[2].toExponential(1)}
+                      </span>
+                    </div>
+                  )}
+
+                  {physics.a_j2 && vectorLength(physics.a_j2) > 1e-10 && (
+                    <div className="grid grid-cols-3 gap-1 text-xs">
+                      <span className="text-muted-foreground">J2</span>
+                      <span className="font-mono">{vectorLength(physics.a_j2).toExponential(2)}</span>
+                      <span className="font-mono text-[11px]">
+                        {physics.a_j2[0].toExponential(1)}, 
+                        {physics.a_j2[1].toExponential(1)}, 
+                        {physics.a_j2[2].toExponential(1)}
+                      </span>
+                    </div>
+                  )}
+
+                  {physics.a_drag && vectorLength(physics.a_drag) > 1e-10 && (
+                    <div className="grid grid-cols-3 gap-1 text-xs">
+                      <span className="text-muted-foreground">Drag</span>
+                      <span className="font-mono">{vectorLength(physics.a_drag).toExponential(2)}</span>
+                      <span className="font-mono text-[11px]">
+                        {physics.a_drag[0].toExponential(1)}, 
+                        {physics.a_drag[1].toExponential(1)}, 
+                        {physics.a_drag[2].toExponential(1)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Individual Body Contributions */}
+                  {physics.a_bodies && Object.keys(physics.a_bodies).length > 0 && (
+                    <div className="pt-1">
+                      <button
+                        onClick={() => setShowBreakdown(!showBreakdown)}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        {showBreakdown ? '− Hide' : '+ Show'} Body Forces ({Object.keys(physics.a_bodies).length})
+                      </button>
+                      {showBreakdown && (
+                        <div className="mt-1 space-y-0.5 max-h-32 overflow-y-auto">
+                          {Object.entries(physics.a_bodies)
+                            .filter(([_, vec]) => vectorLength(vec) >= 1e-10)
+                            .sort(([_, a], [__, b]) => vectorLength(b) - vectorLength(a))
+                            .map(([bodyId, vec]) => {
+                              const magnitude = vectorLength(vec);
+                              const bodyName = getBodyName(bodyId);
+                              return (
+                                <div className="grid grid-cols-3 gap-1 text-xs" key={bodyId}>
+                                  <span className="text-muted-foreground truncate">{bodyName}</span>
+                                  <span className="font-mono">{magnitude.toExponential(2)}</span>
+                                  <span className="font-mono text-[11px]">
+                                    {vec[0].toExponential(1)}, 
+                                    {vec[1].toExponential(1)}, 
+                                    {vec[2].toExponential(1)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="text-xs text-muted-foreground text-right pt-1">Units: km/s²</div>
                 </div>
+              </Section>
+            )}
 
-                {/* Gravity Total */}
-                {physics.a_gravity_total && (
-                  <div className='grid grid-cols-5 gap-0.5 text-[9px]'>
-                    <span className='text-muted-foreground'>Gravity:</span>
-                    <span className='font-mono'>{vectorLength(physics.a_gravity_total).toExponential(2)}</span>
-                    <span className='font-mono'>{physics.a_gravity_total[0].toExponential(1)}</span>
-                    <span className='font-mono'>{physics.a_gravity_total[1].toExponential(1)}</span>
-                    <span className='font-mono'>{physics.a_gravity_total[2].toExponential(1)}</span>
-                  </div>
-                )}
-
-                {/* J2 Perturbation */}
-                {physics.a_j2 && vectorLength(physics.a_j2) > 1e-10 && (
-                  <div className='grid grid-cols-5 gap-0.5 text-[9px]'>
-                    <span className='text-muted-foreground'>J2:</span>
-                    <span className='font-mono'>{vectorLength(physics.a_j2).toExponential(2)}</span>
-                    <span className='font-mono'>{physics.a_j2[0].toExponential(1)}</span>
-                    <span className='font-mono'>{physics.a_j2[1].toExponential(1)}</span>
-                    <span className='font-mono'>{physics.a_j2[2].toExponential(1)}</span>
-                  </div>
-                )}
-
-                {/* Drag */}
-                {physics.a_drag && vectorLength(physics.a_drag) > 1e-10 && (
-                  <div className='grid grid-cols-5 gap-0.5 text-[9px]'>
-                    <span className='text-muted-foreground'>Drag:</span>
-                    <span className='font-mono'>{vectorLength(physics.a_drag).toExponential(2)}</span>
-                    <span className='font-mono'>{physics.a_drag[0].toExponential(1)}</span>
-                    <span className='font-mono'>{physics.a_drag[1].toExponential(1)}</span>
-                    <span className='font-mono'>{physics.a_drag[2].toExponential(1)}</span>
-                  </div>
-                )}
-
-                {/* Individual Body Contributions */}
-                {physics.a_bodies && Object.keys(physics.a_bodies).length > 0 && (
-                  <div className="space-y-1 mt-1">
-                    <button
-                      onClick={() => setShowBreakdown(!showBreakdown)}
-                      className="text-[9px] text-primary hover:underline"
-                    >
-                      {showBreakdown ? '− Hide' : '+ Show'} Body Forces ({Object.keys(physics.a_bodies).length})
-                    </button>
-                    {showBreakdown && (
-                      <div className="space-y-0.5 pl-2">
-                        {Object.entries(physics.a_bodies).map(([bodyId, vec]) => {
-                          const magnitude = vectorLength(vec);
-                          if (magnitude < 1e-10) return null;
-                          const bodyName = getBodyName(bodyId);
-                          return (
-                            <div className='grid grid-cols-5 gap-0.5 text-[8px]' key={bodyId}>
-                              <span className='text-muted-foreground'>{bodyName}:</span>
-                              <span className='font-mono'>{magnitude.toExponential(2)}</span>
-                              <span className='font-mono'>{vec[0].toExponential(1)}</span>
-                              <span className='font-mono'>{vec[1].toExponential(1)}</span>
-                              <span className='font-mono'>{vec[2].toExponential(1)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+            {/* Orbital Elements Section */}
+            {orbitalElements && (
+              <Section
+                title="Orbital Elements"
+                isOpen={showOrbit}
+                onToggle={() => setShowOrbit(!showOrbit)}
+              >
+                <div className="space-y-2">
+                  {/* Basic Elements */}
+                  <div className="space-y-1">
+                    <DataRow label="Semi-Major Axis" value={formatNumber(orbitalElements.semiMajorAxis)} unit="km" />
+                    <DataRow label="Eccentricity" value={formatNumber(orbitalElements.eccentricity, 4)} />
+                    <DataRow label="Inclination" value={formatNumber(orbitalElements.inclination)} unit="°" />
+                    <DataRow label="LAN (Ω)" value={formatNumber(orbitalElements.longitudeOfAscendingNode)} unit="°" />
+                    <DataRow label="Arg of Periapsis (ω)" value={formatNumber(orbitalElements.argumentOfPeriapsis)} unit="°" />
+                    <DataRow label="True Anomaly (ν)" value={formatNumber(orbitalElements.trueAnomaly)} unit="°" />
+                    {orbitalElements.meanAnomaly !== undefined && (
+                      <DataRow label="Mean Anomaly (M)" value={formatNumber(orbitalElements.meanAnomaly)} unit="°" />
+                    )}
+                    {orbitalElements.eccentricAnomaly !== undefined && (
+                      <DataRow label="Eccentric Anomaly (E)" value={formatNumber(orbitalElements.eccentricAnomaly)} unit="°" />
                     )}
                   </div>
-                )}
-                <div className='text-[8px] text-muted-foreground text-right'>Units: km/s²</div>
-              </div>
+                  
+                  {/* Period and Energy */}
+                  <div className="space-y-1 pt-1 border-t border-border/30">
+                    {orbitalElements.period && (
+                      <DataRow label="Period" value={formatDuration(orbitalElements.period)} />
+                    )}
+                    <DataRow label="Specific Energy" value={formatNumber(orbitalElements.specificOrbitalEnergy)} unit="m²/s²" />
+                    <DataRow label="Specific Momentum" value={formatNumber(orbitalElements.specificAngularMomentum)} unit="m²/s" />
+                    {orbitalElements.meanMotion !== undefined && (
+                      <DataRow label="Mean Motion" value={formatNumber(orbitalElements.meanMotion * 86400)} unit="°/day" />
+                    )}
+                  </div>
+                  
+                  {/* Apsides */}
+                  {orbitalElements.eccentricity < 1.0 && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">Periapsis</div>
+                      <DataRow label="Altitude" value={formatNumber(orbitalElements.periapsisAltitude)} unit="km" />
+                      <DataRow label="Radius" value={formatNumber(orbitalElements.periapsisRadial)} unit="km" />
+                      <DataRow label="Velocity" value={formatNumber(orbitalElements.periapsisVelocity)} unit="km/s" />
+                      
+                      <div className="text-xs font-semibold text-muted-foreground pt-1">Apoapsis</div>
+                      <DataRow label="Altitude" value={formatNumber(orbitalElements.apoapsisAltitude)} unit="km" />
+                      <DataRow label="Radius" value={formatNumber(orbitalElements.apoapsisRadial)} unit="km" />
+                      <DataRow label="Velocity" value={formatNumber(orbitalElements.apoapsisVelocity)} unit="km/s" />
+                    </div>
+                  )}
+                </div>
+              </Section>
             )}
 
-            {apsisData && (
-              <>
-                <div className="space-y-0.5">
-                  <div className="text-[10px] font-semibold">Orbit</div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">SMA:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.semiMajorAxis)} km</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">Ecc:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.eccentricity)}</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">Inc:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.inclination)}°</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">LAN:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.longitudeOfAscendingNode)}°</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">AoP:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.argumentOfPeriapsis)}°</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">TA:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.trueAnomaly)}°</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">Period:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.period)} s</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">h:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.specificAngularMomentum)} m²/s</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-0.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">ε:</span>
-                    <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.specificOrbitalEnergy)} m²/s²</span>
+            {/* Simulation Properties Section */}
+            <Section
+              title="Simulation Properties"
+              isOpen={showSimProperties}
+              onToggle={() => setShowSimProperties(!showSimProperties)}
+            >
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Orbit Prediction</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      type="number"
+                      min="0.1"
+                      max="10"
+                      step="0.1"
+                      value={orbitPeriods}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value) || 1;
+                        setOrbitPeriods(value);
+                        handleSimPropertyChange('periods', value);
+                      }}
+                      className="h-7 text-xs flex-1 bg-background"
+                    />
+                    <span className="text-xs text-muted-foreground">periods</span>
                   </div>
                 </div>
-                <div className="text-[10px] font-semibold mt-1">Periapsis</div>
-                <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.periapsisRadial)} km</span>
+                
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Orbit Resolution</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      type="number"
+                      min="30"
+                      max="360"
+                      step="10"
+                      value={pointsPerPeriod}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value) || 180;
+                        setPointsPerPeriod(value);
+                        handleSimPropertyChange('pointsPerPeriod', value);
+                      }}
+                      className="h-7 text-xs flex-1 bg-background"
+                    />
+                    <span className="text-xs text-muted-foreground">pts/period</span>
+                  </div>
                 </div>
-                <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] font-mono text-muted-foreground">Altitude:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.periapsisAltitude)} km</span>
+                
+                <div className="text-xs text-muted-foreground pt-1">
+                  Higher values increase accuracy but may impact performance
                 </div>
-                <div className="text-[10px] font-semibold mt-1">Apoapsis</div>
-                <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] font-mono text-muted-foreground">Radial:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.apoapsisRadial)} km</span>
+              </div>
+            </Section>
+
+            {/* Propagation Information Section */}
+            <Section
+              title="Propagation Information"
+              isOpen={showPropagation}
+              onToggle={() => setShowPropagation(!showPropagation)}
+            >
+              {propagationData ? (
+                <div className="space-y-2">
+                  {/* Basic propagation info */}
+                  <div className="space-y-1">
+                    <DataRow label="Duration" value={formatDuration(propagationData.duration)} />
+                    <DataRow label="Total Points" value={propagationData.pointCount} />
+                    {propagationData.maxPeriods && (
+                      <DataRow label="Periods Shown" value={formatNumber(propagationData.maxPeriods, 1)} />
+                    )}
+                    <DataRow label="Status" value={propagationData.partial ? 'Calculating...' : 'Complete'} />
+                    {physics?.distance_traveled !== undefined && (
+                      <DataRow label="Distance Traveled" value={formatNumber(physics.distance_traveled)} unit="km" />
+                    )}
+                  </div>
+                  
+                  {/* SOI Transitions */}
+                  {propagationData.soiTransitions && propagationData.soiTransitions.length > 0 && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">SOI Transitions</div>
+                      {propagationData.soiTransitions.map((transition, idx) => (
+                        <div key={idx} className="pl-2 space-y-0.5">
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">At </span>
+                            <span className="font-mono">{formatDuration(transition.time)}</span>
+                            <span className="text-muted-foreground">:</span>
+                          </div>
+                          <div className="text-xs pl-2">
+                            <span className="text-muted-foreground">From </span>
+                            <span>{getBodyName(transition.fromBody)}</span>
+                            <span className="text-muted-foreground"> to </span>
+                            <span>{getBodyName(transition.toBody)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Orbit type info */}
+                  {(physics || orbitalElements) && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <DataRow label="Orbit Type" value={
+                        orbitalElements ? (
+                          orbitalElements.eccentricity < 0.001 ? 'Circular' :
+                          orbitalElements.eccentricity < 1.0 ? 'Elliptical' : 
+                          orbitalElements.eccentricity === 1.0 ? 'Parabolic' : 
+                          'Hyperbolic'
+                        ) : 'Unknown'
+                      } />
+                      {orbitalElements && (
+                        <DataRow 
+                          label="Eccentricity" 
+                          value={formatNumber(orbitalElements.eccentricity, 4)} 
+                        />
+                      )}
+                      {physics?.escape_velocity !== undefined && physics?.speed !== undefined && (
+                        <DataRow 
+                          label="Escape Status" 
+                          value={physics.speed >= physics.escape_velocity ? 'Escaping' : 'Captured'} 
+                        />
+                      )}
+                      {physics?.time_to_periapsis !== undefined && (
+                        <DataRow 
+                          label="Next Periapsis" 
+                          value={formatDuration(physics.time_to_periapsis)} 
+                        />
+                      )}
+                      {physics?.time_to_apoapsis !== undefined && (
+                        <DataRow 
+                          label="Next Apoapsis" 
+                          value={formatDuration(physics.time_to_apoapsis)} 
+                        />
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Last update time */}
+                  <div className="text-xs text-muted-foreground pt-1 border-t border-border/30">
+                    Updated {new Date(propagationData.timestamp).toLocaleTimeString()}
+                  </div>
                 </div>
-                <div className="grid grid-cols-4 gap-0.5">
-                  <span className="text-[10px] font-mono text-muted-foreground">Altitude:</span>
-                  <span className="col-span-3 text-[10px] font-mono">{formatNumber(apsisData.apoapsisAltitude)} km</span>
+              ) : (
+                <div className="text-xs text-muted-foreground">
+                  No propagation data available
                 </div>
-              </>
-            )}
+              )}
+            </Section>
           </>
         )}
       </div>

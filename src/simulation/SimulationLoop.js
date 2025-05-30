@@ -1,5 +1,6 @@
 /**
  * Manages the animation and simulation update loop for the 3D app.
+ * Enhanced to coordinate multiple update systems efficiently.
  */
 import { Clock } from 'three';
 
@@ -25,6 +26,21 @@ export class SimulationLoop {
         this._lastTime = performance.now();
         this._frameId = null;
         this._lastLabelTime = 0;
+        
+        // Enhanced update coordination
+        this._frameCount = 0;
+        this._uiUpdateFrequency = 3; // Update UI every 3rd frame (~20Hz at 60fps)
+        this._lastUIUpdate = 0;
+        this._performanceMetrics = {
+            frameTime: 0,
+            renderTime: 0,
+            updateTime: 0
+        };
+        
+        // Tab visibility handling for performance
+        this._isVisible = !document.hidden;
+        this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
+        document.addEventListener('visibilitychange', this._handleVisibilityChange);
     }
 
     /** Start the animation/simulation loop. */
@@ -43,34 +59,76 @@ export class SimulationLoop {
     /** Dispose of the loop and cleanup. */
     dispose() {
         this.stop();
+        
+        // Remove event listeners
+        document.removeEventListener('visibilitychange', this._handleVisibilityChange);
+        
+        // Clear references
+        this.app = null;
+        this.satellites = null;
+        this.sceneManager = null;
+        this.cameraControls = null;
+        this.timeUtils = null;
+        this.stats = null;
     }
 
     /** The main animation frame callback. */
     _animate() {
+        if (!this._running) return;
+        
+        const frameStart = performance.now();
+        
         try {
+            // Throttle updates when tab is not visible
+            if (!this._isVisible) {
+                // Reduced frequency when not visible
+                this._frameCount++;
+                if (this._frameCount % 10 !== 0) {
+                    return;
+                }
+            }
+            
             const delta = this.clock.getDelta();
             
             // Validate delta to prevent extreme time steps
             const maxDelta = 1.0; // Maximum 1 second per frame
             const safeDelta = Math.min(delta, maxDelta);
             
-            if (delta > maxDelta) {
-                console.warn(`[SimulationLoop] Large delta time clamped: ${delta.toFixed(3)}s -> ${safeDelta.toFixed(3)}s`);
+            // Delta validation without logging
+            
+            // Coordinate updates more efficiently
+            this._frameCount++;
+            const updateStart = performance.now();
+            
+            // App tick for essential updates every frame
+            this.app.tick?.(safeDelta);
+            
+            // Throttled UI updates (20Hz instead of 60Hz)
+            if (this._frameCount % this._uiUpdateFrequency === 0) {
+                this._updateUI();
             }
             
-            this.app.tick?.(safeDelta);
-
-            // TimeUtils now has independent time progression - no need to call update() here
+            this._performanceMetrics.updateTime = performance.now() - updateStart;
 
             // Render scene
+            const renderStart = performance.now();
             if (this.sceneManager?.composers?.final) {
                 this.sceneManager.composers.final.render();
             } else if (this.sceneManager?.renderer && this.sceneManager?.scene && this.sceneManager?.camera) {
                 this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
             }
+            this._performanceMetrics.renderTime = performance.now() - renderStart;
+            
         } catch (error) {
-            console.error('[SimulationLoop] Animation frame error:', error);
-            // Don't re-throw to keep the animation loop running
+            // Silent error handling to keep the animation loop running
+        }
+        
+        // Track frame performance
+        this._performanceMetrics.frameTime = performance.now() - frameStart;
+        
+        // Emit performance metrics periodically
+        if (this._frameCount % 300 === 0) { // Every 5 seconds at 60fps
+            this._emitPerformanceMetrics();
         }
     }
 
@@ -115,5 +173,64 @@ export class SimulationLoop {
      */
     setSatelliteManager(satellites) {
         this.satellites = satellites;
+    }
+    
+    /**
+     * Handle tab visibility changes for performance optimization
+     */
+    _handleVisibilityChange() {
+        this._isVisible = !document.hidden;
+        
+        if (this._isVisible) {
+            // Reset clock when becoming visible to prevent huge delta
+            this.clock.getDelta();
+        }
+    }
+    
+    /**
+     * Throttled UI updates - called every 3rd frame (~20Hz)
+     */
+    _updateUI() {
+        // Emit time update event for React components
+        if (this.timeUtils?.getSimulatedTime) {
+            const currentTime = this.timeUtils.getSimulatedTime();
+            document.dispatchEvent(new CustomEvent('timeUpdate', {
+                detail: { 
+                    simulatedTime: currentTime,
+                    timeWarp: this.timeUtils.getTimeWarp?.()
+                }
+            }));
+        }
+        
+        // Update satellite list periodically
+        if (this._frameCount % (this._uiUpdateFrequency * 20) === 0) { // Every ~1 second
+            this.updateSatelliteList();
+        }
+    }
+    
+    /**
+     * Emit performance metrics for monitoring
+     */
+    _emitPerformanceMetrics() {
+        document.dispatchEvent(new CustomEvent('performance-update', {
+            detail: {
+                ...this._performanceMetrics,
+                fps: Math.round(1000 / this._performanceMetrics.frameTime),
+                frameCount: this._frameCount,
+                isVisible: this._isVisible
+            }
+        }));
+    }
+    
+    /**
+     * Get current performance metrics
+     */
+    getPerformanceMetrics() {
+        return {
+            ...this._performanceMetrics,
+            fps: Math.round(1000 / this._performanceMetrics.frameTime),
+            frameCount: this._frameCount,
+            isVisible: this._isVisible
+        };
     }
 } 

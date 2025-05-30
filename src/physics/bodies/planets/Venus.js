@@ -38,7 +38,7 @@ export default {
         thickness: 190, // km - extends very high
         densityScaleHeight: 15.9, // km
         hazeIntensity: 5,
-        scaleHeightMultiplier: 2.0,
+        scaleHeightMultiplier: 1.0,
         rayleighScaleHeight: 15, // km (approx)
         mieScaleHeight: 7,    // km (sulfuric acid clouds)
         rayleighScatteringCoeff: [0.001, 0.001, 0.0005], // Whitish-yellow

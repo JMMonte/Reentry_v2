@@ -51,7 +51,7 @@ describe('State Vector Debug', () => {
     it('should calculate raw Astronomy Engine state for Earth', () => {
         // Direct astronomy engine call
         const astroTime = Astronomy.MakeTime(testDate);
-        const earthStateRaw = Astronomy.StateVector('Earth', astroTime);
+        const earthStateRaw = new Astronomy.StateVector('Earth', astroTime);
         
         console.log('Raw Astronomy Engine Earth state:', {
             position: [earthStateRaw.x, earthStateRaw.y, earthStateRaw.z],

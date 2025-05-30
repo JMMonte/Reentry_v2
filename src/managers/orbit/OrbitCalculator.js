@@ -9,21 +9,17 @@ import { PhysicsAPI } from '../../physics/PhysicsAPI.js';
  */
 export class OrbitCalculator {
     constructor() {
-        // Configuration for special cases
-        this.specialCases = {
-            earthMoonSystem: {
-                parentNaif: 3,
-                minDistance: 10, // 10 m
-                minSpeed: 1e-6, // 1 µm/s
-                circularVelocityCorrection: true
-            }
+        // Default thresholds for orbit validation
+        this.defaultThresholds = {
+            minDistance: 1e3, // 1 km default
+            minSpeed: 1e-3 // 1 mm/s default
         };
     }
 
     /**
      * Calculate orbital elements from position and velocity
      */
-    calculateOrbitalElements(relativePosition, relativeVelocity, parentMass, bodyName = '', parentNaif = 0) {
+    calculateOrbitalElements(relativePosition, relativeVelocity, parentMass, bodyName = '', parentNaif = 0, bodyConfig = null) {
         const mu = PhysicsAPI.getGravitationalParameter({ mass: parentMass });
 
         // Transform to planet's equatorial coordinates if this is a moon orbiting a planet
@@ -48,12 +44,11 @@ export class OrbitCalculator {
         // Calculate initial elements
         let elements = stateToKeplerian(posObj, velObj, mu, 0);
 
-        // Apply special case corrections
-        if (this.needsSpecialHandling(bodyName, parentNaif)) {
-            elements = this.applySpecialCorrections(
+        // Apply corrections if specified in body config (data-driven)
+        if (bodyConfig?.orbitVisualization?.applyCircularCorrection) {
+            elements = this.applyCircularCorrection(
                 elements,
                 transformedPos,
-                transformedVel,
                 mu,
                 bodyName
             );
@@ -163,27 +158,10 @@ export class OrbitCalculator {
     }
 
     /**
-     * Check if a body needs special handling
+     * Apply circular orbit correction for stability
+     * Used for bodies that orbit very close to their barycenter
      */
-    needsSpecialHandling(bodyName, parentNaif) {
-        return parentNaif === this.specialCases.earthMoonSystem.parentNaif &&
-            bodyName === 'Earth';
-    }
-
-    /**
-     * Apply special corrections for problematic orbits
-     */
-    applySpecialCorrections(originalElements, relativePosition, relativeVelocity, mu, bodyName) {
-        if (bodyName === 'Earth') {
-            return this.correctEarthOrbit(originalElements, relativePosition, mu);
-        }
-        return originalElements;
-    }
-
-    /**
-     * Correct Earth's orbit around EMB using circular velocity
-     */
-    correctEarthOrbit(originalElements, relativePosition, mu) {
+    applyCircularCorrection(originalElements, relativePosition, mu, bodyName) {
         const orbitalRadius = relativePosition.length();
         const circularVelocity = PhysicsAPI.calculateCircularVelocity(mu, orbitalRadius);
 
@@ -215,18 +193,13 @@ export class OrbitCalculator {
     /**
      * Validate relative motion for orbit generation
      */
-    validateRelativeMotion(relativePosition, relativeVelocity, parentNaif) {
+    validateRelativeMotion(relativePosition, relativeVelocity, parentNaif, bodyConfig = null) {
         const relDistance = relativePosition.length();
         const relSpeed = relativeVelocity.length();
 
-        let minDistance = 1e3; // 1 km default
-        let minSpeed = 1e-3; // 1 mm/s default
-
-        // Apply special thresholds for Earth-Moon system
-        if (parentNaif === this.specialCases.earthMoonSystem.parentNaif) {
-            minDistance = this.specialCases.earthMoonSystem.minDistance;
-            minSpeed = this.specialCases.earthMoonSystem.minSpeed;
-        }
+        // Use body config for thresholds if available, otherwise use defaults
+        const minDistance = bodyConfig?.orbitVisualization?.minDistance || this.defaultThresholds.minDistance;
+        const minSpeed = bodyConfig?.orbitVisualization?.minSpeed || this.defaultThresholds.minSpeed;
 
         return {
             isValid: relDistance >= minDistance && relSpeed >= minSpeed,
@@ -240,12 +213,18 @@ export class OrbitCalculator {
     /**
      * Calculate optimal number of points for orbit resolution
      */
-    calculateOptimalResolution(elements, parentNaif, defaultPoints = 360) {
-        // Higher resolution for small orbits or Earth-Moon system
-        if (parentNaif === this.specialCases.earthMoonSystem.parentNaif ||
-            (elements && elements.a < 1e6)) {
+    calculateOptimalResolution(elements, parentNaif, bodyConfig = null, defaultPoints = 360) {
+        // Use body config for resolution if available
+        const configuredPoints = bodyConfig?.orbitVisualization?.orbitPoints;
+        if (configuredPoints) {
+            return configuredPoints;
+        }
+        
+        // Higher resolution for small orbits
+        if (elements && elements.a < 1e6) {
             return 720;
         }
+        
         return defaultPoints;
     }
 } 

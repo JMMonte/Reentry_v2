@@ -57,12 +57,9 @@ export async function createSatellite(app, params = {}) {
         color = pickBrightColor(params.color)
     } = params;
 
-    // Debug logging for velocity tracking
-    console.log('[createSatellite] Creating satellite with:');
-    console.log('  Position:', position ? `[${position.x?.toFixed(1) || position[0]?.toFixed(1)}, ${position.y?.toFixed(1) || position[1]?.toFixed(1)}, ${position.z?.toFixed(1) || position[2]?.toFixed(1)}] km` : 'undefined');
-    console.log('  Velocity:', velocity ? `[${velocity.x?.toFixed(3) || velocity[0]?.toFixed(3)}, ${velocity.y?.toFixed(3) || velocity[1]?.toFixed(3)}, ${velocity.z?.toFixed(3) || velocity[2]?.toFixed(3)}] km/s` : 'undefined');
-    console.log('  Velocity magnitude:', velocity ? Math.sqrt((velocity.x || velocity[0])**2 + (velocity.y || velocity[1])**2 + (velocity.z || velocity[2])**2).toFixed(3) + ' km/s' : 'undefined');
-    console.log('  Central body:', planetConfig?.name || 'unknown');
+    // Log only essential info
+    const velMag = velocity ? Math.sqrt((velocity.x || velocity[0])**2 + (velocity.y || velocity[1])**2 + (velocity.z || velocity[2])**2) : 0;
+    console.log(`[createSatellite] ${name || 'Satellite'} - ${planetConfig?.name || 'unknown'} - v=${velMag.toFixed(3)} km/s`);
 
     const sat = await app.satellites.addSatellite({
         position,
@@ -91,25 +88,18 @@ export async function createSatelliteFromLatLon(app, params = {}) {
     const planet = getPlanet(app, naifId);
     if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
 
-    // Debug planet properties
-    console.log('[createSatelliteFromLatLon] Planet properties:');
-    console.log('  Name:', planet.name);
-    console.log('  NAIF ID:', planet.naifId);
-    console.log('  Radius:', planet.radius, 'km');
-    console.log('  Mass:', planet.mass, 'kg');
-    console.log('  GM:', planet.GM, 'km³/s²');
-    console.log('  Has GM?', planet.GM !== undefined);
+    // Log planet info only if needed for debugging
+    // console.log(`[createSatelliteFromLatLon] ${planet.name} (NAIF ${planet.naifId}), GM=${planet.GM} km³/s²`);
 
     // Use improved coordinate calculation with planet quaternion
     const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
     const { position, velocity } = SatelliteCoordinates.createFromLatLon(params, planet, currentTime);
 
-    // Debug logging
-    console.log('[createSatelliteFromLatLon] Calculated initial state:');
-    console.log('  Position:', Array.isArray(position) ? position.map(v => v.toFixed(1)).join(', ') : position.toArray().map(v => v.toFixed(1)).join(', '), 'km');
-    console.log('  Velocity:', Array.isArray(velocity) ? velocity.map(v => v.toFixed(3)).join(', ') : velocity.toArray().map(v => v.toFixed(3)).join(', '), 'km/s');
+    // Log final velocity for circular orbit verification
     const velMag = Array.isArray(velocity) ? Math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2) : velocity.length();
-    console.log('  Velocity magnitude:', velMag.toFixed(3), 'km/s');
+    if (params.velocity === undefined) {
+        console.log(`[createSatelliteFromLatLon] Circular orbit: v=${velMag.toFixed(3)} km/s at ${params.altitude} km, azimuth=${params.azimuth || 0}°`);
+    }
 
     const sat = await createSatellite(app, {
         ...params,

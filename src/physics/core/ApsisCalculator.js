@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { integrateRK45 } from '../integrators/OrbitalIntegrators.js';
 import { GravityCalculator } from './GravityCalculator.js';
-import { PhysicsUtils } from '../../utils/PhysicsUtils.js';
+import { stateToKeplerian } from '../../utils/KeplerianUtils.js';
 
 /**
  * ApsisCalculator - Handles periapsis and apoapsis calculations
@@ -107,14 +107,14 @@ export class ApsisCalculator {
      * @returns {Object} Apsis data
      */
     static findNextApsisAnalytical(position, velocity, mu, type = 'periapsis', currentTime) {
-        const elements = PhysicsUtils.calculateDetailedOrbitalElements(position, velocity, mu);
+        const elements = stateToKeplerian(position, velocity, mu);
         
         // Get current true anomaly in radians
         const f0 = THREE.MathUtils.degToRad(elements.trueAnomaly);
         const e = elements.eccentricity;
         
         // Calculate current mean anomaly
-        const M0 = PhysicsUtils.meanAnomalyFromTrueAnomaly(f0, e);
+        const M0 = this.meanAnomalyFromTrueAnomaly(f0, e);
         
         // Target mean anomaly (0 for periapsis, π for apoapsis)
         const targetM = type === 'periapsis' ? 0 : Math.PI;
@@ -155,7 +155,7 @@ export class ApsisCalculator {
      * @returns {Object} Object containing periapsis and apoapsis data
      */
     static calculateApsides(position, velocity, mu, bodyRadius = 0) {
-        const elements = PhysicsUtils.calculateDetailedOrbitalElements(position, velocity, mu, bodyRadius);
+        const elements = stateToKeplerian(position, velocity, mu, 0, bodyRadius);
         
         const a = elements.semiMajorAxis;
         const e = elements.eccentricity;
@@ -188,10 +188,10 @@ export class ApsisCalculator {
      * @returns {number} Time since periapsis in seconds
      */
     static timeSincePeriapsis(position, velocity, mu) {
-        const elements = PhysicsUtils.calculateDetailedOrbitalElements(position, velocity, mu);
+        const elements = stateToKeplerian(position, velocity, mu);
         const f = THREE.MathUtils.degToRad(elements.trueAnomaly);
         const e = elements.eccentricity;
-        const M = PhysicsUtils.meanAnomalyFromTrueAnomaly(f, e);
+        const M = this.meanAnomalyFromTrueAnomaly(f, e);
         const n = 2 * Math.PI / elements.period;
         
         return M / n;
@@ -222,8 +222,8 @@ export class ApsisCalculator {
             
             if (Math.abs(cosNu) <= 1) {
                 const nu = Math.acos(cosNu);
-                const M = PhysicsUtils.meanAnomalyFromTrueAnomaly(nu, e);
-                const currentM = PhysicsUtils.meanAnomalyFromTrueAnomaly(
+                const M = this.meanAnomalyFromTrueAnomaly(nu, e);
+                const currentM = this.meanAnomalyFromTrueAnomaly(
                     THREE.MathUtils.degToRad(elements.trueAnomaly), 
                     e
                 );
@@ -247,6 +247,14 @@ export class ApsisCalculator {
             willImpact: false,
             periapsisAltitude: apsides.periapsis.altitude
         };
+    }
+
+    /**
+     * Convert true anomaly to mean anomaly
+     */
+    static meanAnomalyFromTrueAnomaly(f, e) {
+        const E = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * Math.tan(f / 2));
+        return E - e * Math.sin(E);
     }
 }
 

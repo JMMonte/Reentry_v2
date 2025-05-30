@@ -14,6 +14,9 @@ uniform vec3 uCameraPosition; // Camera position in world space - actually cam_w
 uniform int uNumLightSteps;   // Steps for light and view sampling
 uniform float uSampleDistributionPower; // >1 biases more samples toward the limb
 
+// LOD control uniform (0.0 = minimum quality, 1.0 = maximum quality)
+uniform float uLODFactor;
+
 // Atmosphere properties
 uniform float uDensityScaleHeight; // Scale height for density falloff
 uniform float uRayleighScaleHeight; // Rayleigh scale height (km)
@@ -92,6 +95,9 @@ vec3 calculateOpticalDepthEllipsoid(
     float aAtm, float bAtm, float aPl, float bPl,
     float scaleHeight, vec3 rayleighCoeff, float mieCoeff
 ) {
+    // Adjust light steps based on LOD factor
+    int actualSteps = int(float(numStepsLight) * mix(0.5, 1.0, uLODFactor));
+    actualSteps = max(actualSteps, 2); // Ensure at least 2 steps
     // Apply multiplier to the incoming scaleHeight (e.g., uDensityScaleHeight)
     float effectiveScaleHeight = scaleHeight * uScaleHeightMultiplier;
 
@@ -99,9 +105,10 @@ vec3 calculateOpticalDepthEllipsoid(
     if(atmIsect.y < 0.0) return vec3(0.0);
     float rayStart = max(0.0, atmIsect.x);
     float rayEnd   = atmIsect.y;
-    float stepSize = (rayEnd - rayStart) / float(numStepsLight);
+    float stepSize = (rayEnd - rayStart) / float(actualSteps);
     vec3 opticalDepth = vec3(0.0);
-    for(int j = 0; j < numStepsLight; ++j) {
+    for(int j = 0; j < actualSteps; ++j) {
+        if (j >= actualSteps) break; // Dynamic loop guard
         float t = rayStart + (float(j) + 0.5) * stepSize;
         vec3 samplePos = rayOrigin + rayDir * t;
         float height = ellipsoidAltitude(samplePos, aPl, bPl);
@@ -203,10 +210,14 @@ void main() {
         }
     }
 
-    // view-ray integration using uNumLightSteps with non-linear distribution
-    int viewSteps = uNumLightSteps;
+    // view-ray integration with LOD-adjusted step count
+    int baseSteps = uNumLightSteps;
+    // Reduce steps based on LOD factor (0.0 = 25% of steps, 1.0 = 100% of steps)
+    int viewSteps = int(float(baseSteps) * mix(0.25, 1.0, uLODFactor));
+    viewSteps = max(viewSteps, 4); // Ensure at least 4 steps
     float viewStepSize = (tEnd - tStart) / float(viewSteps);
     for (int i = 0; i < viewSteps; ++i) {
+        if (i >= viewSteps) break; // Dynamic loop guard
         float fi = (float(i) + 0.5) / float(viewSteps);
         float t = tStart + pow(fi, uSampleDistributionPower) * (tEnd - tStart);
         vec3 samplePos = eyeLocal + dirLocal * t;

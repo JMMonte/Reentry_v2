@@ -48,15 +48,15 @@ export default {
     atmosphere: {
         limbFudgeFactor: 1.0,
         hazeIntensity: 2,
-        scaleHeightMultiplier: 5.0,
-        thickness: 100, // km (effective visual thickness)
-        densityScaleHeight: 59.5, // km
-        rayleighScaleHeight: 50, // km
-        mieScaleHeight: 100, // km (hazes)
-        rayleighScatteringCoeff: [0.002, 0.003, 0.006], // Pale yellow
-        mieScatteringCoeff: 0.05,
-        mieAnisotropy: 0.6,
-        numLightSteps: 3,
+        scaleHeightMultiplier: 1.0,
+        thickness: 200, // km (effective visual thickness)
+        densityScaleHeight: 50.5, // km
+        rayleighScaleHeight: 100, // km
+        mieScaleHeight: 2, // km (hazes)
+        rayleighScatteringCoeff: [0.02, 0.03, 0.06], // Pale yellow
+        mieScatteringCoeff: 0.005,
+        mieAnisotropy: 10.6,
+        numLightSteps: 1,
         sunIntensity: 3,
         equatorialRadius: 60268,
         polarRadius: 54364,

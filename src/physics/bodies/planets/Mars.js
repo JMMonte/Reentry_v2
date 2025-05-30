@@ -45,16 +45,16 @@ export default {
 
     // Atmospheric properties for visual rendering
     atmosphere: {
-        thickness: 20, // km - more visible haze
-        densityScaleHeight: 20, // km - more extended haze
-        hazeIntensity: 2.5, // much more visible haze
-        scaleHeightMultiplier: 8.0, // more exaggerated for visual effect
-        rayleighScaleHeight: 56, // km
-        mieScaleHeight: 4.5,   // km (dust)
-        rayleighScatteringCoeff: [0.001, 0.0004, 0.0002], // Reddish, but more visible
-        mieScatteringCoeff: 0.01, // More dust scattering
-        mieAnisotropy: 0.85, // Strong forward scattering
-        numLightSteps: 3,
+        thickness: 40, // km - more visible haze
+        densityScaleHeight: 5, // km - more extended haze
+        hazeIntensity: 0.9, // much more visible haze
+        scaleHeightMultiplier: 1.0, // more exaggerated for visual effect
+        rayleighScaleHeight: 5, // km
+        mieScaleHeight: 1.5,   // km (dust)
+        rayleighScatteringCoeff: [0.1, 0.04, 0.02], // Reddish, but more visible
+        mieScatteringCoeff: 0.0001, // More dust scattering
+        mieAnisotropy: 10.85, // Strong forward scattering
+        numLightSteps: 1,
         sunIntensity: 4, // Brighter for visual effect
         equatorialRadius: 3396.2,
         polarRadius: 3376.2,

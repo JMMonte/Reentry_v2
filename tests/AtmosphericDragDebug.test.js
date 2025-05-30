@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import PhysicsEngine from '../src/physics/PhysicsEngine.js';
+import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
 
 describe('Atmospheric Drag Debug', () => {
   it('should compute non-zero atmospheric drag for low Earth orbit satellite', () => {

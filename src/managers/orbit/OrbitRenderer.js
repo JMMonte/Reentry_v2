@@ -8,7 +8,7 @@ export class OrbitRenderer {
         // Color scheme for different orbital levels
         this.orbitColors = {
             0: 0xFFFFFF,   // Heliocentric orbits (white)
-            
+
             // Barycenter systems (used when moons orbit barycenters)
             3: 0x00FF00,   // Earth-Moon system (green)
             4: 0xFF4500,   // Mars system (orange-red)
@@ -17,7 +17,7 @@ export class OrbitRenderer {
             7: 0x4FD0E7,   // Uranus system (cyan)
             8: 0x4169E1,   // Neptune system (royal blue)
             9: 0x8A2BE2,   // Pluto system (blue violet)
-            
+
             // Planet systems (used when moons orbit planets directly)
             399: 0x00FF00, // Earth and its satellites (green)
             499: 0xFF4500, // Mars and its moons (orange-red)
@@ -26,7 +26,7 @@ export class OrbitRenderer {
             799: 0x4FD0E7, // Uranus and its moons (cyan)
             899: 0x4169E1, // Neptune and its moons (royal blue)
             999: 0x8A2BE2, // Pluto (blue violet) - though moons orbit barycenter
-            
+
             // Add more as needed for other systems
         };
 
@@ -63,9 +63,9 @@ export class OrbitRenderer {
 
         // Check if body is a dwarf (dwarf planet or moon with isDwarf flag)
         // Also check if it's a barycenter for a dwarf planet system
-        const isDwarf = bodyData.type === 'dwarf_planet' || 
-                       bodyData.isDwarf === true;
-        
+        const isDwarf = bodyData.type === 'dwarf_planet' ||
+            bodyData.isDwarf === true;
+
         // Apply 20% opacity for dwarf bodies
         const opacity = isDwarf ? style.opacity * 0.2 : style.opacity;
 

@@ -181,6 +181,10 @@ class App3D extends EventTarget {
         this._projScreenMatrix = new THREE.Matrix4();
         // Frame counter for throttling UI updates
         this._frameCount = 0;
+        
+        // Pre-allocated vectors for tick() to avoid GC pressure
+        this._tempWorldPos = new THREE.Vector3();
+        this._tempSunPos = new THREE.Vector3();
     }
 
     // ───── Properties (read-only public) ──────────────────────────────────────
@@ -217,6 +221,11 @@ class App3D extends EventTarget {
 
             this._initPOIPicking();
             this._setupControls();
+
+            // Initialize simulation controller for centralized time/state management
+            const { SimulationController } = await import('./simulation/SimulationController.js');
+            this.simulationController = new SimulationController(this);
+            await this.simulationController.initialize();
 
             // Initialize new physics system
             try {
@@ -324,6 +333,9 @@ class App3D extends EventTarget {
         
         // Satellite orbit manager
         this.satelliteOrbitManager?.dispose?.();
+        
+        // Simulation controller
+        this.simulationController?.dispose?.();
         
         // Display settings manager
         this._displaySettingsManager?.dispose?.();
@@ -620,26 +632,21 @@ class App3D extends EventTarget {
         // Use planetNaifId from p if present, otherwise fallback
         let selectedBody = this.selectedBody || { naifId: 399 };
         const naifIdKey = String(p.planetNaifId);
-        // Debug log for lookup
-        console.log('[App3D.createSatelliteFromLatLon] Looking up planetNaifId', p.planetNaifId, 'in', Object.keys(this.bodiesByNaifId));
         if (p.planetNaifId && this.bodiesByNaifId?.[naifIdKey]) {
             selectedBody = this.bodiesByNaifId[naifIdKey];
         }
-        console.log('[App3D.createSatelliteFromLatLon] called with selectedBody:', selectedBody, 'params:', p);
         // Step 2: Call SatelliteManager
         return this.satellites.createSatelliteFromLatLon(this, p, selectedBody);
     }
     createSatelliteFromOrbitalElements(p) {
         // Step 1: Use selectedBody or fallback
         const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
-        console.log('[App3D.createSatelliteFromOrbitalElements] called with selectedBody:', selectedBody, 'params:', p);
         // Step 2: Call SatelliteManager
         return this.satellites.createSatelliteFromOrbitalElements(this, { ...p, selectedBody });
     }
     createSatelliteFromLatLonCircular(p) {
         // Step 1: Use selectedBody or fallback
         const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
-        console.log('[App3D.createSatelliteFromLatLonCircular] called with selectedBody:', selectedBody, 'params:', p);
         // Step 2: Call SatelliteManager
         return this.satellites.createSatelliteFromLatLonCircular(this, p, selectedBody);
     }
@@ -713,10 +720,9 @@ class App3D extends EventTarget {
         let sunMoved = false;
         if (this.sun && typeof this.sun.getWorldPosition === 'function') {
             try {
-                const sunPos = new THREE.Vector3();
-                this.sun.getWorldPosition(sunPos);
-                sunMoved = !this._lastSunPos.equals(sunPos);
-                this._lastSunPos.copy(sunPos);
+                this.sun.getWorldPosition(this._tempSunPos);
+                sunMoved = !this._lastSunPos.equals(this._tempSunPos);
+                this._lastSunPos.copy(this._tempSunPos);
             } catch (e) {
                 console.warn('[App3D] Failed to get sun position:', e);
             }
@@ -763,10 +769,9 @@ class App3D extends EventTarget {
                 if (!isVisible(mesh)) return;
                 // Track last world position on the mesh
                 if (!mesh._lastWorldPos) mesh._lastWorldPos = new THREE.Vector3();
-                const worldPos = new THREE.Vector3();
-                mesh.getWorldPosition(worldPos);
-                const planetMoved = !mesh._lastWorldPos.equals(worldPos);
-                mesh._lastWorldPos.copy(worldPos);
+                mesh.getWorldPosition(this._tempWorldPos);
+                const planetMoved = !mesh._lastWorldPos.equals(this._tempWorldPos);
+                mesh._lastWorldPos.copy(this._tempWorldPos);
 
                 // Atmosphere uniforms
                 if (typeof body.updateAtmosphereUniforms === 'function') {
@@ -796,10 +801,9 @@ class App3D extends EventTarget {
             if (!mesh) return;
             if (!isVisible(mesh)) return;
             if (!mesh._lastWorldPos) mesh._lastWorldPos = new THREE.Vector3();
-            const worldPos = new THREE.Vector3();
-            mesh.getWorldPosition(worldPos);
-            const nodeMoved = !mesh._lastWorldPos.equals(worldPos);
-            mesh._lastWorldPos.copy(worldPos);
+            mesh.getWorldPosition(this._tempWorldPos);
+            const nodeMoved = !mesh._lastWorldPos.equals(this._tempWorldPos);
+            mesh._lastWorldPos.copy(this._tempWorldPos);
             if (typeof node.updateAtmosphereUniforms === 'function') {
                 if (cameraMoved || sunMoved || nodeMoved) {
                     node.updateAtmosphereUniforms(this.camera, this.sun);
