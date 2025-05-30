@@ -8,7 +8,7 @@ import {Constants} from '../../../utils/Constants.js';
 
 const sunMass = 1.989e30; // kg
 const sunRadius = 695_700; // km
-const sunGM = Constants.G * sunMass; // km³/s²
+const sunGM = Constants.G * sunMass; // km³/s² - Note: Constants.G is already in km³/kg/s²
 
 export default {
     // Basic identification
@@ -26,8 +26,13 @@ export default {
     
     // Rotation properties
     rotationPeriod: 25.05 * 24 * 3600, // seconds (25.05 days at equator)
+    rotationRate: 2 * Math.PI / (25.05 * 24 * 3600), // rad/s - angular velocity
     oblateness: 9e-6, // Very small oblateness
     tilt: 7.25, // degrees - inclination to ecliptic
+    
+    // Orbital properties
+    soiRadius: 1e12, // km - Effectively infinite within the solar system
+    hillSphere: 1e12, // km - The Sun dominates the entire solar system
 
     // Rendering properties
     materials: {

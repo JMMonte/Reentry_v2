@@ -335,30 +335,24 @@ export function analyzeOrbit(satellite, centralBody, G) {
         .sub(r.clone().divideScalar(rMag));
     const eccentricity = eVec.length();
 
-    let type, period, duration, points;
+    let type, period;
 
-    if (eccentricity < 0.999) {
-        // Elliptical orbit
+    if (eccentricity < 1.0) {
+        // Elliptical orbit (includes circular)
         type = 'elliptical';
         const a = -mu / (2 * specificEnergy);
         period = 2 * Math.PI * Math.sqrt(a * a * a / mu);
-        duration = period * 2; // Default to 2 periods
-        points = 360; // Points per period
-    } else if (eccentricity < 1.001) {
-        // Parabolic orbit
+    } else if (eccentricity === 1.0) {
+        // Parabolic orbit (exactly 1.0)
         type = 'parabolic';
         period = Infinity;
-        duration = calculateEscapeDuration(r, v, centralBody);
-        points = 500;
     } else {
         // Hyperbolic orbit
         type = 'hyperbolic';
         period = Infinity;
-        duration = calculateEscapeDuration(r, v, centralBody);
-        points = 500;
     }
 
-    return { type, period, duration, points, eccentricity, specificEnergy };
+    return { type, period, eccentricity, specificEnergy };
 }
 
 /**

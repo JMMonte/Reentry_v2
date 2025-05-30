@@ -1,26 +1,33 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { ManeuverManager } from './ManeuverManager.js';
-import { useSimulation } from '../../../simulation/SimulationContext.jsx';
 import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
 import formatTimeDelta from '../../../utils/FormatUtils.js';
 import { usePreviewNodes } from './usePreviewNodes.js';
 import { PhysicsAPI } from '../../../physics/PhysicsAPI.js';
 import { Constants } from '../../../utils/Constants.js';
-import { createManeuverNodeDTO } from '../../../types/DataTransferObjects.js';
 
-export function useManeuverWindow(satellite) {
-    // Pull shared timeUtils from SimulationContext
-    const { timeUtils } = useSimulation();
+export function useManeuverWindow(satellite, currentTime = new Date()) {
+    // Remove dependency on SimulationContext - currentTime is now a prop
+    const [simulationTime, setSimulationTime] = useState(currentTime);
     
-    // Handle case where timeUtils is not yet available
-    if (!timeUtils) {
+    // Update simulation time when prop changes
+    useEffect(() => {
+        setSimulationTime(currentTime);
+    }, [currentTime]);
+    
+    // Create a minimal timeUtils interface for compatibility
+    const timeUtils = useMemo(() => ({
+        getSimulatedTime: () => simulationTime
+    }), [simulationTime]);
+    
+    // Early return handled by parent component
+    if (!satellite) {
         return {
             isAdding: false,
             setIsAdding: () => {},
             currentSimTime: new Date(),
             simTime: new Date(),
-            timeUtils: null,
             nodes: [],
             selectedIndex: null,
             setSelectedIndex: () => {},
@@ -95,15 +102,15 @@ export function useManeuverWindow(satellite) {
     }
     
     const manager = useMemo(() => new ManeuverManager(satellite, timeUtils), [satellite, timeUtils]);
-    const [currentSimTime, setCurrentSimTime] = useState(timeUtils.getSimulatedTime());
+    const [currentSimTime, setCurrentSimTime] = useState(simulationTime);
 
     // Execution time fields
     const [timeMode, setTimeMode] = useState('offset');
     const [offsetSec, setOffsetSec] = useState('0');
-    const [hours, setHours] = useState(timeUtils.getSimulatedTime().getUTCHours());
-    const [minutes, setMinutes] = useState(timeUtils.getSimulatedTime().getUTCMinutes());
-    const [seconds, setSeconds] = useState(timeUtils.getSimulatedTime().getUTCSeconds());
-    const [milliseconds, setMilliseconds] = useState(timeUtils.getSimulatedTime().getUTCMilliseconds());
+    const [hours, setHours] = useState(simulationTime.getUTCHours());
+    const [minutes, setMinutes] = useState(simulationTime.getUTCMinutes());
+    const [seconds, setSeconds] = useState(simulationTime.getUTCSeconds());
+    const [milliseconds, setMilliseconds] = useState(simulationTime.getUTCMilliseconds());
 
     // Local delta-V fields
     const [vx, setVx] = useState('0');
@@ -150,13 +157,11 @@ export function useManeuverWindow(satellite) {
 
     // Generate Hohmann preview data using PhysicsAPI
     const getHohmannPreviewData = useCallback(() => {
-        // Convert classical elements to periapsis/apoapsis altitudes
-        const a_m = parseFloat(targetSmaKm) || 0;
-        const e_val = parseFloat(targetEcc) || 0;
-        const r_pe = a_m * (1 - e_val);
-        const r_ap = a_m * (1 + e_val);
-        const targetPeriapsis = r_pe - Constants.earthRadius;
-        const targetApoapsis = r_ap - Constants.earthRadius;
+        // Convert classical elements to periapsis/apoapsis altitudes using PhysicsAPI
+        const sma = parseFloat(targetSmaKm) || 0;
+        const ecc = parseFloat(targetEcc) || 0;
+        const { periapsis: targetPeriapsis, apoapsis: targetApoapsis } = 
+            PhysicsAPI.orbitalElementsToAltitudes(sma, ecc, Constants.earthRadius);
         
         // Get Hohmann transfer parameters from PhysicsAPI
         const transferParams = PhysicsAPI.calculateHohmannTransfer({
@@ -199,9 +204,9 @@ export function useManeuverWindow(satellite) {
             satellite.position,
             satellite.velocity,
             Constants.earthGravitationalParameter,
-            timeUtils.getSimulatedTime()
+            simulationTime
         );
-    }, [satellite, timeUtils, nodes, selectedIndex, isAdding]);
+    }, [satellite, simulationTime, nodes, selectedIndex, isAdding]);
 
     // Next apoapsis calculation using PhysicsAPI
     const computeNextApoapsis = useCallback(() => {
@@ -218,9 +223,9 @@ export function useManeuverWindow(satellite) {
             satellite.position,
             satellite.velocity,
             Constants.earthGravitationalParameter,
-            timeUtils.getSimulatedTime()
+            simulationTime
         );
-    }, [satellite, timeUtils, nodes, selectedIndex, isAdding]);
+    }, [satellite, simulationTime, nodes, selectedIndex, isAdding]);
 
     // --- Hohmann manual burn time state and helpers ---
     const [manualBurnTime, setManualBurnTime] = useState(null);
@@ -231,9 +236,9 @@ export function useManeuverWindow(satellite) {
             currentVelocity: satellite.velocity,
             targetArgP: parseFloat(targetArgPDeg) || 0,
             mu: Constants.earthGravitationalParameter,
-            currentTime: timeUtils.getSimulatedTime()
+            currentTime: simulationTime
         });
-    }, [timeUtils, satellite, targetArgPDeg]);
+    }, [simulationTime, satellite, targetArgPDeg]);
     const findNextPeriapsis = useCallback(() => computeNextPeriapsis(), [computeNextPeriapsis]);
     const findNextApoapsis = useCallback(() => computeNextApoapsis(), [computeNextApoapsis]);
 
@@ -251,7 +256,7 @@ export function useManeuverWindow(satellite) {
         vy,
         vz,
         getHohmannPreviewData,
-        timeUtils,
+        currentTime: simulationTime,
         computeNextPeriapsis,
         computeNextApoapsis,
         isAdding,
@@ -262,11 +267,11 @@ export function useManeuverWindow(satellite) {
     // Now manualDetails should reference first preview node
     const manualDetails = useMemo(() => {
         const execTime = ManeuverUtils.computeExecutionTime(
-            timeUtils.getSimulatedTime(),
+            simulationTime,
             { timeMode, offsetSec, hours, minutes, seconds, milliseconds }
         );
         const dtSec = (execTime.getTime() - timeUtils.getSimulatedTime().getTime()) / 1000;
-        const dv = ManeuverUtils.computeDeltaVMagnitude(
+        const dv = PhysicsAPI.calculateDeltaVMagnitude(
             parseFloat(vx) || 0,
             parseFloat(vy) || 0,
             parseFloat(vz) || 0
@@ -326,13 +331,11 @@ export function useManeuverWindow(satellite) {
 
     // Generate Hohmann transfer nodes using PhysicsAPI
     const generateHohmann = useCallback(() => {
-        // Convert classical elements to periapsis/apoapsis altitudes
-        const a_m = parseFloat(targetSmaKm) || 0;
-        const e_val = parseFloat(targetEcc) || 0;
-        const r_pe = a_m * (1 - e_val);
-        const r_ap = a_m * (1 + e_val);
-        const targetPeriapsis = r_pe - Constants.earthRadius;
-        const targetApoapsis = r_ap - Constants.earthRadius;
+        // Convert classical elements to periapsis/apoapsis altitudes using PhysicsAPI
+        const sma = parseFloat(targetSmaKm) || 0;
+        const ecc = parseFloat(targetEcc) || 0;
+        const { periapsis: targetPeriapsis, apoapsis: targetApoapsis } = 
+            PhysicsAPI.orbitalElementsToAltitudes(sma, ecc, Constants.earthRadius);
         
         // Get transfer parameters from PhysicsAPI
         const transferParams = PhysicsAPI.calculateHohmannTransfer({
@@ -372,12 +375,10 @@ export function useManeuverWindow(satellite) {
             : satellite.orbitPath;
     };
 
-    // Sync currentSimTime via TimeUtils "timeUpdate" events
+    // Sync currentSimTime when simulationTime prop changes
     useEffect(() => {
-        const handler = e => setCurrentSimTime(new Date(e.detail.simulatedTime));
-        document.addEventListener('timeUpdate', handler);
-        return () => document.removeEventListener('timeUpdate', handler);
-    }, [timeUtils]);
+        setCurrentSimTime(simulationTime);
+    }, [simulationTime]);
 
     // Refresh and rebuild node models on satellite change, updating 3D nodes in time order for nested orbits
     useEffect(() => {
@@ -403,7 +404,7 @@ export function useManeuverWindow(satellite) {
             setVx(local.x.toFixed(2)); setVy(local.y.toFixed(2)); setVz(local.z.toFixed(2));
         } else {
             setTimeMode('offset'); setOffsetSec('0');
-            setHours(timeUtils.getSimulatedTime().getUTCHours()); setMinutes(timeUtils.getSimulatedTime().getUTCMinutes()); setSeconds(timeUtils.getSimulatedTime().getUTCSeconds()); setMilliseconds(timeUtils.getSimulatedTime().getUTCMilliseconds());
+            setHours(simulationTime.getUTCHours()); setMinutes(simulationTime.getUTCMinutes()); setSeconds(simulationTime.getUTCSeconds()); setMilliseconds(simulationTime.getUTCMilliseconds());
             setVx('0'); setVy('0'); setVz('0');
         }
 
@@ -440,8 +441,7 @@ export function useManeuverWindow(satellite) {
         } else if (timeMode === 'nextApoapsis') {
             execTime = computeNextApoapsis();
         } else {
-            const simNow = timeUtils.getSimulatedTime();
-            execTime = ManeuverUtils.computeExecutionTime(simNow, { timeMode, offsetSec, hours, minutes, seconds, milliseconds });
+            execTime = ManeuverUtils.computeExecutionTime(simulationTime, { timeMode, offsetSec, hours, minutes, seconds, milliseconds });
         }
         // Delta-V vector
         const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
@@ -481,7 +481,6 @@ export function useManeuverWindow(satellite) {
         isAdding, setIsAdding,
         currentSimTime,
         simTime: currentSimTime,
-        timeUtils,
         timeMode, setTimeMode,
         offsetSec, setOffsetSec,
         hours, setHours,

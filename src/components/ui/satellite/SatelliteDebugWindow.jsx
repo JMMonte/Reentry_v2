@@ -11,8 +11,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   const { celestialBodies } = useCelestialBodies();
   const [apsisData, setApsisData] = useState(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
-  const [dragData, setDragData] = useState(null);
-  const [perturbationData, setPerturbationData] = useState(null);
+  // const [dragData, setDragData] = useState(null);
+  // const [perturbationData, setPerturbationData] = useState(null);
   const [simTime, setSimTime] = useState(null);
   const [lat, setLat] = useState(null);
   const [lon, setLon] = useState(null);
@@ -24,8 +24,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         onPositionUpdate: () => {
           if (satellite.debug) {
             setApsisData(satellite.debug.apsisData);
-            setDragData(satellite.debug.dragData);
-            setPerturbationData(satellite.debug.perturbation);
+            // setDragData(satellite.debug.dragData);
+            // setPerturbationData(satellite.debug.perturbation);
           }
         }
       };
@@ -77,83 +77,83 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   };
 
   // Render atmospheric drag data
-  const renderDragData = () => {
-    if (!dragData) return null;
-    return (
-      <div className="space-y-1">
-        <div className="text-[10px] font-semibold">Atmospheric Drag</div>
-        <div className="grid grid-cols-4 gap-0.5 text-[9px]">
-          <span className="text-muted-foreground">Altitude:</span>
-          <span className="col-span-3 text-[10px] font-mono">{formatNumber(dragData.altitude)} km</span>
-        </div>
-        <div className="grid grid-cols-4 gap-0.5 text-[9px]">
-          <span className="text-muted-foreground">Density:</span>
-          <span className="col-span-3 text-[10px] font-mono">{dragData.density.toExponential(2)} kg/m³</span>
-        </div>
-        {renderVector(dragData.relativeVelocity, 'Rel Vel', true)}
-        {renderVector(dragData.dragAcceleration, 'Drag Acc', true)}
-      </div>
-    );
-  };
+  // const renderDragData = () => {
+  //   if (!dragData) return null;
+  //   return (
+  //     <div className="space-y-1">
+  //       <div className="text-[10px] font-semibold">Atmospheric Drag</div>
+  //       <div className="grid grid-cols-4 gap-0.5 text-[9px]">
+  //         <span className="text-muted-foreground">Altitude:</span>
+  //         <span className="col-span-3 text-[10px] font-mono">{formatNumber(dragData.altitude)} km</span>
+  //       </div>
+  //       <div className="grid grid-cols-4 gap-0.5 text-[9px]">
+  //         <span className="text-muted-foreground">Density:</span>
+  //         <span className="col-span-3 text-[10px] font-mono">{dragData.density.toExponential(2)} kg/m³</span>
+  //       </div>
+  //       {renderVector(dragData.relativeVelocity, 'Rel Vel', true)}
+  //       {renderVector(dragData.dragAcceleration, 'Drag Acc', true)}
+  //     </div>
+  //   );
+  // };
 
   const formatNumber = (num) => {
     if (num === undefined || num === null) return 'N/A';
     return typeof num === 'number' ? num.toFixed(2) : num;
   };
 
-  const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  // const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   // Render gravitational perturbations with breakdown per body
-  const renderPerturbation = () => {
-    if (!perturbationData) return null;
-    const { acc, force } = perturbationData;
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-semibold">Perturbations</span>
-          <button
-            onClick={() => setShowBreakdown(!showBreakdown)}
-            className="text-[8px] text-primary"
-            style={{ padding: 0 }}
-          >
-            {showBreakdown ? '−' : '+'}
-          </button>
-        </div>
-        <div className="grid grid-cols-4 gap-0.5 text-[9px]">
-          <span className="text-muted-foreground">Total Acc:</span>
-          <span>{formatNumber(acc.total.x)}</span>
-          <span>{formatNumber(acc.total.y)}</span>
-          <span>{formatNumber(acc.total.z)}</span>
-        </div>
-        <div className="grid grid-cols-4 gap-0.5 text-[9px]">
-          <span className="text-muted-foreground">Total F:</span>
-          <span>{formatNumber(force.total.x)}</span>
-          <span>{formatNumber(force.total.y)}</span>
-          <span>{formatNumber(force.total.z)}</span>
-        </div>
-        {showBreakdown && (
-          <div className="space-y-1 p-1 bg-muted/10 rounded">
-            {Object.keys(acc).filter(body => body !== 'total').map(body => (
-              <div className="grid grid-cols-4 gap-0.5 text-[8px]" key={`acc-${body}`}>
-                <span className="text-muted-foreground">{capitalize(body)} Acc:</span>
-                <span>{formatNumber(acc[body].x)}</span>
-                <span>{formatNumber(acc[body].y)}</span>
-                <span>{formatNumber(acc[body].z)}</span>
-              </div>
-            ))}
-            {Object.keys(force).filter(body => body !== 'total').map(body => (
-              <div className="grid grid-cols-4 gap-0.5 text-[8px]" key={`force-${body}`}>
-                <span className="text-muted-foreground">{capitalize(body)} F:</span>
-                <span>{formatNumber(force[body].x)}</span>
-                <span>{formatNumber(force[body].y)}</span>
-                <span>{formatNumber(force[body].z)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+  // const renderPerturbation = () => {
+  //   if (!perturbationData) return null;
+  //   const { acc, force } = perturbationData;
+  //   return (
+  //     <div className="space-y-1">
+  //       <div className="flex items-center gap-1">
+  //         <span className="text-[10px] font-semibold">Perturbations</span>
+  //       <button
+  //           onClick={() => setShowBreakdown(!showBreakdown)}
+  //           className="text-[8px] text-primary"
+  //           style={{ padding: 0 }}
+  //         >
+  //           {showBreakdown ? '−' : '+'}
+  //         </button>
+  //       </div>
+  //       <div className="grid grid-cols-4 gap-0.5 text-[9px]">
+  //         <span className="text-muted-foreground">Total Acc:</span>
+  //         <span>{formatNumber(acc.total.x)}</span>
+  //         <span>{formatNumber(acc.total.y)}</span>
+  //         <span>{formatNumber(acc.total.z)}</span>
+  //       </div>
+  //       <div className="grid grid-cols-4 gap-0.5 text-[9px]">
+  //         <span className="text-muted-foreground">Total F:</span>
+  //         <span>{formatNumber(force.total.x)}</span>
+  //         <span>{formatNumber(force.total.y)}</span>
+  //         <span>{formatNumber(force.total.z)}</span>
+  //       </div>
+  //       {showBreakdown && (
+  //         <div className="space-y-1 p-1 bg-muted/10 rounded">
+  //           {Object.keys(acc).filter(body => body !== 'total').map(body => (
+  //             <div className="grid grid-cols-4 gap-0.5 text-[8px]" key={`acc-${body}`}>
+  //               <span className="text-muted-foreground">{capitalize(body)} Acc:</span>
+  //               <span>{formatNumber(acc[body].x)}</span>
+  //               <span>{formatNumber(acc[body].y)}</span>
+  //               <span>{formatNumber(acc[body].z)}</span>
+  //             </div>
+  //           ))}
+  //           {Object.keys(force).filter(body => body !== 'total').map(body => (
+  //             <div className="grid grid-cols-4 gap-0.5 text-[8px]" key={`force-${body}`}>
+  //               <span className="text-muted-foreground">{capitalize(body)} F:</span>
+  //               <span>{formatNumber(force[body].x)}</span>
+  //               <span>{formatNumber(force[body].y)}</span>
+  //               <span>{formatNumber(force[body].z)}</span>
+  //             </div>
+  //           ))}
+  //         </div>
+  //       )}
+  //     </div>
+  //   );
+  // };
 
   // Helper to convert [x, y, z] arrays to {x, y, z}
   const toVector3 = (arr) =>

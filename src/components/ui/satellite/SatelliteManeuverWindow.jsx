@@ -7,8 +7,14 @@ import { DeltaVSection } from './DeltaVSection.jsx';
 import { useManeuverWindow } from './useManeuverWindow.jsx';
 import HohmannSection from './HohmannSection.jsx';
 import MissionPlanSection from './MissionPlanSection.jsx';
+import ManeuverErrorBoundary from './ManeuverErrorBoundary.jsx';
+import { useSimulation } from '../../../simulation/SimulationContext.jsx';
 
 export function SatelliteManeuverWindow({ satellite, onClose }) {
+    // Get current time from simulation context
+    const simulationContext = useSimulation();
+    const currentTime = simulationContext?.simulatedTime || new Date();
+    
     const {
         currentSimTime,
         timeMode, setTimeMode,
@@ -45,27 +51,8 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
         manualBurnTime, setManualBurnTime,
         findBestBurnTime,
         findNextPeriapsis,
-        findNextApoapsis,
-        timeUtils
-    } = useManeuverWindow(satellite);
-    
-    // Show loading state if timeUtils is not available yet
-    if (!timeUtils) {
-        return (
-            <DraggableModal
-                title={`Maneuver Planning - ${satellite.name}`}
-                onClose={onClose}
-                initialPosition={{ x: window.innerWidth - 580, y: 100 }}
-                width={560}
-                height={400}
-                resizable={false}
-            >
-                <div className="flex items-center justify-center h-full">
-                    <p className="text-gray-500">Loading simulation data...</p>
-                </div>
-            </DraggableModal>
-        );
-    }
+        findNextApoapsis
+    } = useManeuverWindow(satellite, currentTime);
 
     // Resizable mission plan state
     const [missionPlanHeight, setMissionPlanHeight] = useState(180); // px
@@ -144,8 +131,9 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
             minHeight={200}
             maxHeight="calc(100vh - 88px)"
         >
-            {/* Main layout: Vertical flex */}
-            <div className="flex flex-col h-full">
+            <ManeuverErrorBoundary onClose={onClose}>
+                {/* Main layout: Vertical flex */}
+                <div className="flex flex-col h-full">
                 {/* Top row: Only the detail pane now - Make it scrollable */}
                 <div className="flex-1 overflow-y-auto p-2" style={{ minHeight: 0, maxHeight: `calc(100% - ${missionPlanHeight}px)` }}>
                     {/* Right Pane: Manual or Hohmann UI (takes full width) */}
@@ -259,6 +247,7 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
                     />
                 </div>
             </div>
+            </ManeuverErrorBoundary>
         </DraggableModal>
     );
 }

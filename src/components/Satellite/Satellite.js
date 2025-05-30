@@ -4,6 +4,9 @@ import { ApsisVisualizer } from '../ApsisVisualizer.js';
 // import { OrbitPath } from './OrbitPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { GroundtrackPath } from './GroundtrackPath.js';
+import { ManeuverNodeVisualizer } from './ManeuverNodeVisualizer.js';
+import { createManeuverNodeDTO, createManeuverVisualizationDTO } from '../../types/DataTransferObjects.js';
+import { PhysicsAPI } from '../../physics/PhysicsAPI.js';
 
 /**
  * Satellite (UI/View only)
@@ -39,12 +42,17 @@ export class Satellite {
         this.centralBodyNaifId = centralBodyNaifId;
         this._initVisuals();
         this.maneuverNodes = [];
-        this.maneuverGroup = new THREE.Group();
-        scene.add(this.maneuverGroup);
+        this.maneuverNodeVisualizer = new ManeuverNodeVisualizer(scene, this);
         
-        // Request orbit update from new orbit manager
+        // Listen for maneuver events from physics engine
+        this._setupManeuverEventListeners();
+        
+        // Request orbit update from new orbit manager after a short delay
+        // to ensure physics engine has the satellite data
         if (this.app3d?.satelliteOrbitManager) {
-            this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
+            setTimeout(() => {
+                this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
+            }, 100);
         }
     }
 
@@ -152,13 +160,6 @@ export class Satellite {
         }
     }
 
-    /**
-     * Legacy method - redirects to updateVisualsFromState
-     * @deprecated Use updateVisualsFromState instead
-     */
-    updateFromPhysicsEngine(position, velocity) {
-        this.updateVisualsFromState({ position, velocity });
-    }
 
     setVisible(v) {
         const showOrbit = v && this.app3d.getDisplaySetting('showOrbits');
@@ -208,16 +209,11 @@ export class Satellite {
         // Remove apsis visualizer
         this.apsisVisualizer?.dispose();
         
-        // Remove maneuver nodes
-        for (const n of this.maneuverNodes) {
-            n.dispose();
-        }
-        this.maneuverNodes.length = 0;
+        // Clean up maneuver visualizations
+        this.maneuverNodeVisualizer?.dispose();
         
-        // Remove maneuver group
-        if (this.maneuverGroup?.parent) {
-            this.maneuverGroup.parent.remove(this.maneuverGroup);
-        }
+        // Remove event listeners
+        this._removeManeuverEventListeners();
         
         // Dispatch deletion event
         document.dispatchEvent(new CustomEvent('satelliteDeleted', { detail: { id: this.id } }));
@@ -253,5 +249,113 @@ export class Satellite {
 
     getMesh() {
         return this.visualizer?.mesh;
+    }
+    
+    /**
+     * Set up event listeners for maneuver updates from physics engine
+     */
+    _setupManeuverEventListeners() {
+        this._onManeuverAdded = (event) => {
+            if (event.detail.satelliteId !== this.id) return;
+            this._updateManeuverVisualization(event.detail.maneuverNode);
+        };
+        
+        this._onManeuverRemoved = (event) => {
+            if (event.detail.satelliteId !== this.id) return;
+            this.maneuverNodeVisualizer.removeNodeVisualization(event.detail.nodeId);
+        };
+        
+        this._onManeuverExecuted = (event) => {
+            if (event.detail.satelliteId !== this.id) return;
+            // Update orbit visualization after maneuver
+            if (this.app3d?.satelliteOrbitManager) {
+                this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
+            }
+        };
+        
+        window.addEventListener('maneuverNodeAdded', this._onManeuverAdded);
+        window.addEventListener('maneuverNodeRemoved', this._onManeuverRemoved);
+        window.addEventListener('maneuverExecuted', this._onManeuverExecuted);
+    }
+    
+    /**
+     * Remove maneuver event listeners
+     */
+    _removeManeuverEventListeners() {
+        window.removeEventListener('maneuverNodeAdded', this._onManeuverAdded);
+        window.removeEventListener('maneuverNodeRemoved', this._onManeuverRemoved);
+        window.removeEventListener('maneuverExecuted', this._onManeuverExecuted);
+    }
+    
+    /**
+     * Update visualization for a maneuver node
+     */
+    _updateManeuverVisualization(maneuverNode) {
+        if (!this.position || !this.velocity) return;
+        
+        // Request maneuver node visualization from orbit manager
+        // This will calculate position at maneuver time and post-maneuver orbit
+        if (this.app3d?.satelliteOrbitManager) {
+            this.app3d.satelliteOrbitManager.requestManeuverNodeVisualization(
+                this.id,
+                maneuverNode
+            );
+        } else {
+            console.warn('Orbit manager not available for maneuver node visualization');
+        }
+    }
+    
+    /**
+     * Add a maneuver node (delegates to physics engine)
+     */
+    addManeuverNode(executionTime, deltaVLocal) {
+        if (!this.app3d?.physicsManager?.physicsEngine) {
+            console.error('Physics engine not available');
+            return null;
+        }
+        
+        // Create DTO
+        const maneuverNode = createManeuverNodeDTO({
+            executionTime,
+            deltaV: {
+                prograde: deltaVLocal.x,
+                normal: deltaVLocal.y,
+                radial: deltaVLocal.z
+            }
+        });
+        
+        // Add to physics engine
+        const nodeId = this.app3d.physicsManager.physicsEngine.addManeuverNode(
+            this.id,
+            maneuverNode
+        );
+        
+        if (nodeId) {
+            this.maneuverNodes.push(maneuverNode);
+        }
+        
+        return maneuverNode;
+    }
+    
+    /**
+     * Remove a maneuver node (delegates to physics engine)
+     */
+    removeManeuverNode(node) {
+        if (!this.app3d?.physicsManager?.physicsEngine) {
+            console.error('Physics engine not available');
+            return;
+        }
+        
+        // Remove from physics engine
+        this.app3d.physicsManager.physicsEngine.removeManeuverNode(
+            this.id,
+            node.id
+        );
+        
+        // Remove from local array
+        const index = this.maneuverNodes.findIndex(n => n.id === node.id);
+        if (index !== -1) {
+            this.maneuverNodes.splice(index, 1);
+        }
     }
 }

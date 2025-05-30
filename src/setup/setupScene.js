@@ -200,11 +200,9 @@ export async function createSceneObjects(app) {
         if (bodyObject instanceof Planet && bodyObject.getOrbitGroup) {
             object3DForScene = bodyObject.getOrbitGroup();
         } else if (bodyObject instanceof Sun) {
-            if (bodyObject.sun && !bodyObject.sun.parent) {
-                scene.add(bodyObject.sun);
-                if (bodyObject.sunLight && !bodyObject.sunLight.parent) {
-                    scene.add(bodyObject.sunLight);
-                }
+            // Use orbitGroup for Sun, consistent with Planet objects
+            if (bodyObject.orbitGroup && !bodyObject.orbitGroup.parent) {
+                scene.add(bodyObject.orbitGroup);
             }
             continue;
         } else if (bodyObject instanceof THREE.Group) {

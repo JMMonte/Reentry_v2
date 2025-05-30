@@ -435,6 +435,8 @@ export class SatelliteCoordinates {
         
         // Ultimate fallback: identity quaternion (no rotation)
         console.warn(`[SatelliteCoordinates] No quaternion available for planet ${planet.name || 'unknown'}, using identity`);
+        // For the Sun and other bodies without proper quaternion setup, this is acceptable
+        // as they don't have significant rotation effects for most satellite calculations
         return new THREE.Quaternion(); // Identity quaternion
     }
 
@@ -504,6 +506,7 @@ export class SatelliteCoordinates {
         
         // Fallback values for known bodies (sidereal rotation rates in rad/s)
         const knownRotationRates = {
+            10:  2.9089e-6,    // Sun (25.05 day rotation period)
             399: 7.2921159e-5, // Earth
             301: 2.6617e-6,    // Moon (tidally locked, but still has slight rotation)
             499: 7.0882e-5,    // Mars

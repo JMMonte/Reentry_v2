@@ -217,8 +217,6 @@ export class SatelliteManager {
         const shouldUpdatePaths = perfNow - this._lastOrbitUpdate >= orbitMs;
         const predPeriods = dsm.getSetting('orbitPredictionInterval');
         const ptsPerPeriod = dsm.getSetting('orbitPointsPerPeriod');
-        const fallbackDay = dsm.getSetting('nonKeplerianFallbackDays') ?? 30;
-        const hyperMult = dsm.getSetting('hyperbolicPointsMultiplier') ?? 1;
         const epochMs = this.app3d.timeUtils.getSimulatedTime()?.getTime?.() ?? simMs;
 
         let updated = false;
@@ -240,21 +238,25 @@ export class SatelliteManager {
                 let periodS, pts;
 
             if (hyper || nearParab) {
-                const fbDays = dsm.getSetting('nonKeplerianFallbackDays') ?? 1;
-                    periodS = fbDays * Constants.secondsInDay;
-                pts = Math.ceil(ptsPerPeriod * fbDays * (r <= satSOI ? hyperMult : 1));
+                // For escape trajectories, propagate to SOI
+                const radialVel = sat.velocity.dot(sat.position) / r;
+                if (radialVel > 0 && satSOI > r) {
+                    periodS = (satSOI - r) / radialVel * 1.5; // Time to reach SOI with margin
                 } else {
+                    periodS = Constants.secondsInDay; // 1 day fallback
+                }
+                pts = Math.ceil(ptsPerPeriod * effP);
+            } else {
                 const baseP = Number.isFinite(els.period) && els.period > 0
-                        ? els.period
-                    : fallbackDay * Constants.secondsInDay;
+                    ? els.period
+                    : Constants.secondsInDay;
                 periodS = baseP * effP;
                 pts = ptsPerPeriod > 0
                     ? Math.ceil(ptsPerPeriod * effP)
-                        : 180; // Default orbit points
-                }
+                    : 180; // Default orbit points
+            }
 
-            if (r > satSOI) pts = Math.max(10, Math.ceil(pts * 0.2));
-                pts = Math.min(pts, 2000); // Max points limit
+            // No artificial limits - let the user control via settings
 
             try {
                 const posKm = sat.position.clone();

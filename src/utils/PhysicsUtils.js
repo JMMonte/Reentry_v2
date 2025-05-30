@@ -455,65 +455,7 @@ export class PhysicsUtils {
         return pos;
     }
 
-    /**
-     *  RK4 propagator with multiple gravitating bodies
-     *  Note: This method is kept for backward compatibility but could be
-     *  refactored to use the centralized integrator in the future
-     */
-    static propagateOrbit(initialPos, initialVel, bodies, period, numPts = 180) {
-        const dt = period / numPts;
-        let pos = initialPos.clone();
-        let vel = initialVel.clone();
-        const pts = [];
-
-        const accel = p => {
-            const a = new THREE.Vector3();
-            bodies.forEach(b => {
-                const d = new THREE.Vector3().subVectors(b.position, p);
-                const r2 = d.lengthSq();
-                if (r2 > 0) {
-                    a.addScaledVector(d.normalize(), Constants.G * b.mass / r2);
-                }
-            });
-            return a;
-        };
-
-        // TODO: Replace with centralized integrateRK4 from OrbitalIntegrators.js
-        // Currently kept for compatibility to avoid breaking dependent code
-        for (let i = 0; i < numPts; i++) {
-            const p0 = pos.clone(), v0 = vel.clone(), a0 = accel(p0);
-            const k1p = v0.clone().multiplyScalar(dt);
-            const k1v = a0.clone().multiplyScalar(dt);
-
-            const p1 = p0.clone().addScaledVector(k1p, 0.5);
-            const v1 = v0.clone().addScaledVector(k1v, 0.5);
-            const a1 = accel(p1);
-            const k2p = v1.clone().multiplyScalar(dt);
-            const k2v = a1.clone().multiplyScalar(dt);
-
-            const p2 = p0.clone().addScaledVector(k2p, 0.5);
-            const v2 = v0.clone().addScaledVector(k2v, 0.5);
-            const a2 = accel(p2);
-            const k3p = v2.clone().multiplyScalar(dt);
-            const k3v = a2.clone().multiplyScalar(dt);
-
-            const p3 = p0.clone().add(k3p);
-            const v3 = v0.clone().add(k3v);
-            const a3 = accel(p3);
-            const k4p = v3.clone().multiplyScalar(dt);
-            const k4v = a3.clone().multiplyScalar(dt);
-
-            pos.add(
-                k1p.clone().addScaledVector(k2p, 2).addScaledVector(k3p, 2).add(k4p)
-            );
-            vel.add(
-                k1v.clone().addScaledVector(k2v, 2).addScaledVector(k3v, 2).add(k4v)
-            );
-
-            pts.push(pos.clone());
-        }
-        return pts;
-    }
+    // REMOVED: propagateOrbit - use OrbitalIntegrators.integrateRK4 instead
 
     static calculateDetailedOrbitalElements(pos, vel, mu, radius) {
         const r = pos.length();

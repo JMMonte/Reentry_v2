@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PhysicsAPI } from '../physics/PhysicsAPI.js';
 
 /**
  * Utility class for maneuver node operations: selecting the correct orbit path and
@@ -83,6 +84,7 @@ export class ManeuverUtils {
 
     /**
      * Compute execution time based on mode and inputs.
+     * Delegates to PhysicsAPI for consistency.
      * @param {Date} simNow Current simulated time
      * @param {Object} opts
      * @param {'offset'|'datetime'} opts.timeMode
@@ -94,24 +96,14 @@ export class ManeuverUtils {
      * @returns {Date}
      */
     static computeExecutionTime(simNow, { timeMode, offsetSec, hours, minutes, seconds, milliseconds }) {
-        if (timeMode === 'offset') {
-            const secs = parseFloat(offsetSec) || 0;
-            return new Date(simNow.getTime() + secs * 1000);
-        } else {
-            const d = new Date(simNow);
-            d.setUTCHours(hours, minutes, seconds, milliseconds);
-            return d;
-        }
+        return PhysicsAPI.computeExecutionTime(simNow, timeMode, {
+            offsetSec,
+            hours,
+            minutes,
+            seconds,
+            milliseconds
+        });
     }
 
-    /**
-     * Compute magnitude of delta-V vector components.
-     * @param {number} vx
-     * @param {number} vy
-     * @param {number} vz
-     * @returns {number}
-     */
-    static computeDeltaVMagnitude(vx, vy, vz) {
-        return Math.hypot(vx, vy, vz);
-    }
+    // REMOVED: computeDeltaVMagnitude - use PhysicsAPI.calculateDeltaVMagnitude instead
 } 

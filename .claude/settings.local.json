@@ -4,7 +4,8 @@
       "Bash(grep:*)",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(true)"
     ]
   },
   "enableAllProjectMcpServers": false

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { createManeuverVisualizationDTO } from '../../types/DataTransferObjects.js';
 
 /**
  * ManeuverNodeVisualizer - Handles only 3D visualization of maneuver nodes
@@ -193,7 +192,7 @@ export class ManeuverNodeVisualizer {
     updateScales() {
         if (!this._cameraRef) return;
 
-        for (const [nodeId, visual] of this.nodeVisuals) {
+        for (const [, visual] of this.nodeVisuals) {
             const distance = visual.group.position.distanceTo(this._cameraRef.position);
             const scale = Math.max(0.5, Math.min(5, distance * 0.001));
             visual.group.scale.setScalar(scale);
@@ -204,7 +203,7 @@ export class ManeuverNodeVisualizer {
      * Set visibility for all maneuver nodes
      */
     setVisibility(visible) {
-        for (const [nodeId, visual] of this.nodeVisuals) {
+        for (const [, visual] of this.nodeVisuals) {
             visual.group.visible = visible;
             if (visual.orbitLine) {
                 visual.orbitLine.visible = visible;

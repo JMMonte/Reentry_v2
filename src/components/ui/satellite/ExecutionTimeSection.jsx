@@ -79,12 +79,30 @@ export function ExecutionTimeSection({
                 </TabsContent>
                 <TabsContent value="nextPeriapsis">
                     <div className="text-[10px]">
-                        Executes at next periapsis: {computeNextPeriapsis().toISOString()}
+                        {(() => {
+                            try {
+                                const date = computeNextPeriapsis();
+                                return date && !isNaN(date.getTime()) 
+                                    ? `Executes at next periapsis: ${date.toISOString()}`
+                                    : 'Unable to calculate next periapsis';
+                            } catch {
+                                return 'Unable to calculate next periapsis';
+                            }
+                        })()}
                     </div>
                 </TabsContent>
                 <TabsContent value="nextApoapsis">
                     <div className="text-[10px]">
-                        Executes at next apoapsis: {computeNextApoapsis().toISOString()}
+                        {(() => {
+                            try {
+                                const date = computeNextApoapsis();
+                                return date && !isNaN(date.getTime())
+                                    ? `Executes at next apoapsis: ${date.toISOString()}`
+                                    : 'Unable to calculate next apoapsis';
+                            } catch {
+                                return 'Unable to calculate next apoapsis';
+                            }
+                        })()}
                     </div>
                 </TabsContent>
             </Tabs>

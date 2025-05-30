@@ -406,9 +406,10 @@ export class PhysicsEngine {
         const velocityMag = satellite.velocity.length();
         const centralBody = this.bodies[satellite.centralBodyNaifId];
         
-        // Define reasonable limits
-        const maxVelocity = 50; // km/s - anything above this is suspicious
-        const maxPosition = 1e8; // 100 million km - very far from any body
+        // Define reasonable limits - adjust based on central body
+        const isSunCentered = satellite.centralBodyNaifId === 10; // Sun's NAIF ID
+        const maxVelocity = isSunCentered ? 620 : 50; // km/s - up to 620 km/s for Sun (Mercury's perihelion is ~59 km/s)
+        const maxPosition = isSunCentered ? 1e10 : 1e8; // 10 billion km for Sun, 100 million km for others
         const minPosition = centralBody ? centralBody.radius * 0.9 : 100; // Not below surface
         
         let isValid = true;

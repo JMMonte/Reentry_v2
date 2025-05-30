@@ -687,6 +687,8 @@ class App3D extends EventTarget {
                     }
                 }));
             }
+            
+            
             this.stats?.begin();
         
         this.sceneManager.updateFrame?.(delta);

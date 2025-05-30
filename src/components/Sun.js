@@ -13,6 +13,13 @@ export class Sun {
         this.nameLower = this.name.toLowerCase();
         this.radius = config.radius; // Use radius as provided (should be in scene units, e.g., km)
         this.type = config.type || 'star';
+        this.naifId = config.naifId || 10; // Add naifId for consistency
+        
+        // Add properties for physics system compatibility
+        this.targetPosition = new THREE.Vector3();
+        this.targetOrientation = new THREE.Quaternion();
+        this.velocity = new THREE.Vector3();
+        this.absolutePosition = new THREE.Vector3()
         // Store initial flare specs for later scaling
         this.initialFlareSpecs = [
             { url: '/assets/texture/lensflare/lensflare0.png', size: 700, distance: 0.0 },
@@ -40,13 +47,21 @@ export class Sun {
         });
 
         this.sun = new THREE.Mesh(geometry, material);
+        
+        // Create an orbitGroup for consistency with Planet objects
+        // This allows satellites to be parented to the Sun properly
+        this.orbitGroup = new THREE.Group();
+        this.orbitGroup.name = 'Sun_OrbitGroup';
+        this.orbitGroup.add(this.sun);
+        
         // Do not add to scene here; handled externally
-        // this.scene.add(this.sun);
+        // this.scene.add(this.orbitGroup);
 
         this.sunLight = new THREE.PointLight(0xffffff, 1e6, 0);
         this.sunLight.decay = 0.7;
         this.sunLight.position.copy(this.sun.position);
         this.sunLight.castShadow = false;
+        this.orbitGroup.add(this.sunLight);
         // Do not add to scene here; handled externally
         // this.scene.add(this.sunLight);
 
@@ -93,8 +108,22 @@ export class Sun {
 
     // Add a method to update the sun's position and sync the light
     setPosition(position) {
-        this.sun.position.copy(position);
-        this.sunLight.position.copy(position);
+        // Update the orbitGroup position instead of individual meshes
+        this.orbitGroup.position.copy(position);
+        this.targetPosition.copy(position);
+    }
+    
+    // Add update method for consistency with Planet objects
+    update() {
+        // Interpolate position if needed
+        if (this.orbitGroup) {
+            this.orbitGroup.position.lerp(this.targetPosition, 0.1);
+        }
+    }
+    
+    // Add getOrbitGroup method for consistency with Planet objects
+    getOrbitGroup() {
+        return this.orbitGroup;
     }
 
     // Add a getter for the main mesh, for selection/camera logic compatibility

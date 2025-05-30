@@ -382,6 +382,7 @@ function propagateOrbit(params) {
         duration,
         timeStep = 60,
         pointsPerChunk = 100,
+        startTime = 0,
         // Satellite properties for drag calculation
         mass,
         crossSectionalArea,
@@ -410,14 +411,26 @@ function propagateOrbit(params) {
     const points = [];
     const soiTransitions = [];
     const bodyEvolution = []; // Track how solar system evolves
-    let currentTime = 0;
+    let currentTime = startTime;
 
-    // Send initial point
-    points.push({
-        position: position.toArray(),
-        time: 0,
-        centralBodyId: currentCentralBodyId
-    });
+    // Only include initial point if we're starting from the beginning
+    if (startTime === 0) {
+        points.push({
+            position: position.toArray(),
+            velocity: velocity.toArray(),
+            time: currentTime,
+            centralBodyId: currentCentralBodyId
+        });
+    }
+    
+    // If we have a non-zero start time, we need to advance the solar system to that time
+    if (startTime > 0 && propagateSolarSystem) {
+        const skipSteps = Math.floor(startTime / timeStep);
+        console.log(`[orbitPropagationWorker] Advancing solar system by ${skipSteps} steps to reach start time ${startTime}s`);
+        for (let i = 0; i < skipSteps; i++) {
+            currentBodies = propagateSolarSystemBodies(currentBodies, timeStep);
+        }
+    }
 
     // Create satellite properties object
     const satelliteProperties = {
@@ -457,6 +470,7 @@ function propagateOrbit(params) {
         // IMPORTANT: position is planet-centric relative to the current central body position
         points.push({
             position: position.toArray(),
+            velocity: velocity.toArray(), // Need velocity for extensions
             time: currentTime,
             centralBodyId: currentCentralBodyId,
             // Include central body position at this time for debugging

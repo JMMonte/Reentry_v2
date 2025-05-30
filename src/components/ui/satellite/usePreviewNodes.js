@@ -1,12 +1,11 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { ManeuverNode } from '../../../components/Satellite/ManeuverNode.js';
 import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
 
-export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, getHohmannPreviewData, timeUtils, computeNextPeriapsis, computeNextApoapsis, isAdding, selectedIndex, nodes }) {
+export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, getHohmannPreviewData, currentTime, computeNextPeriapsis, computeNextApoapsis, isAdding, selectedIndex, nodes }) {
     const manualNodeRef = useRef(null);
     const hohmannNodeRefs = useRef([]);
-    
+
     // Retrieve display settings for orbit prediction
     const predPeriods = satellite.app3d.getDisplaySetting('orbitPredictionInterval');
     const ptsPerPeriod = satellite.app3d.getDisplaySetting('orbitPointsPerPeriod');
@@ -26,22 +25,9 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
 
         if (maneuverMode === 'manual' && (isAdding || selectedIndex != null)) {
             if (isAdding) {
-                // Adding new manual node
-                const node = new ManeuverNode({ satellite, time: new Date(timeUtils.getSimulatedTime()), deltaV: new THREE.Vector3() });
-                manualNodeRef.current = node;
-                satellite.app3d.previewNode = node;
-                // Style preview node
-                const white = 0xffffff;
-                node.mesh.material.color.set(white);
-                node.mesh.material.opacity = 0.8;
-                node.mesh.material.transparent = true;
-                if (node.arrow.line) node.arrow.line.material.color.set(white);
-                if (node.arrow.cone) node.arrow.cone.material.color.set(white);
-                if (node.predictedOrbit.orbitLine.material) node.predictedOrbit.orbitLine.material.color.set(white);
-                // Make sure the preview orbit line is visible
-                node.predictedOrbit.orbitLine.visible = true;
-                // Immediately compute and draw the preview orbit
-                node._lastPredTime = 0;
+                // TODO: Create preview using new architecture
+                // For now, skip preview node creation until ManeuverNodeVisualizer is fully integrated
+                console.log('Preview node creation temporarily disabled during refactoring');
             } else {
                 // Edit existing node: preview the selected node and its followers
                 const model = nodes[selectedIndex];
@@ -71,6 +57,10 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
                 following.forEach(n3d => { n3d._lastPredTime = 0; });
             }
         } else if (maneuverMode === 'hohmann') {
+            // TODO: Create Hohmann preview using new architecture
+            console.log('Hohmann preview temporarily disabled during refactoring');
+            // The following code is commented out for now, as preview node creation is disabled during refactoring.
+            /*
             const data = getHohmannPreviewData();
             // Create preview nodes
             const node1 = new ManeuverNode({ satellite, time: data.time1, deltaV: new THREE.Vector3(data.dv1, 0, data.dv_plane) });
@@ -102,6 +92,7 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
             hohmannNodeRefs.current = [node1, node2];
             satellite.app3d.previewNodes = [node1, node2];
             satellite.app3d.previewNode = node1;
+            */
         }
 
         // Cleanup on unmount or before next mode change
@@ -143,7 +134,7 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
             execTime = computeNextApoapsis();
         } else {
             execTime = ManeuverUtils.computeExecutionTime(
-                timeUtils.getSimulatedTime(),
+                currentTime,
                 { timeMode, offsetSec, hours, minutes, seconds, milliseconds }
             );
         }
@@ -152,7 +143,7 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
         node.time = execTime;
         node._lastPredTime = 0;
         if (node.predictedOrbit?.orbitLine) node.predictedOrbit.orbitLine.visible = true;
-    }, [maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, isAdding, selectedIndex, timeUtils, computeNextPeriapsis, computeNextApoapsis]);
+    }, [maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, isAdding, selectedIndex, currentTime, computeNextPeriapsis, computeNextApoapsis]);
 
     // Update preview node delta-V when DV inputs change
     useEffect(() => {
@@ -173,31 +164,31 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
     // Update Hohmann preview when parameters change
     useEffect(() => {
         if (maneuverMode !== 'hohmann' || hohmannNodeRefs.current.length !== 2) return;
-        
+
         const data = getHohmannPreviewData();
         const [node1, node2] = hohmannNodeRefs.current;
-        
+
         // Reset throttle so first node honors new settings
         node1.time = data.time1;
         node1.localDV = new THREE.Vector3(data.dv1, 0, data.dv_plane);
         node1._lastPredTime = 0;
-        
+
         // Save original maneuver nodes array
         const originalNodes = [...satellite.maneuverNodes];
-        
+
         try {
             // Temporarily add node1 to the satellite's maneuver nodes
             satellite.maneuverNodes.push(node1);
-            
+
             // Sort them by time
             satellite.maneuverNodes.sort((a, b) => a.time.getTime() - b.time.getTime());
-            
+
             // Now update node2 (it will see node1 in the satellite's maneuverNodes)
             node2.time = data.time2;
             node2.localDV = new THREE.Vector3(data.dv2, 0, 0);
             // Reset throttle so second node honors new settings
             node2._lastPredTime = 0;
-            
+
             // Make orbit lines more visible with distinctive colors
             if (node1.predictedOrbit?.orbitLine) {
                 node1.predictedOrbit.orbitLine.visible = true;
@@ -205,13 +196,13 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
                 // Transfer orbit - use a more distinguishable color
                 node1.predictedOrbit.orbitLine.material.color.set(0xFFEEDD);
             }
-            
+
             if (node2.predictedOrbit?.orbitLine) {
-                node2.predictedOrbit.orbitLine.visible = true; 
+                node2.predictedOrbit.orbitLine.visible = true;
                 node2.predictedOrbit.orbitLine.material.opacity = 0.9;
                 // Final orbit - bright white
                 node2.predictedOrbit.orbitLine.material.color.set(0xFFFFFF);
-                
+
                 // Ensure the line is properly dashed for visibility
                 if (node2.predictedOrbit.orbitLine.material.dashSize) {
                     node2.predictedOrbit.orbitLine.material.dashSize = 8;
@@ -237,8 +228,8 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
             // Restore original maneuver nodes
             satellite.maneuverNodes = originalNodes;
         }
-        
+
     }, [maneuverMode, getHohmannPreviewData, satellite, predPeriods, ptsPerPeriod]);
 
     return null;
-} 
+}

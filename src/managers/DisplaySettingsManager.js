@@ -214,7 +214,17 @@ export class DisplaySettingsManager {
             case 'orbitUpdateInterval':
             case 'orbitPredictionInterval':
             case 'orbitPointsPerPeriod':
-                if (app3d.satellites?.refreshOrbitPaths) {
+                // Just update visualization - don't clear cache
+                if (app3d.satelliteOrbitManager) {
+                    console.log('[DisplaySettingsManager] Orbit settings changed, updating visualization');
+                    if (app3d.physicsIntegration?.physicsEngine?.satellites) {
+                        for (const satelliteId of app3d.physicsIntegration.physicsEngine.satellites.keys()) {
+                            app3d.satelliteOrbitManager.updateSatelliteOrbit(satelliteId);
+                        }
+                    }
+                }
+                // Fallback to old system if it exists
+                else if (app3d.satellites?.refreshOrbitPaths) {
                     app3d.satellites.refreshOrbitPaths();
                 }
                 break;

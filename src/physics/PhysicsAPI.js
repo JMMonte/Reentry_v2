@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PhysicsUtils } from '../utils/PhysicsUtils.js';
-import { Constants } from '../utils/Constants.js';
+// import { Constants } from '../utils/Constants.js';
 import { ApsisCalculator } from './core/ApsisCalculator.js';
 
 /**
@@ -65,7 +65,7 @@ export class PhysicsAPI {
             targetApoapsis,   // km above surface
             targetInclination,  // degrees
             targetLAN,       // degrees
-            targetArgP,      // degrees
+            // targetArgP,      // degrees
             bodyRadius,      // km
             mu              // km³/s²
         } = params;
@@ -74,7 +74,7 @@ export class PhysicsAPI {
         const r_pe = bodyRadius + targetPeriapsis;
         const r_ap = bodyRadius + targetApoapsis;
         const a_target = (r_pe + r_ap) / 2;
-        const e_target = (r_ap - r_pe) / (r_ap + r_pe);
+        // const e_target = (r_ap - r_pe) / (r_ap + r_pe);
 
         // Calculate current orbital elements
         const currentElements = this.calculateOrbitalElements(currentPosition, currentVelocity, mu);
@@ -95,7 +95,7 @@ export class PhysicsAPI {
         const a_transfer = (r_current + r_pe) / 2;
         
         // Velocities at current position
-        const v_circular = Math.sqrt(mu / r_current);
+        // const v_circular = Math.sqrt(mu / r_current);
         const v_transfer_depart = Math.sqrt(mu * (2 / r_current - 1 / a_transfer));
         const v_transfer_arrive = Math.sqrt(mu * (2 / r_pe - 1 / a_transfer));
         const v_final = Math.sqrt(mu * (2 / r_pe - 1 / a_target));
@@ -288,5 +288,164 @@ export class PhysicsAPI {
      */
     static checkOrbitImpact(position, velocity, mu, bodyRadius, atmosphereHeight = 0) {
         return ApsisCalculator.checkForImpact(position, velocity, mu, bodyRadius, atmosphereHeight);
+    }
+
+    /**
+     * Get state vectors at a specific time in the future
+     * @param {THREE.Vector3} position - Current position in km
+     * @param {THREE.Vector3} velocity - Current velocity in km/s
+     * @param {number} mu - Gravitational parameter in km³/s²
+     * @param {number} deltaTime - Time offset in seconds
+     * @returns {Object} State vectors {position, velocity}
+     */
+    static getStateAtTime(position, velocity, mu, deltaTime) {
+        const elements = this.calculateOrbitalElements(position, velocity, mu);
+        const newPosition = PhysicsUtils.getPositionAtTime(elements, deltaTime);
+        // For now, return position only - velocity calculation can be added if needed
+        return { position: newPosition };
+    }
+
+    /**
+     * Get state vectors at a specific true anomaly
+     * @param {THREE.Vector3} position - Current position in km
+     * @param {THREE.Vector3} velocity - Current velocity in km/s
+     * @param {number} mu - Gravitational parameter in km³/s²
+     * @param {number} targetAnomaly - Target true anomaly in degrees
+     * @returns {Object} State vectors {position, velocity}
+     */
+    static getStateAtAnomaly(position, velocity, mu, targetAnomaly) {
+        const elements = this.calculateOrbitalElements(position, velocity, mu);
+        const targetAnomalyRad = THREE.MathUtils.degToRad(targetAnomaly);
+        
+        // Convert elements to format expected by PhysicsUtils
+        const els = {
+            h: elements.specificAngularMomentum,
+            e: elements.eccentricity,
+            i: THREE.MathUtils.degToRad(elements.inclination),
+            omega: THREE.MathUtils.degToRad(elements.longitudeOfAscendingNode),
+            w: THREE.MathUtils.degToRad(elements.argumentOfPeriapsis)
+        };
+        
+        return PhysicsUtils.calculateStateVectorsAtAnomaly(els, targetAnomalyRad, mu);
+    }
+
+    /**
+     * Calculate Hohmann transfer nodes with burn information
+     * @param {THREE.Vector3} currentPosition - Current position in km
+     * @param {THREE.Vector3} currentVelocity - Current velocity in km/s
+     * @param {number} targetRadius - Target orbit radius in km
+     * @param {number} mu - Gravitational parameter in km³/s²
+     * @returns {Object} Transfer nodes with delta-V and timing
+     */
+    static calculateHohmannTransferNodes(currentPosition, currentVelocity, targetRadius, mu) {
+        const r1 = currentPosition.length();
+        const elements = this.calculateOrbitalElements(currentPosition, currentVelocity, mu);
+        
+        // Use existing PhysicsUtils method
+        const { burnNode1, burnNode2 } = PhysicsUtils.calculateHohmannTransferNodes(
+            r1, targetRadius, elements, mu
+        );
+        
+        // Calculate transfer time
+        const transferTime = Math.PI * Math.sqrt(Math.pow((r1 + targetRadius) / 2, 3) / mu);
+        
+        return {
+            burn1: burnNode1,
+            burn2: burnNode2,
+            transferTime: transferTime
+        };
+    }
+
+    /**
+     * Convert between orbital elements and altitude representation
+     * @param {number} semiMajorAxis - Semi-major axis in km
+     * @param {number} eccentricity - Eccentricity (0-1)
+     * @param {number} bodyRadius - Central body radius in km
+     * @returns {Object} Periapsis and apoapsis altitudes
+     */
+    static orbitalElementsToAltitudes(semiMajorAxis, eccentricity, bodyRadius) {
+        const periapsisRadius = semiMajorAxis * (1 - eccentricity);
+        const apoapsisRadius = semiMajorAxis * (1 + eccentricity);
+        return {
+            periapsis: periapsisRadius - bodyRadius,
+            apoapsis: apoapsisRadius - bodyRadius,
+            periapsisRadius: periapsisRadius,
+            apoapsisRadius: apoapsisRadius
+        };
+    }
+
+    /**
+     * Convert altitudes to orbital elements
+     * @param {number} periapsisAltitude - Periapsis altitude in km
+     * @param {number} apoapsisAltitude - Apoapsis altitude in km
+     * @param {number} bodyRadius - Central body radius in km
+     * @returns {Object} Semi-major axis and eccentricity
+     */
+    static altitudesToOrbitalElements(periapsisAltitude, apoapsisAltitude, bodyRadius) {
+        const rp = bodyRadius + periapsisAltitude;
+        const ra = bodyRadius + apoapsisAltitude;
+        const semiMajorAxis = (rp + ra) / 2;
+        const eccentricity = (ra - rp) / (ra + rp);
+        return {
+            semiMajorAxis: semiMajorAxis,
+            eccentricity: eccentricity
+        };
+    }
+
+    /**
+     * Calculate execution time for a maneuver
+     * @param {Date} currentTime - Current simulation time
+     * @param {string} timeMode - Time mode ('offset', 'datetime', 'nextPeriapsis', etc.)
+     * @param {Object} params - Time parameters
+     * @returns {Date} Execution time
+     */
+    static computeExecutionTime(currentTime, timeMode, params) {
+        if (timeMode === 'offset') {
+            const secs = parseFloat(params.offsetSec) || 0;
+            return new Date(currentTime.getTime() + secs * 1000);
+        } else if (timeMode === 'datetime') {
+            const newTime = new Date(currentTime);
+            newTime.setUTCHours(params.hours);
+            newTime.setUTCMinutes(params.minutes);
+            newTime.setUTCSeconds(params.seconds);
+            newTime.setUTCMilliseconds(params.milliseconds || 0);
+            return newTime;
+        }
+        // Handle other modes as needed
+        return currentTime;
+    }
+
+    /**
+     * Calculate delta-V between two orbits at a specific anomaly
+     * @param {THREE.Vector3} currentPosition - Current position
+     * @param {THREE.Vector3} currentVelocity - Current velocity
+     * @param {THREE.Vector3} targetPosition - Target position
+     * @param {THREE.Vector3} targetVelocity - Target velocity
+     * @param {number} mu - Gravitational parameter
+     * @param {number} anomaly - True anomaly in degrees
+     * @returns {number} Delta-V magnitude
+     */
+    static calculateDeltaVAtAnomaly(currentPosition, currentVelocity, targetPosition, targetVelocity, mu, anomaly) {
+        const currentElements = this.calculateOrbitalElements(currentPosition, currentVelocity, mu);
+        const targetElements = this.calculateOrbitalElements(targetPosition, targetVelocity, mu);
+        
+        // Convert to format expected by PhysicsUtils
+        const curEls = {
+            h: currentElements.specificAngularMomentum,
+            e: currentElements.eccentricity,
+            i: THREE.MathUtils.degToRad(currentElements.inclination),
+            omega: THREE.MathUtils.degToRad(currentElements.longitudeOfAscendingNode),
+            w: THREE.MathUtils.degToRad(currentElements.argumentOfPeriapsis)
+        };
+        
+        const tgtEls = {
+            h: targetElements.specificAngularMomentum,
+            e: targetElements.eccentricity,
+            i: THREE.MathUtils.degToRad(targetElements.inclination),
+            omega: THREE.MathUtils.degToRad(targetElements.longitudeOfAscendingNode),
+            w: THREE.MathUtils.degToRad(targetElements.argumentOfPeriapsis)
+        };
+        
+        return PhysicsUtils.calculateDeltaVAtAnomaly(curEls, tgtEls, THREE.MathUtils.degToRad(anomaly), mu);
     }
 }

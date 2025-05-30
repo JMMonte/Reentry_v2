@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import { ManeuverNodeModel } from '../../../models/ManeuverNodeModel.js';
 import { Constants } from '../../../utils/Constants.js';
-import { PhysicsUtils } from '../../../utils/PhysicsUtils.js';
-import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
 import { PhysicsAPI } from '../../../physics/PhysicsAPI.js';
 
 /**
@@ -33,8 +31,10 @@ export class ManeuverManager {
      */
     scheduleManualBurn({ timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz }, replaceOldNode = null) {
         const simNow = this.timeUtils.getSimulatedTime();
-        // Compute execution time via central utility
-        const executeTime = ManeuverUtils.computeExecutionTime(simNow, { timeMode, offsetSec, hours, minutes, seconds, milliseconds });
+        // Use PhysicsAPI for execution time calculation
+        const executeTime = PhysicsAPI.computeExecutionTime(simNow, timeMode, { 
+            offsetSec, hours, minutes, seconds, milliseconds 
+        });
         const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
 
         // Optionally remove an existing node before scheduling a new one
@@ -63,11 +63,30 @@ export class ManeuverManager {
         const r1 = this.sat.position.length();
         const mu = Constants.earthGravitationalParameter;
         const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
-        // Delta-V for Hohmann raise
-        const { deltaV1, deltaV2, totalDeltaV } = PhysicsUtils.calculateHohmannOrbitRaiseDeltaV(r1, r_target, mu);
-        const dv_plane = 0;
-        // Compute transfer time (time between burns)
-        const transferTime = Math.PI * Math.sqrt(Math.pow((r1 + r_target) / 2, 3) / mu);
+        // Get current orbital elements to maintain inclination and LAN
+        const currentElements = PhysicsAPI.calculateOrbitalElements(
+            this.sat.position,
+            this.sat.velocity,
+            mu
+        );
+        
+        // Use PhysicsAPI for Hohmann transfer calculations
+        const transfer = PhysicsAPI.calculateHohmannTransfer({
+            currentPosition: this.sat.position,
+            currentVelocity: this.sat.velocity,
+            targetPeriapsis: parseFloat(ellApoKm) || 0, // For circular orbit, periapsis = apoapsis
+            targetApoapsis: parseFloat(ellApoKm) || 0,
+            targetInclination: currentElements.inclination, // Maintain current inclination
+            targetLAN: currentElements.longitudeOfAscendingNode, // Maintain current LAN
+            bodyRadius: Constants.earthRadius,
+            mu: mu
+        });
+        
+        const deltaV1 = transfer.deltaV1;
+        const deltaV2 = transfer.deltaV2;
+        const totalDeltaV = transfer.totalDeltaV;
+        const dv_plane = transfer.burn2.planeChangeComponent || 0;
+        const transferTime = transfer.transferTime;
         // Preview burn times: first at now, second after transfer
         const time1 = new Date(simNow);
         const time2 = new Date(simNow.getTime() + transferTime * 1000);
@@ -116,19 +135,25 @@ export class ManeuverManager {
             simNow
         );
 
-        // Compute transfer orbit parameters
-        const aTrans = (r1 + r_target) / 2;
-        // First burn: raise apoapsis
-        const vPeriInit = Math.sqrt(mu * (2 / r1 - 1 / aTrans));
-        const vPeriCurrent = Math.sqrt(mu / r1);
-        const dv1 = vPeriInit - vPeriCurrent;
-        const dv_plane = 0;
-        // Second burn: circularize
-        const vApoTrans = Math.sqrt(mu * (2 / r_target - 1 / aTrans));
-        const vApoTarget = Math.sqrt(mu / r_target);
-        const dv2 = vApoTarget - vApoTrans;
-        // Schedule burns
-        const transferTime = Math.PI * Math.sqrt(Math.pow(aTrans, 3) / mu);
+        // Get current orbital elements to maintain inclination and LAN
+        const currentElements = PhysicsAPI.calculateOrbitalElements(r1Vec, v1Vec, mu);
+        
+        // Use PhysicsAPI for Hohmann transfer calculations
+        const transfer = PhysicsAPI.calculateHohmannTransfer({
+            currentPosition: r1Vec,
+            currentVelocity: v1Vec,
+            targetPeriapsis: parseFloat(ellApoKm) || 0, // For circular orbit
+            targetApoapsis: parseFloat(ellApoKm) || 0,
+            targetInclination: currentElements.inclination, // Maintain current inclination
+            targetLAN: currentElements.longitudeOfAscendingNode, // Maintain current LAN
+            bodyRadius: Constants.earthRadius,
+            mu: mu
+        });
+        
+        const dv1 = transfer.deltaV1;
+        const dv2 = transfer.deltaV2;
+        const dv_plane = transfer.burn2.planeChangeComponent || 0;
+        const transferTime = transfer.transferTime;
         const burn2Time = new Date(burnTime.getTime() + transferTime * 1000);
         // Add maneuver nodes
         const node1 = this.sat.addManeuverNode(burnTime, new THREE.Vector3(dv1, 0, 0));

@@ -7,12 +7,13 @@
 import * as THREE from 'three';
 import { analyzeOrbit } from '../physics/integrators/OrbitalIntegrators.js';
 import { Constants } from '../utils/Constants.js';
+import { PhysicsAPI } from '../physics/PhysicsAPI.js';
 
 export class SatelliteOrbitManager {
     constructor(app) {
         this.app = app;
         this.physicsEngine = app.physicsIntegration?.physicsEngine;
-        this.displaySettings = app.displaySettings;
+        this.displaySettings = app.displaySettingsManager;
         
         // Worker management
         this.workers = [];
@@ -133,6 +134,150 @@ export class SatelliteOrbitManager {
     }
 
     /**
+     * Request visualization for a maneuver node
+     * This will calculate the position at maneuver time and post-maneuver orbit
+     */
+    requestManeuverNodeVisualization(satelliteId, maneuverNode) {
+        console.log(`[SatelliteOrbitManager] Maneuver node visualization requested for satellite ${satelliteId}`);
+        
+        const satellite = this.physicsEngine?.satellites.get(satelliteId);
+        if (!satellite) {
+            console.error(`[SatelliteOrbitManager] Satellite ${satelliteId} not found`);
+            return;
+        }
+        
+        // Get the current orbit data
+        const orbitData = this.orbitCache.get(satelliteId);
+        if (!orbitData || !orbitData.points || orbitData.points.length === 0) {
+            console.warn(`[SatelliteOrbitManager] No orbit data available for satellite ${satelliteId}`);
+            // Request orbit calculation first
+            this.updateSatelliteOrbit(satelliteId);
+            // TODO: Queue maneuver visualization for after orbit is calculated
+            return;
+        }
+        
+        // Find the point in the orbit closest to maneuver execution time
+        const currentTime = this.physicsEngine.simulationTime || new Date();
+        const maneuverTime = maneuverNode.executionTime;
+        const timeDelta = (maneuverTime.getTime() - currentTime.getTime()) / 1000; // seconds
+        
+        // Find the orbit point at or near the maneuver time
+        let nodePoint = null;
+        let nodeIndex = -1;
+        
+        for (let i = 0; i < orbitData.points.length; i++) {
+            const point = orbitData.points[i];
+            if (point.time >= timeDelta) {
+                nodePoint = point;
+                nodeIndex = i;
+                break;
+            }
+        }
+        
+        if (!nodePoint) {
+            console.warn(`[SatelliteOrbitManager] Maneuver time ${timeDelta}s is beyond orbit prediction`);
+            nodePoint = orbitData.points[orbitData.points.length - 1]; // Use last point
+            nodeIndex = orbitData.points.length - 1;
+        }
+        
+        // Calculate world delta-V at the maneuver point
+        const position = new THREE.Vector3(...nodePoint.position);
+        const velocity = new THREE.Vector3(...(nodePoint.velocity || satellite.velocity.toArray()));
+        
+        const worldDeltaV = PhysicsAPI.localToWorldDeltaV(
+            new THREE.Vector3(
+                maneuverNode.deltaV.prograde,
+                maneuverNode.deltaV.normal,
+                maneuverNode.deltaV.radial
+            ),
+            position,
+            velocity
+        );
+        
+        // Create visualization data
+        const visualData = {
+            nodeId: maneuverNode.id,
+            position: nodePoint.position,
+            deltaVDirection: worldDeltaV.normalize().toArray(),
+            deltaVMagnitude: maneuverNode.deltaMagnitude,
+            color: satellite.color || 0xffffff,
+            scale: 1,
+            showPredictedOrbit: true,
+            predictedOrbitPoints: [],
+            timeIndex: nodeIndex,
+            referenceFrame: {
+                centralBodyId: nodePoint.centralBodyId,
+                position: position.toArray(),
+                velocity: velocity.toArray()
+            }
+        };
+        
+        // Update the satellite's maneuver node visualizer
+        const satObj = this.scene?.getMeshByName(satelliteId);
+        if (satObj?.maneuverNodeVisualizer) {
+            satObj.maneuverNodeVisualizer.updateNodeVisualization(visualData);
+        }
+        
+        // Request post-maneuver orbit propagation
+        this._requestPostManeuverOrbit(satelliteId, nodePoint, worldDeltaV, maneuverNode);
+    }
+    
+    /**
+     * Request orbit propagation after a maneuver
+     */
+    _requestPostManeuverOrbit(satelliteId, maneuverPoint, worldDeltaV, maneuverNode) {
+        // Apply delta-V to velocity
+        const postManeuverVelocity = new THREE.Vector3(...maneuverPoint.velocity)
+            .add(worldDeltaV);
+        
+        // Start a new propagation job for post-maneuver orbit
+        const satellite = this.physicsEngine.satellites.get(satelliteId);
+        const centralBody = this.physicsEngine.bodies[maneuverPoint.centralBodyId];
+        
+        // Analyze the new orbit
+        const tempSat = {
+            position: new THREE.Vector3(...maneuverPoint.position),
+            velocity: postManeuverVelocity,
+            centralBodyNaifId: maneuverPoint.centralBodyId
+        };
+        
+        const orbitParams = analyzeOrbit(tempSat, centralBody, Constants.G);
+        const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
+        const pointsPerPeriod = this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
+        
+        let duration, timeStep;
+        if (orbitParams.type === 'elliptical') {
+            duration = orbitParams.period * orbitPeriods;
+            timeStep = orbitParams.period / pointsPerPeriod;
+        } else {
+            duration = 86400 * orbitPeriods; // days in seconds
+            timeStep = duration / (pointsPerPeriod * orbitPeriods);
+        }
+        
+        // Create a unique ID for this maneuver prediction
+        const predictionId = `${satelliteId}_maneuver_${maneuverNode.id}`;
+        
+        // Start propagation for post-maneuver orbit
+        this._startPropagationJob({
+            satelliteId: predictionId,
+            satellite: {
+                position: maneuverPoint.position,
+                velocity: postManeuverVelocity.toArray(),
+                centralBodyNaifId: maneuverPoint.centralBodyId,
+                mass: satellite.mass || 1000,
+                crossSectionalArea: satellite.crossSectionalArea || 10,
+                dragCoefficient: satellite.dragCoefficient || 2.2
+            },
+            duration,
+            timeStep,
+            hash: `maneuver_${maneuverNode.id}`,
+            isManeuverPrediction: true,
+            parentSatelliteId: satelliteId,
+            maneuverNodeId: maneuverNode.id
+        });
+    }
+
+    /**
      * Process queued orbit updates
      */
     _processUpdateQueue() {
@@ -150,13 +295,43 @@ export class SatelliteOrbitManager {
                 continue;
             }
 
-            // Check cache validity
+            // Check if we have a valid cached orbit
             const cached = this.orbitCache.get(satelliteId);
-            const currentHash = this._computeStateHash(satellite);
+            const stateChanged = this._hasStateChanged(satellite, cached);
             
-            if (cached && cached.hash === currentHash) {
-                console.log(`[SatelliteOrbitManager] Using cached orbit for satellite ${satelliteId}`);
-                continue; // Cache is still valid
+            // Check if we need more points than currently cached
+            const requestedPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
+            const cachedPeriods = cached?.maxPeriods || 0;
+            const needsExtension = cached && !stateChanged && requestedPeriods > cachedPeriods;
+            
+            // Debug logging
+            if (cached) {
+                console.log(`[SatelliteOrbitManager] Cache check for satellite ${satelliteId}:`, {
+                    stateChanged,
+                    cachedPeriods,
+                    requestedPeriods,
+                    needsExtension,
+                    cachedPoints: cached.points?.length || 0
+                });
+            }
+            
+            // Check if there's an active job in progress
+            const activeJob = this.activeJobs.get(satelliteId);
+            if (activeJob && activeJob.points.length > 0) {
+                console.log(`[SatelliteOrbitManager] Using ${activeJob.points.length} points from active job for satellite ${satelliteId}`);
+                this._updateOrbitVisualization(satelliteId, activeJob.points);
+                continue;
+            }
+            
+            if (!stateChanged && cached && cached.points) {
+                if (requestedPeriods <= cachedPeriods) {
+                    console.log(`[SatelliteOrbitManager] Using cached orbit for satellite ${satelliteId} (${cachedPeriods} periods cached)`);
+                    // Just update the visualization with different settings
+                    this._updateOrbitVisualization(satelliteId, cached.points);
+                    continue;
+                } else {
+                    console.log(`[SatelliteOrbitManager] Need to extend orbit: ${requestedPeriods} > ${cachedPeriods} periods`);
+                }
             }
 
             console.log(`[SatelliteOrbitManager] Analyzing orbit for satellite ${satelliteId}`);
@@ -169,41 +344,114 @@ export class SatelliteOrbitManager {
             const orbitParams = analyzeOrbit(satellite, centralBody, Constants.G);
             
             // Get display settings
-            const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 2;
+            const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
             const pointsPerPeriod = this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
             
-            // Calculate propagation duration
-            let duration;
+            // Calculate maximum reasonable duration for propagation
+            let maxDuration;
+            let maxPoints;
+            
             if (orbitParams.type === 'elliptical') {
-                duration = orbitParams.period * orbitPeriods;
+                // For closed orbits, calculate enough to cover the requested periods plus some buffer
+                const buffer = 1.5; // 50% buffer for future increases
+                const targetPeriods = orbitPeriods * buffer;
+                
+                if (needsExtension && cached.points) {
+                    // We're extending - only calculate the additional periods needed
+                    const additionalPeriods = targetPeriods - cachedPeriods;
+                    maxDuration = orbitParams.period * additionalPeriods;
+                    maxPoints = pointsPerPeriod * additionalPeriods;
+                    console.log(`[SatelliteOrbitManager] Extending by ${additionalPeriods.toFixed(1)} periods`);
+                } else {
+                    // Fresh calculation
+                    maxDuration = orbitParams.period * targetPeriods;
+                    maxPoints = pointsPerPeriod * targetPeriods;
+                }
             } else {
-                duration = orbitParams.duration;
+                // For escape trajectories, propagate until SOI boundary
+                const soiRadius = centralBody.soiRadius || 1e9; // km
+                const currentRadius = satellite.position.length();
+                const radialVelocity = satellite.position.dot(satellite.velocity) / currentRadius;
+                
+                if (radialVelocity > 0) {
+                    // Escaping - estimate time to reach SOI
+                    const distanceToSOI = soiRadius - currentRadius;
+                    maxDuration = Math.abs(distanceToSOI / radialVelocity) * 1.5; // 1.5x for safety margin
+                    // Cap at 1 year maximum
+                    maxDuration = Math.min(maxDuration, 365 * 86400);
+                } else {
+                    // Not escaping - use one period worth of time
+                    maxDuration = 86400; // 1 day default
+                }
+                
+                maxPoints = Math.ceil(pointsPerPeriod * (maxDuration / 86400)); // Points scaled by days
             }
 
-            // Calculate time step for desired point density
-            const totalPoints = orbitParams.type === 'elliptical' 
-                ? pointsPerPeriod * orbitPeriods 
-                : orbitParams.points;
-            const timeStep = duration / totalPoints;
+            // Calculate time step based on desired resolution
+            const timeStep = orbitParams.type === 'elliptical' 
+                ? orbitParams.period / pointsPerPeriod  // One period worth of resolution
+                : maxDuration / maxPoints;
 
             // Update workers with latest solar system state before propagation
             this._updateWorkersPhysicsState();
+            
+            // Check if we just interrupted a job and have partial results
+            const interruptedCache = this.orbitCache.get(satelliteId);
+            const hasPartialResults = interruptedCache?.partial && interruptedCache?.points?.length > 0;
+            
+            // Determine propagation starting point
+            let propagationPosition, propagationVelocity;
+            let startTime = 0;
+            let existingPoints = [];
+            
+            if (hasPartialResults && !stateChanged) {
+                // We have partial results from an interrupted job - continue from there
+                const lastPoint = interruptedCache.points[interruptedCache.points.length - 1];
+                propagationPosition = lastPoint.position;
+                propagationVelocity = lastPoint.velocity || satellite.velocity.toArray();
+                startTime = lastPoint.time || 0;
+                existingPoints = interruptedCache.points;
+                console.log(`[SatelliteOrbitManager] Continuing from ${interruptedCache.points.length} partial points at time ${startTime}s`);
+            } else if (needsExtension && cached.points && cached.points.length > 0) {
+                // Extension: start from the last cached point
+                const lastPoint = cached.points[cached.points.length - 1];
+                propagationPosition = lastPoint.position;
+                propagationVelocity = lastPoint.velocity || satellite.velocity.toArray();
+                startTime = lastPoint.time || (cachedPeriods * orbitParams.period);
+                existingPoints = cached.points;
+                console.log(`[SatelliteOrbitManager] Extending from ${cached.points.length} existing points at time ${startTime}s`);
+            } else if (cached && cached.initialPosition && !stateChanged) {
+                // Recalculation but state hasn't changed - use original initial state
+                propagationPosition = cached.initialPosition;
+                propagationVelocity = cached.initialVelocity;
+                console.log(`[SatelliteOrbitManager] Using cached initial state for recalculation`);
+            } else {
+                // Fresh calculation from current state
+                propagationPosition = satellite.position.toArray();
+                propagationVelocity = satellite.velocity.toArray();
+            }
             
             // Start propagation job
             this._startPropagationJob({
                 satelliteId,
                 satellite: {
-                    position: satellite.position.toArray(),
-                    velocity: satellite.velocity.toArray(),
+                    position: propagationPosition,
+                    velocity: propagationVelocity,
                     centralBodyNaifId: satellite.centralBodyNaifId,
                     // Include satellite properties for accurate propagation
                     mass: satellite.mass || 1000,
                     crossSectionalArea: satellite.crossSectionalArea || 10,
                     dragCoefficient: satellite.dragCoefficient || 2.2
                 },
-                duration,
+                duration: maxDuration,
                 timeStep,
-                hash: currentHash
+                hash: this._computeSimpleStateHash(satellite), // Only hash position/velocity
+                maxPeriods: orbitParams.type === 'elliptical' ? 
+                    (needsExtension ? cachedPeriods + maxDuration / orbitParams.period : maxDuration / orbitParams.period) : null,
+                startTime,
+                existingPoints,
+                isExtension: needsExtension,
+                calculationTime: needsExtension && cached ? cached.calculationTime : (this.physicsEngine.simulationTime?.getTime() || Date.now())
             });
         }
 
@@ -214,8 +462,8 @@ export class SatelliteOrbitManager {
      * Start orbit propagation job
      */
     _startPropagationJob(params) {
-        // Cancel existing job if any
-        this._cancelJob(params.satelliteId);
+        // Cancel existing job but preserve any partial results
+        this._cancelJob(params.satelliteId, true);
 
         // Get available worker
         const worker = this.workerPool.pop();
@@ -229,7 +477,7 @@ export class SatelliteOrbitManager {
         this.activeJobs.set(params.satelliteId, {
             worker,
             params,
-            points: [],
+            points: params.existingPoints || [], // Start with existing points if extending
             startTime: Date.now()
         });
 
@@ -243,6 +491,7 @@ export class SatelliteOrbitManager {
                 centralBodyNaifId: params.satellite.centralBodyNaifId,
                 duration: params.duration,
                 timeStep: params.timeStep,
+                startTime: params.startTime || 0,
                 // Include satellite properties for accurate drag calculation
                 mass: params.satellite.mass,
                 crossSectionalArea: params.satellite.crossSectionalArea,
@@ -278,15 +527,38 @@ export class SatelliteOrbitManager {
                 
                 if (isComplete) {
                     console.log(`[SatelliteOrbitManager] Orbit calculation complete for satellite ${satelliteId} with ${job.points.length} total points`);
-                    // Cache the complete orbit
-                    this.orbitCache.set(satelliteId, {
-                        points: job.points,
-                        timestamp: Date.now(),
-                        hash: job.params.hash
-                    });
                     
-                    // Final visualization update
-                    this._updateOrbitVisualization(satelliteId, job.points);
+                    // Handle maneuver predictions differently
+                    if (job.params.isManeuverPrediction) {
+                        // Send the predicted orbit to the maneuver node visualizer
+                        this._updateManeuverPredictionVisualization(
+                            job.params.parentSatelliteId,
+                            job.params.maneuverNodeId,
+                            job.points
+                        );
+                    } else {
+                        // Cache the complete orbit
+                        const satellite = this.physicsEngine.satellites.get(satelliteId);
+                        this.orbitCache.set(satelliteId, {
+                            points: job.points,
+                            timestamp: Date.now(),
+                            hash: job.params.hash,
+                            maxPeriods: job.params.maxPeriods,
+                            initialPosition: job.params.existingPoints?.length > 0 && job.params.existingPoints[0].position 
+                                ? job.params.existingPoints[0].position 
+                                : job.params.satellite.position,
+                            initialVelocity: job.params.existingPoints?.length > 0 && job.params.existingPoints[0].velocity
+                                ? job.params.existingPoints[0].velocity
+                                : job.params.satellite.velocity,
+                            calculationTime: job.params.calculationTime || (this.physicsEngine.simulationTime?.getTime() || Date.now()),
+                            centralBodyNaifId: job.params.satellite.centralBodyNaifId,
+                            lastManeuverTime: satellite?.lastManeuverTime,
+                            partial: false // Mark as complete
+                        });
+                        
+                        // Final visualization update
+                        this._updateOrbitVisualization(satelliteId, job.points);
+                    }
                     
                     // Return worker to pool
                     this.workerPool.push(job.worker);
@@ -325,11 +597,26 @@ export class SatelliteOrbitManager {
             return;
         }
 
-        console.log(`[SatelliteOrbitManager] Updating orbit visualization for satellite ${satelliteId} with ${points.length} points`);
+        // Get current display settings
+        const orbitPeriods = this.displaySettings?.getSetting('orbitPredictionInterval') || 1;
+        const pointsPerPeriod = this.displaySettings?.getSetting('orbitPointsPerPeriod') || 180;
+        
+        // Determine how many points to actually display
+        const satellite = this.physicsEngine.satellites.get(satelliteId);
+        if (!satellite) return;
+        
+        const centralBody = this.physicsEngine.bodies[satellite.centralBodyNaifId];
+        const orbitParams = analyzeOrbit(satellite, centralBody, Constants.G);
+        
+        // For now, just show all points - the orbit should be continuous
+        // The physics engine will handle showing the correct portion based on time
+        const displayPoints = points;
+        
+        console.log(`[SatelliteOrbitManager] Displaying ${displayPoints.length} of ${points.length} cached points for satellite ${satelliteId}`);
 
         // Group points by central body
         const pointsByBody = new Map();
-        for (const point of points) {
+        for (const point of displayPoints) {
             if (!pointsByBody.has(point.centralBodyId)) {
                 pointsByBody.set(point.centralBodyId, []);
             }
@@ -444,9 +731,24 @@ export class SatelliteOrbitManager {
     /**
      * Cancel active job
      */
-    _cancelJob(satelliteId) {
+    _cancelJob(satelliteId, preservePartialResults = false) {
         const job = this.activeJobs.get(satelliteId);
         if (job) {
+            // If we have partial results and want to preserve them, cache them first
+            if (preservePartialResults && job.points && job.points.length > 0) {
+                console.log(`[SatelliteOrbitManager] Preserving ${job.points.length} partial points for satellite ${satelliteId}`);
+                this.orbitCache.set(satelliteId, {
+                    points: job.points,
+                    timestamp: Date.now(),
+                    hash: job.params.hash,
+                    maxPeriods: job.params.maxPeriods,
+                    initialPosition: job.params.satellite.position,
+                    initialVelocity: job.params.satellite.velocity,
+                    calculationTime: this.physicsEngine.simulationTime?.getTime() || Date.now(),
+                    partial: true
+                });
+            }
+            
             job.worker.postMessage({ type: 'cancel' });
             this.workerPool.push(job.worker);
             this.activeJobs.delete(satelliteId);
@@ -454,12 +756,38 @@ export class SatelliteOrbitManager {
     }
 
     /**
-     * Compute hash of satellite state for cache validation
+     * Check if satellite state has changed significantly
      */
-    _computeStateHash(satellite) {
+    _hasStateChanged(satellite, cached) {
+        if (!cached || !cached.initialPosition) return true;
+        
+        // Don't check current position - it's always changing!
+        // Instead, check if we're still on the same orbit by comparing central body
+        // and checking if a maneuver has occurred
+        if (satellite.centralBodyNaifId !== cached.centralBodyNaifId) {
+            console.log(`[SatelliteOrbitManager] Central body changed`);
+            return true;
+        }
+        
+        // Check if a maneuver has occurred by looking for a significant velocity change
+        // This would be set by the physics engine when a maneuver executes
+        if (satellite.lastManeuverTime && (!cached.lastManeuverTime || 
+            satellite.lastManeuverTime > cached.lastManeuverTime)) {
+            console.log(`[SatelliteOrbitManager] Maneuver detected`);
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Compute simple hash of satellite physical state only
+     */
+    _computeSimpleStateHash(satellite) {
         // Handle both Vector3 and array formats
         const pos = satellite.position.toArray ? satellite.position.toArray() : satellite.position;
         const vel = satellite.velocity.toArray ? satellite.velocity.toArray() : satellite.velocity;
+        // Only include physical state, not display settings
         return `${pos[0].toFixed(3)},${pos[1].toFixed(3)},${pos[2].toFixed(3)},${vel[0].toFixed(3)},${vel[1].toFixed(3)},${vel[2].toFixed(3)},${satellite.centralBodyNaifId}`;
     }
 
@@ -530,6 +858,7 @@ export class SatelliteOrbitManager {
         if (this.displaySettings) {
             this.displaySettings.addListener('showOrbits', this._boundShowOrbitsCallback);
             this.displaySettings.addListener('orbitPredictionInterval', this._boundOrbitPredictionCallback);
+            this.displaySettings.addListener('orbitPointsPerPeriod', this._boundOrbitPredictionCallback);
         }
     }
 
@@ -621,6 +950,7 @@ export class SatelliteOrbitManager {
             }
             if (this._boundOrbitPredictionCallback) {
                 this.displaySettings.removeListener('orbitPredictionInterval', this._boundOrbitPredictionCallback);
+                this.displaySettings.removeListener('orbitPointsPerPeriod', this._boundOrbitPredictionCallback);
             }
         }
         
@@ -643,5 +973,60 @@ export class SatelliteOrbitManager {
         this.app = null;
         this.physicsEngine = null;
         this.displaySettings = null;
+    }
+    
+    /**
+     * Update maneuver prediction visualization
+     */
+    _updateManeuverPredictionVisualization(satelliteId, maneuverNodeId, orbitPoints) {
+        console.log(`[SatelliteOrbitManager] Updating maneuver prediction for satellite ${satelliteId}, node ${maneuverNodeId} with ${orbitPoints.length} points`);
+        
+        // Get the satellite object
+        const satellite = this.scene?.getMeshByName(satelliteId);
+        if (!satellite || !satellite.maneuverNodeVisualizer) {
+            console.warn(`[SatelliteOrbitManager] Satellite or visualizer not found for ${satelliteId}`);
+            return;
+        }
+        
+        // Update the maneuver node with predicted orbit points
+        const nodeVisuals = satellite.maneuverNodeVisualizer.nodeVisuals.get(maneuverNodeId);
+        if (!nodeVisuals) {
+            console.warn(`[SatelliteOrbitManager] Node visual not found for ${maneuverNodeId}`);
+            return;
+        }
+        
+        // Create or update the predicted orbit line
+        if (nodeVisuals.orbitLine) {
+            // Update existing line
+            const positions = new Float32Array(orbitPoints.length * 3);
+            for (let i = 0; i < orbitPoints.length; i++) {
+                const point = orbitPoints[i];
+                positions[i * 3] = point.position[0];
+                positions[i * 3 + 1] = point.position[1];
+                positions[i * 3 + 2] = point.position[2];
+            }
+            nodeVisuals.orbitLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            nodeVisuals.orbitLine.geometry.attributes.position.needsUpdate = true;
+            nodeVisuals.orbitLine.computeLineDistances();
+        } else {
+            // Create new orbit line
+            const positions = orbitPoints.map(p => new THREE.Vector3(...p.position));
+            const geometry = new THREE.BufferGeometry().setFromPoints(positions);
+            const material = new THREE.LineDashedMaterial({
+                color: satellite.color || 0xffffff,
+                dashSize: 5,
+                gapSize: 5,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.7
+            });
+            
+            const orbitLine = new THREE.Line(geometry, material);
+            orbitLine.computeLineDistances();
+            orbitLine.frustumCulled = false;
+            this.scene.add(orbitLine);
+            
+            nodeVisuals.orbitLine = orbitLine;
+        }
     }
 }

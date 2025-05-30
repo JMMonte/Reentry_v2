@@ -58,11 +58,11 @@ export const defaultSettings = {
   orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (Hz)', icon: Circle, type: 'number', min: 1, max: 120, step: 1,
     description: 'Number of orbit path recalculations per second (updates per second) while the simulation is running.'
   },
-  orbitPredictionInterval: { value: 1, name: 'Prediction Periods', icon: Circle, type: 'number', min: 0, max: 1000, step: 0.1,
-    description: 'Number of orbital periods ahead to simulate for orbit predictions.'
+  orbitPredictionInterval: { value: 1, name: 'Prediction Periods', icon: Circle, type: 'number', min: 0.1, max: 100, step: 0.1,
+    description: 'Number of orbital periods to display. Works naturally for all orbit types.'
   },
-  orbitPointsPerPeriod: { value: 60, name: 'Points per Orbit', icon: Circle, type: 'number', min: 10, max: 10000, step: 10,
-    description: 'Number of sample points per orbital period when drawing orbit paths.'
+  orbitPointsPerPeriod: { value: 180, name: 'Points per Period', icon: Circle, type: 'number', min: 10, max: 1000, step: 10,
+    description: 'Resolution of orbit visualization. More points = smoother curves.'
   },
   physicsTimeStep: { value: 0.05, name: 'Physics Timestep (Hz)', icon: Settings2, type: 'number', min: 0.01, max: 1, step: 0.01,
     description: 'Integration time step in seconds. Smaller values increase accuracy but slow down simulation.'
@@ -75,12 +75,6 @@ export const defaultSettings = {
   },
   ambientLight: { value: 0.01, name: 'Ambient Light Intensity', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05,
     description: 'Controls the overall brightness of the scene.'
-  },
-  nonKeplerianFallbackDays: { value: 10, name: 'Non-Keplerian Propagation (days)', icon: Circle, type: 'number', min: 1, max: 3650, step: 1,
-    description: 'Fallback propagation window (in days) for open or undefined-period orbits.'
-  },
-  hyperbolicPointsMultiplier: { value: 10, name: 'Hyperbolic Point Multiplier', icon: Circle, type: 'number', min: 1, max: 100, step: 1,
-    description: 'Multiplier for sample points on hyperbolic trajectories to improve tail resolution.'
   },
   showSOI: { value: false, name: 'SOI Sphere', icon: Circle, description: 'Show the sphere of influence rim glow around planets.' },
   showPlanetOrbits: { value: true, name: 'Planet Orbits', icon: Circle, description: 'Show solar system orbit paths.' },
@@ -133,9 +127,7 @@ const categories = [
       'orbitPointsPerPeriod',
       'physicsTimeStep',
       'perturbationScale',
-      'sensitivityScale',
-      'nonKeplerianFallbackDays',
-      'hyperbolicPointsMultiplier'
+      'sensitivityScale'
     ],
   },
   {
@@ -377,7 +369,7 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
                       setLoadingKeys(prev => ({ ...prev, [k]: v }));
                       onSettingChange(k, v);
                     }}
-                    loading={loadingKeys[key]}
+                    loading={loadingKeys[key] !== undefined}
                   />
                 );
               })}
