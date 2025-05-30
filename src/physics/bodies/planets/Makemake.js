@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const makemakeMass = 3.1e21; // kg
+const makemakeRadius = 715; // km
+const makemakeGM = Constants.G * makemakeMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'makemake',
@@ -8,9 +14,9 @@ export default {
     symbol: '🝼',
 
     // Physical properties
-    mass: 3.1e21, // kg (estimated)
-    radius: 715, // km mean radius
-    GM: 207, // km³/s²
+    mass: makemakeMass, // kg (estimated)
+    radius: makemakeRadius, // km mean radius
+    GM: makemakeGM, // km³/s²
     isDwarf: true, // Dwarf planet
 
     // Shape properties

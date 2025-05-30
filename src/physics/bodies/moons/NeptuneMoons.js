@@ -1,3 +1,7 @@
+import {Constants} from '../../../utils/Constants.js';
+const tritonMass = 2.14e22;
+const proteusMass = 4.4e19;
+const nereidMass = 3.1e19;
 export default [
     {
         name: 'triton',
@@ -5,9 +9,9 @@ export default [
         parent: 'neptune_barycenter',
         type: 'moon',
         symbol: '⧫',
-        mass: 2.14e22, // kg
+        mass: tritonMass, // kg
         radius: 1353.4, // km
-        GM: 1420, // km³/s² (1.42e12 / 1e9)
+        GM: Constants.G * tritonMass, // km³/s² (1.42e12 / 1e9)
         density: 2061, // kg/m³
         rotationPeriod: -5.877 * 24 * 3600, // Synchronous, retrograde
         orbitalPeriod: -5.877 * 24 * 3600, // Retrograde orbit
@@ -47,9 +51,9 @@ export default [
         parent: 'neptune_barycenter',
         type: 'moon',
         symbol: '⬟',
-        mass: 4.4e19, // kg
+        mass: proteusMass, // kg
         radius: 210, // km
-        GM: 0.21, // km³/s² (2.1e8 / 1e9)
+        GM: Constants.G * proteusMass, // km³/s² (2.1e8 / 1e9)
         density: 1300, // kg/m³
         rotationPeriod: 1.122315 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.122315 * 24 * 3600,
@@ -87,9 +91,9 @@ export default [
         parent: 'neptune_barycenter',
         type: 'moon',
         symbol: '⬢',
-        mass: 3.1e19, // kg
+        mass: nereidMass, // kg
         radius: 170, // km
-        GM: 0.29, // km³/s² (2.9e8 / 1e9)
+        GM: Constants.G * nereidMass, // km³/s² (2.9e8 / 1e9)
         isDwarf: true, // Small irregular moon
         density: 1500, // kg/m³ (estimated)
         rotationPeriod: 11.52 * 3600, // seconds (11.52 hours, not synchronous)

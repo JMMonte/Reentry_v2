@@ -142,9 +142,9 @@ export class SceneManager {
             });
         }
 
-        const showSatVectors = displaySettingsManager.getSetting('showSatVectors');
-        if (showSatVectors && satelliteVectors) {
-            satelliteVectors.updateSatelliteVectors?.();
+        // Always update satellite vectors (they handle their own visibility)
+        if (satelliteVectors) {
+            satelliteVectors.update?.();
         }
     }
 

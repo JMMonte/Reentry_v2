@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const erisMass = 1.66e22; // kg
+const erisRadius = 1163; // km
+const erisGM = Constants.G * erisMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'eris',
@@ -8,9 +14,9 @@ export default {
     symbol: '⯰',
 
     // Physical properties
-    mass: 1.66e22, // kg (slightly more massive than Pluto)
-    radius: 1163, // km mean radius
-    GM: 1108, // km³/s²
+    mass: erisMass, // kg (slightly more massive than Pluto)
+    radius: erisRadius, // km mean radius
+    GM: erisGM, // km³/s²
     isDwarf: true, // Dwarf planet
 
     // Shape properties

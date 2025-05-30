@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import {Constants} from '../../../utils/Constants.js';
+
+const plutoMass = 1.303e22; // kg
+const plutoRadius = 1188.3; // km
+const plutoGM = Constants.G * plutoMass; // km³/s²
 
 export default {
     // Basic identification
@@ -10,9 +15,9 @@ export default {
     symbol: '♇',
 
     // Physical properties
-    mass: 1.303e22, // kg
-    radius: 1188.3, // km
-    GM: 8.71e2, // km³/s²
+    mass: plutoMass, // kg
+    radius: plutoRadius, // km
+    GM: plutoGM, // km³/s²
     isDwarf: true, // Dwarf planet
     // j2: unknown or negligible for Pluto
 

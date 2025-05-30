@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const saturnMass = 5.683e26; // kg
+const saturnRadius = 58232; // km
+const saturnGM = Constants.G * saturnMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'saturn',
@@ -8,9 +14,9 @@ export default {
     symbol: '♄',
 
     // Physical properties
-    mass: 5.683e26, // kg
-    radius: 58232, // km - equatorial radius at 1 bar
-    GM: 3.7931187e7, // km³/s²
+    mass: saturnMass, // kg
+    radius: saturnRadius, // km - equatorial radius at 1 bar
+    GM: saturnGM, // km³/s²
     j2: 1.62907e-2, // J2 gravitational coefficient
 
     // Shape properties (most oblate planet)

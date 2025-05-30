@@ -27,17 +27,30 @@ export class SatelliteCoordinates {
      * @param {Date} time - Current simulation time
      * @returns {Object} - { position: [x,y,z], velocity: [vx,vy,vz] } in planet-centric inertial coordinates
      */
-    static createFromLatLon(params, planet, time = new Date()) {
+    static createFromLatLon(params, planet) {
         const {
             latitude, longitude, altitude = 400,
             velocity, azimuth = 0, angleOfAttack = 0
         } = params;
 
+        console.log('[SatelliteCoordinates.createFromLatLon] Input params:');
+        console.log('  Altitude:', altitude, 'km');
+        console.log('  Velocity:', velocity, velocity === undefined ? '(undefined - will calculate circular)' : 'km/s');
+
         // Calculate appropriate orbital velocity if not provided
         let finalVelocity = velocity;
         if (velocity === undefined) {
-            // Simple circular orbital velocity at given altitude
-            finalVelocity = SatelliteCoordinates._calculateCircularOrbitalVelocity(altitude, planet);
+            // Calculate circular orbital velocity accounting for planet rotation and launch direction
+            console.log(`[SatelliteCoordinates] Calculating circular velocity for ${planet.name || 'planet'} at ${altitude} km altitude`);
+            console.log(`  Latitude: ${latitude}°, Longitude: ${longitude}°`);
+            console.log(`  Azimuth: ${azimuth}°, AoA: ${angleOfAttack}°`);
+            
+            // For circular orbit, we need the surface-relative velocity that results in circular orbital velocity
+            // after accounting for planet rotation
+            finalVelocity = SatelliteCoordinates._calculateCircularLaunchVelocity(
+                latitude, longitude, altitude, azimuth, angleOfAttack, planet
+            );
+            console.log(`  Calculated surface-relative velocity for circular orbit: ${finalVelocity.toFixed(3)} km/s`);
         }
 
         // console.log(`[SatelliteCoordinates] Creating from lat/lon: lat=${latitude}°, lon=${longitude}°, alt=${altitude}km, vel=${finalVelocity.toFixed(3)}km/s, az=${azimuth}°`);
@@ -55,7 +68,7 @@ export class SatelliteCoordinates {
         // 3. Transform from Planet-Fixed to Planet-Centered Inertial frame
         const { position: positionPCI, velocity: velocityPCI } = 
             SatelliteCoordinates._transformPlanetFixedToPlanetInertial(
-                positionPF, velocityPF, planet, time
+                positionPF, velocityPF, planet
             );
 
         // console.log(`[SatelliteCoordinates] Final PCI coordinates: pos=[${positionPCI.map(p => p.toFixed(2)).join(', ')}] km, vel=[${velocityPCI.map(v => v.toFixed(3)).join(', ')}] km/s`);
@@ -234,7 +247,12 @@ export class SatelliteCoordinates {
             .addScaledVector(east, eastVel)
             .addScaledVector(up, verticalSpeed);
 
-        // console.log(`[SatelliteCoordinates] Planet-Fixed velocity: [${velocity.x.toFixed(3)}, ${velocity.y.toFixed(3)}, ${velocity.z.toFixed(3)}] km/s (ENU: E=${eastVel.toFixed(3)}, N=${northVel.toFixed(3)}, U=${verticalSpeed.toFixed(3)})`);
+        console.log(`[SatelliteCoordinates] Planet-Fixed velocity calculation:`);
+        console.log(`  Input: speed=${speed} km/s, azimuth=${azimuth}°, AoA=${angleOfAttack}°`);
+        console.log(`  Horizontal speed: ${horizontalSpeed.toFixed(3)} km/s`);
+        console.log(`  Vertical speed: ${verticalSpeed.toFixed(3)} km/s`);
+        console.log(`  ENU components: E=${eastVel.toFixed(3)}, N=${northVel.toFixed(3)}, U=${verticalSpeed.toFixed(3)} km/s`);
+        console.log(`  Planet-Fixed velocity: [${velocity.x.toFixed(3)}, ${velocity.y.toFixed(3)}, ${velocity.z.toFixed(3)}] km/s`);
         return [velocity.x, velocity.y, velocity.z];
     }
 
@@ -242,12 +260,22 @@ export class SatelliteCoordinates {
      * Transform from Planet-Fixed (rotating) to Planet-Centered Inertial frame
      * This is the core transformation that accounts for planet rotation
      */
-    static _transformPlanetFixedToPlanetInertial(positionPF, velocityPF, planet, time) {
+    static _transformPlanetFixedToPlanetInertial(positionPF, velocityPF, planet) {
         // Get planet's current orientation from physics engine quaternion
-        const planetQuaternion = SatelliteCoordinates._getPlanetQuaternion(planet, time);
+        // For velocity transformation, we need to exclude the equatorial rotation that converts Y-up to Z-up
+        const planetQuaternion = SatelliteCoordinates._getPlanetQuaternionForVelocity(planet);
         
         // Get planet's rotation rate (rad/s)
         const rotationRate = planet.rotationRate || SatelliteCoordinates._calculateRotationRate(planet);
+        
+        // Calculate rotation velocity at this location for reference
+        const lat = Math.atan2(positionPF[2], Math.sqrt(positionPF[0]**2 + positionPF[1]**2));
+        const rotVelAtLocation = SatelliteCoordinates._calculateRotationVelocityAtLocation(
+            THREE.MathUtils.radToDeg(lat), 
+            new THREE.Vector3(...positionPF).length() - planet.radius,
+            planet
+        );
+        console.log(`[SatelliteCoordinates] Rotation velocity at latitude ${THREE.MathUtils.radToDeg(lat).toFixed(1)}°: ${rotVelAtLocation.toFixed(3)} km/s`);
         
         // console.log(`[SatelliteCoordinates] Planet rotation rate: ${rotationRate.toExponential(3)} rad/s (period: ${(2 * Math.PI / rotationRate / 3600).toFixed(2)} hours)`);
 
@@ -273,7 +301,13 @@ export class SatelliteCoordinates {
         
         const velocityPCI = [velocityPCI_vec.x, velocityPCI_vec.y, velocityPCI_vec.z];
 
-        // console.log(`[SatelliteCoordinates] Transformation PF→PCI: rotation component added [${rotationVelocity.x.toFixed(3)}, ${rotationVelocity.y.toFixed(3)}, ${rotationVelocity.z.toFixed(3)}] km/s`);
+        console.log(`[SatelliteCoordinates] Transformation PF→PCI:`);
+        console.log(`  Position PCI: [${positionPCI_vec.x.toFixed(1)}, ${positionPCI_vec.y.toFixed(1)}, ${positionPCI_vec.z.toFixed(1)}] km`);
+        console.log(`  Velocity PF: [${velocityPF_vec.x.toFixed(3)}, ${velocityPF_vec.y.toFixed(3)}, ${velocityPF_vec.z.toFixed(3)}] km/s`);
+        console.log(`  Velocity rotated: [${velocityPCI_rotated.x.toFixed(3)}, ${velocityPCI_rotated.y.toFixed(3)}, ${velocityPCI_rotated.z.toFixed(3)}] km/s`);
+        console.log(`  Rotation velocity: [${rotationVelocity.x.toFixed(3)}, ${rotationVelocity.y.toFixed(3)}, ${rotationVelocity.z.toFixed(3)}] km/s`);
+        console.log(`  Final velocity PCI: [${velocityPCI_vec.x.toFixed(3)}, ${velocityPCI_vec.y.toFixed(3)}, ${velocityPCI_vec.z.toFixed(3)}] km/s`);
+        console.log(`  Final speed: ${velocityPCI_vec.length().toFixed(3)} km/s`);
 
         return { position: positionPCI, velocity: velocityPCI };
     }
@@ -325,6 +359,27 @@ export class SatelliteCoordinates {
         return new THREE.Quaternion();
     }
 
+    /**
+     * Get planet's quaternion for velocity transformation (excludes Y-up to Z-up conversion)
+     */
+    static _getPlanetQuaternionForVelocity(planet) {
+        // For velocity calculations, we want orientation and rotation but NOT the equatorial Y->Z conversion
+        if (planet.orientationGroup && planet.rotationGroup) {
+            // Only compose orientation and rotation, skip equatorial
+            const orientationQ = planet.orientationGroup.quaternion.clone();
+            const rotationQ = planet.rotationGroup.quaternion.clone();
+            
+            const composedQ = new THREE.Quaternion()
+                .multiplyQuaternions(orientationQ, rotationQ);
+            
+            console.log(`[SatelliteCoordinates] Using velocity quaternion for ${planet.name} (orientation * rotation, no equatorial)`);
+            return composedQ;
+        }
+        
+        // Fall back to full quaternion if groups not available
+        return SatelliteCoordinates._getPlanetQuaternion(planet);
+    }
+    
     /**
      * Get planet's current quaternion from physics engine or calculate from Astronomy Engine
      */
@@ -484,8 +539,48 @@ export class SatelliteCoordinates {
         }
         
         const orbitalVel = Math.sqrt(GM / r); // km/s
-        // console.log(`[SatelliteCoordinates] Circular orbital velocity: ${orbitalVel.toFixed(3)} km/s at ${altitude} km altitude around ${planet.name || 'planet'}`);
+        console.log(`[SatelliteCoordinates._calculateCircularOrbitalVelocity] Calculation:`);
+        console.log(`  r = ${planet.radius} + ${altitude} = ${r} km`);
+        console.log(`  GM = ${GM} km³/s²`);
+        console.log(`  v = sqrt(GM/r) = sqrt(${GM}/${r}) = ${orbitalVel.toFixed(3)} km/s`);
         return orbitalVel;
+    }
+    
+    /**
+     * Calculate the surface-relative launch velocity needed to achieve a circular orbit
+     * accounting for planet rotation and launch direction
+     */
+    static _calculateCircularLaunchVelocity(latitude, longitude, altitude, azimuth, angleOfAttack, planet) {
+        // Get the required inertial velocity for circular orbit
+        const vCircularInertial = SatelliteCoordinates._calculateCircularOrbitalVelocity(altitude, planet);
+        
+        // Calculate the planet's rotation velocity at this location
+        const rotationVel = SatelliteCoordinates._calculateRotationVelocityAtLocation(latitude, altitude, planet);
+        
+        // Convert azimuth to radians
+        const az = THREE.MathUtils.degToRad(azimuth);
+        const lat = THREE.MathUtils.degToRad(latitude);
+        
+        // For circular orbit at given altitude, we need velocity tangent to the surface
+        // The angle of attack should be 0 for circular orbit
+        if (Math.abs(angleOfAttack) > 1) {
+            console.warn(`[SatelliteCoordinates] Non-zero angle of attack (${angleOfAttack}°) for circular orbit - orbit won't be perfectly circular`);
+        }
+        
+        // Calculate how much of the rotation velocity helps us based on launch direction
+        // East (90°): full benefit, West (270°): full penalty, North/South: no effect
+        const rotationContribution = rotationVel * Math.sin(az) * Math.cos(lat);
+        
+        // The surface-relative velocity needed is the inertial velocity minus the rotation contribution
+        const vSurfaceRelative = vCircularInertial - rotationContribution;
+        
+        console.log(`[SatelliteCoordinates._calculateCircularLaunchVelocity] Calculation:`);
+        console.log(`  Required inertial velocity: ${vCircularInertial.toFixed(3)} km/s`);
+        console.log(`  Rotation velocity at ${latitude.toFixed(1)}°: ${rotationVel.toFixed(3)} km/s`);
+        console.log(`  Rotation contribution (azimuth ${azimuth}°): ${rotationContribution.toFixed(3)} km/s`);
+        console.log(`  Surface-relative velocity needed: ${vSurfaceRelative.toFixed(3)} km/s`);
+        
+        return vSurfaceRelative;
     }
 
     /**

@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const neptuneMass = 1.024e26; // kg
+const neptuneRadius = 24622; // km
+const neptuneGM = Constants.G * neptuneMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'neptune',
@@ -8,9 +14,9 @@ export default {
     symbol: '♆',
 
     // Physical properties
-    mass: 1.024e26, // kg (corrected from 1.02413e26 for consistency with other sources if needed)
-    radius: 24622, // km - equatorial radius at 1 bar
-    GM: 6.836529e6, // km³/s²
+    mass: neptuneMass, // kg (corrected from 1.02413e26 for consistency with other sources if needed)
+    radius: neptuneRadius, // km - equatorial radius at 1 bar
+    GM: neptuneGM, // km³/s²
     j2: 3.411e-3, // J2 gravitational coefficient
 
     // Shape properties

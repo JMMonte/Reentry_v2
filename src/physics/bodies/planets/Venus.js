@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const venusMass = 4.867e24; // kg
+const venusRadius = 6051.8; // km
+const venusGM = Constants.G * venusMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'venus',
@@ -8,9 +14,9 @@ export default {
     symbol: '♀',
 
     // Physical properties
-    mass: 4.867e24, // kg
-    radius: 6051.8, // km
-    GM: 3.24859e5, // km³/s²
+    mass: venusMass, // kg
+    radius: venusRadius, // km
+    GM: venusGM, // km³/s²
     j2: 4.458e-6, // J2 gravitational coefficient
 
     // Shape properties

@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const uranusMass = 8.681e25; // kg
+const uranusRadius = 25362; // km
+const uranusGM = Constants.G * uranusMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'uranus',
@@ -8,9 +14,9 @@ export default {
     symbol: '♅',
 
     // Physical properties
-    mass: 8.681e25, // kg
-    radius: 25362, // km - equatorial radius at 1 bar
-    GM: 5.793939e6, // km³/s²
+    mass: uranusMass, // kg
+    radius: uranusRadius, // km - equatorial radius at 1 bar
+    GM: uranusGM, // km³/s²
     j2: 3.34343e-3, // J2 gravitational coefficient
 
     // Shape properties

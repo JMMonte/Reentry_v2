@@ -140,6 +140,7 @@ export class Planet {
         this.orbitRadius = config.orbitRadius || 0;
         this.oblateness = config.oblateness || 0;
         this.mass = config.mass || 0;
+        this.GM = config.GM; // Gravitational parameter (km³/s²)
         this.targetPosition = new THREE.Vector3();
         this.targetOrientation = new THREE.Quaternion();
         this.hasBeenInitializedByServer = false;

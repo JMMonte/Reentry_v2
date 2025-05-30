@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+const arielMass = 1.353e21;
+const umbrielMass = 1.172e21;
+const titaniaMass = 3.527e21;
+const oberonMass = 3.014e21;
+const mirandaMass = 6.59e19;
 export default [
     {
         name: 'ariel',
@@ -6,9 +12,9 @@ export default [
         type: 'moon',
         symbol: '⧫',
         astronomyEngineName: 'Ariel',
-        mass: 1.353e21, // kg
+        mass: arielMass, // kg
         radius: 578.9, // km
-        GM: 8.663, // km³/s²
+        GM: Constants.G * arielMass, // km³/s²
         density: 1353, // kg/m³
         rotationPeriod: 2.52 * 24 * 3600, // Synchronous
         orbitalPeriod: 2.52 * 24 * 3600,
@@ -48,9 +54,9 @@ export default [
         type: 'moon',
         symbol: '⬟',
         astronomyEngineName: 'Umbriel',
-        mass: 1.172e21, // kg
+        mass: umbrielMass, // kg
         radius: 584.7, // km
-        GM: 7.89, // km³/s²
+        GM: Constants.G * umbrielMass, // km³/s²
         density: 1399, // kg/m³
         rotationPeriod: 4.14 * 24 * 3600, // Synchronous
         orbitalPeriod: 4.14 * 24 * 3600,
@@ -89,9 +95,9 @@ export default [
         type: 'moon',
         symbol: '⬢',
         astronomyEngineName: 'Titania',
-        mass: 3.527e21, // kg
+        mass: titaniaMass, // kg
         radius: 788.9, // km
-        GM: 23.2, // km³/s²
+        GM: Constants.G * titaniaMass, // km³/s²
         density: 1711, // kg/m³
         rotationPeriod: 8.71 * 24 * 3600, // Synchronous
         orbitalPeriod: 8.71 * 24 * 3600,
@@ -130,9 +136,9 @@ export default [
         type: 'moon',
         symbol: '⬣',
         astronomyEngineName: 'Oberon',
-        mass: 3.014e21, // kg
+        mass: oberonMass, // kg
         radius: 761.4, // km
-        GM: 20.4, // km³/s²
+        GM: Constants.G * oberonMass, // km³/s²
         density: 1563, // kg/m³
         rotationPeriod: 13.46 * 24 * 3600, // Synchronous
         orbitalPeriod: 13.46 * 24 * 3600,
@@ -171,9 +177,9 @@ export default [
         type: 'moon',
         symbol: '⬤',
         astronomyEngineName: 'Miranda',
-        mass: 6.59e19, // kg
+        mass: mirandaMass, // kg
         radius: 235.8, // km
-        GM: 0.44, // km³/s²
+        GM: Constants.G * mirandaMass, // km³/s²
         isDwarf: true, // Smallest major moon of Uranus
         density: 1200, // kg/m³
         rotationPeriod: 1.413479 * 24 * 3600, // Synchronous

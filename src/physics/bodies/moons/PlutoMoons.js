@@ -1,3 +1,11 @@
+import {Constants} from '../../../utils/Constants.js';
+const charonMass = 1.586e21;
+const nixMass = 4.5e16;
+const hydraMass = 4.8e16;
+const kerberosMass = 1.65e16;
+const styxMass = 7.5e15;
+
+
 export default [
     {
         name: 'charon',
@@ -6,9 +14,9 @@ export default [
         type: 'moon',
         symbol: '◉',
         astronomyEngineName: 'Charon',
-        mass: 1.586e21, // kg
+        mass: charonMass, // kg
         radius: 606, // km
-        GM: 162, // km³/s² (1.62e11 / 1e9)
+        GM: Constants.G * charonMass, // km³/s² (1.62e11 / 1e9)
         density: 1702, // kg/m³
         rotationPeriod: 6.387230 * 24 * 3600, // Synchronous with Pluto
         orbitalPeriod: 6.387230 * 24 * 3600, // Same as Pluto's rotation
@@ -48,9 +56,9 @@ export default [
         type: 'moon',
         symbol: '⬟',
         astronomyEngineName: 'Nix',
-        mass: 4.5e16, // kg
+        mass: nixMass, // kg
         radius: 49.8, // km
-        GM: 0.003, // km³/s² (3.0e6 / 1e9)
+        GM: Constants.G * nixMass, // km³/s² (3.0e6 / 1e9)
         density: 856, // kg/m³
         rotationPeriod: 43.9 * 3600, // seconds (43.9 hours, chaotic rotation)
         orbitalPeriod: 24.86 * 24 * 3600, // seconds
@@ -90,9 +98,9 @@ export default [
         type: 'moon',
         symbol: '⬢',
         astronomyEngineName: 'Hydra',
-        mass: 4.8e16, // kg
+        mass: hydraMass, // kg
         radius: 50.9, // km (irregular)
-        GM: 0.0032, // km³/s² (3.2e6 / 1e9)
+        GM: Constants.G * hydraMass, // km³/s² (3.2e6 / 1e9)
         density: 862, // kg/m³
         rotationPeriod: 10.3 * 3600, // seconds (10.3 hours, chaotic rotation)
         orbitalPeriod: 38.20 * 24 * 3600, // seconds
@@ -132,9 +140,9 @@ export default [
         type: 'moon',
         symbol: '⬣',
         astronomyEngineName: 'Kerberos',
-        mass: 1.65e16, // kg
+        mass: kerberosMass, // kg
         radius: 19, // km (irregular)
-        GM: 0.0011, // km³/s² (1.1e6 / 1e9)
+        GM: Constants.G * kerberosMass, // km³/s² (1.1e6 / 1e9)
         isDwarf: true, // Small moon
         density: 1400, // kg/m³ (estimated)
         rotationPeriod: 32.17 * 24 * 3600, // seconds (synchronous)
@@ -175,9 +183,9 @@ export default [
         type: 'moon',
         symbol: '⬤',
         astronomyEngineName: 'Styx',
-        mass: 7.5e15, // kg
+        mass: styxMass, // kg
         radius: 16, // km (irregular)
-        GM: 0.00048, // km³/s² (4.8e5 / 1e9)
+        GM: Constants.G * styxMass, // km³/s² (4.8e5 / 1e9)
         isDwarf: true, // Small moon
         density: 1500, // kg/m³ (est)
         rotationPeriod: 3.24 * 24 * 3600, // Not tidally locked

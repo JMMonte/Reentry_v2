@@ -4,6 +4,12 @@
  * Physical, orbital, and rendering properties for the Sun
  */
 
+import {Constants} from '../../../utils/Constants.js';
+
+const sunMass = 1.989e30; // kg
+const sunRadius = 695_700; // km
+const sunGM = Constants.G * sunMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'sun',
@@ -14,9 +20,9 @@ export default {
     symbol: '☉',
 
     // Physical properties
-    mass: 1.989e30, // kg
-    radius: 695_700, // km
-    GM: 1.32712442018e11, // km³/s² - Standard gravitational parameter
+    mass: sunMass, // kg
+    radius: sunRadius, // km
+    GM: sunGM, // km³/s² - Standard gravitational parameter
     
     // Rotation properties
     rotationPeriod: 25.05 * 24 * 3600, // seconds (25.05 days at equator)

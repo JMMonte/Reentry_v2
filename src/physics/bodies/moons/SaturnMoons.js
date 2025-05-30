@@ -1,4 +1,11 @@
-// import * as THREE from 'three';
+import {Constants} from '../../../utils/Constants.js';
+const mimasMass = 3.7493e19;
+const enceladusMass = 1.08022e20;
+const tethysMass = 6.17449e20;
+const dioneMass = 1.095452e21;
+const rheaMass = 2.306518e21;
+const titanMass = 1.3452e23;
+const iapetusMass = 1.805635e21;
 export default [
     {
         name: 'mimas',
@@ -6,9 +13,9 @@ export default [
         parent: 'saturn_barycenter',
         type: 'moon',
         symbol: 'Ⅰ',
-        mass: 3.7493e19, // kg
+        mass: mimasMass, // kg
         radius: 198.2, // km (mean radius)
-        GM: 2.5025, // km³/s²
+        GM: Constants.G * mimasMass, // km³/s²
         isDwarf: true, // Small moon
         density: 1148, // kg/m³
         rotationPeriod: 0.942422 * 24 * 3600, // Synchronous
@@ -47,9 +54,9 @@ export default [
         parent: 'saturn_barycenter',
         type: 'moon',
         symbol: 'Ⅱ',
-        mass: 1.08022e20, // kg
+        mass: enceladusMass, // kg
         radius: 252.1, // km (mean radius)
-        GM: 7.2102, // km³/s²
+        GM: Constants.G * enceladusMass, // km³/s²
         density: 1609, // kg/m³
         rotationPeriod: 1.370218 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.370218 * 24 * 3600,
@@ -89,9 +96,9 @@ export default [
         parent: 'saturn_barycenter',
         type: 'moon',
         symbol: 'Ⅲ',
-        mass: 6.17449e20, // kg
+        mass: tethysMass, // kg
         radius: 531.1, // km (mean radius)
-        GM: 41.208, // km³/s²
+        GM: Constants.G * tethysMass, // km³/s²
         density: 973, // kg/m³ (low density - mostly ice)
         rotationPeriod: 1.887802 * 24 * 3600, // Synchronous
         orbitalPeriod: 1.887802 * 24 * 3600,
@@ -130,9 +137,9 @@ export default [
         parent: 'saturn_barycenter',
         type: 'moon',
         symbol: 'Ⅳ',
-        mass: 1.095452e21, // kg
+        mass: dioneMass, // kg
         radius: 561.4, // km (mean radius)
-        GM: 73.115, // km³/s²
+        GM: Constants.G * dioneMass, // km³/s²
         density: 1476, // kg/m³
         rotationPeriod: 2.736915 * 24 * 3600, // Synchronous
         orbitalPeriod: 2.736915 * 24 * 3600,
@@ -170,9 +177,9 @@ export default [
         parent: 'saturn_barycenter',
         type: 'moon',
         symbol: 'Ⅴ',
-        mass: 2.306518e21, // kg
+        mass: rheaMass, // kg
         radius: 763.8, // km (mean radius)
-        GM: 153.94, // km³/s²
+        GM: Constants.G * rheaMass, // km³/s²
         density: 1236, // kg/m³
         rotationPeriod: 4.518212 * 24 * 3600, // Synchronous
         orbitalPeriod: 4.518212 * 24 * 3600,
@@ -210,9 +217,9 @@ export default [
         parent: 'saturn_barycenter',
         type: 'moon',
         symbol: 'Ⅵ',
-        mass: 1.3452e23, // kg (largest moon of Saturn)
+        mass: titanMass, // kg (largest moon of Saturn)
         radius: 2574.73, // km (larger than Mercury)
-        GM: 8978.138, // km³/s²
+        GM: Constants.G * titanMass, // km³/s²
         density: 1882, // kg/m³
         rotationPeriod: 15.945 * 24 * 3600, // Synchronous
         orbitalPeriod: 15.945 * 24 * 3600,
@@ -275,9 +282,9 @@ export default [
         parent: 'saturn_barycenter',
         type: 'moon',
         symbol: 'Ⅷ',
-        mass: 1.805635e21, // kg
+        mass: iapetusMass, // kg
         radius: 734.5, // km (mean radius)
-        GM: 120.53, // km³/s²
+        GM: Constants.G * iapetusMass, // km³/s²
         density: 1083, // kg/m³
         rotationPeriod: 79.3215 * 24 * 3600, // Synchronous
         orbitalPeriod: 79.3215 * 24 * 3600,

@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import {Constants} from '../../../utils/Constants.js';
+
+const marsMass = 6.417e23; // kg
+const marsRadius = 3389.5; // km
+const marsGM = Constants.G * marsMass; // km³/s²
 
 export default {
     // Basic identification
@@ -10,9 +15,9 @@ export default {
     symbol: '♂',
 
     // Physical properties
-    mass: 6.417e23, // kg
-    radius: 3389.5, // km
-    GM: 4.282837e4, // km³/s²
+    mass: marsMass, // kg
+    radius: marsRadius, // km
+    GM: marsGM, // km³/s²
     J2: 1.96045e-3, // J2 gravitational coefficient (uppercase for consistency)
 
     // Shape properties

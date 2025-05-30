@@ -1,3 +1,7 @@
+import {Constants} from '../../../utils/Constants.js';
+const deimosMass = 1.4762e15;
+const phobosMass = 1.0659e16;
+
 export default [
     {
         // Phobos
@@ -6,9 +10,9 @@ export default [
         parent: 'mars_barycenter',
         type: 'moon',
         symbol: '◉',
-        mass: 1.0659e16, // kg
+        mass: phobosMass, // kg
         radius: 11.2667, // km (mean radius)
-        GM: 7.11e-4, // km³/s²
+        GM: Constants.G * phobosMass, // km³/s²
         isDwarf: true, // Small irregular moon
         dimensions: [26.8, 22.4, 18.4], // km (a x b x c)
         oblateness: 0.19, // Calculated from dimensions
@@ -52,9 +56,9 @@ export default [
         parent: 'mars_barycenter',
         type: 'moon',
         symbol: '⧫',
-        mass: 1.4762e15, // kg
+        mass: deimosMass, // kg
         radius: 6.2, // km (mean radius)
-        GM: 9.85e-5, // km³/s²
+        GM: Constants.G * deimosMass, // km³/s²
         isDwarf: true, // Small irregular moon
         dimensions: [15.0, 12.2, 10.4], // km (a x b x c)
         oblateness: 0.16, // Calculated from dimensions

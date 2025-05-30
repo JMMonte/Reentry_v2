@@ -5,6 +5,11 @@
  */
 
 import * as THREE from 'three';
+import {Constants} from '../../../utils/Constants.js';
+
+const mercuryMass = 3.301e23; // kg
+const mercuryRadius = 2439.7; // km
+const mercuryGM = Constants.G * mercuryMass; // km³/s²
 
 export default {
     name: 'mercury',
@@ -12,9 +17,9 @@ export default {
     naif_id: 199,
     astronomyEngineName: 'Mercury',
     symbol: '☿',
-    mass: 3.301e23,
-    radius: 2439.7,
-    GM: 22031.86855, // km³/s²
+    mass: mercuryMass,
+    radius: mercuryRadius,
+    GM: mercuryGM, // km³/s²
     j2: 6.0e-5,
     rotationPeriod: 5067000,
     oblateness: 0,

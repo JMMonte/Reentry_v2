@@ -91,6 +91,15 @@ export async function createSatelliteFromLatLon(app, params = {}) {
     const planet = getPlanet(app, naifId);
     if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
 
+    // Debug planet properties
+    console.log('[createSatelliteFromLatLon] Planet properties:');
+    console.log('  Name:', planet.name);
+    console.log('  NAIF ID:', planet.naifId);
+    console.log('  Radius:', planet.radius, 'km');
+    console.log('  Mass:', planet.mass, 'kg');
+    console.log('  GM:', planet.GM, 'km³/s²');
+    console.log('  Has GM?', planet.GM !== undefined);
+
     // Use improved coordinate calculation with planet quaternion
     const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
     const { position, velocity } = SatelliteCoordinates.createFromLatLon(params, planet, currentTime);

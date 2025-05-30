@@ -1,3 +1,8 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const ceresMass = 9.3835e20; // kg
+const ceresRadius = 469.73; // km
+const ceresGM = Constants.G * ceresMass; // km³/s²
 
 export default {
     // Basic identification
@@ -9,9 +14,9 @@ export default {
     symbol: '⚳',
 
     // Physical properties
-    mass: 9.3835e20, // kg
-    radius: 469.73, // km mean radius
-    GM: 62.6284, // km³/s²
+    mass: ceresMass, // kg
+    radius: ceresRadius, // km mean radius
+    GM: ceresGM, // km³/s²
     isDwarf: true, // Dwarf planet
 
     // Shape properties

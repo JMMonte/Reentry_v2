@@ -4,6 +4,12 @@
  * Physical, orbital, and rendering properties for Jupiter
  */
 
+import {Constants} from '../../../utils/Constants.js';
+
+const jupiterMass = 1.8982e27; // kg
+const jupiterRadius = 69_911; // km
+const jupiterGM = Constants.G * jupiterMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'jupiter',
@@ -14,9 +20,9 @@ export default {
     symbol: '♃',
 
     // Physical properties
-    mass: 1.8982e27, // kg
-    radius: 69_911, // km - equatorial radius
-    GM: 1.26686534e8, // km³/s² - Standard gravitational parameter
+    mass: jupiterMass, // kg
+    radius: jupiterRadius, // km - equatorial radius
+    GM: jupiterGM, // km³/s² - Standard gravitational parameter
     j2: 1.4736e-2,
     
     // Shape properties (highly oblate due to rapid rotation)

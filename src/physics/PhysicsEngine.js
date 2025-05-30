@@ -484,8 +484,10 @@ export class PhysicsEngine {
             velocity: new THREE.Vector3().fromArray(velArray),
             acceleration: new THREE.Vector3(),
             mass: satellite.mass || 1000, // kg - typical small satellite
+            size: satellite.size || 1, // m - radius for visualization
             dragCoefficient: satellite.dragCoefficient || 2.2,
             crossSectionalArea: satellite.crossSectionalArea || 2, // m² - more realistic for 1000kg satellite
+            ballisticCoefficient: satellite.ballisticCoefficient, // kg/m² - optional
             lastUpdate: this.simulationTime,
             centralBodyNaifId: satellite.centralBodyNaifId,
             // UI properties - store them here as single source of truth
@@ -708,22 +710,27 @@ export class PhysicsEngine {
             }
         }
         
-        // Second pass: Store only significant bodies for visualization
+        // Second pass: Store significant bodies for visualization
+        // For debugging, we can store ALL bodies to see their contributions
+        const storeAllBodies = true; // Set to false for production to save memory
+        
         for (const [bodyId, body] of Object.entries(this.bodies)) {
-            if (bodyId == satellite.centralBodyNaifId || significantBodies.has(Number(bodyId))) {
-                if (allBodyAccels[bodyId]) {
-                    a_bodies[bodyId] = [allBodyAccels[bodyId].x, allBodyAccels[bodyId].y, allBodyAccels[bodyId].z];
-                    
-                    // Debug large accelerations only if truly suspicious (> 100 km/s² which would be extreme)
-                    const accVec = allBodyAccels[bodyId];
-                    if (accVec.length() > 100) {
-                        console.warn(`[PhysicsEngine] Extremely large acceleration from ${body.name} (${bodyId}):`);
-                        console.warn(`  Type: ${body.type || 'unknown'}`);
-                        console.warn(`  Acceleration: ${accVec.length().toExponential(3)} km/s²`);
-                        console.warn(`  Distance: ${body.position.distanceTo(satGlobalPos).toFixed(1)} km`);
-                        console.warn(`  Mass: ${body.mass.toExponential(3)} kg`);
-                        console.warn(`  GM: ${(Constants.G * body.mass).toExponential(3)} km³/s²`);
-                    }
+            const shouldStore = storeAllBodies || 
+                               bodyId == satellite.centralBodyNaifId || 
+                               significantBodies.has(Number(bodyId));
+            
+            if (shouldStore && allBodyAccels[bodyId]) {
+                a_bodies[bodyId] = [allBodyAccels[bodyId].x, allBodyAccels[bodyId].y, allBodyAccels[bodyId].z];
+                
+                // Debug large accelerations only if truly suspicious (> 100 km/s² which would be extreme)
+                const accVec = allBodyAccels[bodyId];
+                if (accVec.length() > 100) {
+                    console.warn(`[PhysicsEngine] Extremely large acceleration from ${body.name} (${bodyId}):`);
+                    console.warn(`  Type: ${body.type || 'unknown'}`);
+                    console.warn(`  Acceleration: ${accVec.length().toExponential(3)} km/s²`);
+                    console.warn(`  Distance: ${body.position.distanceTo(satGlobalPos).toFixed(1)} km`);
+                    console.warn(`  Mass: ${body.mass.toExponential(3)} kg`);
+                    console.warn(`  GM: ${(Constants.G * body.mass).toExponential(3)} km³/s²`);
                 }
             }
         }
@@ -778,6 +785,13 @@ export class PhysicsEngine {
         satellite.a_j2 = [j2Accel.x, j2Accel.y, j2Accel.z];
         satellite.a_drag = [dragAccel.x, dragAccel.y, dragAccel.z];
         satellite.a_total = [totalAccel.x, totalAccel.y, totalAccel.z];
+        
+        // Calculate total gravity for visualization (sum of all body contributions)
+        const gravityTotal = new THREE.Vector3();
+        for (const accel of Object.values(allBodyAccels)) {
+            gravityTotal.add(accel);
+        }
+        satellite.a_gravity_total = [gravityTotal.x, gravityTotal.y, gravityTotal.z];
         
         // Debug logging for extreme accelerations
         const accelMag = totalAccel.length();
@@ -998,8 +1012,11 @@ export class PhysicsEngine {
                 sphereOfInfluence = Math.max(1e6, satAltitude * 5); // At least 1M km or 5x satellite altitude
                 // Always include Moon for Earth satellites
                 if (this.bodies[301]) significantBodies.add(301); // Moon
-                // Include Sun for high Earth orbits
-                if (satAltitude > 100000) significantBodies.add(10); // Sun for high orbits
+                // Always include Sun for Earth satellites
+                if (this.bodies[10]) significantBodies.add(10); // Sun
+                // Include other planets if they exist
+                if (this.bodies[599]) significantBodies.add(599); // Jupiter
+                if (this.bodies[699]) significantBodies.add(699); // Saturn
                 break;
                 
             case 499: // Mars  
@@ -1037,8 +1054,8 @@ export class PhysicsEngine {
                 const gravAccel = (Constants.G * body.mass) / (distance * distance);
                 const centralGravAccel = (Constants.G * centralBody.mass) / (satAltitude * satAltitude);
                 
-                // Include if perturbation is at least 0.1% of central body's gravity
-                if (gravAccel > centralGravAccel * 0.001) {
+                // Include if perturbation is at least 0.01% of central body's gravity (more inclusive)
+                if (gravAccel > centralGravAccel * 0.0001) {
                     significantBodies.add(bId);
                 }
             }
@@ -1195,6 +1212,10 @@ export class PhysicsEngine {
                 velocity: satellite.velocity.toArray(),
                 acceleration: satellite.acceleration.toArray(),
                 mass: satellite.mass,
+                size: satellite.size,
+                crossSectionalArea: satellite.crossSectionalArea,
+                dragCoefficient: satellite.dragCoefficient,
+                ballisticCoefficient: satellite.ballisticCoefficient,
                 altitude_radial,
                 altitude_surface,
                 speed,
@@ -1206,7 +1227,8 @@ export class PhysicsEngine {
                 a_bodies: satellite.a_bodies,
                 a_j2: satellite.a_j2,
                 a_drag: satellite.a_drag,
-                a_total: satellite.a_total
+                a_total: satellite.a_total,
+                a_gravity_total: satellite.a_gravity_total
             };
         }
         return states;

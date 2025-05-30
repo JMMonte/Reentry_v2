@@ -1,3 +1,9 @@
+import {Constants} from '../../../utils/Constants.js';
+
+const haumeaMass = 4.006e21; // kg
+const haumeaRadius = 816; // km
+const haumeaGM = Constants.G * haumeaMass; // km³/s²
+
 export default {
     // Basic identification
     name: 'haumea',
@@ -8,9 +14,9 @@ export default {
     symbol: '🝻',
 
     // Physical properties
-    mass: 4.006e21, // kg
-    radius: 816, // km mean radius (highly elongated!)
-    GM: 267.2, // km³/s²
+    mass: haumeaMass, // kg
+    radius: haumeaRadius, // km mean radius (highly elongated!)
+    GM: haumeaGM, // km³/s²
     isDwarf: true, // Dwarf planet
 
     // Shape properties - Haumea is extremely elongated due to rapid rotation

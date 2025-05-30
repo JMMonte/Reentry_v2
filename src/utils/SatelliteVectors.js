@@ -15,9 +15,11 @@ export class SatelliteVectors {
         app3d,
         satelliteManager,
         // Visual configuration
-        baseLength = 500,           // Base arrow length in km
-        velocityScale = 10,         // Scale factor for velocity arrows
-        accelerationScale = 1000,   // Scale factor for acceleration arrows
+        baseLength = 25,           // Base arrow length in km
+        velocityScale = 1,         // Scale factor for velocity arrows
+        accelerationScale = 50,  // Scale factor for acceleration arrows (km/s² are very small)
+        maxVelocityLength = 500,   // Maximum velocity arrow length in km
+        maxAccelLength = 500,      // Maximum acceleration arrow length in km
         headLength = 0.2,          // Arrow head length as fraction of total
         headWidth = 0.1,           // Arrow head width as fraction of total
         fadeStart = 50000,         // Start fading labels at this distance
@@ -33,6 +35,8 @@ export class SatelliteVectors {
             baseLength,
             velocityScale,
             accelerationScale,
+            maxVelocityLength,
+            maxAccelLength,
             headLength,
             headWidth,
             fadeStart,
@@ -43,36 +47,47 @@ export class SatelliteVectors {
         this.satelliteVectors = new Map(); // satelliteId -> vector objects
         this.visible = false;
 
-        // Vector colors
+        // Vector colors and configuration
         this.colors = {
             velocity: 0x00ff00,        // Green
             totalAccel: 0xff0000,      // Red
             gravity: 0xffff00,         // Yellow
+            j2: 0xff8800,             // Orange
             drag: 0x00ffff,           // Cyan
-            radiation: 0xff00ff,      // Magenta
-            thrust: 0xffffff          // White
+            sun: 0xffff88,            // Light yellow
+            moon: 0xaaaaff,           // Light blue
+            planet: 0xff88ff          // Light magenta
         };
+        
+        // Which vectors to show
+        this.vectorTypes = {
+            velocity: true,
+            totalAccel: true,
+            gravity: true,
+            j2: true,
+            drag: true,
+            individualBodies: true    // Show individual body contributions
+        };
+        
+        // Listen for satellite deletion events
+        this._onSatelliteDeleted = (e) => {
+            if (e.detail?.id) {
+                this._removeSatelliteVectors(String(e.detail.id));
+            }
+        };
+        document.addEventListener('satelliteDeleted', this._onSatelliteDeleted);
     }
 
     /**
      * Update all satellite vectors
      */
     update() {
-        if (!this.visible) return;
-
         const physicsEngine = this.app3d.physicsIntegration?.physicsEngine;
         if (!physicsEngine) return;
 
-        // Get satellite states instead of raw satellites
-        const satelliteStates = physicsEngine._getSatelliteStates();
-
-        // Debug: Check what we're getting
-        const stateKeys = Object.keys(satelliteStates);
-        if (stateKeys.length > 0 && !this._lastDebugLog || Date.now() - this._lastDebugLog > 5000) {
-            console.log('[SatelliteVectors.update] Getting satellite states:', stateKeys);
-            console.log('  First satellite state:', satelliteStates[stateKeys[0]]);
-            this._lastDebugLog = Date.now();
-        }
+        // Get satellite states from the same source as debug window
+        const simulationState = physicsEngine.getSimulationState();
+        const satelliteStates = simulationState.satellites || {};
 
         // Update existing and add new satellites
         Object.entries(satelliteStates).forEach(([satId, satState]) => {
@@ -115,77 +130,57 @@ export class SatelliteVectors {
         // The satellite mesh position will automatically position the vectors
         vectors.group.position.set(0, 0, 0);
 
-        // Get camera distance for scaling
-        const camDistance = worldPos.distanceTo(this.camera.position);
-        const scale = Math.max(1, camDistance / 10000); // Dynamic scaling based on distance
-
         // Update velocity vector
-        if (satData.velocity) {
-            // Check if velocity is an array or object
-            let velArray;
-            if (Array.isArray(satData.velocity)) {
-                velArray = satData.velocity;
-            } else if (satData.velocity.toArray) {
-                velArray = satData.velocity.toArray();
-            } else if (typeof satData.velocity === 'object') {
-                velArray = [satData.velocity.x || 0, satData.velocity.y || 0, satData.velocity.z || 0];
-            } else {
-                console.error(`[SatelliteVectors] Unknown velocity format:`, satData.velocity);
-                return;
-            }
-
-            // Debug extreme velocities
-            const velMag = Math.sqrt(velArray[0] ** 2 + velArray[1] ** 2 + velArray[2] ** 2);
-            if (velMag > 50) {
-                console.error(`[SatelliteVectors._updateSatelliteVectors] EXTREME VELOCITY DETECTED for satellite ${satId}:`);
-                console.error(`  Velocity array: [${velArray[0].toFixed(3)}, ${velArray[1].toFixed(3)}, ${velArray[2].toFixed(3)}] km/s`);
-                console.error(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
-                console.error(`  Raw satData.velocity:`, satData.velocity);
-                console.error(`  satData keys:`, Object.keys(satData));
-
-                // Check if there's a mismatch with speed property
-                if (satData.speed !== undefined && Math.abs(satData.speed - velMag) > 0.001) {
-                    console.error(`  SPEED MISMATCH! satData.speed: ${satData.speed}, calculated: ${velMag}`);
-                }
-            }
-
+        if (satData.velocity && Array.isArray(satData.velocity)) {
             this._updateArrow(
                 vectors.velocity,
-                velArray,
-                this.config.velocityScale * scale,
-                'Velocity'
+                satData.velocity,
+                'V'
             );
         }
-
-        // Get detailed acceleration components from physics engine
-        const accelComponents = this._getAccelerationComponents(satId, satData);
 
         // Update total acceleration vector
-        if (accelComponents.total) {
+        if (satData.a_total && this.vectorTypes.totalAccel) {
             this._updateArrow(
                 vectors.totalAccel,
-                accelComponents.total,
-                this.config.accelerationScale * scale,
-                'Total Accel'
+                satData.a_total,
+                'Total'
             );
+        } else {
+            vectors.totalAccel.arrow.visible = false;
+            vectors.totalAccel.label.visible = false;
         }
 
-        // Update gravity vector (sum of all gravitational forces)
-        if (accelComponents.gravity) {
+        // Update gravity vector (total gravitational force from physics engine)
+        if (satData.a_gravity_total && this.vectorTypes.gravity) {
+            // Pass array directly, no conversion
             this._updateArrow(
                 vectors.gravity,
-                accelComponents.gravity,
-                this.config.accelerationScale * scale,
+                satData.a_gravity_total,
                 'Gravity'
             );
+        } else {
+            vectors.gravity.arrow.visible = false;
+            vectors.gravity.label.visible = false;
+        }
+
+        // Update J2 perturbation vector
+        if (satData.a_j2 && this.vectorTypes.j2) {
+            this._updateArrow(
+                vectors.j2,
+                satData.a_j2,
+                'J2'
+            );
+        } else {
+            vectors.j2.arrow.visible = false;
+            vectors.j2.label.visible = false;
         }
 
         // Update drag vector
-        if (accelComponents.drag && accelComponents.drag.length() > 1e-6) {
+        if (satData.a_drag && this.vectorTypes.drag) {
             this._updateArrow(
                 vectors.drag,
-                accelComponents.drag,
-                this.config.accelerationScale * scale,
+                satData.a_drag,
                 'Drag'
             );
         } else {
@@ -193,60 +188,69 @@ export class SatelliteVectors {
             vectors.drag.label.visible = false;
         }
 
-        // Update radiation pressure vector
-        if (accelComponents.radiation && accelComponents.radiation.length() > 1e-6) {
-            this._updateArrow(
-                vectors.radiation,
-                accelComponents.radiation,
-                this.config.accelerationScale * scale,
-                'Radiation'
-            );
+        // Update individual body vectors if enabled
+        if (satData.a_bodies && this.vectorTypes.individualBodies) {
+            this._updateBodyVectors(vectors, satData.a_bodies);
         } else {
-            vectors.radiation.arrow.visible = false;
-            vectors.radiation.label.visible = false;
+            // Hide all body vectors
+            if (vectors.bodyVectors) {
+                Object.values(vectors.bodyVectors).forEach(v => {
+                    v.arrow.visible = false;
+                    v.label.visible = false;
+                });
+            }
         }
     }
 
     /**
-     * Get acceleration components from physics engine
+     * Update vectors for individual gravitating bodies
      */
-    _getAccelerationComponents(satId, satData) {
+    _updateBodyVectors(vectors, a_bodies) {
+        if (!vectors.bodyVectors) {
+            vectors.bodyVectors = {};
+        }
+        
+        // Get physics engine to look up body names
         const physicsEngine = this.app3d.physicsIntegration?.physicsEngine;
-        if (!physicsEngine) return {};
-
-        // Get the last calculated accelerations from physics engine
-        const components = {
-            total: new THREE.Vector3(),
-            gravity: new THREE.Vector3(),
-            drag: new THREE.Vector3(),
-            radiation: new THREE.Vector3()
-        };
-
-        // Total acceleration
-        if (satData.acceleration) {
-            components.total.fromArray(satData.acceleration);
-        }
-
-        // Get gravitational acceleration from all bodies
-        if (satData.a_bodies) {
-            Object.values(satData.a_bodies).forEach(accel => {
-                if (Array.isArray(accel)) {
-                    components.gravity.add(new THREE.Vector3().fromArray(accel));
-                }
-            });
-        }
-
-        // Get drag acceleration if available
-        if (satData.a_drag) {
-            components.drag.fromArray(satData.a_drag);
-        }
-
-        // Get radiation pressure if available
-        if (satData.a_radiation) {
-            components.radiation.fromArray(satData.a_radiation);
-        }
-
-        return components;
+        if (!physicsEngine) return;
+        
+        Object.entries(a_bodies).forEach(([bodyId, accel]) => {
+            if (!Array.isArray(accel)) return;
+            
+            const magnitude = Math.sqrt(accel[0] ** 2 + accel[1] ** 2 + accel[2] ** 2);
+            if (magnitude < 1e-10) return;
+            
+            // Get or create vector for this body
+            if (!vectors.bodyVectors[bodyId]) {
+                const body = physicsEngine.bodies[bodyId];
+                const color = this._getBodyColor(bodyId);
+                const vectorObj = this._createArrowWithLabel(color, body?.name || `Body ${bodyId}`);
+                vectors.group.add(vectorObj.arrow);
+                vectors.group.add(vectorObj.label);
+                vectors.bodyVectors[bodyId] = vectorObj;
+            }
+            
+            // Update the vector - pass array directly
+            const body = physicsEngine.bodies[bodyId];
+            this._updateArrow(
+                vectors.bodyVectors[bodyId],
+                accel,
+                body?.name || `Body ${bodyId}`
+            );
+        });
+    }
+    
+    /**
+     * Get color for a specific body
+     */
+    _getBodyColor(bodyId) {
+        const id = parseInt(bodyId);
+        if (id === 10) return this.colors.sun;        // Sun
+        if (id === 301) return this.colors.moon;      // Moon
+        if (id === 399) return this.colors.planet;    // Earth
+        if (id === 599) return 0xcc8844;              // Jupiter (brownish)
+        if (id === 499) return 0xff4444;              // Mars (reddish)
+        return 0x888888;                               // Default gray
     }
 
     /**
@@ -271,8 +275,9 @@ export class SatelliteVectors {
             velocity: this._createArrowWithLabel(this.colors.velocity, 'V'),
             totalAccel: this._createArrowWithLabel(this.colors.totalAccel, 'A'),
             gravity: this._createArrowWithLabel(this.colors.gravity, 'G'),
+            j2: this._createArrowWithLabel(this.colors.j2, 'J2'),
             drag: this._createArrowWithLabel(this.colors.drag, 'D'),
-            radiation: this._createArrowWithLabel(this.colors.radiation, 'R')
+            bodyVectors: {} // Will be populated dynamically
         };
 
         // Add all arrows to the group
@@ -314,15 +319,29 @@ export class SatelliteVectors {
     }
 
     /**
-     * Update arrow direction and length
+     * Update arrow direction with fixed length
      */
-    _updateArrow(vectorObj, direction, scale, labelText) {
+    _updateArrow(vectorObj, direction, labelText) {
         const { arrow, label, div } = vectorObj;
 
-        // Convert to Vector3 if needed
-        const dir = direction instanceof THREE.Vector3 ? direction : new THREE.Vector3().fromArray(direction);
+        // Handle both Vector3 and array inputs
+        let magnitude;
+        let dirNormalized;
+        
+        if (direction instanceof THREE.Vector3) {
+            magnitude = direction.length();
+            dirNormalized = direction.clone().normalize();
+        } else if (Array.isArray(direction)) {
+            magnitude = Math.sqrt(direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2);
+            dirNormalized = new THREE.Vector3(direction[0], direction[1], direction[2]).normalize();
+        } else {
+            console.error('[SatelliteVectors._updateArrow] Invalid direction format:', direction);
+            arrow.visible = false;
+            label.visible = false;
+            return;
+        }
 
-        if (dir.length() < 1e-10) {
+        if (magnitude < 1e-10) {
             arrow.visible = false;
             label.visible = false;
             return;
@@ -331,9 +350,10 @@ export class SatelliteVectors {
         arrow.visible = this.visible;
         label.visible = this.visible;
 
-        // Set arrow direction and length
-        const length = dir.length() * scale;
-        arrow.setDirection(dir.normalize());
+        // Use fixed length for all vectors
+        const length = this.config.baseLength;
+        
+        arrow.setDirection(dirNormalized);
         arrow.setLength(
             length,
             length * this.config.headLength,
@@ -341,12 +361,16 @@ export class SatelliteVectors {
         );
 
         // Position label at arrow tip
-        label.position.copy(dir.normalize().multiplyScalar(length * 1.1));
-
-        // Update label text with magnitude
-        const magnitude = direction instanceof THREE.Vector3 ? direction.length() :
-            Math.sqrt(direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2);
-        div.textContent = `${labelText}: ${magnitude.toExponential(2)}`;
+        label.position.copy(dirNormalized.multiplyScalar(length * 1.1));
+        
+        // Format the label to match debug window exactly
+        if (labelText === 'V' || labelText === 'Velocity') {
+            // Velocity: show in km/s with 2 decimal places
+            div.textContent = `${labelText}: ${magnitude.toFixed(2)} km/s`;
+        } else {
+            // Acceleration: show in scientific notation km/s²
+            div.textContent = `${labelText}: ${magnitude.toExponential(2)} km/s²`;
+        }
     }
 
     /**
@@ -386,15 +410,35 @@ export class SatelliteVectors {
             vectors.group.parent.remove(vectors.group);
         }
 
-        // Dispose of geometries and materials
-        Object.values(vectors).forEach(v => {
+        // Dispose of all vector objects
+        const disposeVectorObject = (v) => {
+            if (!v) return;
+            
+            // Dispose THREE.js objects
             if (v.arrow) {
                 v.arrow.line.geometry.dispose();
                 v.arrow.line.material.dispose();
                 v.arrow.cone.geometry.dispose();
                 v.arrow.cone.material.dispose();
             }
+            
+            // Remove label div from DOM - CRITICAL!
+            if (v.div && v.div.parentNode) {
+                v.div.parentNode.removeChild(v.div);
+            }
+        };
+
+        // Dispose standard vectors
+        ['velocity', 'totalAccel', 'gravity', 'j2', 'drag'].forEach(key => {
+            if (vectors[key]) {
+                disposeVectorObject(vectors[key]);
+            }
         });
+
+        // Dispose body vectors
+        if (vectors.bodyVectors) {
+            Object.values(vectors.bodyVectors).forEach(v => disposeVectorObject(v));
+        }
 
         this.satelliteVectors.delete(satId);
     }
@@ -403,27 +447,6 @@ export class SatelliteVectors {
      * Set visibility of all vectors
      */
     setVisible(visible) {
-        console.log(`[SatelliteVectors.setVisible] Setting visibility to ${visible}`);
-
-        // Log physics state before changing visibility
-        if (visible && !this.visible) {
-            console.log('[SatelliteVectors] Enabling vectors, checking physics state BEFORE update:');
-            const physicsEngine = this.app3d.physicsIntegration?.physicsEngine;
-            if (physicsEngine?.satellites) {
-                physicsEngine.satellites.forEach((satData, satId) => {
-                    if (satData.velocity) {
-                        const velMag = Math.sqrt(satData.velocity[0] ** 2 + satData.velocity[1] ** 2 + satData.velocity[2] ** 2);
-                        console.log(`  Satellite ${satId}: velocity = ${velMag.toFixed(3)} km/s`);
-                        if (velMag > 50) {
-                            console.error(`  WARNING: Extreme velocity already present before enabling vectors!`);
-                            console.error(`    Velocity: [${satData.velocity.map(v => v.toFixed(3)).join(', ')}] km/s`);
-                            console.error(`    Position: [${satData.position.map(v => v.toFixed(1)).join(', ')}] km`);
-                        }
-                    }
-                });
-            }
-        }
-
         this.visible = visible;
 
         this.satelliteVectors.forEach(vectors => {
@@ -435,15 +458,40 @@ export class SatelliteVectors {
 
         // Force update when making visible
         if (visible) {
-            console.log('[SatelliteVectors.setVisible] Forcing update due to visibility change');
             this.update();
         }
+    }
+    
+    /**
+     * Toggle individual vector types
+     */
+    setVectorTypeVisible(vectorType, visible) {
+        if (Object.prototype.hasOwnProperty.call(this.vectorTypes, vectorType)) {
+            this.vectorTypes[vectorType] = visible;
+            // Force update to apply changes
+            if (this.visible) {
+                this.update();
+            }
+        }
+    }
+    
+    /**
+     * Get current vector visibility settings
+     */
+    getVectorTypes() {
+        return { ...this.vectorTypes };
     }
 
     /**
      * Dispose of all resources
      */
     dispose() {
+        // Remove event listener
+        if (this._onSatelliteDeleted) {
+            document.removeEventListener('satelliteDeleted', this._onSatelliteDeleted);
+        }
+        
+        // Remove all satellite vectors
         this.satelliteVectors.forEach((vectors, satId) => {
             this._removeSatelliteVectors(satId);
         });

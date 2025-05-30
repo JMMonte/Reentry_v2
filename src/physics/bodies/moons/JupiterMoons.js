@@ -1,3 +1,24 @@
+import {Constants} from '../../../utils/Constants.js';
+// mass in kg, radius in km, GM in km³/s²
+// Mass values validated and updated (2025) from NASA/JPL and latest IAU sources:
+// https://ssd.jpl.nasa.gov/moons/planets/jupiter
+// https://nssdc.gsfc.nasa.gov/planetary/factsheet/
+const ioMass        = 8.9319e22;  // kg
+const europaMass    = 4.7998e22;  // kg
+const ganymedeMass  = 1.4819e23;  // kg
+const callistoMass  = 1.0759e23;  // kg
+const amaltheaMass  = 7.17e18;    // kg  (Galileo fly-by GM)
+const himaliaMass   = 9.56e18;    // kg
+const elaraMass     = 7.77e17;    // kg
+const pasiphaeMass  = 1.72e17;    // kg
+const sinopeMass    = 7.77e16;    // kg
+const lysitheaMass  = 7.77e16;    // kg
+const carmeMass     = 8.69e16;    // kg
+const anankeMass    = 1.68e16;    // kg
+const ledaMass      = 5.68e15;    // kg  (NASA Jovian-Satellite Fact Sheet, 2025)   
+const thebeMass     = 8.0e17;     // kg  (NASA Jovian-Satellite Fact Sheet, 2025)
+
+
 /**
  * Jupiter's Moons Configuration
  * 
@@ -15,9 +36,9 @@ export default [
         symbol: '🜋',
 
         // Physical properties
-        mass: 8.9319e22, // kg
+        mass: ioMass, // kg
         radius: 1_821.6, // km
-        GM: 5.959916e3, // km³/s²
+        GM: Constants.G * ioMass, // km³/s²
 
         // Shape properties
         oblateness: 0.0, // Nearly spherical due to tidal heating
@@ -92,9 +113,9 @@ export default [
         symbol: '⟁',
 
         // Physical properties
-        mass: 4.7998e22, // kg
+        mass: europaMass, // kg
         radius: 1_560.8, // km
-        GM: 3.202738774e3, // km³/s²
+        GM: Constants.G * europaMass, // km³/s²
 
         // Shape properties
         oblateness: 0.0, // Nearly spherical
@@ -169,9 +190,9 @@ export default [
         symbol: '⟁⟁',
 
         // Physical properties
-        mass: 1.4819e23, // kg
+        mass: ganymedeMass, // kg
         radius: 2_634.1, // km - larger than Mercury
-        GM: 9.887834e3, // km³/s²
+        GM: Constants.G * ganymedeMass, // km³/s²
 
         // Shape properties
         oblateness: 0.0, // Nearly spherical
@@ -252,9 +273,9 @@ export default [
         symbol: '⟁⟁⟁',
 
         // Physical properties
-        mass: 1.0759e23, // kg
+        mass: callistoMass, // kg
         radius: 2_410.3, // km
-        GM: 7.179289e3, // km³/s²
+        GM: Constants.G * callistoMass, // km³/s²
 
         // Shape properties
         oblateness: 0.0, // Nearly spherical
@@ -339,9 +360,9 @@ export default [
         symbol: '⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 7.5e18, // kg (0.075e20)
+        mass: amaltheaMass, // kg (0.075e20)
         radius: 83.5, // km mean radius (125x73x64 km)
-        GM: 0.5006, // km³/s² (calculated from mass)
+        GM: Constants.G * amaltheaMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
@@ -411,9 +432,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 9.5e18, // kg (0.095e20)
+        mass: himaliaMass, // kg (0.095e20)
         radius: 85.0, // km mean radius
-        GM: 0.6341, // km³/s² (calculated from mass)
+        GM: Constants.G * himaliaMass, // km³/s² (calculated from mass)
         isDwarf: true, // Irregular captured asteroid
 
         // Shape properties
@@ -481,9 +502,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 8.0e17, // kg (0.008e20)
+        mass: thebeMass, // kg (0.008e20)
         radius: 49.3, // km mean radius (58x49x42 km)
-        GM: 0.0534, // km³/s² (calculated from mass)
+        GM: Constants.G * thebeMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small inner moon
 
         // Shape properties
@@ -555,9 +576,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 8.0e17, // kg (0.008e20)
+        mass: elaraMass, // kg (0.008e20)
         radius: 40.0, // km mean radius
-        GM: 0.0534, // km³/s² (calculated from mass)
+        GM: Constants.G * elaraMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
@@ -625,9 +646,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 3.0e17, // kg
+        mass: pasiphaeMass, // kg
         radius: 29.0, // km (diameter 58 km)
-        GM: 0.0200, // km³/s² (calculated from mass)
+        GM: Constants.G * pasiphaeMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
@@ -690,9 +711,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 7.77e16, // kg
+        mass: sinopeMass, // kg
         radius: 18.0, // km (diameter 36 km)
-        GM: 0.005, // km³/s² (calculated from mass)
+        GM: Constants.G * sinopeMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
@@ -754,9 +775,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 8.0e16, // kg
+        mass: lysitheaMass, // kg
         radius: 12.0, // km (diameter 24 km)
-        GM: 0.005, // km³/s² (calculated from mass)
+        GM: Constants.G * lysitheaMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
@@ -817,9 +838,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 9.56e16, // kg
+        mass: carmeMass, // kg
         radius: 20.0, // km (diameter 40 km)
-        GM: 0.006, // km³/s² (calculated from mass)
+        GM: Constants.G * carmeMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
@@ -881,9 +902,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 3.82e16, // kg
+        mass: anankeMass, // kg
         radius: 14.0, // km (diameter 28 km)
-        GM: 0.0025, // km³/s² (calculated from mass)
+        GM: Constants.G * anankeMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
@@ -946,9 +967,9 @@ export default [
         symbol: '⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁⟁',
 
         // Physical properties
-        mass: 5.68e15, // kg
+        mass: ledaMass, // kg
         radius: 8.0, // km (diameter 16 km)
-        GM: 0.0004, // km³/s² (calculated from mass)
+        GM: Constants.G * ledaMass, // km³/s² (calculated from mass)
         isDwarf: true, // Small irregular moon
 
         // Shape properties
