@@ -12,14 +12,17 @@ export class DisplaySettingsManager {
         this.settings = { ...defaults };
         this.listeners = new Map(); // key -> Set of callback functions
         
-        // Listen for display settings updates
-        document.addEventListener('displaySettingsUpdate', (event) => {
+        // Store bound event handler for removal
+        this._boundDisplaySettingsHandler = (event) => {
             if (event.detail) {
                 Object.entries(event.detail).forEach(([key, value]) => {
                     this.updateSetting(key, value);
                 });
             }
-        });
+        };
+        
+        // Listen for display settings updates
+        document.addEventListener('displaySettingsUpdate', this._boundDisplaySettingsHandler);
     }
 
     /**
@@ -244,5 +247,23 @@ export class DisplaySettingsManager {
                 // No longer supported: only local physics is used
                 break;
         }
+    }
+    
+    /**
+     * Clean up resources and remove event listeners
+     */
+    dispose() {
+        // Remove event listener
+        if (this._boundDisplaySettingsHandler) {
+            document.removeEventListener('displaySettingsUpdate', this._boundDisplaySettingsHandler);
+            this._boundDisplaySettingsHandler = null;
+        }
+        
+        // Clear all listener callbacks
+        this.listeners.clear();
+        
+        // Clear references
+        this.app3d = null;
+        this.settings = null;
     }
 } 

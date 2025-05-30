@@ -72,7 +72,32 @@ export class Satellite {
      * @param {Object} satState - { position, velocity, acceleration, ... }
      */
     updateVisualsFromState(satState) {
-        if (this.visualizer?.mesh && satState.position) {
+        if (!this.visualizer?.mesh || !satState?.position) return;
+        
+        // Validate position array
+        if (!Array.isArray(satState.position) || satState.position.length !== 3) {
+            console.error(`[Satellite] Invalid position array for satellite ${this.id}:`, satState.position);
+            return;
+        }
+        
+        // Check for NaN or invalid values in position
+        if (satState.position.some(v => !Number.isFinite(v))) {
+            console.error(`[Satellite] Invalid position values for satellite ${this.id}:`, satState.position);
+            return;
+        }
+        
+        // Validate velocity if present
+        if (satState.velocity) {
+            if (!Array.isArray(satState.velocity) || satState.velocity.length !== 3) {
+                console.error(`[Satellite] Invalid velocity array for satellite ${this.id}:`, satState.velocity);
+                return;
+            }
+            
+            if (satState.velocity.some(v => !Number.isFinite(v))) {
+                console.error(`[Satellite] Invalid velocity values for satellite ${this.id}:`, satState.velocity);
+                return;
+            }
+            
             // Debug extreme velocity issue
             const velMag = Math.sqrt(satState.velocity[0]**2 + satState.velocity[1]**2 + satState.velocity[2]**2);
             if (velMag > 50) {
@@ -80,42 +105,49 @@ export class Satellite {
                 console.error(`  Velocity: [${satState.velocity[0].toFixed(3)}, ${satState.velocity[1].toFixed(3)}, ${satState.velocity[2].toFixed(3)}] km/s`);
                 console.error(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
                 console.error(`  Position: [${satState.position[0].toFixed(1)}, ${satState.position[1].toFixed(1)}, ${satState.position[2].toFixed(1)}] km`);
-            }
-            
-            // Debug: Log position updates
-            if (!this._lastUpdateLogTime || Date.now() - this._lastUpdateLogTime > 1000) {
-                // console.log(`[Satellite ${this.id}] updateVisualsFromState - position: [${satState.position.map(v => v.toFixed(1)).join(', ')}] km`);
-                // console.log(`  velocity: [${satState.velocity.map(v => v.toFixed(3)).join(', ')}] km/s, speed: ${satState.speed?.toFixed(3)} km/s`);
-                this._lastUpdateLogTime = Date.now();
-            }
-            
-            // satState.position is already planet-centric (relative to central body)
-            // Since the mesh is parented to the central body's group, we can use it directly
-            this.visualizer.mesh.position.set(
-                satState.position[0],
-                satState.position[1],
-                satState.position[2]
-            );
-            
-            // Store physics state for other components
-            const oldPos = this.position ? this.position.clone() : null;
-            const oldVel = this.velocity ? this.velocity.clone() : null;
-            
-            this.position = new THREE.Vector3(...satState.position);
-            this.velocity = new THREE.Vector3(...satState.velocity);
-            if (satState.acceleration) {
-                this.acceleration = new THREE.Vector3(...satState.acceleration);
-            }
-            
-            // Check if orbit needs update (significant change in state)
-            if (this.app3d?.satelliteOrbitManager && oldPos && oldVel) {
-                const posDiff = this.position.distanceTo(oldPos);
-                const velDiff = this.velocity.distanceTo(oldVel);
-                
-                // Update orbit if position changed by >10km or velocity by >0.1km/s
-                if (posDiff > 10 || velDiff > 0.1) {
-                    this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
+                // Clamp velocity to reasonable values to prevent crashes
+                const maxVel = 50; // km/s
+                if (velMag > maxVel) {
+                    const scale = maxVel / velMag;
+                    satState.velocity = satState.velocity.map(v => v * scale);
+                    console.warn(`[Satellite] Clamped velocity to ${maxVel} km/s`);
                 }
+            }
+        }
+        
+        // Debug: Log position updates
+        if (!this._lastUpdateLogTime || Date.now() - this._lastUpdateLogTime > 1000) {
+            // console.log(`[Satellite ${this.id}] updateVisualsFromState - position: [${satState.position.map(v => v.toFixed(1)).join(', ')}] km`);
+            // console.log(`  velocity: [${satState.velocity.map(v => v.toFixed(3)).join(', ')}] km/s, speed: ${satState.speed?.toFixed(3)} km/s`);
+            this._lastUpdateLogTime = Date.now();
+        }
+        
+        // satState.position is already planet-centric (relative to central body)
+        // Since the mesh is parented to the central body's group, we can use it directly
+        this.visualizer.mesh.position.set(
+            satState.position[0],
+            satState.position[1],
+            satState.position[2]
+        );
+        
+        // Store physics state for other components
+        const oldPos = this.position ? this.position.clone() : null;
+        const oldVel = this.velocity ? this.velocity.clone() : null;
+        
+        this.position = new THREE.Vector3(...satState.position);
+        this.velocity = new THREE.Vector3(...satState.velocity);
+        if (satState.acceleration) {
+            this.acceleration = new THREE.Vector3(...satState.acceleration);
+        }
+        
+        // Check if orbit needs update (significant change in state)
+        if (this.app3d?.satelliteOrbitManager && oldPos && oldVel) {
+            const posDiff = this.position.distanceTo(oldPos);
+            const velDiff = this.velocity.distanceTo(oldVel);
+            
+            // Update orbit if position changed by >10km or velocity by >0.1km/s
+            if (posDiff > 10 || velDiff > 0.1) {
+                this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
             }
         }
     }

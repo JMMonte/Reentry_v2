@@ -480,21 +480,19 @@ export class SatelliteOrbitManager {
      * Set up event listeners for satellite events
      */
     _setupEventListeners() {
-        // Listen for satellite lifecycle events
-        window.addEventListener('satelliteAdded', (e) => {
+        // Store bound event handlers for cleanup
+        this._boundSatelliteAdded = (e) => {
             const satData = e.detail;
-            // Queue orbit update for new satellite
             this.updateSatelliteOrbit(String(satData.id));
-        });
-
-        window.addEventListener('satelliteRemoved', (e) => {
+        };
+        
+        this._boundSatelliteRemoved = (e) => {
             const satData = e.detail;
             const satelliteId = String(satData.id);
-            // Clean up orbit visualization
             this.removeSatelliteOrbit(satelliteId);
-        });
-
-        window.addEventListener('satellitePropertyUpdated', (e) => {
+        };
+        
+        this._boundSatellitePropertyUpdated = (e) => {
             const { id, property, value } = e.detail;
             const satelliteId = String(id);
             
@@ -506,20 +504,32 @@ export class SatelliteOrbitManager {
             else if (property === 'color') {
                 this.updateSatelliteColor(satelliteId, value);
             }
-        });
+        };
+        
+        // Listen for satellite lifecycle events
+        window.addEventListener('satelliteAdded', this._boundSatelliteAdded);
+        window.addEventListener('satelliteRemoved', this._boundSatelliteRemoved);
+        window.addEventListener('satellitePropertyUpdated', this._boundSatellitePropertyUpdated);
 
-        // Listen for display setting changes
-        if (this.displaySettings) {
-            this.displaySettings.addListener('showOrbits', () => {
-                this._updateOrbitVisibility();
-            });
-            this.displaySettings.addListener('orbitPredictionInterval', () => {
-                // Clear cache and update all orbits
-                this.orbitCache.clear();
+        // Store display setting callbacks
+        this._boundShowOrbitsCallback = () => {
+            this._updateOrbitVisibility();
+        };
+        
+        this._boundOrbitPredictionCallback = () => {
+            // Clear cache and update all orbits
+            this.orbitCache.clear();
+            if (this.physicsEngine?.satellites) {
                 for (const satelliteId of this.physicsEngine.satellites.keys()) {
                     this.updateSatelliteOrbit(satelliteId);
                 }
-            });
+            }
+        };
+
+        // Listen for display setting changes
+        if (this.displaySettings) {
+            this.displaySettings.addListener('showOrbits', this._boundShowOrbitsCallback);
+            this.displaySettings.addListener('orbitPredictionInterval', this._boundOrbitPredictionCallback);
         }
     }
 
@@ -588,14 +598,50 @@ export class SatelliteOrbitManager {
     }
 
     /**
-     * Dispose of resources
+     * Dispose of resources and clean up memory
      */
     dispose() {
+        // Clear update timer
+        if (this.updateTimer) {
+            clearTimeout(this.updateTimer);
+            this.updateTimer = null;
+        }
+        
+        // Remove event listeners
+        if (this._boundSatelliteAdded) {
+            window.removeEventListener('satelliteAdded', this._boundSatelliteAdded);
+            window.removeEventListener('satelliteRemoved', this._boundSatelliteRemoved);
+            window.removeEventListener('satellitePropertyUpdated', this._boundSatellitePropertyUpdated);
+        }
+        
+        // Remove display settings listeners
+        if (this.displaySettings) {
+            if (this._boundShowOrbitsCallback) {
+                this.displaySettings.removeListener('showOrbits', this._boundShowOrbitsCallback);
+            }
+            if (this._boundOrbitPredictionCallback) {
+                this.displaySettings.removeListener('orbitPredictionInterval', this._boundOrbitPredictionCallback);
+            }
+        }
+        
+        // Clear all orbits and dispose Three.js objects
         this.clearAll();
         
         // Terminate workers
         this.workers.forEach(worker => worker.terminate());
         this.workers = [];
         this.workerPool = [];
+        
+        // Clear all maps and references
+        this.activeJobs.clear();
+        this.orbitCache.clear();
+        this.orbitLines.clear();
+        this.orbitSegmentCounts.clear();
+        this.updateQueue.clear();
+        
+        // Clear references
+        this.app = null;
+        this.physicsEngine = null;
+        this.displaySettings = null;
     }
 }

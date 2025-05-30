@@ -47,16 +47,30 @@ export class SimulationLoop {
 
     /** The main animation frame callback. */
     _animate() {
-        const delta = this.clock.getDelta();
-        this.app.tick?.(delta);
+        try {
+            const delta = this.clock.getDelta();
+            
+            // Validate delta to prevent extreme time steps
+            const maxDelta = 1.0; // Maximum 1 second per frame
+            const safeDelta = Math.min(delta, maxDelta);
+            
+            if (delta > maxDelta) {
+                console.warn(`[SimulationLoop] Large delta time clamped: ${delta.toFixed(3)}s -> ${safeDelta.toFixed(3)}s`);
+            }
+            
+            this.app.tick?.(safeDelta);
 
-        // TimeUtils now has independent time progression - no need to call update() here
+            // TimeUtils now has independent time progression - no need to call update() here
 
-        // Render scene
-        if (this.sceneManager.composers.final) {
-            this.sceneManager.composers.final.render();
-        } else {
-            this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
+            // Render scene
+            if (this.sceneManager?.composers?.final) {
+                this.sceneManager.composers.final.render();
+            } else if (this.sceneManager?.renderer && this.sceneManager?.scene && this.sceneManager?.camera) {
+                this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera);
+            }
+        } catch (error) {
+            console.error('[SimulationLoop] Animation frame error:', error);
+            // Don't re-throw to keep the animation loop running
         }
     }
 

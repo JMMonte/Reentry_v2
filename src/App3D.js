@@ -5,13 +5,54 @@
 import * as THREE from 'three';
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);                   // use Z-up globally
 
-// Monkey-patch to debug NaN boundingSphere issues
+// Monkey-patch to debug and fix NaN boundingSphere issues
 const origComputeBoundingSphere = THREE.BufferGeometry.prototype.computeBoundingSphere;
 THREE.BufferGeometry.prototype.computeBoundingSphere = function () {
-    origComputeBoundingSphere.apply(this, arguments);
-    if (this.boundingSphere && isNaN(this.boundingSphere.radius)) {
-        // Log stack and geometry for debugging
-        console.error('NaN boundingSphere detected!', this, new Error().stack);
+    try {
+        origComputeBoundingSphere.apply(this, arguments);
+        if (this.boundingSphere && isNaN(this.boundingSphere.radius)) {
+            console.error('NaN boundingSphere detected!', this, new Error().stack);
+            // Fix by setting a default bounding sphere
+            const positions = this.attributes.position;
+            if (positions && positions.count > 0) {
+                // Try to compute a valid bounding sphere
+                const center = new THREE.Vector3();
+                let radius = 0;
+                let validPoints = 0;
+                for (let i = 0; i < positions.count; i++) {
+                    const x = positions.getX(i);
+                    const y = positions.getY(i);
+                    const z = positions.getZ(i);
+                    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+                        center.add(new THREE.Vector3(x, y, z));
+                        validPoints++;
+                    }
+                }
+                if (validPoints > 0) {
+                    center.divideScalar(validPoints);
+                    for (let i = 0; i < positions.count; i++) {
+                        const x = positions.getX(i);
+                        const y = positions.getY(i);
+                        const z = positions.getZ(i);
+                        if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+                            const dist = center.distanceTo(new THREE.Vector3(x, y, z));
+                            radius = Math.max(radius, dist);
+                        }
+                    }
+                    this.boundingSphere = new THREE.Sphere(center, radius);
+                } else {
+                    // Fallback to a unit sphere at origin
+                    this.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1);
+                }
+            } else {
+                // Fallback to a unit sphere at origin
+                this.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1);
+            }
+        }
+    } catch (error) {
+        console.error('Error computing bounding sphere:', error);
+        // Fallback to a unit sphere at origin
+        this.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1);
     }
 };
 
@@ -280,12 +321,48 @@ class App3D extends EventTarget {
         // Satellites & loops
         this._satellites?.dispose?.();
         this.simulationLoop?.dispose?.();
+        
+        // Satellite orbit manager
+        this.satelliteOrbitManager?.dispose?.();
+        
+        // Display settings manager
+        this._displaySettingsManager?.dispose?.();
+        
+        // Texture manager
+        this._textureManager?.dispose?.();
+        
+        // Planet vectors
+        if (Array.isArray(this.planetVectors)) {
+            this.planetVectors.forEach(vec => vec.dispose?.());
+            this.planetVectors = [];
+        }
 
         // Scene graph
         this.sceneManager?.dispose?.();
+        
+        // Socket manager
+        this.socketManager?.dispose?.();
+        
+        // Simulation state manager
+        this.simulationStateManager?.dispose?.();
+
+        // Remove stats panel from DOM
+        if (this._stats?.dom?.parentNode) {
+            this._stats.dom.parentNode.removeChild(this._stats.dom);
+        }
 
         // Listeners
         this._removeWindowResizeListener();
+        
+        // Clear all references to help GC
+        this.celestialBodies = null;
+        this.bodiesByNaifId = null;
+        this.planetsByNaifId = null;
+        this._satellites = null;
+        this._camera = null;
+        this._renderer = null;
+        this._controls = null;
+        this.cameraControls = null;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -588,28 +665,29 @@ class App3D extends EventTarget {
      * @param {number} delta - Time since last frame in seconds
      */
     tick(delta) {
-        // Get current physics state (physics is stepped by PhysicsManager.updateLoop)
-        const latestPhysicsState = this.physicsIntegration?.physicsEngine?.getSimulationState?.();
-        
-        if (latestPhysicsState) {
-            this.satellites.updateAllFromPhysicsState(latestPhysicsState);
-            // Dispatch physics state update event for React components
-            // Convert satellite states Map to object if needed
-            let satelliteStates = latestPhysicsState.satellites || {};
-            if (satelliteStates instanceof Map) {
-                const satObj = {};
-                for (const [id, sat] of satelliteStates) {
-                    satObj[id] = sat;
+        try {
+            // Get current physics state (physics is stepped by PhysicsManager.updateLoop)
+            const latestPhysicsState = this.physicsIntegration?.physicsEngine?.getSimulationState?.();
+            
+            if (latestPhysicsState) {
+                this.satellites.updateAllFromPhysicsState(latestPhysicsState);
+                // Dispatch physics state update event for React components
+                // Convert satellite states Map to object if needed
+                let satelliteStates = latestPhysicsState.satellites || {};
+                if (satelliteStates instanceof Map) {
+                    const satObj = {};
+                    for (const [id, sat] of satelliteStates) {
+                        satObj[id] = sat;
+                    }
+                    satelliteStates = satObj;
                 }
-                satelliteStates = satObj;
+                window.dispatchEvent(new CustomEvent('physicsStateUpdate', {
+                    detail: {
+                        satellites: satelliteStates
+                    }
+                }));
             }
-            window.dispatchEvent(new CustomEvent('physicsStateUpdate', {
-                detail: {
-                    satellites: satelliteStates
-                }
-            }));
-        }
-        this.stats?.begin();
+            this.stats?.begin();
         
         this.sceneManager.updateFrame?.(delta);
 
@@ -626,19 +704,27 @@ class App3D extends EventTarget {
 
         // --- Optimized per-frame updates ---
         // Track camera and sun movement
-        const cameraMoved = !this._lastCameraPos.equals(this.camera.position);
-        this._lastCameraPos.copy(this.camera.position);
+        const cameraMoved = this.camera && !this._lastCameraPos.equals(this.camera.position);
+        if (cameraMoved) {
+            this._lastCameraPos.copy(this.camera.position);
+        }
         let sunMoved = false;
-        if (this.sun && this.sun.getWorldPosition) {
-            const sunPos = new THREE.Vector3();
-            this.sun.getWorldPosition(sunPos);
-            sunMoved = !this._lastSunPos.equals(sunPos);
-            this._lastSunPos.copy(sunPos);
+        if (this.sun && typeof this.sun.getWorldPosition === 'function') {
+            try {
+                const sunPos = new THREE.Vector3();
+                this.sun.getWorldPosition(sunPos);
+                sunMoved = !this._lastSunPos.equals(sunPos);
+                this._lastSunPos.copy(sunPos);
+            } catch (e) {
+                console.warn('[App3D] Failed to get sun position:', e);
+            }
         }
 
         // Update frustum
-        this._projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
-        this._frustum.setFromProjectionMatrix(this._projScreenMatrix);
+        if (this.camera && this.camera.projectionMatrix && this.camera.matrixWorldInverse) {
+            this._projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+            this._frustum.setFromProjectionMatrix(this._projScreenMatrix);
+        }
 
         // Helper to check if a mesh is visible in the frustum
         const isVisible = mesh => {
@@ -736,6 +822,11 @@ class App3D extends EventTarget {
         
         this.labelRenderer?.render?.(this.scene, this.camera);
         this.stats?.end();
+        } catch (error) {
+            console.error('[App3D] tick() error:', error);
+            this.stats?.end();
+            // Don't re-throw to prevent animation loop from stopping
+        }
     }
 }
 

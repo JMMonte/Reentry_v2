@@ -51,9 +51,10 @@ export class PlanetVectors {
                 });
             } else {
                 // fallback: poll every 100ms (should not be needed)
-                const poll = setInterval(() => {
+                this._pollInterval = setInterval(() => {
                     if (this.body.getMesh()) {
-                        clearInterval(poll);
+                        clearInterval(this._pollInterval);
+                        this._pollInterval = null;
                         this.#initVectorsAsync();
                     }
                 }, 100);
@@ -384,5 +385,86 @@ export class PlanetVectors {
     setPlanetVectorsVisible(visible) {
         this.setVisible(visible);
         this.setAxesVisible(visible);
+    }
+    
+    /**
+     * Dispose of all resources and clean up memory
+     */
+    dispose() {
+        // Clear polling interval if it exists
+        if (this._pollInterval) {
+            clearInterval(this._pollInterval);
+            this._pollInterval = null;
+        }
+        
+        // Remove event listener if added
+        if (this.body && typeof this.body.removeEventListener === 'function') {
+            this.body.removeEventListener('planetMeshLoaded', this.#initVectorsAsync);
+        }
+        
+        // Dispose directional arrows
+        this.directionalArrows.forEach(arrow => {
+            if (arrow) {
+                if (arrow.line) {
+                    if (arrow.line.parent) arrow.line.parent.remove(arrow.line);
+                    if (arrow.line.geometry) arrow.line.geometry.dispose();
+                    if (arrow.line.material) arrow.line.material.dispose();
+                }
+                if (arrow.cone) {
+                    if (arrow.cone.parent) arrow.cone.parent.remove(arrow.cone);
+                    if (arrow.cone.geometry) arrow.cone.geometry.dispose();
+                    if (arrow.cone.material) arrow.cone.material.dispose();
+                }
+            }
+        });
+        this.directionalArrows = [];
+        
+        // Dispose directional labels (Sprites)
+        this.directionalLabels.forEach(label => {
+            if (label) {
+                if (label.parent) label.parent.remove(label);
+                if (label.material) {
+                    if (label.material.map) label.material.map.dispose();
+                    label.material.dispose();
+                }
+                if (label.geometry) label.geometry.dispose();
+            }
+        });
+        this.directionalLabels = [];
+        
+        // Dispose axes helpers
+        const disposeAxesHelper = (helper, labels) => {
+            if (helper) {
+                if (helper.parent) helper.parent.remove(helper);
+                if (helper.geometry) helper.geometry.dispose();
+                if (helper.material) helper.material.dispose();
+            }
+            if (labels) {
+                labels.forEach(lbl => {
+                    if (lbl) {
+                        if (lbl.parent) lbl.parent.remove(lbl);
+                        // CSS2DObject cleanup
+                        if (lbl.element && lbl.element.parentNode) {
+                            lbl.element.parentNode.removeChild(lbl.element);
+                        }
+                    }
+                });
+            }
+        };
+        
+        disposeAxesHelper(this.orbitAxesHelper, this.orbitAxesLabels);
+        disposeAxesHelper(this.rotationAxesHelper, this.rotationAxesLabels);
+        
+        // Remove main group
+        if (this.group && this.group.parent) {
+            this.group.parent.remove(this.group);
+        }
+        
+        // Clear references
+        this.body = null;
+        this.scene = null;
+        this.sun = null;
+        this.font = null;
+        this.group = null;
     }
 } 
