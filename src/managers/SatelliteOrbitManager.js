@@ -74,7 +74,7 @@ export class SatelliteOrbitManager {
     }
 
     /**
-     * Update physics state in all workers
+     * Update physics state in all workers with complete solar system data
      */
     _updateWorkersPhysicsState() {
         if (!this.physicsEngine) return;
@@ -82,22 +82,34 @@ export class SatelliteOrbitManager {
         const state = this.physicsEngine.getSimulationState();
         const simplifiedBodies = {};
         
-        // Extract essential body data for workers
+        // Extract complete body data for solar system propagation
         for (const [id, body] of Object.entries(state.bodies)) {
             simplifiedBodies[id] = {
-                position: body.position,
-                velocity: body.velocity,
+                naif: parseInt(id),
+                position: body.position.toArray ? body.position.toArray() : body.position,
+                velocity: body.velocity.toArray ? body.velocity.toArray() : body.velocity,
                 mass: body.mass,
-                soiRadius: body.soiRadius
+                soiRadius: body.soiRadius,
+                radius: body.radius,
+                type: body.type,
+                // Include properties needed for perturbations
+                J2: body.J2,
+                atmosphericModel: body.atmosphericModel,
+                GM: body.GM || (Constants.G * body.mass),
+                rotationPeriod: body.rotationPeriod
             };
         }
 
-        // Send to all workers
+        console.log('[SatelliteOrbitManager] Updating workers with complete solar system state:', Object.keys(simplifiedBodies).length, 'bodies');
+
+        // Send to all workers with current simulation time
         this.workers.forEach(worker => {
             worker.postMessage({
                 type: 'updatePhysicsState',
                 data: {
-                    bodies: simplifiedBodies
+                    bodies: simplifiedBodies,
+                    hierarchy: state.hierarchy || null,
+                    currentTime: this.physicsEngine.simulationTime?.getTime() || Date.now()
                 }
             });
         });
@@ -174,13 +186,20 @@ export class SatelliteOrbitManager {
                 : orbitParams.points;
             const timeStep = duration / totalPoints;
 
+            // Update workers with latest solar system state before propagation
+            this._updateWorkersPhysicsState();
+            
             // Start propagation job
             this._startPropagationJob({
                 satelliteId,
                 satellite: {
                     position: satellite.position.toArray(),
                     velocity: satellite.velocity.toArray(),
-                    centralBodyNaifId: satellite.centralBodyNaifId
+                    centralBodyNaifId: satellite.centralBodyNaifId,
+                    // Include satellite properties for accurate propagation
+                    mass: satellite.mass || 1000,
+                    crossSectionalArea: satellite.crossSectionalArea || 10,
+                    dragCoefficient: satellite.dragCoefficient || 2.2
                 },
                 duration,
                 timeStep,
@@ -214,7 +233,7 @@ export class SatelliteOrbitManager {
             startTime: Date.now()
         });
 
-        // Send propagation request
+        // Send propagation request with satellite properties for drag calculation
         worker.postMessage({
             type: 'propagate',
             data: {
@@ -223,7 +242,13 @@ export class SatelliteOrbitManager {
                 velocity: params.satellite.velocity,
                 centralBodyNaifId: params.satellite.centralBodyNaifId,
                 duration: params.duration,
-                timeStep: params.timeStep
+                timeStep: params.timeStep,
+                // Include satellite properties for accurate drag calculation
+                mass: params.satellite.mass,
+                crossSectionalArea: params.satellite.crossSectionalArea,
+                dragCoefficient: params.satellite.dragCoefficient,
+                // Disable solar system propagation for orbit visualization
+                propagateSolarSystem: false
             }
         });
     }
@@ -232,7 +257,7 @@ export class SatelliteOrbitManager {
      * Handle worker messages
      */
     _handleWorkerMessage(event) {
-        const { type, satelliteId, points, progress, isComplete } = event.data;
+        const { type, satelliteId, points, isComplete } = event.data;
 
         console.log(`[SatelliteOrbitManager] Worker message received: type=${type}, satelliteId=${satelliteId}, points=${points?.length || 0}, isComplete=${isComplete}`);
 
@@ -249,7 +274,7 @@ export class SatelliteOrbitManager {
                 console.log(`[SatelliteOrbitManager] Accumulated ${job.points.length} points for satellite ${satelliteId}`);
                 
                 // Update visualization progressively
-                this._updateOrbitVisualization(satelliteId, job.points, false);
+                this._updateOrbitVisualization(satelliteId, job.points);
                 
                 if (isComplete) {
                     console.log(`[SatelliteOrbitManager] Orbit calculation complete for satellite ${satelliteId} with ${job.points.length} total points`);
@@ -261,7 +286,7 @@ export class SatelliteOrbitManager {
                     });
                     
                     // Final visualization update
-                    this._updateOrbitVisualization(satelliteId, job.points, true);
+                    this._updateOrbitVisualization(satelliteId, job.points);
                     
                     // Return worker to pool
                     this.workerPool.push(job.worker);
@@ -294,7 +319,7 @@ export class SatelliteOrbitManager {
     /**
      * Update Three.js visualization
      */
-    _updateOrbitVisualization(satelliteId, points, isComplete) {
+    _updateOrbitVisualization(satelliteId, points) {
         if (points.length < 2) {
             console.warn(`[SatelliteOrbitManager] Not enough points (${points.length}) to visualize orbit for satellite ${satelliteId}`);
             return;

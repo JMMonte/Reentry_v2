@@ -13,7 +13,6 @@ export const earthPolarRadius = 6356.752314245; // km
 export const earthMass = 5.972e24; // kg
 export const earthInclination = 23.5; // degrees
 export const earthGravitationalParameter = Constants.G * earthMass; // km^3/s^2
-export const atmosphereScaleHeight = 8.5; // km
 export const atmosphereSeaLevelDensity = 1.225e-3; // kg/km^3
 export const atmosphereRadius = earthRadius + 100; // km
 export const ballisticCoefficient = 100; // kg/m^2
@@ -103,17 +102,17 @@ export default {
 
     // Atmospheric properties
     atmosphere: {
-        thickness: atmosphereRadius - earthRadius, // km
-        densityScaleHeight: atmosphereScaleHeight, // km
-        hazeIntensity: 3,
-        scaleHeightMultiplier: 4.0,
-        rayleighScaleHeight: 8, // km
-        mieScaleHeight: 1.2, // km
+        thickness: 70, // km
+        densityScaleHeight: 10, // km
+        hazeIntensity: 0.4,
+        scaleHeightMultiplier: 10.0,
+        rayleighScaleHeight: 10, // km
+        mieScaleHeight: 1.2, // km - height at which mie scattering is significant
         rayleighScatteringCoeff: [0.0015, 0.004, 0.012],
         mieScatteringCoeff: 0.00015,
-        mieAnisotropy: 0.75,
-        numLightSteps: 2,
-        sunIntensity: 6,
+        mieAnisotropy: 0.75, // mie's anisotropy factor - how much light is scattered in the forward direction
+        numLightSteps: 1,
+        sunIntensity: 1,
         equatorialRadius: earthRadius, // km
         polarRadius: earthPolarRadius, // km
         rho0: atmosphereSeaLevelDensity, // kg/km^3

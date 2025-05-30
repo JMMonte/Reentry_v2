@@ -13,11 +13,11 @@ import { Constants } from '../../utils/Constants.js';
  * 4th-order Runge-Kutta (RK4) integration
  * Standard fixed-step integration for orbital mechanics
  * 
- * @param {THREE.Vector3} position - Current position (km)
- * @param {THREE.Vector3} velocity - Current velocity (km/s)
+ * @param {Vector3} position - Current position (km)
+ * @param {Vector3} velocity - Current velocity (km/s)
  * @param {Function} accelerationFunc - Function that computes acceleration given state
  * @param {number} dt - Time step (seconds)
- * @returns {{position: THREE.Vector3, velocity: THREE.Vector3}} - New state
+ * @returns {{position: Vector3, velocity: Vector3}} - New state
  */
 export function integrateRK4(position, velocity, accelerationFunc, dt) {
     const pos0 = position.clone();

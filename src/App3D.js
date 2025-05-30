@@ -36,7 +36,7 @@ import { SimulationLoop } from './simulation/SimulationLoop.js';
 import { SocketManager } from './managers/SocketManager.js';
 
 // New physics system
-import { PhysicsIntegration } from './physics/PhysicsIntegration.js';
+import { PhysicsManager } from './physics/PhysicsManager.js';
 
 // Controls
 import { CameraControls } from './controls/CameraControls.js';
@@ -104,7 +104,7 @@ class App3D extends EventTarget {
         );
 
         // Initialize new physics system
-        this.physicsIntegration = new PhysicsIntegration(this);
+        this.physicsIntegration = new PhysicsManager(this);
         // Only use SatelliteManager, no provider
         this._satellites = new SatelliteManager(this);
 
@@ -588,7 +588,7 @@ class App3D extends EventTarget {
      * @param {number} delta - Time since last frame in seconds
      */
     tick(delta) {
-        // Get current physics state (physics is stepped by PhysicsIntegration.updateLoop)
+        // Get current physics state (physics is stepped by PhysicsManager.updateLoop)
         const latestPhysicsState = this.physicsIntegration?.physicsEngine?.getSimulationState?.();
         
         if (latestPhysicsState) {

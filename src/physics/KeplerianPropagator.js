@@ -133,15 +133,22 @@ export class KeplerianPropagator {
     }
 
     /**
-     * Generate orbital path for a celestial body around its parent
+     * Generate orbital path for a celestial body around its parent with moving reference frames
      * @param {Object} body - Body with position, velocity, mass
      * @param {Object} parent - Parent body (center of orbit)
+     * @param {Object} allBodies - Complete solar system state for proper reference frame handling
      * @param {number} numPoints - Number of points in orbit (default: 360)
      * @param {number} timeSpan - Time span in seconds (default: one orbital period)
-     * @returns {Array} Array of THREE.Vector3 positions
+     * @param {number} timeStep - Integration time step for system evolution
+     * @returns {Array} Array of THREE.Vector3 positions with proper reference frame corrections
      */
-    generateOrbitPath(body, parent, numPoints = 360, timeSpan = null) {
-        // Calculate orbital elements
+    generateOrbitPath(body, parent, allBodies = null, numPoints = 360, timeSpan = null, timeStep = 3600) {
+        // If no complete solar system provided, fall back to simple Keplerian orbit
+        if (!allBodies) {
+            return this._generateSimpleKeplerianOrbit(body, parent, numPoints, timeSpan);
+        }
+
+        // Calculate orbital elements for initial conditions
         const elements = this.calculateOrbitalElements(body, parent);
 
         if (!elements || !isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
@@ -155,16 +162,139 @@ export class KeplerianPropagator {
 
         const points = [];
         const dt = period / numPoints;
+        
+        // Initialize current solar system state
+        let currentBodies = JSON.parse(JSON.stringify(allBodies));
+        
+        // Get initial relative position
+        let currentBodyPos = new THREE.Vector3().fromArray(currentBodies[body.naif]?.position || body.position);
+        let currentParentPos = new THREE.Vector3().fromArray(currentBodies[parent.naif]?.position || parent.position);
+        
+        for (let i = 0; i <= numPoints; i++) {
+            const t = i * dt;
+            
+            // Evolve the solar system if we have significant time steps
+            if (i > 0 && Math.abs(dt) > 60) { // Only evolve for significant time steps
+                currentBodies = this._evolveSolarSystem(currentBodies, dt);
+                currentParentPos = new THREE.Vector3().fromArray(currentBodies[parent.naif]?.position || parent.position);
+            }
+            
+            // Get position using Keplerian motion relative to evolved parent
+            const relativePosition = this._getKeplerianPositionAtTime(elements, parent, t);
+            
+            // Add parent's evolved position to get absolute position
+            const absolutePosition = relativePosition.add(currentParentPos);
+            
+            points.push(absolutePosition);
+        }
+
+        return points;
+    }
+
+    /**
+     * Simple Keplerian orbit generation (fallback for when solar system state unavailable)
+     * @param {Object} body - Body with position, velocity, mass
+     * @param {Object} parent - Parent body (center of orbit)
+     * @param {number} numPoints - Number of points in orbit
+     * @param {number} timeSpan - Time span in seconds
+     * @returns {Array} Array of THREE.Vector3 positions
+     */
+    _generateSimpleKeplerianOrbit(body, parent, numPoints, timeSpan) {
+        const elements = this.calculateOrbitalElements(body, parent);
+
+        if (!elements || !isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
+            console.warn('Invalid orbital elements for', body.name);
+            return [];
+        }
+
+        const parentMu = parent.mu || (Constants.G * parent.mass);
+        const period = timeSpan || (this.computeOrbitalPeriod(elements.semiMajorAxis, parentMu) * 86400);
+
+        const points = [];
+        const dt = period / numPoints;
 
         for (let i = 0; i <= numPoints; i++) {
             const t = i * dt;
-            const position = this.getPositionAtTime(elements, parent, t);
+            const position = this._getKeplerianPositionAtTime(elements, parent, t);
             if (position) {
                 points.push(position);
             }
         }
 
         return points;
+    }
+
+    /**
+     * Evolve solar system state by one time step
+     * @param {Object} currentBodies - Current solar system state
+     * @param {number} deltaTime - Time step in seconds
+     * @returns {Object} Updated solar system state
+     */
+    _evolveSolarSystem(currentBodies, deltaTime) {
+        const updatedBodies = {};
+        
+        // Copy current state
+        for (const [naifId, body] of Object.entries(currentBodies)) {
+            updatedBodies[naifId] = {
+                ...body,
+                position: new THREE.Vector3().fromArray(body.position),
+                velocity: new THREE.Vector3().fromArray(body.velocity)
+            };
+        }
+        
+        // Simplified N-body evolution for major bodies only
+        for (const [naifId, body] of Object.entries(updatedBodies)) {
+            if (body.type === 'barycenter') continue;
+            
+            const acceleration = this._computeBodyAcceleration(body, updatedBodies);
+            
+            // Simple Euler integration (could be improved to RK4)
+            const newVel = body.velocity.clone().addScaledVector(acceleration, deltaTime);
+            const newPos = body.position.clone().addScaledVector(newVel, deltaTime);
+            
+            updatedBodies[naifId].position = newPos.toArray();
+            updatedBodies[naifId].velocity = newVel.toArray();
+        }
+        
+        return updatedBodies;
+    }
+
+    /**
+     * Compute gravitational acceleration for a body
+     * @param {Object} targetBody - Body to compute acceleration for
+     * @param {Object} allBodies - All bodies in the system
+     * @returns {THREE.Vector3} Acceleration vector
+     */
+    _computeBodyAcceleration(targetBody, allBodies) {
+        const acceleration = new THREE.Vector3();
+        const targetPos = targetBody.position;
+        
+        for (const [naifId, body] of Object.entries(allBodies)) {
+            if (naifId == targetBody.naif || body.type === 'barycenter') continue;
+            if (!body.mass || body.mass <= 0) continue;
+            
+            const r = new THREE.Vector3().fromArray(body.position).sub(targetPos);
+            const distance = r.length();
+            
+            if (distance > 1e-6) {
+                const gravAccel = (Constants.G * body.mass) / (distance * distance);
+                const accVec = r.normalize().multiplyScalar(gravAccel);
+                acceleration.add(accVec);
+            }
+        }
+        
+        return acceleration;
+    }
+
+    /**
+     * Get Keplerian position at specific time (renamed for clarity)
+     * @param {Object} elements - Orbital elements
+     * @param {Object} parent - Parent body
+     * @param {number} time - Time in seconds from epoch
+     * @returns {THREE.Vector3} Position relative to parent
+     */
+    _getKeplerianPositionAtTime(elements, parent, time) {
+        return this.getPositionAtTime(elements, parent, time);
     }
 
     /**

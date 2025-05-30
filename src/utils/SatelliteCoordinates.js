@@ -36,23 +36,8 @@ export class SatelliteCoordinates {
         // Calculate appropriate orbital velocity if not provided
         let finalVelocity = velocity;
         if (velocity === undefined) {
-            // Calculate the inertial velocity needed for circular orbit
-            const inertialVelocity = SatelliteCoordinates._calculateCircularOrbitalVelocity(altitude, planet);
-            
-            // Calculate Earth's rotation velocity at this location
-            const rotationVelocity = SatelliteCoordinates._calculateRotationVelocityAtLocation(
-                latitude, altitude, planet
-            );
-            
-            // For eastward launch (azimuth ~90°), subtract rotation velocity
-            // For westward launch (azimuth ~270°), add rotation velocity
-            const azimuthRad = THREE.MathUtils.degToRad(azimuth);
-            const eastwardComponent = Math.sin(azimuthRad); // 1 for east, -1 for west
-            
-            // Adjust velocity: subtract Earth's rotation contribution
-            finalVelocity = inertialVelocity - rotationVelocity * eastwardComponent;
-            
-            // console.log(`[SatelliteCoordinates] Orbital velocity adjustment: inertial=${inertialVelocity.toFixed(3)} km/s, rotation=${rotationVelocity.toFixed(3)} km/s, final=${finalVelocity.toFixed(3)} km/s`);
+            // Simple circular orbital velocity at given altitude
+            finalVelocity = SatelliteCoordinates._calculateCircularOrbitalVelocity(altitude, planet);
         }
 
         // console.log(`[SatelliteCoordinates] Creating from lat/lon: lat=${latitude}°, lon=${longitude}°, alt=${altitude}km, vel=${finalVelocity.toFixed(3)}km/s, az=${azimuth}°`);

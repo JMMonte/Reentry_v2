@@ -50,14 +50,6 @@ export class PhysicsEngine {
 
         // Initialize core modules with the loaded config
         this.hierarchy = new SolarSystemHierarchy(solarSystemDataManager.naifToBody);
-        // Debug: print parent for each major planet
-        // const majorPlanets = [199, 299, 399, 499, 599, 699, 799, 899]; // Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune
-        // for (const naifId of majorPlanets) {
-        //     const info = this.hierarchy.getBodyInfo(naifId);
-        //     if (info) {
-        //         console.log(`[HierarchyDebug] ${info.name} (NAIF ${naifId}) parent: ${info.parent}`);
-        //     }
-        // }
         this.stateCalculator = new StateVectorCalculator(this.hierarchy, solarSystemDataManager.naifToBody);
         this.positionManager = new PositionManager(this.hierarchy, this.stateCalculator);
 

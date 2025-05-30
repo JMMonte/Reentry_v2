@@ -130,7 +130,7 @@ export class SatelliteManager {
             });
         }
         
-        console.warn('[SatelliteManager] PhysicsIntegration not available');
+        console.warn('[SatelliteManager] PhysicsManager not available');
         return null;
     }
 

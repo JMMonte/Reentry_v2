@@ -4,9 +4,10 @@ import { KeplerianPropagator } from './KeplerianPropagator.js';
 import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 
 /**
- * Integration manager that bridges the new physics engine with existing codebase.
+ * Physics Manager - Main interface between application and physics engine
+ * Handles initialization, updates, and bridges to existing codebase
  */
-export class PhysicsIntegration {
+export class PhysicsManager {
     constructor(app) {
         this.app = app; // Reference to main App3D instance
         this.physicsEngine = new PhysicsEngine();
@@ -35,7 +36,7 @@ export class PhysicsIntegration {
         try {
             // Validate initialTime parameter first
             if (!initialTime || !(initialTime instanceof Date) || isNaN(initialTime.getTime())) {
-                console.warn('[PhysicsIntegration] Invalid initialTime parameter, using current time');
+                console.warn('[PhysicsManager] Invalid initialTime parameter, using current time');
                 initialTime = new Date();
             }
 
@@ -46,11 +47,11 @@ export class PhysicsIntegration {
                 if (appTime && appTime instanceof Date && !isNaN(appTime.getTime())) {
                     currentTime = appTime;
                 } else {
-                    console.warn('[PhysicsIntegration] App timeUtils returned invalid time, using initialTime');
+                    console.warn('[PhysicsManager] App timeUtils returned invalid time, using initialTime');
                 }
             }
 
-            // console.log('[PhysicsIntegration] Initializing with time:', currentTime.toISOString());
+            // console.log('[PhysicsManager] Initializing with time:', currentTime.toISOString());
 
             // Initialize the physics engine
             await this.physicsEngine.initialize(currentTime);
@@ -68,11 +69,11 @@ export class PhysicsIntegration {
             this._startUpdateLoop();
 
             this.isInitialized = true;
-            // console.log('[PhysicsIntegration] Successfully initialized');
+            // console.log('[PhysicsManager] Successfully initialized');
 
             return this;
         } catch (error) {
-            console.error('[PhysicsIntegration] Failed to initialize:', error);
+            console.error('[PhysicsManager] Failed to initialize:', error);
             throw error;
         }
     }
@@ -112,7 +113,7 @@ export class PhysicsIntegration {
         
         // Throttle log: only log every 10 seconds
         if (!this._lastStepLogTime || Date.now() - this._lastStepLogTime > 10000) {
-            // console.log(`[PhysicsIntegration] stepSimulation: ${this._stepCallCount} calls in 10s, total deltaTime: ${this._totalDeltaTime.toFixed(3)}s, avg: ${(this._totalDeltaTime/this._stepCallCount).toFixed(4)}s`);
+            // console.log(`[PhysicsManager] stepSimulation: ${this._stepCallCount} calls in 10s, total deltaTime: ${this._totalDeltaTime.toFixed(3)}s, avg: ${(this._totalDeltaTime/this._stepCallCount).toFixed(4)}s`);
             this._stepCallCount = 0;
             this._totalDeltaTime = 0;
             this._lastStepLogTime = Date.now();
@@ -120,7 +121,7 @@ export class PhysicsIntegration {
         if (!this.isInitialized) return;
 
         const state = await this.physicsEngine.step(deltaTime);
-        // console.log('[PhysicsIntegration] stepSimulation: state.satellites keys:', Object.keys(state.satellites));
+        // console.log('[PhysicsManager] stepSimulation: state.satellites keys:', Object.keys(state.satellites));
 
         // Sync with existing celestial bodies
         this._syncWithCelestialBodies(state);
@@ -142,12 +143,12 @@ export class PhysicsIntegration {
      */
     addSatellite(satelliteData) {
         if (!this.isInitialized) {
-            console.warn('[PhysicsIntegration] Cannot add satellite - not initialized');
+            console.warn('[PhysicsManager] Cannot add satellite - not initialized');
             return;
         }
 
         // Debug logging for velocity tracking
-        console.log('[PhysicsIntegration.addSatellite] Adding satellite:');
+        console.log('[PhysicsManager.addSatellite] Adding satellite:');
         console.log('  satelliteData:', satelliteData);
         if (satelliteData.velocity) {
             const vel = satelliteData.velocity;
@@ -198,7 +199,7 @@ export class PhysicsIntegration {
         const parent = this._findParentBody(state.bodies, body);
 
         if (!body || !parent) {
-            console.warn(`[PhysicsIntegration] Cannot find body or parent for ${bodyName}`);
+            console.warn(`[PhysicsManager] Cannot find body or parent for ${bodyName}`);
             return [];
         }
 
@@ -220,7 +221,7 @@ export class PhysicsIntegration {
         const satellite = state.satellites[satelliteId];
 
         if (!satellite) {
-            console.warn(`[PhysicsIntegration] Satellite ${satelliteId} not found`);
+            console.warn(`[PhysicsManager] Satellite ${satelliteId} not found`);
             return [];
         }
 
@@ -343,7 +344,7 @@ export class PhysicsIntegration {
         if (this._accumulator > maxAccumulator) {
             // Only log if clamping by a significant amount
             if (this._accumulator - maxAccumulator > 0.1) {
-                // console.log(`[PhysicsIntegration] Clamping accumulator from ${this._accumulator.toFixed(3)}s to ${maxAccumulator.toFixed(3)}s`);
+                // console.log(`[PhysicsManager] Clamping accumulator from ${this._accumulator.toFixed(3)}s to ${maxAccumulator.toFixed(3)}s`);
             }
             this._accumulator = maxAccumulator;
         }
@@ -371,7 +372,7 @@ export class PhysicsIntegration {
         
         // If we couldn't process all accumulated time, log it
         if (this._accumulator > this._fixedTimeStep && stepsProcessed >= maxSteps) {
-            // console.log(`[PhysicsIntegration] Hit max steps (${maxSteps}) at ${timeWarp}x warp, ${this._accumulator.toFixed(3)}s remaining`);
+            // console.log(`[PhysicsManager] Hit max steps (${maxSteps}) at ${timeWarp}x warp, ${this._accumulator.toFixed(3)}s remaining`);
         }
         
         // Always update orbit visualizations for smooth rendering
@@ -517,7 +518,7 @@ export class PhysicsIntegration {
                 // bodiesUpdated++;
 
             } catch (error) {
-                console.warn(`[PhysicsIntegration] Failed to update ${celestialBody.name}:`, error);
+                console.warn(`[PhysicsManager] Failed to update ${celestialBody.name}:`, error);
             }
         }
 
@@ -633,7 +634,7 @@ export class PhysicsIntegration {
         }
 
         // if (bodiesUpdated > 0) {
-        //     console.log(`[PhysicsIntegration] Updated ${bodiesUpdated} celestial bodies with correct positions`);
+        //     console.log(`[PhysicsManager] Updated ${bodiesUpdated} celestial bodies with correct positions`);
         // }
     }
 
@@ -641,12 +642,12 @@ export class PhysicsIntegration {
      * Private: Sync satellite states with existing managers
      */
     _syncSatelliteStates(state) {
-        // console.log('[PhysicsIntegration] _syncSatelliteStates: called with satellites keys:', Object.keys(state.satellites));
+        // console.log('[PhysicsManager] _syncSatelliteStates: called with satellites keys:', Object.keys(state.satellites));
         if (!this.app.satelliteManager?.satellites) return;
 
         // Throttle log: only log every 5 seconds
         if (!this._lastSyncLogTime || Date.now() - this._lastSyncLogTime > 5000) {
-            // console.log('[PhysicsIntegration] _syncSatelliteStates called, satellites:', Object.keys(state.satellites));
+            // console.log('[PhysicsManager] _syncSatelliteStates called, satellites:', Object.keys(state.satellites));
             this._lastSyncLogTime = Date.now();
         }
 
@@ -656,13 +657,13 @@ export class PhysicsIntegration {
             if (satellite) {
                 // Only log every 5 seconds
                 if (!satellite._lastSyncLogTime || Date.now() - satellite._lastSyncLogTime > 5000) {
-                    // console.log('[PhysicsIntegration] Syncing satellite', satId, satelliteState.position);
+                    // console.log('[PhysicsManager] Syncing satellite', satId, satelliteState.position);
                     satellite._lastSyncLogTime = Date.now();
                 }
                 satellite.updateVisualsFromState(satelliteState);
             } else {
                 if (!this._lastMissingLogTime || Date.now() - this._lastMissingLogTime > 5000) {
-                    console.warn('[PhysicsIntegration] No UI satellite found for id', satId, 'keys:', Array.from(this.app.satelliteManager.satellites.keys()));
+                    console.warn('[PhysicsManager] No UI satellite found for id', satId, 'keys:', Array.from(this.app.satelliteManager.satellites.keys()));
                     this._lastMissingLogTime = Date.now();
                 }
             }
@@ -679,7 +680,7 @@ export class PhysicsIntegration {
         try {
             this.app.orbitManager.update();
         } catch (error) {
-            console.warn('[PhysicsIntegration] Failed to update orbit visualizations:', error);
+            console.warn('[PhysicsManager] Failed to update orbit visualizations:', error);
         }
     }
 
@@ -745,7 +746,7 @@ export class PhysicsIntegration {
      */
     _setupTimeSync() {
         if (!this.app.timeUtils) {
-            console.warn('[PhysicsIntegration] No timeUtils found in app - time sync disabled');
+            console.warn('[PhysicsManager] No timeUtils found in app - time sync disabled');
             return;
         }
 

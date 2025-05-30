@@ -13,7 +13,7 @@ export default {
     mass: 6.417e23, // kg
     radius: 3389.5, // km
     GM: 4.282837e4, // km³/s²
-    j2: 1.96045e-3, // J2 gravitational coefficient
+    J2: 1.96045e-3, // J2 gravitational coefficient (uppercase for consistency)
 
     // Shape properties
     oblateness: 0.00648,
@@ -29,7 +29,16 @@ export default {
     orbitalPeriod: 686.98 * 86400, // seconds (686.98 Earth days)
     semiMajorAxis: 227.9e6, // km (1.52 AU)
 
-    // Atmospheric properties
+    // Atmospheric model for drag calculations  
+    atmosphericModel: {
+        maxAltitude: 200, // km - much thinner than Earth
+        minAltitude: 0,
+        referenceAltitude: 100, // km
+        referenceDensity: 2.0e-11, // kg/m³ at 100km (much thinner than Earth)
+        scaleHeight: 10.8 // km - Mars scale height
+    },
+
+    // Atmospheric properties for visual rendering
     atmosphere: {
         thickness: 50, // km - more visible haze
         densityScaleHeight: 20, // km - more extended haze

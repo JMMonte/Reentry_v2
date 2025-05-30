@@ -1,123 +1,338 @@
 /**
  * orbitPropagationWorker.js
  * 
- * Web Worker for satellite orbit propagation
+ * Web Worker for satellite orbit propagation with complete solar system propagation
  * Handles physics-based orbit computation in background thread
+ * 
+ * KEY FIX: Now propagates the entire solar system during predictions to maintain
+ * consistent reference frames between real-time physics and orbit prediction
  */
 
 import * as THREE from 'three';
 import { Constants } from '../utils/Constants.js';
 import { integrateRK4 } from '../physics/integrators/OrbitalIntegrators.js';
-import { GravityCalculator } from '../physics/core/GravityCalculator.js';
 
-// Simplified physics engine state
+// Complete physics engine state including solar system propagation
 let physicsState = {
     bodies: {},
-    hierarchy: null
+    hierarchy: null,
+    initialTime: null,
+    bodyStates: new Map() // Track body positions over time
 };
 
-// Create acceleration function using centralized calculator
-function createAccelerationFunction(centralBodyNaifId) {
-    return (position, velocity) => {
-        const centralBody = physicsState.bodies[centralBodyNaifId];
-        if (!centralBody) {
-            return new THREE.Vector3();
-        }
-
-        // Convert to global position
-        const globalPos = position.clone()
-            .add(new THREE.Vector3().fromArray(centralBody.position));
-
-        // Get bodies array for GravityCalculator
-        const bodiesArray = Object.values(physicsState.bodies).filter(b => b.position && b.mass);
+// Solar system propagation functions
+function propagateSolarSystemBodies(currentBodies, deltaTime) {
+    const updatedBodies = {};
+    
+    // Copy current state
+    for (const [naifId, body] of Object.entries(currentBodies)) {
+        updatedBodies[naifId] = {
+            ...body,
+            position: new THREE.Vector3().fromArray(body.position),
+            velocity: new THREE.Vector3().fromArray(body.velocity)
+        };
+    }
+    
+    // Propagate each celestial body using N-body physics
+    for (const [naifId, body] of Object.entries(updatedBodies)) {
+        if (body.type === 'barycenter') continue; // Skip barycenters
         
-        // Compute acceleration in global frame
-        const globalAccel = GravityCalculator.computeAcceleration(globalPos, bodiesArray);
+        const acceleration = computeBodyAcceleration(body, updatedBodies);
         
-        // Compute central body acceleration for reference frame
-        const centralGlobalPos = new THREE.Vector3().fromArray(centralBody.position);
-        const centralAccel = GravityCalculator.computeAcceleration(
-            centralGlobalPos, 
-            bodiesArray,
-            { excludeBodies: [centralBodyNaifId] }
+        // RK4 integration for celestial body
+        const result = integrateRK4(
+            body.position,
+            body.velocity,
+            () => acceleration,
+            deltaTime
         );
         
-        // Convert to planet-centric frame
-        return globalAccel.sub(centralAccel);
+        updatedBodies[naifId].position = result.position;
+        updatedBodies[naifId].velocity = result.velocity;
+    }
+    
+    // Convert back to arrays for consistency
+    for (const [naifId, body] of Object.entries(updatedBodies)) {
+        updatedBodies[naifId].position = body.position.toArray();
+        updatedBodies[naifId].velocity = body.velocity.toArray();
+    }
+    
+    return updatedBodies;
+}
+
+function computeBodyAcceleration(targetBody, allBodies) {
+    const acceleration = new THREE.Vector3();
+    const targetPos = targetBody.position;
+    
+    // Compute gravitational acceleration from all other massive bodies
+    for (const [naifId, body] of Object.entries(allBodies)) {
+        if (naifId == targetBody.naif || body.type === 'barycenter') continue;
+        if (!body.mass || body.mass <= 0) continue;
+        
+        const r = new THREE.Vector3().fromArray(body.position).sub(targetPos);
+        const distance = r.length();
+        
+        if (distance > 1e-6) {
+            const gravAccel = (Constants.G * body.mass) / (distance * distance);
+            const accVec = r.normalize().multiplyScalar(gravAccel);
+            acceleration.add(accVec);
+        }
+    }
+    
+    return acceleration;
+}
+
+// Create acceleration function with current solar system state (simplified from PhysicsEngine)
+function createAccelerationFunction(centralBodyNaifId, satelliteProperties = {}, currentBodies, propagateSolarSystemFlag = true) {
+    return (position, velocity) => {
+        const satellite = {
+            position: position,
+            velocity: velocity,
+            centralBodyNaifId: centralBodyNaifId,
+            mass: satelliteProperties.mass || 1000,
+            crossSectionalArea: satelliteProperties.crossSectionalArea || 10,
+            dragCoefficient: satelliteProperties.dragCoefficient || 2.2
+        };
+        
+        return computeSatelliteAcceleration(satellite, currentBodies, propagateSolarSystemFlag);
     };
 }
 
-
-// Check SOI transition
-function checkSOITransition(position, velocity, centralBodyId) {
-    const centralBody = physicsState.bodies[centralBodyId];
-    if (!centralBody) return null;
-
-    const globalPos = position.clone()
-        .add(new THREE.Vector3().fromArray(centralBody.position));
-    const distToCentral = position.length();
-    const soiRadius = centralBody.soiRadius || 1e12;
-
-    // Check if outside current SOI
-    if (distToCentral > soiRadius) {
-        // Find parent body
-        const parentId = getParentBody(centralBodyId);
-        if (parentId !== null && physicsState.bodies[parentId]) {
-            const parent = physicsState.bodies[parentId];
-            const newPos = globalPos.sub(new THREE.Vector3().fromArray(parent.position));
-            const newVel = velocity.clone()
-                .add(new THREE.Vector3().fromArray(centralBody.velocity))
-                .sub(new THREE.Vector3().fromArray(parent.velocity));
-            
-            return {
-                newCentralBodyId: parentId,
-                newPosition: newPos,
-                newVelocity: newVel
-            };
-        }
+// Simplified satellite acceleration computation (based on PhysicsEngine._computeSatelliteAcceleration)
+function computeSatelliteAcceleration(satellite, bodies, propagateSolarSystemFlag = true) {
+    const totalAccel = new THREE.Vector3();
+    const centralBody = bodies[satellite.centralBodyNaifId];
+    
+    if (!centralBody) {
+        return totalAccel;
     }
-
-    // Check if entered child body SOI
-    for (const [bodyId, body] of Object.entries(physicsState.bodies)) {
-        if (bodyId == centralBodyId || !body.soiRadius) continue;
+    
+    // For visualization orbits (when solar system is not propagating),
+    // keep central body fixed but still compute perturbations from other bodies
+    if (!propagateSolarSystemFlag) {
+        // First compute central body gravity (two-body problem base)
+        const r = satellite.position.clone();
+        const distance = r.length();
         
-        const parentId = getParentBody(Number(bodyId));
-        if (parentId === centralBodyId) {
-            const relPos = globalPos.clone()
-                .sub(new THREE.Vector3().fromArray(body.position));
+        if (distance > 1e-6) {
+            const mu = centralBody.GM || (Constants.G * centralBody.mass);
+            const gravAccel = -mu / (distance * distance);
+            const accVec = r.normalize().multiplyScalar(gravAccel);
+            totalAccel.add(accVec);
+        }
+        
+        // Add perturbations from other significant bodies
+        // Convert satellite to global position for perturbation calculation
+        const satGlobalPos = satellite.position.clone().add(
+            new THREE.Vector3().fromArray(centralBody.position)
+        );
+        
+        // Only include significant perturbations (e.g., Sun and Moon for Earth satellites)
+        for (const [bodyId, body] of Object.entries(bodies)) {
+            if (body.type === 'barycenter' || !body.mass || body.mass <= 0) continue;
+            if (bodyId == satellite.centralBodyNaifId) continue; // Skip central body
             
-            if (relPos.length() < body.soiRadius) {
-                const newVel = velocity.clone()
-                    .add(new THREE.Vector3().fromArray(centralBody.velocity))
-                    .sub(new THREE.Vector3().fromArray(body.velocity));
+            // Apply significance filter based on mass and distance
+            const bodyMass = body.mass;
+            const isSun = parseInt(bodyId) === 10;
+            const isMoon = parseInt(bodyId) === 301;
+            const isJupiter = parseInt(bodyId) === 599;
+            
+            // For Earth satellites, include Sun and Moon; for Mars include Sun and Jupiter, etc.
+            let includeBody = false;
+            if (satellite.centralBodyNaifId == 399) { // Earth
+                includeBody = isSun || isMoon;
+            } else if (satellite.centralBodyNaifId == 499) { // Mars
+                includeBody = isSun || isJupiter;
+            } else {
+                // For other bodies, just include the Sun
+                includeBody = isSun;
+            }
+            
+            if (!includeBody) continue;
+            
+            // Compute perturbation acceleration
+            const r = new THREE.Vector3().fromArray(body.position).sub(satGlobalPos);
+            const distance = r.length();
+            
+            if (distance > 1e-6) {
+                const gravAccel = (Constants.G * bodyMass) / (distance * distance);
+                const perturbAccel = r.normalize().multiplyScalar(gravAccel);
                 
-                return {
-                    newCentralBodyId: Number(bodyId),
-                    newPosition: relPos,
-                    newVelocity: newVel
-                };
+                // Also compute the acceleration of the central body due to this perturber
+                const rCentral = new THREE.Vector3().fromArray(body.position).sub(
+                    new THREE.Vector3().fromArray(centralBody.position)
+                );
+                const distCentral = rCentral.length();
+                
+                if (distCentral > 1e-6) {
+                    const gravAccelCentral = (Constants.G * bodyMass) / (distCentral * distCentral);
+                    const centralAccel = rCentral.normalize().multiplyScalar(gravAccelCentral);
+                    
+                    // Third-body perturbation: subtract central body's acceleration
+                    perturbAccel.sub(centralAccel);
+                }
+                
+                totalAccel.add(perturbAccel);
             }
         }
+        
+        // Add J2 and drag perturbations
+        const j2Accel = computeJ2Perturbation(satellite, centralBody);
+        const dragAccel = computeAtmosphericDrag(satellite, centralBody);
+        
+        totalAccel.add(j2Accel).add(dragAccel);
+        
+        return totalAccel;
     }
-
-    return null;
+    
+    // For full solar system propagation: compute N-body gravitational forces
+    
+    // Convert satellite from planet-centric to solar system coordinates
+    const satGlobalPos = satellite.position.clone().add(
+        new THREE.Vector3().fromArray(centralBody.position)
+    );
+    
+    // Compute gravitational forces from all bodies
+    for (const [, body] of Object.entries(bodies)) {
+        if (body.type === 'barycenter' || !body.mass || body.mass <= 0) continue;
+        
+        const r = new THREE.Vector3().fromArray(body.position).sub(satGlobalPos);
+        const distance = r.length();
+        
+        if (distance > 1e-6) {
+            const gravAccel = (Constants.G * body.mass) / (distance * distance);
+            const accVec = r.normalize().multiplyScalar(gravAccel);
+            totalAccel.add(accVec);
+        }
+    }
+    
+    // Compute central body's acceleration (reference frame correction)
+    const centralAccel = new THREE.Vector3();
+    for (const [bodyId, body] of Object.entries(bodies)) {
+        if (bodyId == satellite.centralBodyNaifId || body.type === 'barycenter') continue;
+        if (!body.mass || body.mass <= 0) continue;
+        
+        const r = new THREE.Vector3().fromArray(body.position).sub(
+            new THREE.Vector3().fromArray(centralBody.position)
+        );
+        const distance = r.length();
+        
+        if (distance > 1e-6) {
+            const gravAccel = (Constants.G * body.mass) / (distance * distance);
+            const accVec = r.normalize().multiplyScalar(gravAccel);
+            centralAccel.add(accVec);
+        }
+    }
+    
+    // Subtract central body acceleration to get planet-centric acceleration
+    totalAccel.sub(centralAccel);
+    
+    // Add J2 and drag perturbations
+    const j2Accel = computeJ2Perturbation(satellite, centralBody);
+    const dragAccel = computeAtmosphericDrag(satellite, centralBody);
+    
+    totalAccel.add(j2Accel).add(dragAccel);
+    
+    return totalAccel;
 }
 
-// Simplified hierarchy lookup
-function getParentBody(naifId) {
-    // Basic parent relationships
-    const parentMap = {
-        301: 399,  // Moon -> Earth
-        401: 499, 402: 499,  // Mars moons -> Mars
-        501: 599, 502: 599, 503: 599, 504: 599,  // Jupiter moons -> Jupiter
-        601: 699, 602: 699, 603: 699, 604: 699, 605: 699, 606: 699,  // Saturn moons -> Saturn
-        701: 799, 702: 799, 703: 799, 704: 799, 705: 799,  // Uranus moons -> Uranus
-        801: 899, 802: 899,  // Neptune moons -> Neptune
-        901: 999, 902: 999, 903: 999,  // Pluto moons -> Pluto
-        // Planets -> Sun
-        199: 10, 299: 10, 399: 10, 499: 10, 599: 10, 699: 10, 799: 10, 899: 10, 999: 10
-    };
-    return parentMap[naifId] || null;
+// Simplified J2 perturbation
+function computeJ2Perturbation(satellite, centralBody) {
+    // Check both uppercase and lowercase J2
+    const J2 = centralBody.J2 || centralBody.j2;
+    if (!J2 || J2 === 0) {
+        return new THREE.Vector3(0, 0, 0);
+    }
+    const Re = centralBody.radius || centralBody.equatorialRadius;
+    const mu = centralBody.GM || (Constants.G * centralBody.mass);
+    
+    const r = satellite.position.clone();
+    const rMag = r.length();
+    
+    if (rMag < Re * 1.1) {
+        return new THREE.Vector3(0, 0, 0);
+    }
+    
+    // Simplified J2 calculation (assumes pole along Z-axis)
+    const z = r.z;
+    const factor = -1.5 * J2 * mu * (Re * Re) / (rMag ** 5);
+    
+    const radialComp = r.clone().multiplyScalar(factor * (1 - 5 * (z * z) / (rMag * rMag)));
+    const polarComp = new THREE.Vector3(0, 0, factor * z * (3 - 5 * (z * z) / (rMag * rMag)));
+    
+    return radialComp.add(polarComp);
+}
+
+// Simplified atmospheric drag
+function computeAtmosphericDrag(satellite, centralBody) {
+    if (!centralBody.atmosphericModel) {
+        return new THREE.Vector3(0, 0, 0);
+    }
+    
+    const r = satellite.position.clone();
+    const altitude = r.length() - (centralBody.radius || centralBody.equatorialRadius);
+    
+    const maxAlt = centralBody.atmosphericModel.maxAltitude || 1000;
+    const minAlt = centralBody.atmosphericModel.minAltitude || 0;
+    
+    if (altitude > maxAlt || altitude < minAlt) {
+        return new THREE.Vector3(0, 0, 0);
+    }
+    
+    // Use planet-specific atmospheric model
+    let density;
+    if (centralBody.atmosphericModel.getDensity) {
+        // Use custom density function (like Earth)
+        density = centralBody.atmosphericModel.getDensity(altitude);
+    } else {
+        // Use simple exponential model with planet's parameters
+        const h0 = centralBody.atmosphericModel.referenceAltitude || 200;
+        const rho0 = centralBody.atmosphericModel.referenceDensity || 2.789e-13;
+        const H = centralBody.atmosphericModel.scaleHeight || 50;
+        density = rho0 * Math.exp(-(altitude - h0) / H);
+    }
+    
+    const mass = satellite.mass || 1000;
+    const area = satellite.crossSectionalArea || 10;
+    const Cd = satellite.dragCoefficient || 2.2;
+    
+    const relativeVel = satellite.velocity.clone();
+    const velMag = relativeVel.length() * 1000; // km/s to m/s
+    
+    if (velMag === 0) {
+        return new THREE.Vector3(0, 0, 0);
+    }
+    
+    const dragMag = 0.5 * density * velMag * velMag * Cd * area / mass;
+    const dragDirection = relativeVel.normalize().multiplyScalar(-1);
+    
+    return dragDirection.multiplyScalar(dragMag / 1000); // back to km/s²
+}
+
+
+// Simplified SOI transition logic
+function checkSOITransition(position, velocity, centralBodyId, currentBodies) {
+    const centralBody = currentBodies[centralBodyId];
+    if (!centralBody) return null;
+    
+    const distToCentral = position.length();
+    const soiRadius = centralBody.soiRadius || 1e12;
+    
+    // If outside SOI, find parent body
+    if (distToCentral > soiRadius) {
+        // Simplified: switch to SSB for now (could be improved with hierarchy)
+        const globalPos = position.clone().add(new THREE.Vector3().fromArray(centralBody.position));
+        const globalVel = velocity.clone().add(new THREE.Vector3().fromArray(centralBody.velocity));
+        
+        return {
+            newCentralBodyId: 0, // SSB
+            newPosition: globalPos,
+            newVelocity: globalVel
+        };
+    }
+    
+    return null;
 }
 
 // Main propagation variables
@@ -130,9 +345,12 @@ self.onmessage = function(event) {
 
     switch (type) {
         case 'updatePhysicsState':
-            // Update cached physics state
+            // Update cached physics state with initial conditions
             physicsState.bodies = data.bodies || {};
             physicsState.hierarchy = data.hierarchy || null;
+            physicsState.initialTime = data.currentTime || Date.now();
+            
+            console.log('[orbitPropagationWorker] Updated physics state with', Object.keys(physicsState.bodies).length, 'bodies');
             break;
 
         case 'propagate':
@@ -154,7 +372,7 @@ self.onmessage = function(event) {
     }
 };
 
-// Main propagation function
+// Main propagation function with complete solar system propagation
 function propagateOrbit(params) {
     const {
         satelliteId,
@@ -163,25 +381,35 @@ function propagateOrbit(params) {
         centralBodyNaifId,
         duration,
         timeStep = 60,
-        pointsPerChunk = 100
+        pointsPerChunk = 100,
+        // Satellite properties for drag calculation
+        mass,
+        crossSectionalArea,
+        dragCoefficient,
+        propagateSolarSystem = true // Set to false for pure planet-centric orbit visualization
     } = params;
 
-    console.log('[orbitPropagationWorker] Starting propagation:', {
+    console.log('[orbitPropagationWorker] Starting propagation with solar system evolution:', {
         satelliteId,
         centralBodyNaifId,
         duration,
         timeStep,
         position: posArray,
-        velocity: velArray
+        velocity: velArray,
+        bodyCount: Object.keys(physicsState.bodies).length
     });
 
     currentCentralBodyId = centralBodyNaifId;
     let position = new THREE.Vector3().fromArray(posArray);
     let velocity = new THREE.Vector3().fromArray(velArray);
     
+    // Initialize current solar system state (starts with current physics state)
+    let currentBodies = JSON.parse(JSON.stringify(physicsState.bodies));
+    
     const numSteps = Math.floor(duration / timeStep);
     const points = [];
     const soiTransitions = [];
+    const bodyEvolution = []; // Track how solar system evolves
     let currentTime = 0;
 
     // Send initial point
@@ -191,16 +419,28 @@ function propagateOrbit(params) {
         centralBodyId: currentCentralBodyId
     });
 
+    // Create satellite properties object
+    const satelliteProperties = {
+        mass: mass || 1000,
+        crossSectionalArea: crossSectionalArea || 10,
+        dragCoefficient: dragCoefficient || 2.2
+    };
+
     for (let i = 0; i < numSteps && isRunning; i++) {
-        // Use centralized RK4 integration
-        const accelerationFunc = createAccelerationFunction(currentCentralBodyId);
+        // CRITICAL FIX: Propagate the entire solar system first (if enabled)
+        if (propagateSolarSystem) {
+            currentBodies = propagateSolarSystemBodies(currentBodies, timeStep);
+        }
+        
+        // Now propagate satellite in the context of the evolved solar system
+        const accelerationFunc = createAccelerationFunction(currentCentralBodyId, satelliteProperties, currentBodies, propagateSolarSystem);
         const result = integrateRK4(position, velocity, accelerationFunc, timeStep);
         position = result.position;
         velocity = result.velocity;
         currentTime += timeStep;
 
-        // Check SOI transition
-        const transition = checkSOITransition(position, velocity, currentCentralBodyId);
+        // Check SOI transition using current solar system state
+        const transition = checkSOITransition(position, velocity, currentCentralBodyId, currentBodies);
         if (transition) {
             currentCentralBodyId = transition.newCentralBodyId;
             position = transition.newPosition;
@@ -213,26 +453,42 @@ function propagateOrbit(params) {
             });
         }
 
-        // Store point
+        // Store point with reference frame information
+        // IMPORTANT: position is planet-centric relative to the current central body position
         points.push({
             position: position.toArray(),
             time: currentTime,
-            centralBodyId: currentCentralBodyId
+            centralBodyId: currentCentralBodyId,
+            // Include central body position at this time for debugging
+            centralBodyPosition: currentBodies[currentCentralBodyId]?.position || [0, 0, 0]
         });
+
+        // Optionally track major body evolution for debugging
+        if (i % 100 === 0) { // Every 100 steps
+            bodyEvolution.push({
+                time: currentTime,
+                earth: currentBodies[399]?.position || null,
+                moon: currentBodies[301]?.position || null,
+                sun: currentBodies[10]?.position || null
+            });
+        }
 
         // Send chunk if ready
         if (points.length >= pointsPerChunk || i === numSteps - 1) {
-            console.log(`[orbitPropagationWorker] Sending chunk: ${points.length} points, step ${i+1}/${numSteps}`);
+            console.log(`[orbitPropagationWorker] Sending chunk: ${points.length} points, step ${i+1}/${numSteps}, solar system evolved`);
             self.postMessage({
                 type: 'chunk',
                 satelliteId,
                 points: points.slice(),
                 soiTransitions: soiTransitions.slice(),
+                bodyEvolution: bodyEvolution.slice(),
                 progress: (i + 1) / numSteps,
-                isComplete: i === numSteps - 1
+                isComplete: i === numSteps - 1,
+                finalSolarSystemState: i === numSteps - 1 ? currentBodies : null
             });
             points.length = 0;
             soiTransitions.length = 0;
+            bodyEvolution.length = 0;
         }
     }
 
@@ -241,6 +497,7 @@ function propagateOrbit(params) {
     // Send completion message
     self.postMessage({
         type: 'complete',
-        satelliteId
+        satelliteId,
+        message: 'Orbit propagation completed with full solar system evolution'
     });
 }
