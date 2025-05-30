@@ -106,5 +106,12 @@ export default {
         surfaceTemperature: 5778, // K
         age: 4.6e9 * 365.25 * 24 * 3600, // seconds (4.6 billion years)
         metallicity: 0.0122 // Z - fraction of mass in elements heavier than helium
-    }
+    },
+
+    // Rotational properties
+    poleRA: 286.13, // deg at J2000.0, +0.0*T per century
+    poleDec: 63.87, // deg at J2000.0, +0.0*T per century
+    spin: 286.13, // deg at J2000.0
+    spinRate: 0.00001990986, // deg/day (retrograde)
+    orientationEpoch: 2451545.0, // JD (J2000.0)
 }; 
