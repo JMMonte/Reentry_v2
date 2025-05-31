@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PhysicsAPI } from '../physics/PhysicsAPI.js';
+import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
 import { createManeuverNodeDTO } from '../types/DataTransferObjects.js';
 
 /**
@@ -58,7 +58,7 @@ export class ManeuverPreviewManager {
         const velAtManeuver = new THREE.Vector3(...stateAtManeuver.velocity);
 
         // Convert local delta-V to world coordinates
-        const worldDeltaV = PhysicsAPI.localToWorldDeltaV(deltaV, posAtManeuver, velAtManeuver);
+        const worldDeltaV = Utils.vector.localToWorldDeltaV(deltaV, posAtManeuver, velAtManeuver);
         
         // Apply delta-V
         const velAfterManeuver = velAtManeuver.clone().add(worldDeltaV);
@@ -131,15 +131,15 @@ export class ManeuverPreviewManager {
         };
 
         // Calculate Hohmann transfer parameters
-        const transferParams = PhysicsAPI.calculateHohmannTransfer({
+        const transferParams = Orbital.calculateHohmannTransfer({
             currentPosition: currentState.position,
             currentVelocity: currentState.velocity,
             targetPeriapsis,
             targetApoapsis,
             targetInclination,
             targetLAN,
-            bodyRadius: PhysicsAPI.getBodyRadius ? PhysicsAPI.getBodyRadius(satellite.centralBodyNaifId) : satellite.app3d.physicsEngine.getBodyRadius(satellite.centralBodyNaifId),
-            mu: PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId)
+            bodyRadius: Bodies.getData(satellite.centralBodyNaifId)?.radius || satellite.app3d.physicsEngine.getBodyRadius(satellite.centralBodyNaifId),
+            mu: Bodies.getGM(satellite.centralBodyNaifId)
         });
 
         // Determine burn times
@@ -148,10 +148,10 @@ export class ManeuverPreviewManager {
             burn1Time = manualBurnTime;
         } else {
             // Find next optimal burn point
-            burn1Time = PhysicsAPI.calculateNextPeriapsis(
+            burn1Time = Orbital.nextPeriapsis(
                 currentState.position,
                 currentState.velocity,
-                PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId),
+                { GM: Bodies.getGM(satellite.centralBodyNaifId) },
                 currentState.time
             );
         }

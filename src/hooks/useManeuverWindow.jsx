@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
-import { ManeuverManager } from './ManeuverManager.js';
-import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
-import formatTimeDelta from '../../../utils/FormatUtils.js';
+import { ManeuverManager } from '../managers/ManeuverManager.js';
+import { ManeuverUtils } from '../utils/ManeuverUtils.js';
+import formatTimeDelta from '../utils/FormatUtils.js';
 import { usePreviewNodes } from './usePreviewNodes.js';
-import { PhysicsAPI } from '../../../physics/PhysicsAPI.js';
-import { Constants } from '../../../utils/Constants.js';
+import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
+import { Constants } from '../utils/Constants.js';
 
 export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Remove dependency on SimulationContext - currentTime is now a prop
@@ -135,7 +135,7 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Computed magnitude of delta-V using PhysicsAPI
     // Convert from m/s (UI) to km/s (backend) for calculation, then back to m/s for display
     const dvMag = useMemo(
-        () => PhysicsAPI.calculateDeltaVMagnitude(
+        () => Utils.vector.magnitude(
             (parseFloat(vx) || 0) / 1000, // Convert m/s to km/s
             (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
             (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
@@ -162,10 +162,10 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         const sma = parseFloat(targetSmaKm) || 0;
         const ecc = parseFloat(targetEcc) || 0;
         const { periapsis: targetPeriapsis, apoapsis: targetApoapsis } = 
-            PhysicsAPI.orbitalElementsToAltitudes(sma, ecc, Constants.earthRadius);
+            Orbital.elementsToAltitudes(sma, ecc, Constants.earthRadius);
         
         // Get Hohmann transfer parameters from PhysicsAPI
-        const transferParams = PhysicsAPI.calculateHohmannTransfer({
+        const transferParams = Orbital.calculateHohmannTransfer({
             currentPosition: satellite.position,
             currentVelocity: satellite.velocity,
             targetPeriapsis,
@@ -213,8 +213,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
                 // First node: use satellite's current orbital period
                 // Calculate period from current position/velocity using PhysicsAPI
                 // Get the correct gravitational parameter for the satellite's central body
-                const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
-                const currentOrbitPeriod = PhysicsAPI.calculateOrbitalPeriod(
+                const mu = Bodies.getGM(satellite.centralBodyNaifId);
+                const currentOrbitPeriod = Orbital.calculatePeriod(
                     satellite.position,
                     satellite.velocity,
                     mu
@@ -230,8 +230,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         }
         // Use PhysicsAPI for calculation from current satellite state
         // Get the correct gravitational parameter for the satellite's central body
-        const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
-        return PhysicsAPI.calculateNextPeriapsis(
+        const mu = Bodies.getGM(satellite.centralBodyNaifId);
+        return Orbital.nextPeriapsis(
             satellite.position,
             satellite.velocity,
             mu,
@@ -262,8 +262,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
                 // First node: use satellite's current orbital period
                 // Calculate period from current position/velocity using PhysicsAPI
                 // Get the correct gravitational parameter for the satellite's central body
-                const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
-                const currentOrbitPeriod = PhysicsAPI.calculateOrbitalPeriod(
+                const mu = Bodies.getGM(satellite.centralBodyNaifId);
+                const currentOrbitPeriod = Orbital.calculatePeriod(
                     satellite.position,
                     satellite.velocity,
                     mu
@@ -281,8 +281,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         }
         // Use PhysicsAPI for calculation from current satellite state
         // Get the correct gravitational parameter for the satellite's central body
-        const mu = PhysicsAPI.getGravitationalParameter(satellite.centralBodyNaifId);
-        return PhysicsAPI.calculateNextApoapsis(
+        const mu = Bodies.getGM(satellite.centralBodyNaifId);
+        return Orbital.nextApoapsis(
             satellite.position,
             satellite.velocity,
             mu,
@@ -294,7 +294,7 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     const [manualBurnTime, setManualBurnTime] = useState(null);
     const findBestBurnTime = useCallback(() => {
         // Use PhysicsAPI for optimal burn time calculation
-        return PhysicsAPI.findOptimalBurnTime({
+        return Utils.time.findOptimalBurnTime({
             currentPosition: satellite.position,
             currentVelocity: satellite.velocity,
             targetArgP: parseFloat(targetArgPDeg) || 0,
@@ -334,7 +334,7 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             { timeMode, offsetSec, hours, minutes, seconds, milliseconds }
         );
         const dtSec = (execTime.getTime() - timeUtils.getSimulatedTime().getTime()) / 1000;
-        const dv = PhysicsAPI.calculateDeltaVMagnitude(
+        const dv = Utils.vector.magnitude(
             (parseFloat(vx) || 0) / 1000, // Convert m/s to km/s
             (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
             (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
@@ -398,10 +398,10 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         const sma = parseFloat(targetSmaKm) || 0;
         const ecc = parseFloat(targetEcc) || 0;
         const { periapsis: targetPeriapsis, apoapsis: targetApoapsis } = 
-            PhysicsAPI.orbitalElementsToAltitudes(sma, ecc, Constants.earthRadius);
+            Orbital.elementsToAltitudes(sma, ecc, Constants.earthRadius);
         
         // Get transfer parameters from PhysicsAPI
-        const transferParams = PhysicsAPI.calculateHohmannTransfer({
+        const transferParams = Orbital.calculateHohmannTransfer({
             currentPosition: satellite.position,
             currentVelocity: satellite.velocity,
             targetPeriapsis,

@@ -6,7 +6,7 @@ import { PositionManager } from './PositionManager.js';
 import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
 import { Constants } from '../utils/Constants.js';
 import { integrateRK4 } from './integrators/OrbitalIntegrators.js';
-import { PhysicsAPI } from './PhysicsAPI.js';
+import { Utils } from './PhysicsAPI.js';
 
 // Extract the functions we need from the Astronomy module
 const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector } = Astronomy;
@@ -672,7 +672,7 @@ export class PhysicsEngine {
             console.log(`  Delta-V: P=${nextNode.deltaV.prograde}, N=${nextNode.deltaV.normal}, R=${nextNode.deltaV.radial} km/s`);
             
             // Convert local delta-V to world coordinates
-            const worldDeltaV = PhysicsAPI.localToWorldDeltaV(
+            const worldDeltaV = Utils.vector.localToWorldDeltaV(
                 new THREE.Vector3(
                     nextNode.deltaV.prograde,
                     nextNode.deltaV.normal,

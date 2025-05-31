@@ -5,8 +5,7 @@ import { ApsisVisualizer } from '../ApsisVisualizer.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { GroundtrackPath } from './GroundtrackPath.js';
 import { ManeuverVisualizationManager } from './ManeuverNodeVisualizer.js';
-import { createManeuverNodeDTO, createManeuverVisualizationDTO } from '../../types/DataTransferObjects.js';
-import { PhysicsAPI } from '../../physics/PhysicsAPI.js';
+import { createManeuverNodeDTO } from '../../types/DataTransferObjects.js';
 
 /**
  * Satellite (UI/View only)

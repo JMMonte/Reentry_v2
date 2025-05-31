@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../button';
-import { Rewind, FastForward, RotateCcw, Pause, Play, AlertTriangle } from 'lucide-react';
+import { Rewind, FastForward, RotateCcw, Pause, Play } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../select';
 import { Separator } from '../separator';
@@ -12,7 +12,7 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
     
     // Listen for time warp lag warnings
     useEffect(() => {
-        const handleLag = (e) => {
+        const handleLag = () => {
             setIsLagging(true);
             // Clear warning after 2 seconds
             setTimeout(() => setIsLagging(false), 2000);

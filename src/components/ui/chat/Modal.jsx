@@ -42,28 +42,32 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
   );
   const showChatLoader = isLoading && !hasStreamedThisTurn;
 
-  // Handle table rendering (this complex logic will be moved to ChatMessage later)
+  // Handle table rendering (debounced for performance)
   useEffect(() => {
-    messages.forEach(message => {
-      const messageContainer = document.getElementById(`message-${message.id}`);
-      if (messageContainer) {
-        const tablePlaceholders = messageContainer.querySelectorAll('[data-table]');
-        tablePlaceholders.forEach(placeholder => {
-          try {
-            const data = JSON.parse(placeholder.getAttribute('data-table'));
-            let root = placeholder._reactRoot;
-            if (!root) {
-              root = createRoot(placeholder);
-              placeholder._reactRoot = root;
+    const timeoutId = setTimeout(() => {
+      messages.forEach(message => {
+        const messageContainer = document.getElementById(`message-${message.id}`);
+        if (messageContainer) {
+          const tablePlaceholders = messageContainer.querySelectorAll('[data-table]');
+          tablePlaceholders.forEach(placeholder => {
+            try {
+              const data = JSON.parse(placeholder.getAttribute('data-table'));
+              let root = placeholder._reactRoot;
+              if (!root) {
+                root = createRoot(placeholder);
+                placeholder._reactRoot = root;
+              }
+              root.render(<DataTable data={data} />);
+            } catch (error) {
+              console.error('Error rendering table:', error);
             }
-            root.render(<DataTable data={data} />);
-          } catch (error) {
-            console.error('Error rendering table:', error);
-          }
-        });
-      }
-    });
+          });
+        }
+      });
+    }, 100); // Debounce to prevent excessive DOM queries
+
     return () => {
+      clearTimeout(timeoutId);
       messages.forEach(message => {
         const messageContainer = document.getElementById(`message-${message.id}`);
         if (messageContainer) {

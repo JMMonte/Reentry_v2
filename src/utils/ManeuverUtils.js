@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PhysicsAPI } from '../physics/PhysicsAPI.js';
+import { Utils } from '../physics/PhysicsAPI.js';
 
 /**
  * Utility class for maneuver node operations: selecting the correct orbit path and
@@ -96,7 +96,7 @@ export class ManeuverUtils {
      * @returns {Date}
      */
     static computeExecutionTime(simNow, { timeMode, offsetSec, hours, minutes, seconds, milliseconds }) {
-        return PhysicsAPI.computeExecutionTime(simNow, timeMode, {
+        return Utils.time.computeExecutionTime(simNow, timeMode, {
             offsetSec,
             hours,
             minutes,

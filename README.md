@@ -23,11 +23,19 @@
   <img src="public/assets/images/Screenshot%202025-04-25%20at%2002.22.55.png" alt="Moon View" width="100%" />
 </p>
 
-This project utilizes WebGL via the Three.js library and a custom physics engine (**specially built for simulating spacecraft dynamics on the web**) to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth-Moon system and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
+This project utilizes WebGL via the Three.js library and a **custom self-sufficient physics engine** (**specially built for simulating spacecraft dynamics on the web**) to create a realistic space simulation environment. This setup includes interactive controls and dynamic visualizations of celestial objects like the Earth-Moon system and the Sun. The simulation is designed to display complex orbital mechanics in a user-friendly 3D interface.
 
-## Simulation Engine
+## Physics Architecture
 
-The physics simulation runs in a dedicated Web Worker (`src/workers/physicsWorker.js`) and uses:
+The physics system is organized as a **self-sufficient embedded backend** with domain-specific APIs:
+
+### 🏗️ Modular Physics Engine (`src/physics/`)
+- **Domain-Organized API**: `Orbital`, `Bodies`, `Atmosphere`, `Coordinates`, `Utils`
+- **Zero Initialization**: Ready to use immediately, no setup required
+- **Web Workers**: Orbit propagation and heavy calculations run in dedicated workers
+- **Performance Optimized**: Centralized calculations with smart caching
+
+The physics simulation uses:
 
 - Adaptive Integration: Solves the equations of motion using an adaptive time-step integrator:
 
@@ -49,11 +57,22 @@ The physics simulation runs in a dedicated Web Worker (`src/workers/physicsWorke
 
 ```mermaid
 graph TD
-  A[Main Thread: Three.js Rendering] --> B[Web Worker: physicsWorker.js]
-  B --> C[Adaptive Integrator]
-  B --> D[Drag & Perturbations Computation]
-  B --> F[PostMessage: Satellite Updates]
-  F --> A[Three.js]
+  A[Main Thread: Three.js Rendering] --> B[Physics API: Domain-Organized Interface]
+  B --> C[Orbital Domain: Hohmann Transfers, Elements]
+  B --> D[Bodies Domain: Planetary Data, GM]
+  B --> E[Atmosphere Domain: Drag, Density]
+  B --> F[Utils Domain: Coordinates, Vectors]
+  
+  B --> G[Web Workers: orbitPropagationWorker.js]
+  G --> H[Adaptive Integrator: RK4]
+  G --> I[Drag & Perturbations Computation]
+  G --> J[PostMessage: Orbit Updates]
+  J --> A[Three.js Visualization]
+  
+  B --> K[PhysicsEngine: Core Simulation]
+  K --> L[StateVectorCalculator]
+  K --> M[PositionManager]
+  K --> N[SolarSystemHierarchy]
 ```
 
 This decouples rendering and physics, ensuring smooth performance at 60 FPS.

@@ -15,7 +15,6 @@ import { SatelliteManeuverWindow } from './satellite/SatelliteManeuverWindow';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './dropdown-menu';
 import { Button } from './button';
 import { GroundTrackWindow } from './groundtrack/GroundTrackWindow';
-import { usePhysicsSatellites } from '../../providers/PhysicsStateContext.jsx';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -243,7 +242,8 @@ export function Layout({
     authModalProps,
     simulationWindowProps,
     earthPointModalProps,
-    isLoadingInitialData
+    isLoadingInitialData,
+    satellitesPhysics = {}
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {
@@ -257,7 +257,7 @@ export function Layout({
     const [currentLoadingMessage, setCurrentLoadingMessage] = useState(loadingMessages[0]);
     const loadingMessageIndexRef = useRef(0);
 
-    const satellitesPhysics = usePhysicsSatellites();
+    // Removed duplicate usePhysicsSatellites() call - now passed as prop for better performance
 
     useEffect(() => {
         if (isLoadingInitialData) {
@@ -467,5 +467,6 @@ Layout.propTypes = {
         ).isRequired,
         onToggle: PropTypes.func.isRequired
     }),
-    isLoadingInitialData: PropTypes.bool.isRequired
+    isLoadingInitialData: PropTypes.bool.isRequired,
+    satellitesPhysics: PropTypes.object
 }; 

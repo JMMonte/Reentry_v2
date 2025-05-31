@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { ManeuverNodeModel } from '../../../models/ManeuverNodeModel.js';
-import { Constants } from '../../../utils/Constants.js';
-import { PhysicsAPI } from '../../../physics/PhysicsAPI.js';
+import { ManeuverNodeModel } from '../models/ManeuverNodeModel.js';
+import { Constants } from '../utils/Constants.js';
+import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
 
 /**
  * Encapsulates maneuver operations for a satellite (manual burns, transfers).
@@ -54,7 +54,7 @@ export class ManeuverManager {
     scheduleManualBurn({ timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz }, replaceOldNode = null) {
         const simNow = this.timeUtils.getSimulatedTime();
         // Use PhysicsAPI for execution time calculation
-        const executeTime = PhysicsAPI.computeExecutionTime(simNow, timeMode, { 
+        const executeTime = Utils.time.computeExecutionTime(simNow, timeMode, { 
             offsetSec, hours, minutes, seconds, milliseconds 
         });
         const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
@@ -82,14 +82,14 @@ export class ManeuverManager {
         const mu = Constants.earthGravitationalParameter;
         const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
         // Get current orbital elements to maintain inclination and LAN
-        const currentElements = PhysicsAPI.calculateOrbitalElements(
+        const currentElements = Orbital.calculateElements(
             this.sat.position,
             this.sat.velocity,
-            mu
+            { GM: mu }
         );
         
-        // Use PhysicsAPI for Hohmann transfer calculations
-        const transfer = PhysicsAPI.calculateHohmannTransfer({
+        // Use new Physics API for Hohmann transfer calculations
+        const transfer = Orbital.calculateHohmannTransfer({
             currentPosition: this.sat.position,
             currentVelocity: this.sat.velocity,
             targetPeriapsis: parseFloat(ellApoKm) || 0, // For circular orbit, periapsis = apoapsis
@@ -145,19 +145,19 @@ export class ManeuverManager {
         const r1 = r1Vec.length();
         // Target orbit radius
         const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
-        // Find next periapsis for first burn using PhysicsAPI
-        let burnTime = PhysicsAPI.calculateNextPeriapsis(
+        // Find next periapsis for first burn using new Physics API
+        let burnTime = Orbital.nextPeriapsis(
             r1Vec,
             v1Vec,
-            mu,
+            { GM: mu },
             simNow
         );
 
         // Get current orbital elements to maintain inclination and LAN
-        const currentElements = PhysicsAPI.calculateOrbitalElements(r1Vec, v1Vec, mu);
+        const currentElements = Orbital.calculateElements(r1Vec, v1Vec, { GM: mu });
         
-        // Use PhysicsAPI for Hohmann transfer calculations
-        const transfer = PhysicsAPI.calculateHohmannTransfer({
+        // Use new Physics API for Hohmann transfer calculations
+        const transfer = Orbital.calculateHohmannTransfer({
             currentPosition: r1Vec,
             currentVelocity: v1Vec,
             targetPeriapsis: parseFloat(ellApoKm) || 0, // For circular orbit

@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 import { DraggableModal } from '../modal/DraggableModal';
-import { usePlanetList } from './hooks';
+import { usePlanetList } from '../../../hooks/useGroundTrack';
 import GroundTrackCanvas from './GroundTrackCanvas.jsx';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 import { Button } from '../button';

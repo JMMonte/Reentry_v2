@@ -8,7 +8,7 @@
  *   createSatelliteFromOrbitalElements
  *********************************************************************/
 
-import { SatelliteCoordinates } from '../../utils/SatelliteCoordinates.js';
+import { SatelliteCoordinates } from '../../physics/utils/SatelliteCoordinates.js';
 
 /*─────────────────── constants ────────────────────*/
 const DEFAULT_SIZE = 1;           // m (radius, for visuals)

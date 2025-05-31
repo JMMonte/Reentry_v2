@@ -23,7 +23,7 @@ import { PlanetVectors } from '../components/planet/PlanetVectors.js';
 // Config ───────────────────────────────────────────────────────────────────────
 import { textureDefinitions } from '../config/textureRegistry.js';
 
-import { OrbitManager } from '../managers/OrbitManager.js';
+import { CelestialOrbitManager } from '../components/orbit/CelestialOrbitManager.js';
 import { SolarSystemDataManager } from '../physics/bodies/PlanetaryDataManager.js';
 import { SolarSystemHierarchy } from '../physics/SolarSystemHierarchy.js';
 
@@ -184,14 +184,14 @@ export async function createSceneObjects(app) {
     }
 
     // --- Initialize Physics Engine with high precision orbital mechanics ---
-    // Create OrbitManager first to get the hierarchy
-    app.orbitManager = new OrbitManager({ scene, app });
+    // Create CelestialOrbitManager for all celestial body orbits
+    // It uses the existing app.hierarchy and app.bodiesByNaifId
+    app.orbitManager = new CelestialOrbitManager(scene, app);
     
     // Generate all planetary and moon orbits after establishing hierarchy
-    if (app.orbitManager && app.physicsIntegration?.physicsEngine) {
-        console.log('Generating planetary and moon orbits...');
-        app.orbitManager.renderSolarSystemOrbits();
-    }
+    // Note: CelestialOrbitManager will automatically initialize when physics engine is ready
+    console.log('Setting up orbit manager - will render orbits when physics engine is available...');
+    app.orbitManager.renderSolarSystemOrbits();
 
     // Add top-level objects (those with no parent in the config, or whose parent wasn't found) to the scene
     for (const bodyObject of Object.values(app.bodiesByNaifId)) {

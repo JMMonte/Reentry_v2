@@ -11,7 +11,7 @@
  *  ► ESLint: no unused-variable warnings.                              *
  ***********************************************************************/
 
-import { Constants } from './Constants.js';
+import { Constants } from '../../utils/Constants.js';
 import * as THREE from 'three';
 
 /*─────────────────────────────────────────────────────────────────────┐

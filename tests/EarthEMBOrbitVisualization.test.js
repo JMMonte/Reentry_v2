@@ -12,7 +12,7 @@ global.window = {
     innerHeight: 1080
 };
 
-import { OrbitManager } from '../src/managers/OrbitManager.js';
+import { CelestialOrbitManager } from '../src/components/orbit/CelestialOrbitManager.js';
 import { StateVectorCalculator } from '../src/physics/StateVectorCalculator.js';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
 import { planetaryDataManager } from '../src/physics/bodies/PlanetaryDataManager.js';
@@ -192,14 +192,9 @@ describe('Earth EMB Orbit Visualization', () => {
         mockScene = createMockScene();
         mockApp = createMockApp(mockPhysicsEngine);
         
-        // Create OrbitManager with mocked hierarchy
-        orbitManager = new OrbitManager({
-            scene: mockScene,
-            app: mockApp
-        });
-        
-        // Override hierarchy with mock
-        orbitManager.hierarchy = createMockHierarchy();
+        // Create CelestialOrbitManager using app.hierarchy
+        mockApp.hierarchy = createMockHierarchy();
+        orbitManager = new CelestialOrbitManager(mockScene, mockApp);
     });
 
     test('should detect Earth has EMB special handling flag', () => {
@@ -213,14 +208,19 @@ describe('Earth EMB Orbit Visualization', () => {
     });
 
     test('should generate proper Earth orbit points around EMB', () => {
-        // Process Earth's orbit
-        const bodyStates = mockPhysicsEngine.getSimulationState().bodies;
-        const earthHierarchy = { name: 'earth', parent: 3, type: 'planet' };
+        // Initialize the orbit manager with physics engine
+        orbitManager.initialize(mockPhysicsEngine);
         
-        // Manually call processOrbitForBody to test the logic
-        const result = orbitManager.processOrbitForBody(399, earthHierarchy, bodyStates);
+        // Generate orbits
+        orbitManager.renderAllOrbits();
         
-        expect(result).toBe(true);
+        // Check that Earth orbit was created
+        const orbitInfo = orbitManager.getOrbitInfo();
+        const earthOrbit = orbitInfo.find(info => info.name === 'earth');
+        
+        expect(earthOrbit).toBeDefined();
+        expect(earthOrbit.parentName).toBe('emb');
+        expect(earthOrbit.dataSource).toBe('special_emb');
         expect(mockStateVectorCalculator.calculateStateVector).toHaveBeenCalledWith(399, expect.any(Date));
     });
 

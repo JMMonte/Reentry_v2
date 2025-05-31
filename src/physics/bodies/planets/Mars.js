@@ -124,15 +124,8 @@ export default {
         vallesMarinerisLength: 4000, // km - vast canyon system
     },
 
-    // Orbital mechanics from orbitalBodiesData.js
-    orbitalElements: {
-        semiMajorAxis: 227939200.0,
-        eccentricity: 0.0935,
-        inclination: 1.850,
-        longitudeOfAscendingNode: 49.558,
-        argumentOfPeriapsis: 286.502,
-        meanAnomalyAtEpoch: 19.373
-    },
+    // Note: Mars's heliocentric orbital elements are defined in the Mars barycenter
+    // Mars's position relative to its barycenter is calculated via astronomy-engine
     
     // Polar caps
     polarCaps: {

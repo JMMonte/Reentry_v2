@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { analyzeOrbit } from '../physics/integrators/OrbitalIntegrators.js';
 import { Constants } from '../utils/Constants.js';
-import { PhysicsAPI } from '../physics/PhysicsAPI.js';
+import { Bodies, Utils } from '../physics/PhysicsAPI.js';
 
 export class SatelliteOrbitManager {
     constructor(app) {
@@ -46,7 +46,7 @@ export class SatelliteOrbitManager {
     _initializeWorkers() {
         for (let i = 0; i < this.maxWorkers; i++) {
             const worker = new Worker(
-                new URL('../workers/orbitPropagationWorker.js', import.meta.url),
+                new URL('../physics/workers/orbitPropagationWorker.js', import.meta.url),
                 { type: 'module' }
             );
             
@@ -121,7 +121,7 @@ export class SatelliteOrbitManager {
                 // Include properties needed for perturbations
                 J2: body.J2,
                 atmosphericModel: atmosphericModel,
-                GM: body.GM || PhysicsAPI.getGravitationalParameter(body), // Use existing GM or centralized calculation
+                GM: body.GM || Bodies.getGM(body), // Use existing GM or centralized calculation
                 rotationPeriod: body.rotationPeriod
             };
         }
@@ -217,7 +217,7 @@ export class SatelliteOrbitManager {
             maneuverNode.deltaV.radial
         );
         
-        const worldDeltaV = PhysicsAPI.localToWorldDeltaV(localDeltaV, position, velocity);
+        const worldDeltaV = Utils.vector.localToWorldDeltaV(localDeltaV, position, velocity);
         
         // Create visualization data
         const visualData = {

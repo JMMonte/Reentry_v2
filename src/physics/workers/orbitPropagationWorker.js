@@ -5,8 +5,8 @@
  * Demonstrates maximum code reusability with shared classes
  */
 
-import { OrbitPropagator } from '../physics/core/OrbitPropagator.js';
-import { WorkerMessageHandler } from '../utils/WorkerMessageHandler.js';
+import { OrbitPropagator } from '../core/OrbitPropagator.js';
+import { WorkerMessageHandler } from '../../utils/WorkerMessageHandler.js';
 
 // Create reusable components
 const orbitPropagator = new OrbitPropagator({

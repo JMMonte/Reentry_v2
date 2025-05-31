@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { ManeuverUtils } from '../../../utils/ManeuverUtils.js';
+import { ManeuverUtils } from '../utils/ManeuverUtils.js';
 
 export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, getHohmannPreviewData, currentTime, computeNextPeriapsis, computeNextApoapsis, isAdding, selectedIndex, nodes }) {
     const manualNodeRef = useRef(null);

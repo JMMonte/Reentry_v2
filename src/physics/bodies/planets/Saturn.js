@@ -32,17 +32,8 @@ export default {
     soiRadius: 65500000, // km - Sphere of Influence radius
     orbitalPeriod: 29.457 * 365.25 * 86400, // seconds (29.457 Earth years)
     // Saturn orbital elements (J2000, VSOP87, IAU 2025, NASA Horizons)
-    // Source: NASA Horizons, JPL, IAU 2023/2025, VSOP87, https://ssd.jpl.nasa.gov/horizons/
-    orbitalElements: {
-        semiMajorAxis: 1429400000, // km (9.53707032 AU)
-        eccentricity: 0.055723219,
-        inclination: 2.485240, // deg to ecliptic J2000
-        longitudeOfAscendingNode: 113.662424, // deg
-        argumentOfPeriapsis: 339.392263, // deg
-        meanAnomalyAtEpoch: 317.020705, // deg at J2000.0 (JD 2451545.0)
-        epoch: 2451545.0, // J2000.0
-        referenceFrame: 'ECLIPJ2000'
-    },
+    // Note: Saturn's heliocentric orbital elements are defined in the Saturn barycenter
+    // Saturn's position relative to its barycenter is calculated via astronomy-engine
 
     // Atmospheric properties
     atmosphere: {

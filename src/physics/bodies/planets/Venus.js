@@ -120,15 +120,8 @@ export default {
         volcanism: 'extensive' // Shield volcanoes, pancake domes
     },
 
-    // Orbital mechanics from orbitalBodiesData.js
-    orbitalElements: {
-        semiMajorAxis: 108208000.0,
-        eccentricity: 0.0067,
-        inclination: 3.3947,
-        longitudeOfAscendingNode: 76.680,
-        argumentOfPeriapsis: 54.884,
-        meanAnomalyAtEpoch: 50.416
-    },
+    // Note: Venus's heliocentric orbital elements are defined in the Venus barycenter
+    // Venus's position relative to its barycenter is calculated via astronomy-engine
 
     // Surface temperature (extreme greenhouse effect)
     surfaceTemperature: 735 // K (462 °C)

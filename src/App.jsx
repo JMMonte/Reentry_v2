@@ -1,177 +1,179 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { ThemeProvider } from './components/ui/theme-provider';
 import { Layout } from './components/ui/Layout';
-import { defaultSettings } from './components/ui/controls/DisplayOptions';
-import { useApp3D } from './simulation/useApp3D';
-import { useSimulationState } from './simulation/useSimulationState';
+import { useApp3D } from './hooks/useApp3D';
+import { useSimulationState } from './hooks/useSimulationState';
 import { SimulationStateManager } from './managers/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
 import { SimulationProvider } from './simulation/SimulationContext';
 import { useBodySelection } from './hooks/useBodySelection';
-import { usePhysicsSatellites } from './hooks/usePhysicsSatellites';
 import { PhysicsStateProvider } from './providers/PhysicsStateContext.jsx';
 import { CelestialBodiesProvider } from './providers/CelestialBodiesContext.jsx';
 
-// Custom hooks
-import { useModalState } from './hooks/useAppState';
+// New consolidated hooks
+import { useAppStateConsolidated } from './hooks/useAppStateConsolidated.js';
+import { useSatelliteOperations } from './hooks/useSatelliteOperations.js';
+import { useTimeManagement } from './hooks/useTimeManagement.js';
+import { useApp3DSetup } from './hooks/useApp3DSetup.js';
+
+// Existing hooks
 import { useSimulationSharing } from './hooks/useSimulationSharing';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useSimulationEvents } from './hooks/useSimulationEvents';
 import { ToastProvider, useToast } from './components/ui/Toast';
 import { buildNavbarProps, buildModalProps } from './utils/propsBuilder';
 
-function getInitialDisplaySettings(importedState) {
-  const loaded = importedState?.displaySettings || {};
-  const initial = {};
-  Object.entries(defaultSettings).forEach(([key, setting]) => {
-    initial[key] = loaded[key] !== undefined ? loaded[key] : setting.value;
-  });
-  return initial;
-}
-
 function App3DMain() {
-  // Core state
-  const [displaySettings, setDisplaySettings] = useState(() => 
-    getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash())
-  );
-  const [authMode, setAuthMode] = useState('signin');
-  const [importedState, setImportedState] = useState(() => 
-    SimulationStateManager.decodeFromUrlHash()
-  );
-  const [simTime, setSimTime] = useState(() => new Date());
-  const [checkedInitialState, setCheckedInitialState] = useState(false);
-  const [isAssetsLoaded, setIsAssetsLoaded] = useState(false);
-  const [isSimReady, setIsSimReady] = useState(false);
-  const [timeWarpLoading, setTimeWarpLoading] = useState(false);
-  
   // Refs
   const toastRef = useRef();
   
-  // Custom hooks for state management
-  const modalState = useModalState();
-  const { controller, ready } = useApp3D(importedState);
+  // Consolidated app state (replaces 15+ useState calls)
+  const appState = useAppStateConsolidated();
+  
+  // Core 3D setup
+  const { controller, ready } = useApp3D(appState.importedState);
   const app3d = controller?.app3d;
   
-  // Custom hooks for business logic
+  // Business logic hooks
   const sharingHooks = useSimulationSharing(app3d, toastRef);
   const { showToast } = useToast();
   
-  // Satellite data
-  const satellitesPhysics = usePhysicsSatellites(app3d);
-  const satellitesUI = app3d?.satellites?.getSatellitesMap?.() || new Map();
-  const satellites = Object.values(satellitesPhysics)
-    .map(satState => {
-      const satUI = satellitesUI.get(satState.id);
-      if (!satUI) return null;
-      return {
-        ...satState,
-        color: satUI.color,
-        name: satUI.name,
-        setColor: satUI.setColor?.bind(satUI),
-        delete: satUI.delete?.bind(satUI)
-      };
-    })
-    .filter(Boolean);
-
-  // Body selection
-  const {
-    selectedBody,
-    handleBodyChange,
-    planetOptions,
-    satelliteOptions,
-    getDisplayValue,
-    groupedPlanetOptions
-  } = useBodySelection({
+  // Satellite operations (extracted from App.jsx)
+  const { satellites, satellitesPhysics, availableBodies } = useSatelliteOperations(app3d, appState.modalState, null);
+  
+  // Body selection (depends on satellite data)
+  const bodySelection = useBodySelection({
     app3dRef: { current: app3d },
     satellites: Object.values(satellites),
-    importedState,
+    importedState: appState.importedState,
     ready
   });
-
-  // Custom hooks for events and shortcuts
+  
+  // Satellite creation with proper handleBodyChange
+  const { onCreateSatellite } = useSatelliteOperations(app3d, appState.modalState, bodySelection.handleBodyChange);
+  
+  // Time management (extracted from App.jsx)
+  const timeManagement = useTimeManagement(app3d, controller, appState.setSimTime);
+  
+  // Existing event and keyboard hooks
   useKeyboardShortcuts(app3d, sharingHooks.saveSimulationState);
   useSimulationEvents({
-    setSimTime,
-    setTimeWarpLoading,
-    setIsSimReady,
-    setIsAssetsLoaded,
-    setOpenPointModals: modalState.setOpenPointModals,
+    setSimTime: appState.setSimTime,
+    setTimeWarpLoading: appState.setTimeWarpLoading,
+    setIsSimReady: appState.setIsSimReady,
+    setIsAssetsLoaded: appState.setIsAssetsLoaded,
+    setOpenPointModals: appState.modalState.setOpenPointModals,
     app3d
   });
+  
+  // App3D setup and complex event management (extracted from App.jsx)
+  useApp3DSetup(app3d, appState.modalState, bodySelection.handleBodyChange, showToast);
+  
+  // Memoized props builders (moved to correct position)
+  const navbarProps = useMemo(() => buildNavbarProps({
+    modalState: appState.modalState,
+    selectedBody: bodySelection.selectedBody,
+    handleBodyChange: bodySelection.handleBodyChange,
+    groupedPlanetOptions: bodySelection.groupedPlanetOptions,
+    satelliteOptions: bodySelection.satelliteOptions,
+    getDisplayValue: bodySelection.getDisplayValue,
+    app3d,
+    timeWarpLoading: appState.timeWarpLoading,
+    simTime: appState.simTime,
+    handleSimulatedTimeChange: timeManagement.handleSimulatedTimeChange,
+    satellites: satellites,
+    handleImportState: (event) => sharingHooks.handleImportState(
+      event, appState.setDisplaySettings, appState.setImportedState, (state) => state?.displaySettings || {}
+    ),
+    shareModalOpen: appState.modalState.shareModalOpen,
+    setShareModalOpen: appState.modalState.setShareModalOpen,
+    setShareUrl: sharingHooks.setShareUrl,
+    isAuthOpen: appState.modalState.isAuthOpen,
+    setIsAuthOpen: appState.modalState.setIsAuthOpen,
+    setAuthMode: appState.setAuthMode,
+    isSimulationOpen: appState.modalState.isSimulationOpen,
+    setIsSimulationOpen: appState.modalState.setIsSimulationOpen,
+    planetOptions: bodySelection.planetOptions
+  }), [appState, bodySelection, app3d, timeManagement, satellites, sharingHooks]);
 
+  const modalProps = useMemo(() => buildModalProps({
+    modalState: appState.modalState,
+    controller,
+    displaySettings: appState.displaySettings,
+    setDisplaySettings: appState.setDisplaySettings,
+    app3d,
+    satellites: satellites,
+    handleBodyChange: bodySelection.handleBodyChange,
+    debugWindows: appState.modalState.debugWindows,
+    onCreateSatellite: onCreateSatellite,
+    availableBodies: availableBodies,
+    shareUrl: sharingHooks.shareUrl,
+    shareCopied: sharingHooks.shareCopied,
+    handleCopyShareUrl: sharingHooks.handleCopyShareUrl,
+    handleShareViaEmail: sharingHooks.handleShareViaEmail,
+    authMode: appState.authMode,
+    setAuthMode: appState.setAuthMode,
+    showToast,
+    satellitesPhysics: satellitesPhysics
+  }), [appState, controller, app3d, satellites, onCreateSatellite, availableBodies, satellitesPhysics, bodySelection.handleBodyChange, sharingHooks, showToast]);
+
+  // Simplified useEffect hooks (most complex logic moved to custom hooks)
+  
   // One-time initialization
-  useEffect(() => { setCheckedInitialState(true); }, []);
-
-  // Hash change handling
+  useEffect(() => { appState.setCheckedInitialState(true); }, [appState.setCheckedInitialState]);
+  
+  // Hash change handling  
   useEffect(() => {
     const onHashChange = () => {
       if (sharingHooks.ignoreNextHashChange.current) {
         sharingHooks.ignoreNextHashChange.current = false;
         return;
       }
-      setImportedState(SimulationStateManager.decodeFromUrlHash());
+      appState.setImportedState(SimulationStateManager.decodeFromUrlHash());
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [sharingHooks.ignoreNextHashChange]);
+  }, [sharingHooks.ignoreNextHashChange, appState.setImportedState]);
 
   // Simulation state management
-  useSimulationState(controller, importedState);
+  useSimulationState(controller, appState.importedState);
 
-  // Display settings sync
+  // Display settings sync (consolidated)
   useEffect(() => {
-    if (importedState && importedState.displaySettings) {
-      setDisplaySettings(getInitialDisplaySettings(importedState));
+    if (appState.importedState && appState.importedState.displaySettings) {
+      // Move getInitialDisplaySettings logic to the consolidated hook
+      const loaded = appState.importedState.displaySettings || {};
+      const initial = {};
+      Object.entries(appState.displaySettings).forEach(([key, setting]) => {
+        initial[key] = loaded[key] !== undefined ? loaded[key] : setting.value;
+      });
+      appState.setDisplaySettings(initial);
     }
-  }, [importedState]);
-
-  useEffect(() => {
+    
     if (app3d && app3d.displaySettingsManager && typeof app3d.displaySettingsManager.applyAll === 'function') {
       app3d.displaySettingsManager.applyAll();
     }
-  }, [app3d]);
+  }, [appState.importedState, app3d, appState.setDisplaySettings, appState.displaySettings]);
 
   // Session sync
   useEffect(() => {
     if (app3d && app3d.sessionId) {
-      setSimTime(app3d.timeUtils.getSimulatedTime());
+      appState.setSimTime(app3d.timeUtils.getSimulatedTime());
     }
-  }, [app3d?.sessionId]);
-
-  // Time handling
-  const handleSimulatedTimeChange = (newTime) => {
-    setSimTime(new Date(newTime));
-    
-    const sessionId = app3d?.sessionId || controller?.sessionId;
-    const physicsProviderType = app3d?.physicsProviderType;
-    
-    if (sessionId && physicsProviderType === 'remote') {
-      console.log('[App.jsx] handleSimulatedTimeChange - Using backend API for remote physics');
-      setSimTime(new Date(newTime));
-    } else if (app3d?.timeUtils) {
-      console.log('[App.jsx] handleSimulatedTimeChange - Using local time management');
-      app3d.timeUtils.setSimulatedTime(newTime);
-      
-      if (app3d.physicsIntegration) {
-        app3d.physicsIntegration.setSimulationTime(new Date(newTime));
-      }
-    } else {
-      console.warn('[App.jsx] handleSimulatedTimeChange - No timeUtils found, cannot update simulation time');
-    }
-  };
+  }, [app3d?.sessionId, appState.setSimTime]);
 
   // Satellite deletion handling
   useEffect(() => {
     const handleSatelliteDeleted = (e) => {
       const deletedSatelliteId = e.detail?.id;
       if (deletedSatelliteId) {
-        modalState.setDebugWindows(prev => prev.filter(w => w.id !== deletedSatelliteId));
+        appState.modalState.setDebugWindows(prev => prev.filter(w => w.id !== deletedSatelliteId));
         
-        if (selectedBody) {
-          if (selectedBody.id === deletedSatelliteId || 
-              (typeof selectedBody === 'string' && selectedBody.includes(deletedSatelliteId))) {
-            handleBodyChange('none');
+        if (bodySelection.selectedBody) {
+          if (bodySelection.selectedBody.id === deletedSatelliteId || 
+              (typeof bodySelection.selectedBody === 'string' && bodySelection.selectedBody.includes(deletedSatelliteId))) {
+            bodySelection.handleBodyChange('none');
           }
         }
       }
@@ -179,7 +181,7 @@ function App3DMain() {
     
     document.addEventListener('satelliteDeleted', handleSatelliteDeleted);
     return () => document.removeEventListener('satelliteDeleted', handleSatelliteDeleted);
-  }, [selectedBody, handleBodyChange, modalState]);
+  }, [bodySelection.selectedBody, bodySelection.handleBodyChange, appState.modalState]);
 
   // Selected body updates
   useEffect(() => {
@@ -189,171 +191,17 @@ function App3DMain() {
       Array.isArray(controller.app3d.celestialBodies) &&
       controller.app3d.celestialBodies.length > 0
     ) {
-      controller.app3d.updateSelectedBody(selectedBody, false);
+      controller.app3d.updateSelectedBody(bodySelection.selectedBody, false);
     }
-  }, [selectedBody, controller, ready]);
+  }, [bodySelection.selectedBody, controller, ready]);
 
-  // Satellite creation
-  const onCreateSatellite = async (params) => {
-    try {
-      let result;
-      if (params.mode === 'latlon') {
-        result = await app3d?.createSatelliteFromLatLon(params);
-      } else if (params.mode === 'orbital') {
-        result = await app3d?.createSatelliteFromOrbitalElements(params);
-      } else if (params.mode === 'circular') {
-        result = await app3d?.createSatelliteFromLatLonCircular(params);
-      }
-      
-      const satellite = result?.satellite || result;
-      if (satellite) {
-        modalState.setIsSatelliteModalOpen(false);
-        handleBodyChange(satellite);
-        app3d?.createDebugWindow?.(satellite);
-      }
-    } catch (error) {
-      console.error('Error creating satellite:', error);
-    }
-  };
-
-  // POI modal handling
-  useEffect(() => {
-    const open = modalState.openPointModals.length > 0;
-    const feature = modalState.openPointModals[0]?.feature;
-    const category = modalState.openPointModals[0]?.category;
-    window.dispatchEvent(new CustomEvent('poiModal', {
-      detail: { open, feature, category }
-    }));
-  }, [modalState.openPointModals]);
-
-  // Global app3d reference
-  useEffect(() => {
-    if (app3d) {
-      window.app3d = app3d;
-    }
-  }, [app3d]);
-
-  // Debug window management
-  useEffect(() => {
-    if (!app3d) return;
-    
-    app3d.createDebugWindow = (satellite) => {
-      if (!satellite || satellite.id === undefined || satellite.id === null) {
-        console.error("createDebugWindow called with invalid satellite or satellite.id", satellite);
-        return;
-      }
-      modalState.setDebugWindows(prev => {
-        if (prev.some(w => w.id === satellite.id)) return prev;
-        console.log(`Creating debug window for satellite ${satellite.id}`);
-        return [
-          ...prev,
-          {
-            id: satellite.id,
-            satellite,
-            earth: app3d.earth,
-            onBodySelect: handleBodyChange,
-            onClose: () => app3d.removeDebugWindow(satellite.id),
-            sessionId: app3d.sessionId,
-            app3d
-          }
-        ];
-      });
-    };
-    
-    app3d.removeDebugWindow = (id) => {
-      modalState.setDebugWindows(prev => prev.filter(w => w.id !== id));
-    };
-    
-    return () => {
-      delete app3d.createDebugWindow;
-      delete app3d.removeDebugWindow;
-    };
-  }, [app3d, handleBodyChange, modalState]);
-
-  // Connection status toasts
-  useEffect(() => {
-    function handleLost() {
-      showToast('Simulation connection lost');
-    }
-    function handleRestored() {
-      showToast('Simulation connection restored');
-    }
-    window.addEventListener('sim-connection-lost', handleLost);
-    window.addEventListener('sim-connection-restored', handleRestored);
-    return () => {
-      window.removeEventListener('sim-connection-lost', handleLost);
-      window.removeEventListener('sim-connection-restored', handleRestored);
-    };
-  }, [showToast]);
-
-  if (!checkedInitialState) return null;
-
-  // Build available bodies
-  let availableBodies = [];
-  if (Array.isArray(app3d?.celestialBodies)) {
-    availableBodies = app3d.celestialBodies
-      .filter(b => b && (b.naifId !== undefined && b.naifId !== null))
-      .map(b => ({ ...b, naifId: b.naifId ?? b.naif_id }));
-  }
-  if (availableBodies.length === 0) {
-    availableBodies = [{ name: 'Earth', naifId: 399, type: 'planet' }];
-  }
-
-  const isLoadingInitialData = !isAssetsLoaded || !isSimReady;
-
-  // Build props using utility functions
-  const navbarProps = buildNavbarProps({
-    modalState,
-    selectedBody,
-    handleBodyChange,
-    groupedPlanetOptions,
-    satelliteOptions,
-    getDisplayValue,
-    app3d,
-    timeWarpLoading,
-    simTime,
-    handleSimulatedTimeChange,
-    satellites,
-    handleImportState: (event) => sharingHooks.handleImportState(
-      event, setDisplaySettings, setImportedState, getInitialDisplaySettings
-    ),
-    shareModalOpen: modalState.shareModalOpen,
-    setShareModalOpen: modalState.setShareModalOpen,
-    setShareUrl: sharingHooks.setShareUrl,
-    isAuthOpen: modalState.isAuthOpen,
-    setIsAuthOpen: modalState.setIsAuthOpen,
-    setAuthMode,
-    isSimulationOpen: modalState.isSimulationOpen,
-    setIsSimulationOpen: modalState.setIsSimulationOpen,
-    planetOptions
-  });
-
-  const modalProps = buildModalProps({
-    modalState,
-    controller,
-    displaySettings,
-    setDisplaySettings,
-    app3d,
-    satellites,
-    handleBodyChange,
-    debugWindows: modalState.debugWindows,
-    onCreateSatellite,
-    availableBodies,
-    shareUrl: sharingHooks.shareUrl,
-    shareCopied: sharingHooks.shareCopied,
-    handleCopyShareUrl: sharingHooks.handleCopyShareUrl,
-    handleShareViaEmail: sharingHooks.handleShareViaEmail,
-    authMode,
-    setAuthMode,
-    showToast,
-    satellitesPhysics
-  });
+  if (!appState.checkedInitialState) return null;
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <SimulationProvider 
         timeUtils={app3d?.timeUtils} 
-        displaySettings={displaySettings} 
+        displaySettings={appState.displaySettings} 
         simulatedTime={app3d?.timeUtils?.getSimulatedTime() ?? new Date()} 
         timeWarp={app3d?.timeUtils?.getTimeWarp() ?? 1}
       >
@@ -363,7 +211,7 @@ function App3DMain() {
               navbarProps={navbarProps}
               chatModalProps={modalProps.chatModal}
               displayOptionsProps={modalProps.displayOptions}
-              debugWindows={modalState.debugWindows}
+              debugWindows={appState.modalState.debugWindows}
               satelliteListWindowProps={modalProps.satelliteListWindow}
               satelliteCreatorModalProps={modalProps.satelliteCreatorModal}
               shareModalProps={modalProps.shareModal}
@@ -371,7 +219,8 @@ function App3DMain() {
               simulationWindowProps={modalProps.simulationWindow}
               groundTrackWindowProps={modalProps.groundTrackWindow}
               earthPointModalProps={modalProps.earthPointModal}
-              isLoadingInitialData={isLoadingInitialData}
+              isLoadingInitialData={appState.isLoadingInitialData}
+              satellitesPhysics={satellitesPhysics}
             >
               <canvas id="three-canvas" className="absolute inset-0 z-0" />
             </Layout>

@@ -127,15 +127,8 @@ export default {
         }
     },
 
-    // Orbital mechanics
-    orbitalElements: {
-        semiMajorAxis: 778.5e6, // km - 5.2 AU
-        eccentricity: 0.0489,
-        inclination: 1.303, // degrees - relative to ecliptic
-        longitudeOfAscendingNode: 100.464, // degrees
-        argumentOfPeriapsis: 273.867, // degrees
-        meanAnomalyAtEpoch: 20.020 // degrees at J2000.0
-    },
+    // Note: Jupiter's heliocentric orbital elements are defined in the Jupiter barycenter
+    // Jupiter's position relative to its barycenter is calculated via astronomy-engine
 
     // Great Red Spot properties
     greatRedSpot: {

@@ -8,7 +8,7 @@ import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
-import { PhysicsAPI } from '../../../physics/PhysicsAPI';
+import { Orbital } from '../../../physics/PhysicsAPI.js';
 import * as THREE from 'three';
 
 // Section component for collapsible sections
@@ -155,12 +155,11 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         bodyRadius = centralBody.radius || 0;
       }
       
-      // Calculate orbital elements using PhysicsAPI
-      const elements = PhysicsAPI.calculateOrbitalElements(
+      // Calculate orbital elements using new Physics API
+      const elements = Orbital.calculateElements(
         position,
         velocity,
-        centralBody,
-        bodyRadius
+        centralBody
       );
       
       setOrbitalElements(elements);

@@ -521,5 +521,29 @@ export function setupExternalApi(app3d) {
             }
         },
 
+        // ═══════════════════════════════════════════════════════════════════
+        // CODE INTERPRETER
+        // ═══════════════════════════════════════════════════════════════════
+
+        /**
+         * Handle code interpreter tool calls from OpenAI
+         * Note: Actual code execution is handled by OpenAI's built-in code interpreter
+         * This function just acknowledges the tool call and returns success
+         * @param {Object} params - { code: string, files?: Array }
+         * @returns {Object} Success acknowledgment
+         */
+        runCodeInterpreter: (params) => {
+            console.log('[Code Interpreter] Tool call received:', params);
+            
+            // The actual code execution is handled by OpenAI's built-in environment
+            // We just need to acknowledge the tool call was received
+            return { 
+                success: true, 
+                message: "Code interpreter tool call received - execution handled by OpenAI",
+                code: params?.code || '',
+                files: params?.files || []
+            };
+        },
+
     };
 } 

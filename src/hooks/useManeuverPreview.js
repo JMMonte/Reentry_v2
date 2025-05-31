@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
-import { ManeuverNodeRenderer } from '../../Satellite/ManeuverNodeRenderer.js';
+import { ManeuverNodeRenderer } from '../components/Satellite/ManeuverNodeRenderer.js';
 
 /**
  * useManeuverPreview - Hook for managing maneuver node previews

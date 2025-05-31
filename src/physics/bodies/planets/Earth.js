@@ -208,15 +208,7 @@ export default {
         epoch: 2451545.0 // J2000.0
     },
 
-    // Heliocentric orbital elements (for reference, not used when useSpecialEMBHandling is true)
-    heliocentricOrbitalElements: {
-        semiMajorAxis: 149597870.7, // km - 1 AU
-        eccentricity: 0.0167086,
-        inclination: 0.00005, // degrees - relative to ecliptic
-        longitudeOfAscendingNode: -11.26064, // degrees
-        argumentOfPeriapsis: 114.20783, // degrees
-        meanAnomalyAtEpoch: 358.617 // degrees at J2000.0
-    },
+    // Note: Earth's heliocentric orbital elements are defined in the EMB barycenter
 
     // Orbit visualization configuration
     orbitVisualization: {

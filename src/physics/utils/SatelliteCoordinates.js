@@ -1,10 +1,8 @@
 import * as THREE from 'three';
 import * as Astronomy from 'astronomy-engine';
 import { PhysicsUtils } from './PhysicsUtils.js';
-import { Constants } from './Constants.js';
-import { PhysicsAPI } from '../physics/PhysicsAPI.js';
-import { GravityCalculator } from '../physics/core/GravityCalculator.js';
-import { OrbitalMechanics } from '../physics/core/OrbitalMechanics.js';
+import { Bodies } from '../PhysicsAPI.js';
+import { OrbitalMechanics } from '../core/OrbitalMechanics.js';
 
 /**
  * Advanced satellite coordinate system using local planet quaternions and proper reference frame transformations.
@@ -273,12 +271,13 @@ export class SatelliteCoordinates {
         const rotationRate = planet.rotationRate || SatelliteCoordinates._calculateRotationRate(planet);
         
         // Calculate rotation velocity at this location for reference
-        const lat = Math.atan2(positionPF[2], Math.sqrt(positionPF[0]**2 + positionPF[1]**2));
-        const rotVelAtLocation = SatelliteCoordinates._calculateRotationVelocityAtLocation(
-            THREE.MathUtils.radToDeg(lat), 
-            new THREE.Vector3(...positionPF).length() - planet.radius,
-            planet
-        );
+        // const lat = Math.atan2(positionPF[2], Math.sqrt(positionPF[0]**2 + positionPF[1]**2));
+        // Calculate rotation velocity at location (for future use)
+        // SatelliteCoordinates._calculateRotationVelocityAtLocation(
+        //     THREE.MathUtils.radToDeg(lat), 
+        //     new THREE.Vector3(...positionPF).length() - planet.radius,
+        //     planet
+        // );
         // console.log(`[SatelliteCoordinates] Rotation velocity at latitude ${THREE.MathUtils.radToDeg(lat).toFixed(1)}°: ${rotVelAtLocation.toFixed(3)} km/s`);
         
         // console.log(`[SatelliteCoordinates] Planet rotation rate: ${rotationRate.toExponential(3)} rad/s (period: ${(2 * Math.PI / rotationRate / 3600).toFixed(2)} hours)`);
@@ -483,7 +482,7 @@ export class SatelliteCoordinates {
      */
     static _calculateRotationRate(planet) {
         // Use PhysicsAPI to get rotation rate
-        return PhysicsAPI.getBodyRotationRate(planet);
+        return Bodies.getRotationRate(planet);
     }
 
     /**
@@ -520,9 +519,8 @@ export class SatelliteCoordinates {
         // Get the required inertial velocity for circular orbit
         const vCircularInertial = SatelliteCoordinates._calculateCircularOrbitalVelocity(altitude, planet);
         
-        // Get planet rotation rate and radius at this altitude
+        // Get planet rotation rate at this altitude
         const rotationRate = planet.rotationRate || SatelliteCoordinates._calculateRotationRate(planet);
-        const r = planet.radius + altitude;
         const lat = THREE.MathUtils.degToRad(latitude);
         const az = THREE.MathUtils.degToRad(azimuth);
         const aoa = THREE.MathUtils.degToRad(angleOfAttack);
@@ -562,8 +560,8 @@ export class SatelliteCoordinates {
         
         // The rotation velocity in ENU coordinates
         // At the equator pointing east, at poles it's zero
-        const rotVelEast = rotationVelocityVec.dot(east);
-        const rotVelNorth = rotationVelocityVec.dot(north);
+        // const rotVelEast = rotationVelocityVec.dot(east);
+        // const rotVelNorth = rotationVelocityVec.dot(north);
         
         // For a circular orbit, we need the velocity vector to have magnitude vCircularInertial
         // in the inertial frame after accounting for rotation

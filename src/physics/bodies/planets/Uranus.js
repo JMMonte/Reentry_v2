@@ -112,15 +112,8 @@ export default {
         standoffDistance: 18 * 25559, // km
     },
 
-    // Orbital mechanics from orbitalBodiesData.js
-    orbitalElements: {
-        semiMajorAxis: 2875040000.0,
-        eccentricity: 0.0463,
-        inclination: 0.773,
-        longitudeOfAscendingNode: 74.006,
-        argumentOfPeriapsis: 96.998,
-        meanAnomalyAtEpoch: 142.2386
-    },
+    // Note: Uranus's heliocentric orbital elements are defined in the Uranus barycenter
+    // Uranus's position relative to its barycenter is calculated via astronomy-engine
 
     // Orientation (IAU 2023/2025)
     poleRA: 257.311, // deg at J2000.0, +0.000 * T per century

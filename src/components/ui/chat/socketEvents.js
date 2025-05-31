@@ -199,12 +199,8 @@ export function handleToolCallResponse({ setMessages, outstandingToolCalls, mayb
         setMessages(prev => {
             let updated = [...prev];
             data.toolResponses.forEach(resp => {
-                if (resp.name === 'runCodeInterpreter') {
-                    if (resp.call_id) {
-                        outstandingToolCalls.current.delete(resp.call_id);
-                    }
-                    return;
-                }
+                // Note: runCodeInterpreter responses are now handled normally
+                // The actual code execution results come through code_interpreter_result event
                 const idx = updated.findIndex(m => m.id === resp.call_id && m.role === 'tool');
                 if (idx !== -1) {
                     updated[idx] = {
@@ -283,6 +279,28 @@ export function handleDisconnect({ setIsConnected, setIsLoading }) {
     };
 }
 
+export function handleCodeInterpreterResult({ setMessages }) {
+    return (data) => {
+        console.log('[Code Interpreter Result]', data);
+        setMessages(prev => [
+            ...prev,
+            {
+                id: `${data.call_id || Date.now()}-ci`,
+                role: 'assistant',
+                type: 'code_interpreter_result',
+                content: data.result || data.output || '',
+                output: data.result || data.output || '',
+                files: data.files || [],
+                raw: {
+                    code: data.code || '',
+                    ...data
+                },
+                timestamp: Date.now()
+            }
+        ]);
+    };
+}
+
 export const eventHandlerFactories = {
     conversation_start: handleConversationStart,
     answer_start: handleAnswerStart,
@@ -291,6 +309,7 @@ export const eventHandlerFactories = {
     conversation_end: handleConversationEnd,
     tool_call_sent: handleToolCallSent,
     tool_call_response: handleToolCallResponse,
+    code_interpreter_result: handleCodeInterpreterResult,
     error: handleError,
     threadCreated: handleThreadCreated,
     runCompleted: handleRunCompleted,

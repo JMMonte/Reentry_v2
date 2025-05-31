@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App3DController } from './App3DController';
+import { App3DController } from '../simulation/App3DController';
 
 export function useApp3D(initialState) {
     const [controller, setController] = useState(null);

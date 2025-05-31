@@ -114,15 +114,8 @@ export default {
         standoffDistance: 23 * 24764, // km
     },
 
-    // Orbital mechanics from orbitalBodiesData.js
-    orbitalElements: {
-        semiMajorAxis: 4504450000.0,
-        eccentricity: 0.0097,
-        inclination: 1.770,
-        longitudeOfAscendingNode: 131.784,
-        argumentOfPeriapsis: 273.187,
-        meanAnomalyAtEpoch: 256.228
-    },
+    // Note: Neptune's heliocentric orbital elements are defined in the Neptune barycenter
+    // Neptune's position relative to its barycenter is calculated via astronomy-engine
 
     // Orientation (IAU 2023/2025)
     poleRA: 299.36, // deg at J2000.0, -0.70*T per century

@@ -4,7 +4,7 @@ import { Button } from '../button';
 import PropTypes from 'prop-types';
 import { ExecutionTimeSection } from './ExecutionTimeSection.jsx';
 import { DeltaVSection } from './DeltaVSection.jsx';
-import { useManeuverWindow } from './useManeuverWindow.jsx';
+import { useManeuverWindow } from '../../../hooks/useManeuverWindow.jsx';
 import HohmannSection from './HohmannSection.jsx';
 import MissionPlanSection from './MissionPlanSection.jsx';
 import ManeuverErrorBoundary from './ManeuverErrorBoundary.jsx';

@@ -6,7 +6,6 @@
  * All data comes from PhysicsAPI via render updates.
  */
 
-import * as THREE from 'three';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 
 export class SatelliteRenderer {

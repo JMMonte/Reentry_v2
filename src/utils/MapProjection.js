@@ -1,4 +1,4 @@
-import { SatelliteCoordinates } from './SatelliteCoordinates.js';
+import { SatelliteCoordinates } from '../physics/utils/SatelliteCoordinates.js';
 
 /**
  * Project a world-space position to planet surface coordinates using generic transformations.
