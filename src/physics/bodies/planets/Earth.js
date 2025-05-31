@@ -195,8 +195,21 @@ export default {
         plateCount: 15 // major tectonic plates
     },
 
-    // Orbital mechanics
+    // Orbital mechanics - EMB-relative elements for proper Earth-Moon barycenter orbit visualization
+    // These represent Earth's motion around the EMB, which is influenced by lunar orbital dynamics
     orbitalElements: {
+        semiMajorAxis: 4671, // km - mean Earth-EMB distance (1737.4 km * 73.4 / (73.4 + 1) ≈ 4671 km)
+        eccentricity: 0.0549, // Earth-EMB eccentricity matches lunar orbital eccentricity
+        inclination: 5.145, // degrees - matches Moon's inclination to ecliptic (Earth wobbles with Moon)
+        longitudeOfAscendingNode: 125.012, // degrees - matches lunar node regression
+        argumentOfPeriapsis: 318.063, // degrees - opposite to Moon's argument of periapsis
+        meanAnomalyAtEpoch: 244.635, // degrees - opposite phase to Moon at J2000.0 (115.3654 + 180 - 50.7304)
+        period: 27.321661 * 24 * 3600, // seconds - same as lunar sidereal period
+        epoch: 2451545.0 // J2000.0
+    },
+
+    // Heliocentric orbital elements (for reference, not used when useSpecialEMBHandling is true)
+    heliocentricOrbitalElements: {
         semiMajorAxis: 149597870.7, // km - 1 AU
         eccentricity: 0.0167086,
         inclination: 0.00005, // degrees - relative to ecliptic

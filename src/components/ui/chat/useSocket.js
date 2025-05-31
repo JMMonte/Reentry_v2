@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { eventHandlerFactories } from './ChatSocketEventHandlers';
-import { maybeEndTurn, handleCopy } from './chatHistoryUtils';
+import { eventHandlerFactories } from './socketEvents';
+import { maybeEndTurn } from './conversation';
+import { handleCopy } from './clipboard';
 
-export function useChatSocket(socket) {
+export function useSocket(socket) {
     const [messages, setMessages] = useState([]);
     const [userMessage, setUserMessage] = useState('');
     const [threadId, setThreadId] = useState(null);
@@ -40,7 +41,10 @@ export function useChatSocket(socket) {
     );
 
     useEffect(() => {
-        if (!socket) return;
+        if (!socket) {
+            console.log('[useSocket] No socket provided - chat functionality will be disabled');
+            return;
+        }
 
         Object.keys(eventHandlers).forEach(event => {
             socket.on(event, eventHandlers[event]);

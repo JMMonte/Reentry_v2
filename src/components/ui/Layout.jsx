@@ -2,7 +2,7 @@ import React, { useState, createContext, useRef, forwardRef, useImperativeHandle
 import { Navbar } from './navbar/Navbar';
 import { ModalPortal } from './modal/ModalPortal';
 import { AuthModal } from './auth/AuthModal';
-import { ChatModal } from './chat/ChatModal';
+import { ChatModal } from './chat/Modal';
 import { DisplayOptions } from './controls/DisplayOptions';
 import { SatelliteDebugWindow } from './satellite/SatelliteDebugWindow';
 import { SatelliteListWindow } from './satellite/SatelliteListWindow';

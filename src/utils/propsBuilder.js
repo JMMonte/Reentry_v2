@@ -3,6 +3,8 @@
  * This helps organize and type-check component props
  */
 
+import { getSocket } from '../socket.js';
+
 export function buildNavbarProps({
   modalState,
   selectedBody,
@@ -91,7 +93,7 @@ export function buildModalProps({
     chatModal: {
       isOpen: modalState.isChatVisible,
       onClose: () => modalState.setIsChatVisible(false),
-      socket: controller?.app3d?.socketManager?.socket
+      socket: getSocket()
     },
     
     displayOptions: {

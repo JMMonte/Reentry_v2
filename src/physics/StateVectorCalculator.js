@@ -28,9 +28,17 @@ export class StateVectorCalculator {
         this.bodiesConfigMap = bodiesConfigMap;
         this.AU_TO_KM = Constants.AU; // Astronomical unit in km
         this.DAYS_TO_SEC = Constants.secondsInDay; // Seconds in a day
+        this._debugEarthState = false; // Flag for detailed Earth state debugging
 
         // Initialize planetary data manager
         this._initializePlanetaryData();
+    }
+
+    /**
+     * Enable or disable detailed Earth state debugging
+     */
+    setEarthStateDebug(enabled) {
+        this._debugEarthState = enabled;
     }
 
     /**
@@ -48,14 +56,32 @@ export class StateVectorCalculator {
      * Get full body configuration including orbital elements
      */
     _getFullBodyConfig(naifId) {
+        // Debug logging for Earth config lookup - disabled
+        // if (naifId === 399) {
+        //     console.log('[StateVectorCalculator] Looking up Earth config (NAIF 399)');
+        //     console.log('  bodiesConfigMap exists:', !!this.bodiesConfigMap);
+        //     if (this.bodiesConfigMap) {
+        //         console.log('  bodiesConfigMap has 399:', this.bodiesConfigMap.has(399));
+        //         console.log('  bodiesConfigMap keys:', Array.from(this.bodiesConfigMap.keys()));
+        //     }
+        //     console.log('  planetaryDataManager exists:', !!planetaryDataManager);
+        // }
+
         // First try the provided bodiesConfigMap
         if (this.bodiesConfigMap) {
             const config = this.bodiesConfigMap.get(naifId);
-            if (config) return config;
+            if (config) {
+                // if (naifId === 399) console.log('  Found Earth in bodiesConfigMap:', config);
+                return config;
+            }
         }
 
         // Fallback to planetaryDataManager
-        return planetaryDataManager.getBodyByNaif(naifId);
+        const pmConfig = planetaryDataManager.getBodyByNaif(naifId);
+        // if (naifId === 399) {
+        //     console.log('  planetaryDataManager result for Earth:', pmConfig);
+        // }
+        return pmConfig;
     }
 
     /**
@@ -102,7 +128,16 @@ export class StateVectorCalculator {
         }
 
         // Special handling for Earth and Moon: always use Astronomy Engine for highest accuracy
-        if (naifId === NAIF_EARTH) return this._calculateEarthState(time);
+        // But check if Earth has orbital elements and we want to use procedural orbit generation
+        if (naifId === NAIF_EARTH) {
+            const earthConfig = this._getFullBodyConfig(NAIF_EARTH);
+            if (earthConfig?.orbitVisualization?.useSpecialEMBHandling && earthConfig?.orbitalElements) {
+                // For orbit visualization, use the physics-based state calculation instead of orbital elements
+                // This ensures consistent EMB-relative coordinates from Astronomy Engine
+                return this._calculateEarthState(time);
+            }
+            return this._calculateEarthState(time);
+        }
         if (naifId === NAIF_MOON) return this._calculateMoonState(time);
 
         // Special handling for Galilean moons: always use Astronomy Engine for highest accuracy
@@ -402,12 +437,26 @@ export class StateVectorCalculator {
             // Calculate mass ratio
             const MOON_MASS_RATIO = MOON_MASS / (EARTH_MASS + MOON_MASS);
 
-            // Calculate velocity using finite differences
-            const dt = StateVectorCalculator.FINITE_DIFF_DT; // seconds
-            const futureTime = new Date(time.getTime() + dt * 1000);
-            const futureMoonGeo = GeoMoon(MakeTime(futureTime));
+            // Debug logging for Earth state calculation - enabled for orbit debugging
+            if (this._debugEarthState) {
+                console.log(`[StateVectorCalculator] Earth state at ${time.toISOString()}:`);
+                console.log('  moonGeo (AU):', moonGeo);
+                console.log('  moonGeoECL (km):', moonGeoECL);
+                console.log('  MOON_MASS_RATIO:', MOON_MASS_RATIO);
+                console.log('  Earth offset (km):', -(MOON_MASS_RATIO * moonGeoECL.x), -(MOON_MASS_RATIO * moonGeoECL.y), -(MOON_MASS_RATIO * moonGeoECL.z));
+            }
 
-            if (futureMoonGeo) {
+            // Calculate velocity using higher precision finite differences with smaller timestep
+            // Use smaller timestep for better precision on small EMB-relative motions
+            const dt = 3600; // 1 hour instead of default (better precision for small motions)
+            const futureTime = new Date(time.getTime() + dt * 1000);
+            const pastTime = new Date(time.getTime() - dt * 1000);
+            
+            const futureMoonGeo = GeoMoon(MakeTime(futureTime));
+            const pastMoonGeo = GeoMoon(MakeTime(pastTime));
+
+            if (futureMoonGeo && pastMoonGeo) {
+                // Future moon position
                 const futureMoonGeoEQJ = {
                     x: futureMoonGeo.x * this.AU_TO_KM,
                     y: futureMoonGeo.y * this.AU_TO_KM,
@@ -415,10 +464,24 @@ export class StateVectorCalculator {
                     t: MakeTime(futureTime)
                 };
                 const futureMoonGeoECL = RotateVector(rotMatrix, futureMoonGeoEQJ);
+                
+                // Past moon position
+                const pastMoonGeoEQJ = {
+                    x: pastMoonGeo.x * this.AU_TO_KM,
+                    y: pastMoonGeo.y * this.AU_TO_KM,
+                    z: pastMoonGeo.z * this.AU_TO_KM,
+                    t: MakeTime(pastTime)
+                };
+                const pastMoonGeoECL = RotateVector(rotMatrix, pastMoonGeoEQJ);
 
-                const earthVelX = -(MOON_MASS_RATIO * (futureMoonGeoECL.x - moonGeoECL.x)) / dt;
-                const earthVelY = -(MOON_MASS_RATIO * (futureMoonGeoECL.y - moonGeoECL.y)) / dt;
-                const earthVelZ = -(MOON_MASS_RATIO * (futureMoonGeoECL.z - moonGeoECL.z)) / dt;
+                // Use central differences for better precision (2*dt total interval)
+                const earthVelX = -(MOON_MASS_RATIO * (futureMoonGeoECL.x - pastMoonGeoECL.x)) / (2 * dt);
+                const earthVelY = -(MOON_MASS_RATIO * (futureMoonGeoECL.y - pastMoonGeoECL.y)) / (2 * dt);
+                const earthVelZ = -(MOON_MASS_RATIO * (futureMoonGeoECL.z - pastMoonGeoECL.z)) / (2 * dt);
+
+                // Debug velocity calculation - temporarily enabled
+                // console.log('[StateVectorCalculator] Earth EMB-relative velocity (km/s):', [earthVelX, earthVelY, earthVelZ]);
+                // console.log('[StateVectorCalculator] Velocity magnitude (km/s):', Math.sqrt(earthVelX*earthVelX + earthVelY*earthVelY + earthVelZ*earthVelZ));
 
                 // Return RELATIVE position (no EMB offset added)
                 return {

@@ -74,7 +74,7 @@ import { DisplaySettingsManager } from './managers/DisplaySettingsManager.js';
 import { SceneManager } from './managers/SceneManager.js';
 import { SimulationStateManager } from './managers/SimulationStateManager.js';
 import { SimulationLoop } from './simulation/SimulationLoop.js';
-import { SocketManager } from './managers/SocketManager.js';
+// SocketManager removed - socket handled directly by chat components
 
 // New physics system
 import { PhysicsManager } from './physics/PhysicsManager.js';
@@ -151,7 +151,6 @@ class App3D extends EventTarget {
 
         this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
-        this.socketManager = new SocketManager(this);
 
         // — Misc util — --------------------------------------------------------
         // Always use UTC time - new Date().toISOString() gives us UTC
@@ -265,6 +264,9 @@ class App3D extends EventTarget {
                 }
             }
 
+            // Socket manager is available for chat functionality but not initialized here
+            // Chat components will initialize their own socket connections as needed
+
             // Simulation heartbeat
             this.simulationLoop = new SimulationLoop({
                 app: this,
@@ -352,8 +354,7 @@ class App3D extends EventTarget {
         // Scene graph
         this.sceneManager?.dispose?.();
         
-        // Socket manager
-        this.socketManager?.dispose?.();
+        // Socket cleanup handled by individual components
         
         // Simulation state manager
         this.simulationStateManager?.dispose?.();
