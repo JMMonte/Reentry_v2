@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { AtmosphericModels } from '../core/AtmosphericModels.js';
 import { GravityCalculator } from '../core/GravityCalculator.js';
 import { stateToKeplerian } from '../../utils/KeplerianUtils.js';
-import { Constants } from '../../utils/Constants.js';
+import { PhysicsConstants } from '../core/PhysicsConstants.js';
 
 /**
  * Centralized orbital integration methods for the simulation
@@ -356,6 +356,48 @@ export function analyzeOrbit(satellite, centralBody, G) {
 }
 
 /**
+ * Calculate propagation parameters for orbit visualization
+ * @param {Object} orbitParams - Result from analyzeOrbit()
+ * @param {number} orbitPeriods - Number of orbital periods to propagate
+ * @param {number} pointsPerPeriod - Number of points per orbital period
+ * @param {boolean} needsExtension - Whether this is extending existing orbit
+ * @param {Object} cached - Cached orbit data if extending
+ * @returns {Object} { maxDuration, timeStep }
+ */
+export function calculatePropagationParameters(orbitParams, orbitPeriods, pointsPerPeriod, needsExtension = false, cached = null) {
+    let maxDuration;
+    let timeStep;
+
+    if (orbitParams.type === 'elliptical' && orbitParams.period > 0) {
+        // For elliptical orbits, propagate for specified number of periods
+        if (needsExtension && cached) {
+            // Extend existing orbit by additional periods
+            maxDuration = orbitPeriods * orbitParams.period;
+        } else {
+            // New orbit calculation
+            maxDuration = orbitPeriods * orbitParams.period;
+        }
+        
+        // Time step based on desired points per period
+        timeStep = orbitParams.period / pointsPerPeriod;
+    } else {
+        // For parabolic/hyperbolic orbits, use fixed duration
+        // Base duration on a reasonable time scale
+        const baseDuration = 86400; // 1 day in seconds
+        maxDuration = orbitPeriods * baseDuration; // Use orbitPeriods as a multiplier
+        
+        // Smaller time step for non-elliptical orbits to capture trajectory properly
+        timeStep = maxDuration / (pointsPerPeriod * orbitPeriods);
+    }
+
+    // Ensure reasonable limits
+    maxDuration = Math.max(60, Math.min(maxDuration, 86400 * 365)); // Between 1 minute and 1 year
+    timeStep = Math.max(0.1, Math.min(timeStep, 3600)); // Between 0.1 seconds and 1 hour
+
+    return { maxDuration, timeStep };
+}
+
+/**
  * Calculate duration to reach SOI boundary or max distance
  * Currently unused but kept for future escape trajectory calculations
  */
@@ -447,7 +489,7 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
     }
     
     // Use the dominant body's gravitational parameter
-    const mu = dominantBody.GM || (Constants.G * dominantBody.mass);
+    const mu = dominantBody.GM || (PhysicsConstants.PHYSICS.G * dominantBody.mass);
     const oe = stateToKeplerian(
         new THREE.Vector3(...pos0),
         new THREE.Vector3(...vel0),

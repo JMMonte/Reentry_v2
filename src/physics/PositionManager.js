@@ -100,22 +100,8 @@ export class PositionManager {
         if (!parentBody) {
             return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
         }
-        // Get moon config
-        const moonConfig = this.hierarchy.bodiesConfigMap?.get(moonNaifId) || {};
-        const referenceFrame = moonConfig.orbitalElements?.referenceFrame || moonConfig.referenceFrame;
-        // If parent is a barycenter and referenceFrame is xxx_equatorial, rotate by planet orientation
-        if (this.hierarchy.isBarycenter(parentPlanetId) && referenceFrame && /_equatorial$/i.test(referenceFrame)) {
-            // Find the planet with this barycenter as parent
-            const planetNaif = Array.from(this.hierarchy.bodiesConfigMap.entries()).find(([, cfg]) => cfg.parent && this.hierarchy._findNaifIdByName(this.hierarchy.bodiesConfigMap, cfg.parent) === parentPlanetId && (cfg.type === 'planet' || cfg.type === 'dwarf_planet'))?.[0];
-            if (planetNaif && this.bodies[planetNaif]) {
-                // Get planet orientation quaternion
-                const planetQuat = this.bodies[planetNaif].quaternion;
-                const pos = new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
-                pos.applyQuaternion(planetQuat);
-                // Add barycenter position
-                return pos.add(parentBody.position);
-            }
-        }
+        // Moon coordinates should remain in their native reference frame
+        // The 3D scene handles coordinate transformations via equatorial groups
         // Default: position is relative to parent, so add parent position
         const relativePos = new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
         return relativePos.add(parentBody.position);
@@ -168,25 +154,8 @@ export class PositionManager {
         // We need to add parent's velocity to get absolute velocity
         const relativeVel = new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
         
-        // Special handling for moons (their velocities might need rotation)
-        if (this.hierarchy.isMoon(naifId)) {
-            const moonConfig = this.hierarchy.bodiesConfigMap?.get(naifId) || {};
-            const referenceFrame = moonConfig.orbitalElements?.referenceFrame || moonConfig.referenceFrame;
-            
-            // If moon uses equatorial reference frame and parent is a barycenter
-            if (this.hierarchy.isBarycenter(parentId) && referenceFrame && /_equatorial$/i.test(referenceFrame)) {
-                // Find the planet and apply its rotation to the velocity
-                const planetNaif = Array.from(this.hierarchy.bodiesConfigMap.entries()).find(([, cfg]) => 
-                    cfg.parent && this.hierarchy._findNaifIdByName(this.hierarchy.bodiesConfigMap, cfg.parent) === parentId && 
-                    (cfg.type === 'planet' || cfg.type === 'dwarf_planet')
-                )?.[0];
-                
-                if (planetNaif && this.bodies[planetNaif]) {
-                    const planetQuat = this.bodies[planetNaif].quaternion;
-                    relativeVel.applyQuaternion(planetQuat);
-                }
-            }
-        }
+        // Moon velocities should remain in their native reference frame
+        // The 3D scene handles coordinate transformations via equatorial groups
         
         // Add parent velocity to get absolute velocity
         return relativeVel.add(parentBody.velocity);

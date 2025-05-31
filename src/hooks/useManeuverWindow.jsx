@@ -4,8 +4,8 @@ import { ManeuverManager } from '../managers/ManeuverManager.js';
 import { ManeuverUtils } from '../utils/ManeuverUtils.js';
 import formatTimeDelta from '../utils/FormatUtils.js';
 import { usePreviewNodes } from './usePreviewNodes.js';
-import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
-import { Constants } from '../utils/Constants.js';
+import { useManeuverApsisData } from './useApsisData.js';
+import { Orbital, Bodies, Utils, Constants } from '../physics/PhysicsAPI.js';
 
 export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Remove dependency on SimulationContext - currentTime is now a prop
@@ -122,6 +122,9 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     const [multH, setMultH] = useState('1');
     const [multMin, setMultMin] = useState('1');
     const [multSVal, setMultSVal] = useState('1');
+
+    // Apsis data and calculations
+    const apsisData = useManeuverApsisData(satellite, simulationTime, nodes, selectedIndex, isAdding);
     const [multMsVal, setMultMsVal] = useState('1');
     const [multP, setMultP] = useState('1');
     const [multA, setMultA] = useState('1');
@@ -158,11 +161,14 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
 
     // Generate Hohmann preview data using PhysicsAPI
     const getHohmannPreviewData = useCallback(() => {
+        // Get central body data from physics API (body-agnostic)
+        const centralBodyData = Bodies.getByNaif(satellite.centralBodyNaifId);
+        
         // Convert classical elements to periapsis/apoapsis altitudes using PhysicsAPI
         const sma = parseFloat(targetSmaKm) || 0;
         const ecc = parseFloat(targetEcc) || 0;
         const { periapsis: targetPeriapsis, apoapsis: targetApoapsis } = 
-            Orbital.elementsToAltitudes(sma, ecc, Constants.earthRadius);
+            Orbital.elementsToAltitudes(sma, ecc, centralBodyData?.radius);
         
         // Get Hohmann transfer parameters from PhysicsAPI
         const transferParams = Orbital.calculateHohmannTransfer({
@@ -173,8 +179,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             targetInclination: parseFloat(targetIncDeg) || 0,
             targetLAN: parseFloat(targetLANDeg) || 0,
             targetArgP: parseFloat(targetArgPDeg) || 0,
-            bodyRadius: Constants.earthRadius,
-            mu: Constants.earthGravitationalParameter
+            bodyRadius: centralBodyData?.radius,
+            mu: centralBodyData?.GM || Bodies.getGM(satellite.centralBodyNaifId)
         });
         
         // Still need to call manager for now to maintain compatibility
@@ -189,116 +195,24 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         });
     }, [manager, targetSmaKm, targetEcc, targetIncDeg, targetLANDeg, targetArgPDeg, satellite.position, satellite.velocity]);
 
-    // Next periapsis calculation using PhysicsAPI
-    const computeNextPeriapsis = useCallback(() => {
-        // Chain off existing node if in editing/adding mode
-        if ((selectedIndex != null || isAdding) && nodes.length > 0) {
-            // For editing: use the selected node
-            // For adding: use the last node in the sequence
-            const baseNodeIndex = selectedIndex != null ? selectedIndex : nodes.length - 1;
-            const baseNode = nodes[baseNodeIndex].node3D;
-            
-            // Use the correct time property from DTO structure
-            const baselineTime = baseNode.executionTime || baseNode.time;
-            if (!baselineTime) {
-                console.error('[useManeuverWindow] No execution time found for base node');
-                return new Date(simulationTime.getTime() + 3600 * 1000); // Default to 1 hour
-            }
-            
-            // For nested nodes, we need to use the orbit they'll be executed in
-            // If this is the first node (index 0), use satellite's current orbit
-            // Otherwise, use the previous node's post-burn orbit
-            let periodSec = 0;
-            if (baseNodeIndex === 0 || !nodes[baseNodeIndex - 1]) {
-                // First node: use satellite's current orbital period
-                // Calculate period from current position/velocity using PhysicsAPI
-                // Get the correct gravitational parameter for the satellite's central body
-                const mu = Bodies.getGM(satellite.centralBodyNaifId);
-                const currentOrbitPeriod = Orbital.calculatePeriod(
-                    satellite.position,
-                    satellite.velocity,
-                    mu
-                );
-                periodSec = currentOrbitPeriod || 0;
-            } else {
-                // Subsequent node: use previous node's post-burn orbit period
-                const prevNode = nodes[baseNodeIndex - 1].node3D;
-                periodSec = prevNode.predictedOrbit?._orbitPeriod || 0;
-            }
-            
-            return new Date(baselineTime.getTime() + periodSec * 1000);
-        }
-        // Use PhysicsAPI for calculation from current satellite state
-        // Get the correct gravitational parameter for the satellite's central body
-        const mu = Bodies.getGM(satellite.centralBodyNaifId);
-        return Orbital.nextPeriapsis(
-            satellite.position,
-            satellite.velocity,
-            mu,
-            simulationTime
-        );
-    }, [satellite, simulationTime, nodes, selectedIndex, isAdding]);
+    // Next periapsis calculation - now handled by ApsisService
+    const computeNextPeriapsis = apsisData.computeNextPeriapsis;
 
-    // Next apoapsis calculation using PhysicsAPI
-    const computeNextApoapsis = useCallback(() => {
-        if ((selectedIndex != null || isAdding) && nodes.length > 0) {
-            // For editing: use the selected node
-            // For adding: use the last node in the sequence
-            const baseNodeIndex = selectedIndex != null ? selectedIndex : nodes.length - 1;
-            const baseNode = nodes[baseNodeIndex].node3D;
-            
-            // Use the correct time property from DTO structure
-            const baselineTime = baseNode.executionTime || baseNode.time;
-            if (!baselineTime) {
-                console.error('[useManeuverWindow] No execution time found for base node');
-                return new Date(simulationTime.getTime() + 1800 * 1000); // Default to 30 minutes
-            }
-            
-            // For nested nodes, we need to use the orbit they'll be executed in
-            // If this is the first node (index 0), use satellite's current orbit
-            // Otherwise, use the previous node's post-burn orbit
-            let periodSec = 0;
-            if (baseNodeIndex === 0 || !nodes[baseNodeIndex - 1]) {
-                // First node: use satellite's current orbital period
-                // Calculate period from current position/velocity using PhysicsAPI
-                // Get the correct gravitational parameter for the satellite's central body
-                const mu = Bodies.getGM(satellite.centralBodyNaifId);
-                const currentOrbitPeriod = Orbital.calculatePeriod(
-                    satellite.position,
-                    satellite.velocity,
-                    mu
-                );
-                periodSec = currentOrbitPeriod || 0;
-            } else {
-                // Subsequent node: use previous node's post-burn orbit period
-                const prevNode = nodes[baseNodeIndex - 1].node3D;
-                periodSec = prevNode.predictedOrbit?._orbitPeriod || 0;
-            }
-            
-            // Apoapsis is half a period from periapsis
-            const halfPeriod = periodSec * 1000 / 2;
-            return new Date(baselineTime.getTime() + halfPeriod);
-        }
-        // Use PhysicsAPI for calculation from current satellite state
-        // Get the correct gravitational parameter for the satellite's central body
-        const mu = Bodies.getGM(satellite.centralBodyNaifId);
-        return Orbital.nextApoapsis(
-            satellite.position,
-            satellite.velocity,
-            mu,
-            simulationTime
-        );
-    }, [satellite, simulationTime, nodes, selectedIndex, isAdding]);
+    // Next apoapsis calculation - now handled by ApsisService
+    const computeNextApoapsis = apsisData.computeNextApoapsis;
 
     // --- Hohmann manual burn time state and helpers ---
     const [manualBurnTime, setManualBurnTime] = useState(null);
     const findBestBurnTime = useCallback(() => {
+        // Get central body data from physics API (body-agnostic)
+        const centralBodyData = Bodies.getByNaif(satellite.centralBodyNaifId);
+        
         // Use PhysicsAPI for optimal burn time calculation
         return Utils.time.findOptimalBurnTime({
             currentPosition: satellite.position,
             currentVelocity: satellite.velocity,
             targetArgP: parseFloat(targetArgPDeg) || 0,
-            mu: Constants.earthGravitationalParameter,
+            mu: centralBodyData?.GM || Bodies.getGM(satellite.centralBodyNaifId),
             currentTime: simulationTime
         });
     }, [simulationTime, satellite, targetArgPDeg]);
@@ -394,11 +308,14 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
 
     // Generate Hohmann transfer nodes using PhysicsAPI
     const generateHohmann = useCallback(() => {
+        // Get central body data from physics API (body-agnostic)
+        const centralBodyData = Bodies.getByNaif(satellite.centralBodyNaifId);
+        
         // Convert classical elements to periapsis/apoapsis altitudes using PhysicsAPI
         const sma = parseFloat(targetSmaKm) || 0;
         const ecc = parseFloat(targetEcc) || 0;
         const { periapsis: targetPeriapsis, apoapsis: targetApoapsis } = 
-            Orbital.elementsToAltitudes(sma, ecc, Constants.earthRadius);
+            Orbital.elementsToAltitudes(sma, ecc, centralBodyData?.radius);
         
         // Get transfer parameters from PhysicsAPI
         const transferParams = Orbital.calculateHohmannTransfer({
@@ -409,8 +326,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             targetInclination: parseFloat(targetIncDeg) || 0,
             targetLAN: parseFloat(targetLANDeg) || 0,
             targetArgP: parseFloat(targetArgPDeg) || 0,
-            bodyRadius: Constants.earthRadius,
-            mu: Constants.earthGravitationalParameter
+            bodyRadius: centralBodyData?.radius,
+            mu: centralBodyData?.GM || Bodies.getGM(satellite.centralBodyNaifId)
         });
         
         // Use manager to create the actual nodes (will be refactored later)

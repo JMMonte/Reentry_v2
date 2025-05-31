@@ -19,9 +19,11 @@ export { PhysicsManager } from './PhysicsManager.js';
 export { default as PhysicsAPI } from './PhysicsAPI.js';
 
 // Core physics calculations
+export { CelestialBody } from './core/CelestialBody.js';
+export { PhysicsConstants } from './core/PhysicsConstants.js';
 export { OrbitPropagator } from './core/OrbitPropagator.js';
 export { OrbitalMechanics } from './core/OrbitalMechanics.js';
-export { ApsisCalculator } from './core/ApsisCalculator.js';
+export { ApsisCalculations } from './core/ApsisCalculations.js';
 export { GravityCalculator } from './core/GravityCalculator.js';
 export { AtmosphericModels } from './core/AtmosphericModels.js';
 export { SatelliteAccelerationCalculator } from './core/SatelliteAccelerationCalculator.js';
@@ -31,7 +33,7 @@ export { PhysicsUtils } from './utils/PhysicsUtils.js';
 export { SatelliteCoordinates } from './utils/SatelliteCoordinates.js';
 
 // Body data
-export { solarSystemDataManager as PlanetaryDataManager } from './bodies/PlanetaryDataManager.js';
+export { solarSystemDataManager as PlanetaryDataManager } from './PlanetaryDataManager.js';
 
 // State management
 export { StateVectorCalculator } from './StateVectorCalculator.js';

@@ -104,41 +104,8 @@ Toast.displayName = 'Toast';
 Toast.propTypes = {};
 
 // SatelliteCreatorModal
-function SatelliteCreatorModal({ isOpen, onClose, onCreate, availableBodies }) {
-    // Presets and handler for dropdown
-    const presets = [
-        { label: 'ISS', mode: 'orbital', values: { name: 'ISS', mass: 419725, size: 1, semiMajorAxis: 6778, eccentricity: 0.0007, inclination: 51.6, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Geostationary', mode: 'orbital', values: { name: 'Geostationary', mass: 5000, size: 3, semiMajorAxis: 42164, eccentricity: 0, inclination: 0, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Molniya', mode: 'orbital', values: { name: 'Molniya', mass: 2200, size: 2, semiMajorAxis: 26600, eccentricity: 0.74, inclination: 63.4, raan: 0, argumentOfPeriapsis: 270, trueAnomaly: 0 } },
-        { label: 'Sun-Synchronous', mode: 'orbital', values: { name: 'Sun-Synchronous', mass: 1000, size: 1, semiMajorAxis: 6978, eccentricity: 0.001, inclination: 98, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'GPS IIF', mode: 'orbital', values: { name: 'GPS IIF', mass: 1630, size: 1, semiMajorAxis: 26560, eccentricity: 0.01, inclination: 55, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Hubble', mode: 'orbital', values: { name: 'Hubble', mass: 11110, size: 1.5, semiMajorAxis: 6918, eccentricity: 0.0005, inclination: 28.5, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'Iridium', mode: 'orbital', values: { name: 'Iridium', mass: 700, size: 0.5, semiMajorAxis: 7151, eccentricity: 0.0002, inclination: 86.4, raan: 0, argumentOfPeriapsis: 0, trueAnomaly: 0 } },
-        { label: 'LEO Satellite', mode: 'latlon', values: { name: 'LEO Satellite', mass: 1200, size: 1, latitude: 0, longitude: 0, altitude: 400, velocity: 7.8, azimuth: 0, angleOfAttack: 0 } },
-    ];
+function SatelliteCreatorModal({ isOpen, onClose, onCreate, availableBodies, selectedBody }) {
     const satelliteCreatorRef = React.useRef();
-    const handlePreset = (preset) => {
-        if (satelliteCreatorRef.current && satelliteCreatorRef.current.applyPreset) {
-            satelliteCreatorRef.current.applyPreset(preset);
-        }
-    };
-    // Dropdown for header
-    const dropdown = (
-        <div className="mr-2">
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">Templates</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    {presets.map(preset => (
-                        <DropdownMenuItem key={preset.label} onSelect={() => handlePreset(preset)}>
-                            {preset.label}
-                        </DropdownMenuItem>
-                    ))}
-                </DropdownMenuContent>
-            </DropdownMenu>
-        </div>
-    );
     return (
         <DraggableModal
             title="Create Satellite"
@@ -149,9 +116,8 @@ function SatelliteCreatorModal({ isOpen, onClose, onCreate, availableBodies }) {
             minWidth={300}
             minHeight={300}
             resizable={true}
-            rightElement={dropdown}
         >
-            <SatelliteCreator ref={satelliteCreatorRef} onCreateSatellite={onCreate} availableBodies={availableBodies} />
+            <SatelliteCreator ref={satelliteCreatorRef} onCreateSatellite={onCreate} availableBodies={availableBodies} selectedBody={selectedBody} />
         </DraggableModal>
     );
 }
@@ -159,7 +125,11 @@ SatelliteCreatorModal.propTypes = {
     isOpen: PropTypes.bool.isRequired,
     onClose: PropTypes.func.isRequired,
     onCreate: PropTypes.func.isRequired,
-    availableBodies: PropTypes.array
+    availableBodies: PropTypes.array,
+    selectedBody: PropTypes.shape({
+        name: PropTypes.string.isRequired,
+        naifId: PropTypes.number.isRequired
+    })
 };
 
 // ShareModal
@@ -207,27 +177,6 @@ ShareModal.propTypes = {
     onShareEmail: PropTypes.func.isRequired
 };
 
-const loadingMessages = [
-    "Loading 4.5 Billion Years...",
-    "Collapsing Primordial Gas Cloud...",
-    "Accreting Stellar Disk...",
-    "Spinning Up Magnetospheres...",
-    "Igniting Fusion Core...",
-    "Calibrating Orbital Resonances...",
-    "Plotting Interplanetary Trajectories...",
-    "Rendering Celestial Tapestry...",
-    "Synchronizing Cosmic Clocks...",
-    "Simulating the Universe...",
-    "Building the Solar System...",
-    "Calculating Gravitational Constants...",
-    "Solving the Navier-Stokes Equations...",
-    "Simulating the Big Bang...",
-    "Synchronizing Cosmic Clocks...",
-    "Collapsing rocky planets...",
-    "Colliding Theia with Earth...",
-    "Ejecting radical proto-planets...",
-    "Painting the rings of Saturn..."
-];
 
 export function Layout({
     groundTrackWindowProps,
@@ -243,6 +192,8 @@ export function Layout({
     simulationWindowProps,
     earthPointModalProps,
     isLoadingInitialData,
+    loadingProgress = 0,
+    loadingStage = 'Initializing...',
     satellitesPhysics = {}
 }) {
     const toastRef = useRef();
@@ -254,29 +205,7 @@ export function Layout({
     const handleOpenManeuver = (satellite) => setManeuverSat(satellite);
     const [showIntro, setShowIntro] = useState(false);
 
-    const [currentLoadingMessage, setCurrentLoadingMessage] = useState(loadingMessages[0]);
-    const loadingMessageIndexRef = useRef(0);
-
     // Removed duplicate usePhysicsSatellites() call - now passed as prop for better performance
-
-    useEffect(() => {
-        if (isLoadingInitialData) {
-            // Start with a random message
-            const randomIndex = Math.floor(Math.random() * loadingMessages.length);
-            setCurrentLoadingMessage(loadingMessages[randomIndex]);
-            loadingMessageIndexRef.current = randomIndex;
-            
-            const intervalId = setInterval(() => {
-                loadingMessageIndexRef.current = (loadingMessageIndexRef.current + 1) % loadingMessages.length;
-                setCurrentLoadingMessage(loadingMessages[loadingMessageIndexRef.current]);
-            }, 2500); // Change message every 2.5 seconds
-
-            return () => clearInterval(intervalId); // Cleanup interval on unmount or when loading finishes
-        } else {
-             // Optional: if you want to clear the message or set a default when not loading
-             // setCurrentLoadingMessage(''); 
-        }
-    }, [isLoadingInitialData]);
 
     useEffect(() => {
         if (typeof window !== 'undefined' && !localStorage.getItem('introShown')) {
@@ -321,7 +250,7 @@ export function Layout({
                     left: 0,
                     width: '100%',
                     height: '100%',
-                    backgroundColor: 'rgba(0, 0, 0, 0.7)', 
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)', 
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'center',
@@ -333,22 +262,57 @@ export function Layout({
                 }}>
                     <style>
                         {`
-                            @keyframes spin {
-                                to {
-                                    transform: rotate(360deg);
+                            @keyframes progressOpacity {
+                                0%, 100% {
+                                    opacity: 0.5;
+                                }
+                                50% {
+                                    opacity: 1;
                                 }
                             }
                         `}
                     </style>
+                    
+                    {/* Current Stage Message */}
+                    <span style={{ 
+                        marginBottom: '20px', 
+                        letterSpacing: '0.5px',
+                        fontSize: '18px',
+                        fontWeight: '500'
+                    }}>
+                        {loadingStage}
+                    </span>
+                    
+                    {/* Progress Bar Container */}
                     <div style={{
-                        border: '4px solid rgba(255, 255, 255, 0.2)',
-                        borderTopColor: '#fff',
-                        borderRadius: '50%',
-                        width: '40px',
-                        height: '40px',
-                        animation: 'spin 1s linear infinite'
-                    }}></div>
-                    <span style={{ marginTop: '20px', letterSpacing: '0.5px' }}>{currentLoadingMessage}</span>
+                        width: '300px',
+                        height: '8px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                        borderRadius: '4px',
+                        overflow: 'hidden',
+                        marginBottom: '10px',
+                        position: 'relative',
+                        border: '1px solid rgba(255, 255, 255, 0.2)'
+                    }}>
+                        {/* Progress Bar Fill */}
+                        <div style={{
+                            width: `${loadingProgress}%`,
+                            height: '100%',
+                            background: '#ffffff',
+                            borderRadius: '3px',
+                            transition: 'width 0.5s ease',
+                            animation: loadingProgress < 100 ? 'progressOpacity 1.5s ease-in-out infinite' : 'none'
+                        }}></div>
+                    </div>
+                    
+                    {/* Progress Percentage */}
+                    <span style={{
+                        fontSize: '14px',
+                        opacity: 0.8,
+                        letterSpacing: '0.3px'
+                    }}>
+                        {Math.round(loadingProgress)}%
+                    </span>
                 </div>
             )}
 
@@ -468,5 +432,7 @@ Layout.propTypes = {
         onToggle: PropTypes.func.isRequired
     }),
     isLoadingInitialData: PropTypes.bool.isRequired,
+    loadingProgress: PropTypes.number,
+    loadingStage: PropTypes.string,
     satellitesPhysics: PropTypes.object
 }; 

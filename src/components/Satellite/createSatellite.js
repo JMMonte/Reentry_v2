@@ -54,7 +54,8 @@ export async function createSatellite(app, params = {}) {
         ballisticCoefficient,
         crossSectionalArea: areaOverride,
         dragCoefficient = DEFAULT_CD,
-        color = pickBrightColor(params.color)
+        color = pickBrightColor(params.color),
+        commsConfig = params.commsConfig || {}
     } = params;
 
     // Log only essential info
@@ -74,6 +75,19 @@ export async function createSatellite(app, params = {}) {
         dragCoefficient,
         color
     });
+
+    // Create communication system for the satellite
+    if (sat && app.lineOfSightManager?.createSatelliteComms) {
+        // Apply default communication configuration based on satellite type
+        const defaultCommsConfig = {
+            preset: commsConfig.preset || 'cubesat', // Default to cubesat communications
+            enabled: commsConfig.enabled !== false,
+            ...commsConfig
+        };
+        
+        app.lineOfSightManager.createSatelliteComms(sat.id, defaultCommsConfig);
+        console.log(`[createSatellite] Created communications for ${name || 'Satellite'} with config:`, defaultCommsConfig);
+    }
 
     // Return the satellite object
     return sat;

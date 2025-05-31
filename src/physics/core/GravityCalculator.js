@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
+import { PhysicsConstants } from './PhysicsConstants.js';
 
 /**
  * Centralized gravity calculation module
  * Handles all gravitational force and acceleration computations
+ * Now optimized to work with CelestialBody instances
  */
 export class GravityCalculator {
     /**
      * Compute gravitational acceleration on a body due to multiple gravitating bodies
      * @param {THREE.Vector3} position - Position of the body (km)
-     * @param {Array} bodies - Array of gravitating bodies with position and mass
+     * @param {Array} bodies - Array of CelestialBody instances or legacy body objects
      * @param {Object} options - Additional options
      * @returns {THREE.Vector3} - Total gravitational acceleration (km/s²)
      */
@@ -26,6 +27,7 @@ export class GravityCalculator {
         for (const body of bodies) {
             if (excludeBodies.includes(body.naifId || body.id)) continue;
 
+            // Handle both CelestialBody instances and legacy objects
             const bodyPos = body.position instanceof THREE.Vector3 
                 ? body.position 
                 : new THREE.Vector3().fromArray(body.position);
@@ -34,16 +36,26 @@ export class GravityCalculator {
             const distance = r.length();
 
             if (distance > 0) {
-                const mu = body.mu || (Constants.G * body.mass);
+                // Use CelestialBody GM property if available, otherwise fallback
+                const mu = body.GM || body.mu || (PhysicsConstants.PHYSICS.G * body.mass);
                 const accelMag = mu / (distance * distance);
                 acceleration.addScaledVector(r.normalize(), accelMag);
             }
         }
 
         // J2 perturbation for oblate bodies
-        if (includeJ2 && centralBody && centralBody.J2) {
-            const j2Accel = this.computeJ2Acceleration(position, centralBody);
-            acceleration.add(j2Accel);
+        if (includeJ2 && centralBody) {
+            let j2Accel;
+            if (typeof centralBody.computeJ2Acceleration === 'function') {
+                // Use CelestialBody method
+                j2Accel = centralBody.computeJ2Acceleration(position);
+            } else if (centralBody.J2) {
+                // Fallback to legacy computation
+                j2Accel = this.computeJ2Acceleration(position, centralBody);
+            }
+            if (j2Accel) {
+                acceleration.add(j2Accel);
+            }
         }
 
         return acceleration;
@@ -59,7 +71,7 @@ export class GravityCalculator {
         if (!body.J2 || !body.radius) return new THREE.Vector3();
 
         const r = position.length();
-        const mu = body.mu || (Constants.G * body.mass);
+        const mu = body.mu || (PhysicsConstants.PHYSICS.G * body.mass);
         const J2 = body.J2;
         const Re = body.radius;
 
@@ -86,8 +98,8 @@ export class GravityCalculator {
 
     /**
      * Compute gravitational force between two bodies
-     * @param {Object} body1 - First body with position and mass
-     * @param {Object} body2 - Second body with position and mass
+     * @param {Object|CelestialBody} body1 - First body with position and mass
+     * @param {Object|CelestialBody} body2 - Second body with position and mass
      * @returns {THREE.Vector3} - Gravitational force on body1 due to body2 (kg⋅km/s²)
      */
     static computeForce(body1, body2) {
@@ -103,7 +115,9 @@ export class GravityCalculator {
 
         if (distance === 0) return new THREE.Vector3();
 
-        const forceMag = Constants.G * body1.mass * body2.mass / (distance * distance);
+        const mass1 = body1.mass || 0;
+        const mass2 = body2.mass || 0;
+        const forceMag = PhysicsConstants.PHYSICS.G * mass1 * mass2 / (distance * distance);
         return r.normalize().multiplyScalar(forceMag);
     }
 
@@ -124,7 +138,7 @@ export class GravityCalculator {
         const distance = pos1.distanceTo(pos2);
         if (distance === 0) return 0;
 
-        return -Constants.G * body1.mass * body2.mass / distance;
+        return -PhysicsConstants.PHYSICS.G * body1.mass * body2.mass / distance;
     }
 
     /**
@@ -144,7 +158,7 @@ export class GravityCalculator {
             }
             r = distance;
         } else {
-            mu = bodyOrGM.GM || bodyOrGM.mu || (Constants.G * bodyOrGM.mass);
+            mu = bodyOrGM.GM || bodyOrGM.mu || (PhysicsConstants.PHYSICS.G * bodyOrGM.mass);
             r = distance || bodyOrGM.radius;
         }
         
@@ -165,7 +179,7 @@ export class GravityCalculator {
         if (typeof centralBodyOrGM === 'number') {
             mu = centralBodyOrGM; // GM passed directly
         } else {
-            mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (Constants.G * centralBodyOrGM.mass);
+            mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (PhysicsConstants.PHYSICS.G * centralBodyOrGM.mass);
         }
         
         if (!mu || mu <= 0) {
@@ -189,7 +203,7 @@ export class GravityCalculator {
         if (typeof centralBodyOrGM === 'number') {
             mu = centralBodyOrGM;
         } else {
-            mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (Constants.G * centralBodyOrGM.mass);
+            mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (PhysicsConstants.PHYSICS.G * centralBodyOrGM.mass);
         }
         
         if (!mu || mu <= 0 || semiMajorAxis <= 0) {
@@ -284,7 +298,7 @@ export class GravityCalculator {
             const r = position.distanceTo(bodyPos);
             if (r === 0) continue;
 
-            const mu = body.mu || (Constants.G * body.mass);
+            const mu = body.mu || (PhysicsConstants.PHYSICS.G * body.mass);
             const acceleration = mu / (r * r);
 
             if (acceleration > maxAcceleration) {

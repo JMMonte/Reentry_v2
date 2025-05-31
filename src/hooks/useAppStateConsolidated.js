@@ -22,6 +22,10 @@ export function useAppStateConsolidated() {
   const [checkedInitialState, setCheckedInitialState] = useState(false);
   const [isAssetsLoaded, setIsAssetsLoaded] = useState(false);
   const [isSimReady, setIsSimReady] = useState(false);
+  
+  // Enhanced loading progress tracking
+  const [loadingProgress, setLoadingProgress] = useState(0); // 0-100
+  const [loadingStage, setLoadingStage] = useState('Initializing...');
 
   // Import/Export state
   const [importedState, setImportedState] = useState(() => 
@@ -54,6 +58,12 @@ export function useAppStateConsolidated() {
     setIsAssetsLoaded,
     isSimReady,
     setIsSimReady,
+    
+    // Loading progress
+    loadingProgress,
+    setLoadingProgress,
+    loadingStage,
+    setLoadingStage,
 
     // Import/Export state
     importedState,

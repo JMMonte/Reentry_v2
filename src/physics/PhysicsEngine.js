@@ -3,10 +3,12 @@ import * as Astronomy from 'astronomy-engine';
 import { SolarSystemHierarchy } from './SolarSystemHierarchy.js';
 import { StateVectorCalculator } from './StateVectorCalculator.js';
 import { PositionManager } from './PositionManager.js';
-import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
-import { Constants } from '../utils/Constants.js';
+import { solarSystemDataManager } from './PlanetaryDataManager.js';
+// Note: No longer importing Constants.js - using PhysicsConstants instead
 import { integrateRK4 } from './integrators/OrbitalIntegrators.js';
-import { Utils } from './PhysicsAPI.js';
+import { OrbitalMechanics } from './core/OrbitalMechanics.js';
+import { PhysicsConstants } from './core/PhysicsConstants.js';
+import { SubsystemManager } from './subsystems/SubsystemManager.js';
 
 // Extract the functions we need from the Astronomy module
 const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector } = Astronomy;
@@ -29,7 +31,7 @@ export class PhysicsEngine {
 
         // Simulation state
         this.simulationTime = new Date();
-        this.timeStep = 0.0167; // Default to 1/60 second for proper satellite integration
+        this.timeStep = PhysicsConstants.SIMULATION.DEFAULT_TIME_STEP;
 
         // Body storage
         this.bodies = {};
@@ -42,6 +44,9 @@ export class PhysicsEngine {
 
         // Barycenter calculations
         this.barycenters = new Map();
+        
+        // Subsystem manager for physics-based satellite subsystems
+        this.subsystemManager = null;
     }
 
     /**
@@ -62,6 +67,9 @@ export class PhysicsEngine {
         // Update all positions using the new modular system
         await this._updateAllBodies();
         this._updateBarycenters();
+        
+        // Initialize subsystem manager after physics engine is ready
+        this.subsystemManager = new SubsystemManager(this);
 
         return this;
     }
@@ -73,7 +81,7 @@ export class PhysicsEngine {
         const actualDeltaTime = deltaTime || this.timeStep;
         
         // Only log if unusually large time step
-        if (actualDeltaTime > 10.0) {
+        if (actualDeltaTime > PhysicsConstants.SIMULATION.LARGE_TIME_STEP_WARNING) {
             console.warn(`[PhysicsEngine] Large deltaTime in step(): ${actualDeltaTime} seconds`);
         }
 
@@ -89,6 +97,11 @@ export class PhysicsEngine {
 
         // Only integrate satellite dynamics
         await this._integrateSatellites(actualDeltaTime);
+        
+        // Update all satellite subsystems
+        if (this.subsystemManager) {
+            this.subsystemManager.update(actualDeltaTime);
+        }
 
         return {
             time: this.simulationTime,
@@ -408,8 +421,8 @@ export class PhysicsEngine {
         
         // Define reasonable limits - adjust based on central body
         const isSunCentered = satellite.centralBodyNaifId === 10; // Sun's NAIF ID
-        const maxVelocity = isSunCentered ? 620 : 50; // km/s - up to 620 km/s for Sun (Mercury's perihelion is ~59 km/s)
-        const maxPosition = isSunCentered ? 1e10 : 1e8; // 10 billion km for Sun, 100 million km for others
+        const maxVelocity = isSunCentered ? PhysicsConstants.VELOCITY_LIMITS.HELIOCENTRIC_MAX : PhysicsConstants.VELOCITY_LIMITS.PLANETARY_MAX;
+        const maxPosition = isSunCentered ? PhysicsConstants.POSITION_LIMITS.HELIOCENTRIC_MAX : PhysicsConstants.POSITION_LIMITS.PLANETARY_MAX;
         const minPosition = centralBody ? centralBody.radius * 0.9 : 100; // Not below surface
         
         let isValid = true;
@@ -474,7 +487,7 @@ export class PhysicsEngine {
                         (satellite.velocity.toArray ? satellite.velocity.toArray() : [0, 0, 0]);
         const velMag = Math.sqrt(velArray[0]**2 + velArray[1]**2 + velArray[2]**2);
         
-        if (velMag > 50) {
+        if (velMag > PhysicsConstants.VELOCITY_LIMITS.PLANETARY_MAX) {
             console.error(`[PhysicsEngine.addSatellite] EXTREME VELOCITY on creation for satellite ${id}:`);
             console.error(`  Velocity array: [${velArray[0].toFixed(3)}, ${velArray[1].toFixed(3)}, ${velArray[2].toFixed(3)}] km/s`);
             console.error(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
@@ -488,10 +501,10 @@ export class PhysicsEngine {
             position: new THREE.Vector3().fromArray(satellite.position),
             velocity: new THREE.Vector3().fromArray(velArray),
             acceleration: new THREE.Vector3(),
-            mass: satellite.mass || 1000, // kg - typical small satellite
-            size: satellite.size || 1, // m - radius for visualization
-            dragCoefficient: satellite.dragCoefficient || 2.2,
-            crossSectionalArea: satellite.crossSectionalArea || 2, // m² - more realistic for 1000kg satellite
+            mass: satellite.mass || PhysicsConstants.SATELLITE_DEFAULTS.MASS,
+            size: satellite.size || PhysicsConstants.SATELLITE_DEFAULTS.RADIUS,
+            dragCoefficient: satellite.dragCoefficient || PhysicsConstants.SATELLITE_DEFAULTS.DRAG_COEFFICIENT,
+            crossSectionalArea: satellite.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
             ballisticCoefficient: satellite.ballisticCoefficient, // kg/m² - optional
             lastUpdate: this.simulationTime,
             centralBodyNaifId: satellite.centralBodyNaifId,
@@ -554,6 +567,18 @@ export class PhysicsEngine {
         
         this.satellites.set(id, satData);
         
+        // Add default communication subsystem to all satellites
+        if (this.subsystemManager) {
+            this.subsystemManager.addSubsystem(id, 'communication', {
+                // Default communication configuration
+                antennaGain: 12.0,
+                transmitPower: 10.0,
+                transmitFrequency: 2.4,
+                dataRate: 1000,
+                protocols: ['inter_satellite', 'ground_station']
+            });
+        }
+        
         // Dispatch event for UI updates
         this._dispatchSatelliteEvent('satelliteAdded', satData);
         return id;
@@ -566,6 +591,11 @@ export class PhysicsEngine {
         const strId = String(id);
         const satellite = this.satellites.get(strId);
         if (satellite) {
+            // Remove all subsystems for this satellite
+            if (this.subsystemManager) {
+                this.subsystemManager.removeSatellite(strId);
+            }
+            
             this.satellites.delete(strId);
             // console.log('[PhysicsEngine] Removed satellite', strId);
             // Dispatch event for UI cleanup
@@ -672,7 +702,7 @@ export class PhysicsEngine {
             console.log(`  Delta-V: P=${nextNode.deltaV.prograde}, N=${nextNode.deltaV.normal}, R=${nextNode.deltaV.radial} km/s`);
             
             // Convert local delta-V to world coordinates
-            const worldDeltaV = Utils.vector.localToWorldDeltaV(
+            const worldDeltaV = OrbitalMechanics.localToWorldDeltaV(
                 new THREE.Vector3(
                     nextNode.deltaV.prograde,
                     nextNode.deltaV.normal,
@@ -705,7 +735,7 @@ export class PhysicsEngine {
     // Satellite integration methods (copied from original PhysicsEngine)
     async _integrateSatellites(deltaTime) {
         // Debug: Log integration call (every 10 seconds)
-        if (!this._lastIntegrateLogTime || Date.now() - this._lastIntegrateLogTime > 10000) {
+        if (!this._lastIntegrateLogTime || Date.now() - this._lastIntegrateLogTime > PhysicsConstants.SIMULATION.LOG_THROTTLE_INTERVAL) {
             // console.log(`[PhysicsEngine] _integrateSatellites called with deltaTime: ${deltaTime} seconds, ${this.satellites.size} satellites`);
             this._lastIntegrateLogTime = Date.now();
         }
@@ -784,7 +814,7 @@ export class PhysicsEngine {
         
         // Debug logging for extreme velocity issue
         const velMag = satellite.velocity.length();
-        if (velMag > 50) { // Log if velocity exceeds 50 km/s
+        if (velMag > PhysicsConstants.VELOCITY_LIMITS.PLANETARY_MAX) { // Log if velocity exceeds 50 km/s
             console.warn(`[PhysicsEngine._computeSatelliteAcceleration] HIGH VELOCITY DETECTED for satellite ${satellite.id}:`);
             console.warn(`  Velocity: ${satellite.velocity.toArray().map(v => v.toFixed(3)).join(', ')} km/s`);
             console.warn(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
@@ -819,7 +849,7 @@ export class PhysicsEngine {
             const distance = r.length();
             
             if (distance > 1e-6) { // Avoid near-zero distances
-                const gravAccel = (Constants.G * body.mass) / (distance * distance);
+                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
                 const accVec = r.clone().normalize().multiplyScalar(gravAccel);
                 totalAccel.add(accVec);
                 allBodyAccels[bodyId] = accVec.clone();
@@ -846,7 +876,7 @@ export class PhysicsEngine {
                     console.warn(`  Acceleration: ${accVec.length().toExponential(3)} km/s²`);
                     console.warn(`  Distance: ${body.position.distanceTo(satGlobalPos).toFixed(1)} km`);
                     console.warn(`  Mass: ${body.mass.toExponential(3)} kg`);
-                    console.warn(`  GM: ${(Constants.G * body.mass).toExponential(3)} km³/s²`);
+                    console.warn(`  GM: ${(PhysicsConstants.PHYSICS.G * body.mass).toExponential(3)} km³/s²`);
                 }
             }
         }
@@ -866,7 +896,7 @@ export class PhysicsEngine {
             const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
             const distance = r.length();
             if (distance > 1e-6) { // Avoid near-zero distances
-                const gravAccel = (Constants.G * body.mass) / (distance * distance);
+                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
                 const accVec = r.clone().normalize().multiplyScalar(gravAccel);
                 centralAccel.add(accVec);
             }
@@ -935,7 +965,7 @@ export class PhysicsEngine {
         // Use body's J2 coefficient and radius
         const J2 = centralBody.J2;
         const Re = centralBody.radius || centralBody.equatorialRadius;
-        const mu = centralBody.GM || (Constants.G * centralBody.mass); // Gravitational parameter
+        const mu = centralBody.GM || (PhysicsConstants.PHYSICS.G * centralBody.mass); // Gravitational parameter
 
         // Satellite position relative to central body (planet-centric)
         const r = satellite.position.clone();
@@ -1042,7 +1072,7 @@ export class PhysicsEngine {
      */
     _calculateAtmosphereVelocity(position, body) {
         // Get rotation period (convert from seconds to days if needed)
-        const rotationPeriod = body.rotationPeriod || (body.spin ? 360 / body.spin : Constants.siderialDay);
+        const rotationPeriod = body.rotationPeriod || (body.spin ? 360 / body.spin : PhysicsConstants.TIME.SIDEREAL_DAY);
         
         if (!rotationPeriod || rotationPeriod === 0) {
             return new THREE.Vector3(0, 0, 0);
@@ -1167,8 +1197,8 @@ export class PhysicsEngine {
             const distance = body.position.distanceTo(satGlobalPos);
             if (distance < sphereOfInfluence) {
                 // Additional check: only include if gravitational acceleration is significant
-                const gravAccel = (Constants.G * body.mass) / (distance * distance);
-                const centralGravAccel = (Constants.G * centralBody.mass) / (satAltitude * satAltitude);
+                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
+                const centralGravAccel = (PhysicsConstants.PHYSICS.G * centralBody.mass) / (satAltitude * satAltitude);
                 
                 // Include if perturbation is at least 0.01% of central body's gravity (more inclusive)
                 if (gravAccel > centralGravAccel * 0.0001) {
@@ -1357,7 +1387,11 @@ export class PhysicsEngine {
                 a_j2: satellite.a_j2,
                 a_drag: satellite.a_drag,
                 a_total: satellite.a_total,
-                a_gravity_total: satellite.a_gravity_total
+                a_gravity_total: satellite.a_gravity_total,
+                
+                // Include subsystem status
+                subsystems: this.subsystemManager ? 
+                    this.subsystemManager.getAllSubsystemStatuses(id) : {}
             };
         }
         return states;
@@ -1397,15 +1431,33 @@ export class PhysicsEngine {
 
     /**
      * Get all satellites as plain JS objects for line-of-sight calculations
-     * Returns: [{ id, position: [x, y, z] }]
+     * Returns: [{ id, position: [x, y, z] }] where position is absolute in solar system coordinates
      */
     getSatellitesForLineOfSight() {
         const sats = [];
         for (const [id, sat] of this.satellites) {
             if (!sat || typeof sat.position?.toArray !== 'function') continue;
+            
+            // Get satellite's relative position
+            const relativePos = sat.position.toArray();
+            
+            // Get central body's absolute position to transform to absolute coordinates
+            const centralBody = this.bodies[sat.centralBodyNaifId];
+            let absolutePos = relativePos;
+            
+            if (centralBody && centralBody.position) {
+                const centralBodyPos = centralBody.position.toArray();
+                absolutePos = [
+                    relativePos[0] + centralBodyPos[0],
+                    relativePos[1] + centralBodyPos[1],
+                    relativePos[2] + centralBodyPos[2]
+                ];
+            }
+            
             sats.push({
                 id,
-                position: sat.position.toArray()
+                position: absolutePos,
+                centralBodyNaifId: sat.centralBodyNaifId // Include for debugging
             });
         }
         return sats;

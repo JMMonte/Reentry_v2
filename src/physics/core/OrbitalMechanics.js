@@ -39,7 +39,7 @@ export class OrbitalMechanics {
     static calculateOrbitalPeriod(position, velocity, centralBodyOrGM) {
         const mu = typeof centralBodyOrGM === 'number' 
             ? centralBodyOrGM 
-            : PhysicsConstants.getGravitationalParameter(centralBodyOrGM);
+            : (centralBodyOrGM.GM || centralBodyOrGM.mu || (centralBodyOrGM.mass ? PhysicsConstants.PHYSICS.G * centralBodyOrGM.mass : 0));
             
         const elements = stateToKeplerian(position, velocity, mu);
         
@@ -81,7 +81,7 @@ export class OrbitalMechanics {
     static calculateLaunchVelocity(body, latitude, altitude, azimuth = 90) {
         // Required inertial velocity for circular orbit
         const orbitalRadius = (body.radius || 0) + altitude;
-        const mu = PhysicsConstants.getGravitationalParameter(body);
+        const mu = body.GM || body.mu || (body.mass ? PhysicsConstants.PHYSICS.G * body.mass : 0);
         const vInertial = this.calculateCircularVelocity(mu, orbitalRadius);
         
         // Body rotation contribution
@@ -117,7 +117,14 @@ export class OrbitalMechanics {
         const deltaT = julianDate - epoch;
 
         // Mean motion (rad/day)
-        const n = Math.sqrt(GM / (a * a * a)) * 86400; // rad/s to rad/day
+        let n;
+        if (elements.customPeriod) {
+            // Use custom period instead of Kepler's law (for special cases like Pluto)
+            const customPeriodDays = elements.customPeriod / 86400; // convert seconds to days
+            n = (2 * Math.PI) / customPeriodDays; // rad/day
+        } else {
+            n = Math.sqrt(GM / (a * a * a)) * 86400; // rad/s to rad/day
+        }
 
         // Current mean anomaly
         const M = M0_rad + n * deltaT;
@@ -193,7 +200,7 @@ export class OrbitalMechanics {
             targetRadius     // km from center
         } = params;
         
-        const mu = PhysicsConstants.getGravitationalParameter(centralBody);
+        const mu = centralBody.GM || centralBody.mu || (centralBody.mass ? PhysicsConstants.PHYSICS.G * centralBody.mass : 0);
         
         // Calculate velocities
         const v1 = this.calculateCircularVelocity(mu, currentRadius);
@@ -266,7 +273,7 @@ export class OrbitalMechanics {
     static calculateOrbitalElements(position, velocity, centralBodyOrGM, bodyRadius = 0) {
         const mu = typeof centralBodyOrGM === 'number' 
             ? centralBodyOrGM 
-            : PhysicsConstants.getGravitationalParameter(centralBodyOrGM);
+            : (centralBodyOrGM.GM || centralBodyOrGM.mu || (centralBodyOrGM.mass ? PhysicsConstants.PHYSICS.G * centralBodyOrGM.mass : 0));
             
         return stateToKeplerian(position, velocity, mu, 0, bodyRadius);
     }
@@ -283,7 +290,7 @@ export class OrbitalMechanics {
     static calculateNextApsis(position, velocity, centralBodyOrGM, apsisType, currentTime) {
         const mu = typeof centralBodyOrGM === 'number' 
             ? centralBodyOrGM 
-            : PhysicsConstants.getGravitationalParameter(centralBodyOrGM);
+            : (centralBodyOrGM.GM || centralBodyOrGM.mu || (centralBodyOrGM.mass ? PhysicsConstants.PHYSICS.G * centralBodyOrGM.mass : 0));
             
         const elements = stateToKeplerian(position, velocity, mu);
         
@@ -324,7 +331,7 @@ export class OrbitalMechanics {
      * @returns {number} Gravitational parameter (km³/s²)
      */
     static getGravitationalParameter(bodyIdentifier) {
-        return PhysicsConstants.getGravitationalParameter(bodyIdentifier);
+        return bodyIdentifier.GM || bodyIdentifier.mu || (bodyIdentifier.mass ? PhysicsConstants.PHYSICS.G * bodyIdentifier.mass : 0);
     }
     
     /**

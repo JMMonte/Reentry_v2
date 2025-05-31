@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { ManeuverNodeModel } from '../models/ManeuverNodeModel.js';
-import { Constants } from '../utils/Constants.js';
-import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
+import { Orbital, Bodies, Utils, Constants } from '../physics/PhysicsAPI.js';
 
 /**
  * Encapsulates maneuver operations for a satellite (manual burns, transfers).
@@ -79,8 +78,9 @@ export class ManeuverManager {
     calculateHohmannPreview({ ellApoKm }) {
         const simNow = this.timeUtils.getSimulatedTime();
         const r1 = this.sat.position.length();
-        const mu = Constants.earthGravitationalParameter;
-        const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
+        const earthData = Bodies.getData('earth');
+        const mu = earthData?.GM || Bodies.getGM('earth');
+        const r_target = (parseFloat(ellApoKm) || 0) + earthData?.radius;
         // Get current orbital elements to maintain inclination and LAN
         const currentElements = Orbital.calculateElements(
             this.sat.position,
@@ -96,7 +96,7 @@ export class ManeuverManager {
             targetApoapsis: parseFloat(ellApoKm) || 0,
             targetInclination: currentElements.inclination, // Maintain current inclination
             targetLAN: currentElements.longitudeOfAscendingNode, // Maintain current LAN
-            bodyRadius: Constants.earthRadius,
+            bodyRadius: earthData?.radius,
             mu: mu
         });
         
@@ -109,8 +109,8 @@ export class ManeuverManager {
         const time1 = new Date(simNow);
         const time2 = new Date(simNow.getTime() + transferTime * 1000);
         // Altitudes in km
-        const altitude1Km = (r1 - Constants.earthRadius);
-        const altitudeTargetKm = (r_target - Constants.earthRadius);
+        const altitude1Km = (r1 - earthData?.radius);
+        const altitudeTargetKm = (r_target - earthData?.radius);
         const dt1Sec = (time1.getTime() - simNow.getTime()) / 1000;
         const dt2Sec = (time2.getTime() - simNow.getTime()) / 1000;
         return {
@@ -139,12 +139,13 @@ export class ManeuverManager {
         this.sat.maneuverNodes.slice().forEach(node => this.sat.removeManeuverNode(node));
 
         const simNow = this.timeUtils.getSimulatedTime();
-        const mu = Constants.earthGravitationalParameter;
+        const earthData = Bodies.getData('earth');
+        const mu = earthData?.GM || Bodies.getGM('earth');
         const r1Vec = this.sat.position.clone();
         const v1Vec = this.sat.velocity.clone();
         const r1 = r1Vec.length();
         // Target orbit radius
-        const r_target = (parseFloat(ellApoKm) || 0) + Constants.earthRadius;
+        const r_target = (parseFloat(ellApoKm) || 0) + earthData?.radius;
         // Find next periapsis for first burn using new Physics API
         let burnTime = Orbital.nextPeriapsis(
             r1Vec,
@@ -164,7 +165,7 @@ export class ManeuverManager {
             targetApoapsis: parseFloat(ellApoKm) || 0,
             targetInclination: currentElements.inclination, // Maintain current inclination
             targetLAN: currentElements.longitudeOfAscendingNode, // Maintain current LAN
-            bodyRadius: Constants.earthRadius,
+            bodyRadius: earthData?.radius,
             mu: mu
         });
         

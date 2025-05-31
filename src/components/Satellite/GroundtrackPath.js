@@ -17,7 +17,7 @@ export class GroundtrackPath {
 
     static _initSharedWorker() {
         GroundtrackPath._worker = new Worker(
-            new URL('../../workers/groundtrackWorker.js', import.meta.url),
+            new URL('../../physics/workers/groundtrackWorker.js', import.meta.url),
             { type: 'module' },
         );
 

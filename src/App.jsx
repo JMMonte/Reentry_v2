@@ -6,7 +6,7 @@ import { useSimulationState } from './hooks/useSimulationState';
 import { SimulationStateManager } from './managers/SimulationStateManager';
 import './styles/globals.css';
 import './styles/animations.css';
-import { SimulationProvider } from './simulation/SimulationContext';
+import { SimulationProvider } from './simulation/SimulationContext.jsx';
 import { useBodySelection } from './hooks/useBodySelection';
 import { PhysicsStateProvider } from './providers/PhysicsStateContext.jsx';
 import { CelestialBodiesProvider } from './providers/CelestialBodiesContext.jsx';
@@ -40,7 +40,7 @@ function App3DMain() {
   const { showToast } = useToast();
   
   // Satellite operations (extracted from App.jsx)
-  const { satellites, satellitesPhysics, availableBodies } = useSatelliteOperations(app3d, appState.modalState, null);
+  const { satellites, satellitesPhysics, availableBodies } = useSatelliteOperations(app3d, appState.modalState, null, ready);
   
   // Body selection (depends on satellite data)
   const bodySelection = useBodySelection({
@@ -51,7 +51,7 @@ function App3DMain() {
   });
   
   // Satellite creation with proper handleBodyChange
-  const { onCreateSatellite } = useSatelliteOperations(app3d, appState.modalState, bodySelection.handleBodyChange);
+  const { onCreateSatellite } = useSatelliteOperations(app3d, appState.modalState, bodySelection.handleBodyChange, ready);
   
   // Time management (extracted from App.jsx)
   const timeManagement = useTimeManagement(app3d, controller, appState.setSimTime);
@@ -64,6 +64,8 @@ function App3DMain() {
     setIsSimReady: appState.setIsSimReady,
     setIsAssetsLoaded: appState.setIsAssetsLoaded,
     setOpenPointModals: appState.modalState.setOpenPointModals,
+    setLoadingProgress: appState.setLoadingProgress,
+    setLoadingStage: appState.setLoadingStage,
     app3d
   });
   
@@ -104,6 +106,7 @@ function App3DMain() {
     setDisplaySettings: appState.setDisplaySettings,
     app3d,
     satellites: satellites,
+    selectedBody: bodySelection.selectedBody,
     handleBodyChange: bodySelection.handleBodyChange,
     debugWindows: appState.modalState.debugWindows,
     onCreateSatellite: onCreateSatellite,
@@ -116,7 +119,7 @@ function App3DMain() {
     setAuthMode: appState.setAuthMode,
     showToast,
     satellitesPhysics: satellitesPhysics
-  }), [appState, controller, app3d, satellites, onCreateSatellite, availableBodies, satellitesPhysics, bodySelection.handleBodyChange, sharingHooks, showToast]);
+  }), [appState, controller, app3d, satellites, bodySelection.selectedBody, onCreateSatellite, availableBodies, satellitesPhysics, bodySelection.handleBodyChange, sharingHooks, showToast]);
 
   // Simplified useEffect hooks (most complex logic moved to custom hooks)
   
@@ -220,6 +223,8 @@ function App3DMain() {
               groundTrackWindowProps={modalProps.groundTrackWindow}
               earthPointModalProps={modalProps.earthPointModal}
               isLoadingInitialData={appState.isLoadingInitialData}
+              loadingProgress={appState.loadingProgress}
+              loadingStage={appState.loadingStage}
               satellitesPhysics={satellitesPhysics}
             >
               <canvas id="three-canvas" className="absolute inset-0 z-0" />

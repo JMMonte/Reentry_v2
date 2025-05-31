@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { Satellite } from '../components/Satellite/Satellite.js';
 // import { OrbitPath } from '../components/Satellite/OrbitPath.js'; // Removed - using SatelliteOrbitManager
-import { Constants } from '../utils/Constants.js';
+import { Constants } from '../physics/PhysicsAPI.js';
 import {
     createSatelliteFromLatLon as createSatFromLatLonInternal,
     createSatelliteFromOrbitalElements as createSatFromOEInternal,
@@ -243,13 +243,13 @@ export class SatelliteManager {
                 if (radialVel > 0 && satSOI > r) {
                     periodS = (satSOI - r) / radialVel * 1.5; // Time to reach SOI with margin
                 } else {
-                    periodS = Constants.secondsInDay; // 1 day fallback
+                    periodS = Constants.TIME.SECONDS_IN_DAY; // 1 day fallback
                 }
                 pts = Math.ceil(ptsPerPeriod * effP);
             } else {
                 const baseP = Number.isFinite(els.period) && els.period > 0
                     ? els.period
-                    : Constants.secondsInDay;
+                    : Constants.TIME.SECONDS_IN_DAY;
                 periodS = baseP * effP;
                 pts = ptsPerPeriod > 0
                     ? Math.ceil(ptsPerPeriod * effP)

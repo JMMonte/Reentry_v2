@@ -4,6 +4,7 @@
  */
 
 import { getSocket } from '../socket.js';
+import { solarSystemDataManager } from '../physics/PlanetaryDataManager.js';
 
 export function buildNavbarProps({
   modalState,
@@ -76,6 +77,7 @@ export function buildModalProps({
   setDisplaySettings,
   app3d,
   satellites,
+  selectedBody,
   handleBodyChange,
   debugWindows,
   onCreateSatellite,
@@ -119,12 +121,57 @@ export function buildModalProps({
       app3d
     },
     
-    satelliteCreatorModal: {
-      isOpen: modalState.isSatelliteModalOpen,
-      onClose: () => modalState.setIsSatelliteModalOpen(false),
-      onCreate: onCreateSatellite,
-      availableBodies
-    },
+    satelliteCreatorModal: (() => {
+      // Find matching body in availableBodies based on current selection using data-driven approach
+      let preselectedBody = null;
+      
+      if (selectedBody && selectedBody !== 'none' && !selectedBody.startsWith('satellite-')) {
+        // Strategy 1: Direct name match (case-insensitive)
+        preselectedBody = availableBodies.find(body => 
+          body.name.toLowerCase() === selectedBody.toLowerCase()
+        );
+        
+        // Strategy 2: Use planetary data manager if available and initialized
+        if (!preselectedBody && solarSystemDataManager?.initialized) {
+          const bodyConfig = solarSystemDataManager.getBodyByName(selectedBody.toLowerCase());
+          
+          if (bodyConfig) {
+            // Try to find by NAIF ID (most reliable identifier)
+            preselectedBody = availableBodies.find(body => 
+              body.naifId === bodyConfig.naif_id
+            );
+            
+            // Try by astronomy engine name if NAIF ID didn't work
+            if (!preselectedBody && bodyConfig.astronomyEngineName) {
+              preselectedBody = availableBodies.find(body => 
+                body.name.toLowerCase() === bodyConfig.astronomyEngineName.toLowerCase()
+              );
+            }
+          }
+        }
+        
+        // Strategy 3: Fallback - search through all available bodies for any reasonable match
+        // This handles cases where the data manager isn't ready yet
+        if (!preselectedBody) {
+          const searchTerm = selectedBody.toLowerCase();
+          preselectedBody = availableBodies.find(body => {
+            const bodyName = body.name.toLowerCase();
+            // Exact match, contains match, or common variations
+            return bodyName === searchTerm || 
+                   bodyName.includes(searchTerm) || 
+                   searchTerm.includes(bodyName);
+          });
+        }
+      }
+      
+      return {
+        isOpen: modalState.isSatelliteModalOpen,
+        onClose: () => modalState.setIsSatelliteModalOpen(false),
+        onCreate: onCreateSatellite,
+        availableBodies,
+        selectedBody: preselectedBody
+      };
+    })(),
     
     shareModal: {
       isOpen: modalState.shareModalOpen,

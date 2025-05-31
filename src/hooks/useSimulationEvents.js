@@ -9,6 +9,8 @@ export function useSimulationEvents({
   setIsSimReady,
   setIsAssetsLoaded,
   setOpenPointModals,
+  setLoadingProgress,
+  setLoadingStage,
   app3d
 }) {
   
@@ -51,19 +53,37 @@ export function useSimulationEvents({
   useEffect(() => {
     const handleSceneReady = () => {
       setIsSimReady(true);
+      setLoadingProgress(100);
+      setLoadingStage('Ready to Explore!');
       console.log('[App.jsx] sceneReady event received, hiding spinner.');
     };
     
     window.addEventListener('sceneReadyFromBackend', handleSceneReady);
     return () => window.removeEventListener('sceneReadyFromBackend', handleSceneReady);
-  }, [setIsSimReady]);
+  }, [setIsSimReady, setLoadingProgress, setLoadingStage]);
 
   // Assets loaded events
   useEffect(() => {
-    const handleAssetsLoaded = () => setIsAssetsLoaded(true);
+    const handleAssetsLoaded = () => {
+      setIsAssetsLoaded(true);
+      setLoadingProgress(50);
+      setLoadingStage('Building Solar System...');
+    };
     window.addEventListener('assetsLoaded', handleAssetsLoaded);
     return () => window.removeEventListener('assetsLoaded', handleAssetsLoaded);
-  }, [setIsAssetsLoaded]);
+  }, [setIsAssetsLoaded, setLoadingProgress, setLoadingStage]);
+
+  // Loading progress events
+  useEffect(() => {
+    const handleLoadingProgress = (e) => {
+      const { progress, stage } = e.detail;
+      if (typeof progress === 'number') setLoadingProgress(progress);
+      if (typeof stage === 'string') setLoadingStage(stage);
+    };
+    
+    window.addEventListener('loadingProgress', handleLoadingProgress);
+    return () => window.removeEventListener('loadingProgress', handleLoadingProgress);
+  }, [setLoadingProgress, setLoadingStage]);
 
   // Earth point click events
   useEffect(() => {

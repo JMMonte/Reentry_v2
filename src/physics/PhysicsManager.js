@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
 import { OrbitPropagator } from './core/OrbitPropagator.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
-import { solarSystemDataManager } from './bodies/PlanetaryDataManager.js';
+import { solarSystemDataManager } from './PlanetaryDataManager.js';
 
 /**
  * Physics Manager - Main interface between application and physics engine

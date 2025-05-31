@@ -5,13 +5,11 @@ import { PlanetMaterials } from './PlanetMaterials.js';
 import atmosphereMeshVertexShader from '../../shaders/atmosphereMesh.vert?raw';
 import atmosphereMeshFragmentShader from '../../shaders/atmosphereMesh.frag?raw';
 import { AtmosphereComponent } from './AtmosphereComponent.js';
-import { CloudComponent } from './CloudComponent.js';
-import { DistantMeshComponent } from './DistantMeshComponent.js';
-import { SoiComponent } from './SoiComponent.js';
 import { PlanetSurface } from './PlanetSurface.js';
 import { RadialGrid } from './RadialGrid.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
+import { SoiComponent } from './SoiComponent.js';
 
 /*
  * Planet.js
@@ -173,12 +171,10 @@ export class Planet {
             this.#initComponents(config);
         }
 
-        // --- SOI (Sphere of Influence) ---
-        if (this.soiRadius > 0) {
+        // --- SOI Component ---
+        if (this.soiRadius) {
             this.soiComponent = new SoiComponent(this);
-            if (this.soiComponent.mesh) {
-                this.components.push(this.soiComponent);
-            }
+            this.components.push(this.soiComponent);
         }
 
         if (config.addLight && config.lightOptions) {
@@ -297,8 +293,6 @@ export class Planet {
             // Do NOT set equatorialGroup quaternion for barycenters
             return;
         }
-        // Always update distantComponent so it can toggle dot visibility
-        this.distantComponent?.update();
 
         // --- Orbital position update ---
         // Always use targetPosition which is set by the physics engine
@@ -316,7 +310,6 @@ export class Planet {
         // Update all other detailed components as usual
         this.components.forEach(c => {
             if (c && typeof c.update === 'function') {
-                if (c === this.distantComponent) return; // Already updated above
                 c.update();
             }
         });
@@ -448,7 +441,11 @@ export class Planet {
      * Set visibility of the sphere of influence (SOI).
      * @param {boolean} v
      */
-    setSOIVisible(v) { this.soiComponent && (this.soiComponent.mesh.visible = v); }
+    setSOIVisible(v) { 
+        if (this.soiComponent) {
+            this.soiComponent.setVisible(v);
+        }
+    }
     /**
      * Set visibility of the radial grid.
      * @param {boolean} v
@@ -541,6 +538,49 @@ export class Planet {
     }
 
     /**
+     * Set server quaternion for orientation updates
+     * @param {THREE.Quaternion} q - Server quaternion
+     */
+    setServerQuaternion(q) {
+        this._serverQuaternion = q;
+    }
+
+    /**
+     * Update rotation from server quaternion
+     */
+    updateRotation() {
+        if (this._serverQuaternion && this.orientationGroup) {
+            this.orientationGroup.quaternion.copy(this._serverQuaternion);
+        }
+    }
+
+    /**
+     * Applies the base orientation to a planet's rotationGroup.
+     * @param {THREE.Group} rotationGroup
+     * @param {Object} options - { applyBase: boolean, baseRotation: number }
+     */
+    static applyBaseOrientation(rotationGroup, options = {}) {
+        const { applyBase = true, baseRotation = Math.PI / 2 } = options;
+        if (applyBase) {
+            rotationGroup.rotation.set(0, 0, 0);
+            rotationGroup.rotateX(baseRotation);
+        }
+    }
+
+    /**
+     * Applies the server quaternion to the orientationGroup.
+     * @param {THREE.Group} orientationGroup
+     * @param {THREE.Quaternion} qServer
+     * @param {Object} options - { applyServer: boolean }
+     */
+    static applyServerQuaternion(orientationGroup, qServer, options = {}) {
+        const { applyServer = true } = options;
+        if (applyServer && qServer) {
+            orientationGroup.quaternion.copy(qServer);
+        }
+    }
+
+    /**
      * Convert a quaternion from Z-up (server) to Y-up (Three.js) reference frame.
      * @param {THREE.Quaternion} qServer - Quaternion from server (Z-up)
      * @returns {THREE.Quaternion} Quaternion for Three.js (Y-up)
@@ -592,9 +632,7 @@ export class Planet {
                 this.modelLoaded = true;
                 // Add rings for mesh planets after model is loaded
                 this.#addRings(config);
-                // Add distant rendering for mesh planets
-                this.distantComponent = new DistantMeshComponent(this);
-                this.components.push(this.distantComponent);
+                // Proximity renderer is already initialized in constructor
                 // Dispatch event for listeners (e.g., PlanetVectors)
                 if (typeof this.onMeshLoaded === 'function') this.onMeshLoaded();
                 if (typeof this.dispatchEvent === 'function') {
@@ -632,6 +670,7 @@ export class Planet {
             if (Array.isArray(atm.rayleighScatteringCoeff)) atm.rayleighScatteringCoeff = atm.rayleighScatteringCoeff.map(v => v * (earthRef / this.radius));
             if (typeof atm.mieScatteringCoeff === 'number') atm.mieScatteringCoeff *= (earthRef / this.radius);
             const configWithComputedAtmo = { ...config, atmosphere: atm };
+            // Create atmosphere component
             this.atmosphereComponent = new AtmosphereComponent(
                 this,
                 configWithComputedAtmo,
@@ -645,12 +684,6 @@ export class Planet {
             if (this.atmosphereMesh) {
                 this.atmosphereMesh.renderOrder = this.renderOrderOverrides.ATMOSPHERE ?? RENDER_ORDER.ATMOSPHERE;
             }
-        }
-        this.distantComponent = new DistantMeshComponent(this);
-        this.components.push(this.distantComponent);
-        if (this.cloudMaterial) {
-            this.cloudComponent = new CloudComponent(this);
-            this.components.push(this.cloudComponent);
         }
         const defaultSurfaceOpts = {
             addLatitudeLines: true,

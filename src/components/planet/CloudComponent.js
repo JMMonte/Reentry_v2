@@ -52,4 +52,4 @@ export class CloudComponent {
         });
         this.planet.rotationGroup.remove(this.lod);
     }
-} 
+}

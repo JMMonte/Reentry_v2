@@ -1,11 +1,12 @@
 // Satellite.js
 import * as THREE from 'three';
-import { ApsisVisualizer } from '../ApsisVisualizer.js';
+import { ApsisVisualizer } from '../planet/ApsisVisualizer.js';
 // import { OrbitPath } from './OrbitPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { GroundtrackPath } from './GroundtrackPath.js';
 import { ManeuverVisualizationManager } from './ManeuverNodeVisualizer.js';
 import { createManeuverNodeDTO } from '../../types/DataTransferObjects.js';
+import { SatelliteComms } from './SatelliteComms.js';
 
 /**
  * Satellite (UI/View only)
@@ -28,6 +29,7 @@ export class Satellite {
      * @param {string}  [opts.name]
      * @param {Object}  opts.planetConfig
      * @param {number}  opts.centralBodyNaifId
+     * @param {Object}  [opts.commsConfig] - Communication system configuration
      */
     constructor({
         scene, id, color, app3d, name, planetConfig, centralBodyNaifId,
@@ -74,7 +76,10 @@ export class Satellite {
         // this.scene.add(this.orbitPath.orbitLine);
         // this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
         this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
-        this.apsisVisualizer.setVisible(this.app3d.getDisplaySetting('showOrbits'));
+        this.apsisVisualizer.setVisible(
+            this.app3d.getDisplaySetting('showOrbits') && 
+            this.app3d.getDisplaySetting('showApsis')
+        );
         this.groundTrackPath = new GroundtrackPath();
     }
 
@@ -182,9 +187,10 @@ export class Satellite {
 
     setVisible(v) {
         const showOrbit = v && this.app3d.getDisplaySetting('showOrbits');
+        const showApsis = showOrbit && this.app3d.getDisplaySetting('showApsis');
         this.visualizer.setVisible(v);
         // Orbit visibility handled by SatelliteOrbitManager
-        this.apsisVisualizer.setVisible(showOrbit);
+        this.apsisVisualizer.setVisible(showApsis);
     }
 
     setColor(c) {

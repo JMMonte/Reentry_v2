@@ -5,7 +5,7 @@ import {
     getPlanetOptions,
     getSatelliteOptions
 } from '../utils/BodySelectionUtils';
-import { solarSystemDataManager } from '../physics/bodies/PlanetaryDataManager.js';
+import { solarSystemDataManager } from '../physics/PlanetaryDataManager.js';
 
 
 /**

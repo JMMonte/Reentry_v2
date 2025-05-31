@@ -66,7 +66,7 @@ export class SatelliteRenderManager {
         }
         
         // Remove renderers for deleted satellites
-        for (const [id, renderer] of this.renderers) {
+        for (const [id] of this.renderers) {
             if (!renderData.satellites.has(id)) {
                 this._removeRenderer(id);
             }

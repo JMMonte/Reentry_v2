@@ -1,0 +1,1 @@
+// TBD implement sol system agregator as a physics object; we need to be able to manage star systems.

@@ -8,8 +8,9 @@ import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
-import { Orbital } from '../../../physics/PhysicsAPI.js';
+import { Bodies, Orbital } from '../../../physics/PhysicsAPI.js';
 import * as THREE from 'three';
+import { SatelliteCommsSection } from './SatelliteCommsSection.jsx';
 
 // Section component for collapsible sections
 const Section = ({ title, isOpen, onToggle, children }) => {
@@ -60,6 +61,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   const [showCharacteristics, setShowCharacteristics] = useState(true);
   const [showPosition, setShowPosition] = useState(true);
   const [showStateVectors, setShowStateVectors] = useState(false);
+  const [showCommunications, setShowCommunications] = useState(true);
+  const [showCommTimeline, setShowCommTimeline] = useState(false);
   const [showForces, setShowForces] = useState(false);
   const [showOrbit, setShowOrbit] = useState(true);
   const [showSimProperties, setShowSimProperties] = useState(false);
@@ -67,6 +70,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   
   // Propagation data state
   const [propagationData, setPropagationData] = useState(null);
+  
 
   // Update state when satellite changes
   useEffect(() => {
@@ -134,21 +138,39 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
           centralBody = physicsBody;
           bodyRadius = physicsBody.radius || 0;
         } else {
-          // Use default values for common bodies
-          const defaultBodies = {
-            399: { name: 'Earth', GM: 398600.4418, radius: 6371.0 }, // Earth
-            301: { name: 'Moon', GM: 4902.8, radius: 1737.4 },      // Moon
-            10: { name: 'Sun', GM: 132712440018, radius: 695700 }   // Sun
-          };
-          
-          const defaultBody = defaultBodies[physics.centralBodyNaifId];
-          if (defaultBody) {
-            centralBody = defaultBody;
-            bodyRadius = defaultBody.radius;
-          } else {
-            console.warn(`[SatelliteDebugWindow] Central body ${physics.centralBodyNaifId} not found, using Earth defaults`);
-            centralBody = defaultBodies[399]; // Default to Earth
-            bodyRadius = defaultBodies[399].radius;
+          // Get body data from PhysicsAPI
+          try {
+            const bodyData = Bodies.getByNaif(physics.centralBodyNaifId);
+            
+            if (bodyData) {
+              centralBody = {
+                name: bodyData.name,
+                GM: bodyData.GM || Bodies.getGM(physics.centralBodyNaifId),
+                radius: bodyData.radius
+              };
+              bodyRadius = bodyData.radius;
+            } else {
+              // Fallback to Bodies.getGM if no body data found
+              const GM = Bodies.getGM(physics.centralBodyNaifId);
+              
+              if (GM) {
+                centralBody = {
+                  name: `Body ${physics.centralBodyNaifId}`,
+                  GM: GM,
+                  radius: 1000 // Default radius - should be improved to get from constants
+                };
+                bodyRadius = 1000;
+              } else {
+                console.warn(`[SatelliteDebugWindow] Central body ${physics.centralBodyNaifId} not found in physics data, using Earth defaults`);
+                centralBody = { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
+                bodyRadius = 6371.0;
+              }
+            }
+          } catch (error) {
+            console.error(`[SatelliteDebugWindow] Error accessing physics data:`, error);
+            console.warn(`[SatelliteDebugWindow] Central body ${physics.centralBodyNaifId} not accessible, using Earth defaults`);
+            centralBody = { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
+            bodyRadius = 6371.0;
           }
         }
       } else {
@@ -574,6 +596,33 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               {physics?.flight_path_angle !== undefined && (
                 <DataRow label="Flight Path" value={formatNumber(physics.flight_path_angle)} unit="°" />
               )}
+            </Section>
+
+            {/* Communications Section */}
+            <Section
+              title="Communications"
+              isOpen={showCommunications}
+              onToggle={() => setShowCommunications(!showCommunications)}
+            >
+              <div className="p-1">
+                <SatelliteCommsSection 
+                  satelliteId={satellite.id} 
+                  app={satellite?.app3d || window.app3d} 
+                />
+              </div>
+            </Section>
+
+            {/* Communication Timeline Section */}
+            <Section
+              title="Communication Timeline"
+              isOpen={showCommTimeline}
+              onToggle={() => setShowCommTimeline(!showCommTimeline)}
+            >
+              <div className="p-1 space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  Communication subsystem integration coming soon...
+                </div>
+              </div>
             </Section>
 
             {/* Forces and Accelerations Section */}

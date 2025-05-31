@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as Astronomy from 'astronomy-engine';
 import { PhysicsUtils } from './PhysicsUtils.js';
-import { Bodies } from '../PhysicsAPI.js';
+// Removed Bodies import to avoid circular dependency
 import { OrbitalMechanics } from '../core/OrbitalMechanics.js';
 
 /**
@@ -481,8 +481,11 @@ export class SatelliteCoordinates {
      * Calculate planet's rotation rate if not provided
      */
     static _calculateRotationRate(planet) {
-        // Use PhysicsAPI to get rotation rate
-        return Bodies.getRotationRate(planet);
+        // Calculate rotation rate directly from rotationPeriod to avoid circular dependency
+        if (planet.rotationPeriod && planet.rotationPeriod > 0) {
+            return 2 * Math.PI / planet.rotationPeriod; // rad/s
+        }
+        return 0; // No rotation if period not specified
     }
 
     /**

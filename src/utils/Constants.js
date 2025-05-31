@@ -16,6 +16,6 @@ export class Constants {
     static AU = 1.495978707e8; // Astronomical unit in kilometers
     // Sun constants
     static sunMass = 1.9885e30; // Sun mass in kg
-    static sunGravitationalParameter = Constants.G * Constants.sunMass; // km^3/s^2
+    static sunGravitationalParameter = 132712440041.93938; // km³/s² - Authoritative NASA/JPL value
     static ECLIPIC_J2000_JD = 2451545.0; // Julian date of J2000 epoch
 }

@@ -1,6 +1,6 @@
 // src/utils/KeplerianUtils.js
 
-import { Constants } from './Constants.js';
+import { PhysicsConstants } from '../physics/core/PhysicsConstants.js';
 import * as THREE from 'three';
 
 // Basic vector operations for {x, y, z} objects
@@ -209,7 +209,7 @@ export function keplerianToStateVectors(elements, mu, jd) {
     }
 
     const n = Math.sqrt(mu / Math.abs(Math.pow(a, 3))); // Mean motion
-    const M = M0 + n * (jd - epochJD) * Constants.secondsInDay; // Mean anomaly at time jd (AE times are in days)
+    const M = M0 + n * (jd - epochJD) * PhysicsConstants.TIME.SECONDS_IN_DAY; // Mean anomaly at time jd (AE times are in days)
 
     // Eccentric Anomaly E
     // For hyperbolic (e > 1), would need hyperbolic Kepler's equation solver.

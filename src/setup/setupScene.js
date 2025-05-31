@@ -6,8 +6,8 @@ import * as THREE from 'three';
 
 // 3-D assets ───────────────────────────────────────────────────────────────────
 import { Planet } from '../components/planet/Planet.js';
-import { BackgroundStars } from '../components/background.js';
-import { Sun } from '../components/Sun.js';
+import { BackgroundStars } from '../components/planet/background.js';
+import { Sun } from '../components/planet/Sun.js';
 
 // Post-processing ───────────────────────────────────────────────────────────────
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -24,7 +24,7 @@ import { PlanetVectors } from '../components/planet/PlanetVectors.js';
 import { textureDefinitions } from '../config/textureRegistry.js';
 
 import { CelestialOrbitManager } from '../components/orbit/CelestialOrbitManager.js';
-import { SolarSystemDataManager } from '../physics/bodies/PlanetaryDataManager.js';
+import { solarSystemDataManager } from '../physics/PlanetaryDataManager.js';
 import { SolarSystemHierarchy } from '../physics/SolarSystemHierarchy.js';
 
 // Scene-wide rendering settings (moved from celestialBodiesConfig.js)
@@ -41,7 +41,21 @@ const addAmbientLight = (scene) => {
 };
 
 const loadTextures = async (textureManager) => {
+    // Emit progress for texture loading start
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('loadingProgress', { 
+            detail: { progress: 10, stage: 'Loading 4.5 Billion Years...' } 
+        }));
+    }
+    
     await textureManager.loadAllTextures(textureDefinitions.map(({ key, src }) => ({ name: key, url: src })));
+    
+    // Emit progress for texture loading complete
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('loadingProgress', { 
+            detail: { progress: 30, stage: 'Collapsing Primordial Gas Cloud...' } 
+        }));
+    }
 };
 
 const setupPostProcessing = (app) => {
@@ -80,8 +94,7 @@ const setupPostProcessing = (app) => {
 
 };
 
-// At the top-level of your module (outside any function)
-const solarSystemDataManager = new SolarSystemDataManager();
+// Using singleton solarSystemDataManager imported from PlanetaryDataManager.js
 
 /**
  * Creates and initializes all celestial bodies and related managers.
@@ -135,13 +148,29 @@ export async function createSceneObjects(app) {
     app.backgroundStars = new BackgroundStars(scene, camera);
 
     // 1. Initialize solar system data
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('loadingProgress', { 
+            detail: { progress: 55, stage: 'Accreting Stellar Disk...' } 
+        }));
+    }
     await solarSystemDataManager.initialize();
 
     // 2. Build hierarchy from config data
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('loadingProgress', { 
+            detail: { progress: 65, stage: 'Spinning Up Magnetospheres...' } 
+        }));
+    }
     const hierarchy = new SolarSystemHierarchy(solarSystemDataManager.naifToBody);
     app.hierarchy = hierarchy;
 
     // 3. Create all celestial bodies from config
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('loadingProgress', { 
+            detail: { progress: 75, stage: 'Igniting Fusion Core...' } 
+        }));
+    }
+    
     for (const [, config] of solarSystemDataManager.naifToBody.entries()) {
         let bodyObj = null;
         if (config.type === 'star') {
@@ -184,6 +213,12 @@ export async function createSceneObjects(app) {
     }
 
     // --- Initialize Physics Engine with high precision orbital mechanics ---
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('loadingProgress', { 
+            detail: { progress: 85, stage: 'Calibrating Orbital Resonances...' } 
+        }));
+    }
+    
     // Create CelestialOrbitManager for all celestial body orbits
     // It uses the existing app.hierarchy and app.bodiesByNaifId
     app.orbitManager = new CelestialOrbitManager(scene, app);
@@ -192,6 +227,12 @@ export async function createSceneObjects(app) {
     // Note: CelestialOrbitManager will automatically initialize when physics engine is ready
     console.log('Setting up orbit manager - will render orbits when physics engine is available...');
     app.orbitManager.renderSolarSystemOrbits();
+    
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('loadingProgress', { 
+            detail: { progress: 95, stage: 'Synchronizing Cosmic Clocks...' } 
+        }));
+    }
 
     // Add top-level objects (those with no parent in the config, or whose parent wasn't found) to the scene
     for (const bodyObject of Object.values(app.bodiesByNaifId)) {

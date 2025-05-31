@@ -1,6 +1,6 @@
 //TimeUtils.js
 import * as THREE from 'three';
-import { Constants } from './Constants.js';
+import { Constants, Bodies } from '../physics/PhysicsAPI.js';
 
 /**
  * Convert JavaScript Date to Julian Date
@@ -8,7 +8,7 @@ import { Constants } from './Constants.js';
  * @returns {number} Julian Date
  */
 export function dateToJd(date) {
-    return (date.getTime() / 86400000) + Constants.ECLIPIC_J2000_JD;
+    return (date.getTime() / Constants.TIME.MILLISECONDS_IN_DAY) + Constants.PHYSICS.J2000_EPOCH;
 }
 
 export class TimeUtils {
@@ -131,7 +131,7 @@ export class TimeUtils {
             0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180)
         );
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
-        const distance = Constants.AU;
+        const distance = Constants.PHYSICS.AU;
         const rad = trueLongitude * Math.PI / 180;
         const x = distance * Math.cos(rad);
         const y = distance * Math.sin(rad);
@@ -139,13 +139,17 @@ export class TimeUtils {
         return new THREE.Vector3(x, y, z);
     }
 
-    static calculateEarthVelocity(simulatedTime) {
+    static calculateBodyVelocity(simulatedTime, bodyName = 'earth') {
+        const bodyData = Bodies.getData(bodyName);
         const dayOfYear = TimeUtils.getDayOfYear(simulatedTime);
-        return new THREE.Vector3(-Math.sin(2 * Math.PI * dayOfYear / 365.25), 0, Math.cos(2 * Math.PI * dayOfYear / 365.25));
+        const orbitalPeriod = bodyData?.orbitalPeriod || 365.25; // Default to Earth's orbital period
+        return new THREE.Vector3(-Math.sin(2 * Math.PI * dayOfYear / orbitalPeriod), 0, Math.cos(2 * Math.PI * dayOfYear / orbitalPeriod));
     }
 
-    static getEarthTilt() {
-        return new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(23.5)));
+    static getBodyTilt(bodyName = 'earth') {
+        const bodyData = Bodies.getData(bodyName);
+        const tilt = bodyData?.tilt || 23.5; // Default to Earth's tilt
+        return new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(tilt)));
     }
 
     static getJulianDate(simulatedTime) {
@@ -170,7 +174,7 @@ export class TimeUtils {
         } else {
             julianDay = Math.floor(365.25 * (year + 4716)) + Math.floor(30.6001 * (month + 1)) + day - 1524.5;
         }
-        const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / Constants.secondsInDay + millisecond / Constants.milisecondsInDay;
+        const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / Constants.TIME.SECONDS_IN_DAY + millisecond / Constants.TIME.MILLISECONDS_IN_DAY;
         return julianDate;
     }
 
@@ -188,11 +192,13 @@ export class TimeUtils {
         return (elapsedCycle % millisecondsInCycle) / millisecondsInCycle;
     }
 
-    getGreenwichPosition(earth) {
-        const distance = Constants.earthRadius;
+    getBodyReferencePosition(body, bodyName = 'earth') {
+        const bodyData = Bodies.getData(bodyName);
+        const distance = bodyData?.radius || 6371; // Default to Earth radius
         let position = new THREE.Vector3(distance, 0, 0);
-        const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(23.5));
-        const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), earth.rotationGroup.rotation.y.toFixed(4));
+        const tilt = bodyData?.tilt || 23.5; // Default to Earth's tilt
+        const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(tilt));
+        const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), body.rotationGroup.rotation.y.toFixed(4));
         const combinedQuaternion = new THREE.Quaternion().multiplyQuaternions(tiltQuaternion, rotationQuaternion);
         position.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.5));
         position.applyQuaternion(combinedQuaternion);

@@ -239,7 +239,35 @@ export class CelestialOrbitCalculator {
                 const cos_w = Math.cos(w);
                 const sin_w = Math.sin(w);
 
-                // Transform to 3D space (J2000 ecliptic coordinates)
+                // Check reference frame for coordinate system
+                const referenceFrame = orbitalElements.referenceFrame || bodyConfig?.referenceFrame;
+                
+                if (referenceFrame && referenceFrame.toLowerCase().includes('equatorial')) {
+                    // Extract planet name from reference frame (e.g., "saturn_equatorial" -> "saturn")
+                    const planetName = referenceFrame.toLowerCase().replace('_equatorial', '');
+                    
+                    // Calculate position in planetary equatorial frame first
+                    const x_eq = (cos_w * cos_i) * x_orb + (-sin_w) * y_orb;
+                    const y_eq = (sin_w * cos_i) * x_orb + (cos_w) * y_orb;
+                    const z_eq = (sin_i) * x_orb; // Inclination relative to equatorial plane
+                    
+                    // Find the dominant planet in this barycenter system to get its quaternion
+                    const dominantPlanet = this._findDominantPlanet(parentId, planetName);
+                    
+                    if (dominantPlanet && dominantPlanet.targetOrientation) {
+                        // Apply the planet's quaternion to transform from its equatorial frame to barycenter frame
+                        const eqVector = new THREE.Vector3(x_eq, y_eq, z_eq);
+                        eqVector.applyQuaternion(dominantPlanet.targetOrientation);
+                        
+                        points.push(eqVector);
+                    } else {
+                        // Fallback: use raw coordinates if planet not found
+                        points.push(new THREE.Vector3(x_eq, y_eq, z_eq));
+                    }
+                    continue;
+                }
+                
+                // Default: Transform to 3D space (J2000 ecliptic coordinates) for non-equatorial frames
                 const x = (cos_omega * cos_w - sin_omega * sin_w * cos_i) * x_orb +
                          (-cos_omega * sin_w - sin_omega * cos_w * cos_i) * y_orb;
 
@@ -330,5 +358,35 @@ export class CelestialOrbitCalculator {
         // For now, return empty array
         // console.warn(`[CelestialOrbitCalculator] Physics fallback not yet implemented for body ${orbit.bodyId}`);
         return [];
+    }
+
+    /**
+     * Find the dominant planet in a barycenter system by name
+     * @param {number} barycenterNaifId - NAIF ID of the barycenter
+     * @param {string} planetName - Name of the planet to find (e.g., "saturn", "pluto")
+     * @returns {Object|null} - The celestial body object with targetOrientation, or null
+     */
+    _findDominantPlanet(barycenterNaifId, planetName) {
+        // Access celestial bodies from the app context through stateCalculator
+        const app = this.stateCalculator.app || 
+                   this.stateCalculator.hierarchy?.app || 
+                   window.app3d; // Fallback to global app
+        
+        if (!app || !app.celestialBodies) {
+            console.warn(`[CelestialOrbitCalculator] Cannot find app or celestialBodies for planet ${planetName}`);
+            return null;
+        }
+        
+        // Find the planet by name in the celestial bodies
+        const planet = app.celestialBodies.find(body => 
+            body.name && body.name.toLowerCase() === planetName.toLowerCase()
+        );
+        
+        if (!planet) {
+            console.warn(`[CelestialOrbitCalculator] Cannot find planet ${planetName} in celestial bodies`);
+            return null;
+        }
+        
+        return planet;
     }
 }

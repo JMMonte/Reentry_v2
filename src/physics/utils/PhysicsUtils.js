@@ -11,7 +11,7 @@
  *  ► ESLint: no unused-variable warnings.                              *
  ***********************************************************************/
 
-import { Constants } from '../../utils/Constants.js';
+import { PhysicsConstants } from '../core/PhysicsConstants.js';
 import * as THREE from 'three';
 
 /*─────────────────────────────────────────────────────────────────────┐
@@ -41,9 +41,9 @@ export class PhysicsUtils {
 
     /*───────────────────────── 1.1  Newtonian helpers ───────────────────*/
     static calculateGravitationalForce(m1, m2, r) {
-        return r === 0 ? 0 : Constants.G * (m1 * m2) / (r * r);
+        return r === 0 ? 0 : PhysicsConstants.PHYSICS.G * (m1 * m2) / (r * r);
     }
-    static calculateGravityAcceleration(mass, r) { return Constants.G * mass / (r * r); }
+    static calculateGravityAcceleration(mass, r) { return PhysicsConstants.PHYSICS.G * mass / (r * r); }
     static calculateAcceleration(force, mass) { return force / mass; }
 
     /*───────────────────────── 1.2  Lat/Lon ↔ ECEF  ─────────────────────*/
@@ -291,7 +291,7 @@ export class PhysicsUtils {
     }
 
     static calculateVerticalAcceleration(planetRadius, planetMass, altitude) {
-        return Constants.G * planetMass / Math.pow(planetRadius + altitude, 2);
+        return PhysicsConstants.PHYSICS.G * planetMass / Math.pow(planetRadius + altitude, 2);
     }
 
     static calculateDragForce(v, Cd, A, rho) { return 0.5 * Cd * A * rho * v * v; }
@@ -310,10 +310,9 @@ export class PhysicsUtils {
     }
 
     /* Z-up version: ω × r */
-    static calculateEarthSurfaceVelocity(posECEF,
-        earthRotationRate = Constants.earthRotationSpeed) {
+    static calculateBodySurfaceVelocity(posECEF, rotationRate) {
         return new THREE.Vector3().crossVectors(
-            new THREE.Vector3(0, 0, earthRotationRate), posECEF
+            new THREE.Vector3(0, 0, rotationRate), posECEF
         );
     }
 
@@ -396,7 +395,7 @@ export class PhysicsUtils {
     static getPositionAtTime(els, t) {
         const mu = els.mu !== undefined
             ? els.mu
-            : Constants.G * Constants.earthMass;
+            : null; // Must be provided as parameter
 
         const { semiMajorAxis: a, eccentricity: e,
             inclination: i, longitudeOfAscendingNode: Ω,

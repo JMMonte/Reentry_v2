@@ -140,7 +140,7 @@ export class SimulationLoop {
                 .map(([id, s]) => [id, { id: s.id, name: s.name }])
         );
         document.dispatchEvent(new CustomEvent('satelliteListUpdated', { detail: { satellites: list } }));
-        if (this.app._connectionsEnabled) this.app._syncConnectionsWorker();
+        if (this.app.lineOfSightManager?.isEnabled()) this.app._syncConnectionsWorker();
     }
 
     /** Update camera to follow a new body selection. */
@@ -154,8 +154,18 @@ export class SimulationLoop {
         switch (key) {
             case 'showSatConnections':
                 this.app._toggleSatelliteLinks(value);
-                if (value) {
-                    this.app._updateSatelliteConnections(this.app._connections || []);
+                break;
+            case 'losUpdateInterval':
+            case 'losMinElevation':
+            case 'losAtmosphericRefraction':
+                // Update LineOfSightManager configuration when LOS settings change
+                if (this.app.lineOfSightManager) {
+                    const config = {};
+                    if (key === 'losUpdateInterval') config.UPDATE_INTERVAL = value;
+                    if (key === 'losMinElevation') config.MIN_ELEVATION_ANGLE = value;
+                    if (key === 'losAtmosphericRefraction') config.ATMOSPHERIC_REFRACTION = value;
+                    this.app.lineOfSightManager.updateSettings(config);
+                    this.app.lineOfSightManager.forceUpdate(); // Force immediate recalculation
                 }
                 break;
             case 'physicsTimeStep':

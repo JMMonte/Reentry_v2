@@ -60,8 +60,7 @@ THREE.BufferGeometry.prototype.computeBoundingSphere = function () {
 // import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import Stats from 'stats.js';
 
-// Core utilities & constants
-import { Constants } from './utils/Constants.js';
+// Core utilities
 import { TimeUtils } from './utils/TimeUtils.js';
 import { TextureManager } from './managers/textureManager.js';
 // Removed atmosphere fixing imports - simplified material handles depth properly
@@ -78,6 +77,7 @@ import { SimulationLoop } from './simulation/SimulationLoop.js';
 
 // New physics system
 import { PhysicsManager } from './physics/PhysicsManager.js';
+import { LineOfSightManager } from './managers/LineOfSightManager.js';
 
 // Controls
 import { CameraControls } from './controls/CameraControls.js';
@@ -128,7 +128,6 @@ class App3D extends EventTarget {
 
         // — Internal state — ---------------------------------------------------
         /** @type {boolean} */        this._isInitialized = false;
-        /** @type {THREE.Group} */    this._satelliteLinks = new THREE.Group();
 
         // active pick-state
         this._poiIndicator = null;
@@ -151,6 +150,9 @@ class App3D extends EventTarget {
 
         this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
+        
+        // LineOfSightManager will be initialized after scene is ready
+        this.lineOfSightManager = null;
 
         // — Misc util — --------------------------------------------------------
         // Always use UTC time - new Date().toISOString() gives us UTC
@@ -158,9 +160,7 @@ class App3D extends EventTarget {
         this._stats = new Stats();
 
         // — Workers & helpers — -----------------------------------------------
-        this._lineOfSightWorker = null;
-        this._connectionsEnabled = false;
-        this._connections = [];
+        this._lineOfSightManager = null; // Will be initialized after SceneManager
 
         // — Event storage — ----------------------------------------------------
         this._eventHandlers = {};
@@ -169,7 +169,6 @@ class App3D extends EventTarget {
         setupGlobalListeners(this);
 
         // Attach core modules for SceneManager access
-        this.Constants = Constants;
         this.Planet = Planet;
         this.THREE = THREE;
 
@@ -217,6 +216,13 @@ class App3D extends EventTarget {
             }
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
+
+            // Initialize LineOfSightManager after scene is ready
+            this.lineOfSightManager = new LineOfSightManager(
+                this.sceneManager.scene,
+                this._displaySettingsManager,
+                this.physicsIntegration
+            );
 
             this._initPOIPicking();
             this._setupControls();
@@ -320,8 +326,7 @@ class App3D extends EventTarget {
         this._isInitialized = false;
 
         // Workers
-        this._lineOfSightWorker?.terminate?.();
-        this._lineOfSightWorker = null;
+        this.lineOfSightManager?.dispose();
 
         // Physics integration cleanup
         this.physicsIntegration?.cleanup?.();
@@ -449,72 +454,34 @@ class App3D extends EventTarget {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 8. SATELLITE CONNECTIONS WORKER
+    // 8. SATELLITE CONNECTIONS WORKER (Delegated to LineOfSightManager)
     // ──────────────────────────────────────────────────────────────────────────
     _toggleSatelliteLinks(enabled) {
         console.log('[App3D] _toggleSatelliteLinks called with:', enabled);
-        this._connectionsEnabled = enabled;
+        this.lineOfSightManager.setEnabled(enabled);
         if (enabled) {
-            this._initLineOfSightWorker();
             this._syncConnectionsWorker();
-        } else {
-            this._lineOfSightWorker?.terminate?.();
-            this._lineOfSightWorker = null;
-            this._connections = [];
-            this._updateSatelliteConnections([]);
         }
     }
 
-    _initLineOfSightWorker() {
-        if (this._lineOfSightWorker) return;
-        console.log('[App3D] _initLineOfSightWorker: creating worker');
-        this._lineOfSightWorker = new Worker(
-            new URL('./workers/lineOfSightWorker.js', import.meta.url),
-            { type: 'module' }
-        );
-        this._lineOfSightWorker.onmessage = evt => {
-            if (evt.data.type === 'CONNECTIONS_UPDATED') {
-                console.log('[App3D] Worker CONNECTIONS_UPDATED:', evt.data.connections?.length);
-                this._connections = evt.data.connections;
-                this._updateSatelliteConnections(this._connections);
-            }
-        };
-    }
-
     _syncConnectionsWorker() {
-        if (!this._lineOfSightWorker || !this.physicsIntegration?.physicsEngine) return;
+        console.log('[App3D] _syncConnectionsWorker called');
+        if (!this.physicsIntegration?.physicsEngine) {
+            console.log('[App3D] No physics engine available');
+            return;
+        }
+        
         const physicsEngine = this.physicsIntegration.physicsEngine;
         const sats = physicsEngine.getSatellitesForLineOfSight();
         const bodies = physicsEngine.getBodiesForLineOfSight();
-        console.log('[App3D] _syncConnectionsWorker: sending', sats.length, 'sats and', bodies.length, 'bodies');
-        this._lineOfSightWorker.postMessage({
-            type: 'UPDATE_SCENE',
-            satellites: sats,
-            bodies: bodies
-        });
-    }
-
-    _updateSatelliteConnections(connections) {
-        console.log('[App3D] _updateSatelliteConnections called. showSatConnections:', this.displaySettingsManager.getSetting('showSatConnections'), 'connections:', connections.length);
-        this._satelliteLinks.visible = true;
-        this._satelliteLinks.clear();
-
-        // if (!this.displaySettingsManager.getSetting('showSatConnections')) return; // COMMENTED OUT FOR DEBUGGING
-
-        connections.forEach(cnx => {
-            const material = new THREE.LineBasicMaterial({ color: cnx.color === 'red' ? 0xff0000 : 0x00ff00 });
-            const verts = new Float32Array(cnx.points.flat().map(p => p));
-            const geom = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(verts, 3));
-            const line = new THREE.Line(geom, material);
-            line.renderOrder = 9999;
-            this._satelliteLinks.add(line);
-        });
-
-        console.log('[App3D] _satelliteLinks children after add:', this._satelliteLinks.children.length);
-
-        if (this.sceneManager.scene && !this.sceneManager.scene.children.includes(this._satelliteLinks)) {
-            this.sceneManager.scene.add(this._satelliteLinks);
-            console.log('[App3D] _satelliteLinks added to scene');
+        
+        console.log('[App3D] Got', sats?.length, 'satellites and', bodies?.length, 'bodies for LOS');
+        console.log('[App3D] Satellite data for LOS:', sats);
+        
+        if (this.lineOfSightManager) {
+            this.lineOfSightManager.updateConnections(sats, bodies, []);
+        } else {
+            console.log('[App3D] LineOfSightManager not initialized');
         }
     }
 

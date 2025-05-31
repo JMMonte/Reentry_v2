@@ -1,11 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { usePhysicsSatellites } from './usePhysicsSatellites.js';
+import { getPlanetOptions } from '../utils/BodySelectionUtils.js';
 
 /**
  * Hook for satellite operations and data management
  * Extracts satellite-related logic from App.jsx
  */
-export function useSatelliteOperations(app3d, modalState, handleBodyChange) {
+export function useSatelliteOperations(app3d, modalState, handleBodyChange, ready = true) {
   // Get physics satellite data
   const satellitesPhysics = usePhysicsSatellites(app3d);
   
@@ -29,19 +30,33 @@ export function useSatelliteOperations(app3d, modalState, handleBodyChange) {
       .filter(Boolean);
   }, [satellitesPhysics, satellitesUI]);
 
-  // Memoized available bodies calculation
+  // Memoized available bodies calculation using the same logic as navbar
   const availableBodies = useMemo(() => {
-    let bodies = [];
-    if (Array.isArray(app3d?.celestialBodies)) {
-      bodies = app3d.celestialBodies
-        .filter(b => b && (b.naifId !== undefined && b.naifId !== null))
-        .map(b => ({ ...b, naifId: b.naifId ?? b.naif_id }));
+    // Wait for scene to be ready, just like the navbar does
+    if (!ready || !app3d?.celestialBodies) {
+      return [{ name: 'Earth', naifId: 399, type: 'planet' }];
     }
+    
+    // Use getPlanetOptions to get the same filtered list as the navbar
+    const planetOptions = getPlanetOptions(app3d.celestialBodies);
+    
+    // Convert planet options to availableBodies format
+    const bodies = planetOptions.map(option => {
+      const body = app3d.celestialBodies.find(b => b.name === option.value);
+      return {
+        name: option.text,
+        naifId: body?.naifId ?? body?.naif_id,
+        type: body?.type || 'planet'
+      };
+    }).filter(b => b.naifId !== undefined && b.naifId !== null);
+    
+    // Fallback to Earth if no bodies found
     if (bodies.length === 0) {
-      bodies = [{ name: 'Earth', naifId: 399, type: 'planet' }];
+      return [{ name: 'Earth', naifId: 399, type: 'planet' }];
     }
+    
     return bodies;
-  }, [app3d?.celestialBodies]);
+  }, [ready, app3d?.celestialBodies]);
 
   // Satellite creation callback
   const onCreateSatellite = useCallback(async (params) => {

@@ -52,8 +52,18 @@ export const defaultSettings = {
   showTopographicIsolines: { value: false, name: 'Topographic Isolines', icon: Mountain },
   showSatVectors: { value: false, name: 'Satellite Vectors', icon: Circle },
   showOrbits: { value: true, name: 'Satellite Orbits', icon: Circle },
+  showApsis: { value: true, name: 'Apsis Markers', icon: Circle, description: 'Show periapsis and apoapsis markers on satellite orbits.' },
   showSatConnections: { value: false, name: 'Satellite Connections', icon: Link,
     description: 'Show lines connecting satellites with other satellites.'
+  },
+  losUpdateInterval: { value: 500, name: 'LOS Update Interval (ms)', icon: Link, type: 'number', min: 100, max: 5000, step: 100,
+    description: 'How often to update line-of-sight calculations (milliseconds). Higher values reduce jittering.'
+  },
+  losMinElevation: { value: 5, name: 'Min Elevation Angle (°)', icon: Link, type: 'number', min: 0, max: 45, step: 1,
+    description: 'Minimum elevation angle for satellite connections (degrees above horizon).'
+  },
+  losAtmosphericRefraction: { value: true, name: 'Atmospheric Refraction', icon: Link,
+    description: 'Include atmospheric refraction effects in line-of-sight calculations.'
   },
   orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (Hz)', icon: Circle, type: 'number', min: 1, max: 120, step: 1,
     description: 'Number of orbit path recalculations per second (updates per second) while the simulation is running.'
@@ -116,7 +126,7 @@ const categories = [
   },
   {
     name: 'Satellites',
-    keys: ['showOrbits', 'showSatVectors', 'showSatConnections'],
+    keys: ['showOrbits', 'showApsis', 'showSatVectors', 'showSatConnections', 'losUpdateInterval', 'losMinElevation', 'losAtmosphericRefraction'],
   },
   {
     name: 'Simulation',

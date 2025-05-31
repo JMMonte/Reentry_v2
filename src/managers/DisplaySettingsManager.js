@@ -237,6 +237,12 @@ export class DisplaySettingsManager {
                 if (app3d.satellites?.setOrbitVisibility) {
                     app3d.satellites.setOrbitVisibility(value);
                 }
+                // Update apsis visibility (depends on showOrbits)
+                this._updateApsisVisibility(app3d);
+                break;
+            case 'showApsis':
+                // Update apsis marker visibility
+                this._updateApsisVisibility(app3d);
                 break;
             case 'pixelRatio': {
                 // Update renderer pixel ratio
@@ -259,6 +265,25 @@ export class DisplaySettingsManager {
         }
     }
     
+    /**
+     * Update apsis marker visibility for all satellites
+     * @private
+     */
+    _updateApsisVisibility(app3d) {
+        const showOrbits = this.getSetting('showOrbits');
+        const showApsis = this.getSetting('showApsis');
+        const apsisVisible = showOrbits && showApsis;
+
+        // Update through satellite manager if available
+        if (app3d.satellites?.satellites) {
+            for (const satellite of app3d.satellites.satellites.values()) {
+                if (satellite.apsisVisualizer) {
+                    satellite.apsisVisualizer.setVisible(apsisVisible);
+                }
+            }
+        }
+    }
+
     /**
      * Clean up resources and remove event listeners
      */

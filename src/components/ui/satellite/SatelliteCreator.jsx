@@ -7,9 +7,105 @@ import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import PropTypes from 'prop-types';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 import { Popover, PopoverTrigger, PopoverContent } from '../popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
+import { Switch } from '../switch';
+
+// Satellite system engineering templates
+const SATELLITE_TEMPLATES = {
+    cubesat: {
+        name: 'CubeSat',
+        description: 'Small, standardized satellite (1-6U)',
+        mass: 5,
+        size: 0.3,
+        ballisticCoefficient: 30,
+        commsConfig: {
+            preset: 'cubesat'
+        }
+    },
+    communications_satellite: {
+        name: 'Communications Satellite',
+        description: 'Commercial communications platform',
+        mass: 3000,
+        size: 3,
+        ballisticCoefficient: 200,
+        commsConfig: {
+            preset: 'communications_satellite'
+        }
+    },
+    scientific_probe: {
+        name: 'Scientific Probe',
+        description: 'Deep space exploration vehicle',
+        mass: 500,
+        size: 1.5,
+        ballisticCoefficient: 150,
+        commsConfig: {
+            preset: 'scientific_probe'
+        }
+    },
+    earth_observation: {
+        name: 'Earth Observation',
+        description: 'Remote sensing satellite',
+        mass: 800,
+        size: 2,
+        ballisticCoefficient: 120,
+        commsConfig: {
+            preset: 'earth_observation'
+        }
+    },
+    military_satellite: {
+        name: 'Military Satellite',
+        description: 'Defense and reconnaissance platform',
+        mass: 2000,
+        size: 2.5,
+        ballisticCoefficient: 180,
+        commsConfig: {
+            preset: 'military_satellite'
+        }
+    }
+};
+
+// Section component for collapsible sections
+const Section = ({ title, isOpen, onToggle, children, className = "" }) => {
+    return (
+        <div className={`border-b border-border/50 last:border-0 ${className}`}>
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle();
+                }}
+                className="w-full flex items-center justify-between py-2 px-1 hover:bg-accent/5 transition-colors cursor-pointer text-left"
+            >
+                <span className="text-xs font-semibold text-foreground/90">{title}</span>
+                <span className="text-xs text-muted-foreground">{isOpen ? '−' : '+'}</span>
+            </button>
+            {isOpen && (
+                <div className="pb-2 px-1 space-y-1">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
+Section.propTypes = {
+    title: PropTypes.string.isRequired,
+    isOpen: PropTypes.bool.isRequired,
+    onToggle: PropTypes.func.isRequired,
+    children: PropTypes.node,
+    className: PropTypes.string
+};
 
 const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ name: 'Earth', naifId: 399 }], selectedBody: initialSelectedBody }, ref) => {
     const [mode, setMode] = useState('latlon');
+    const [selectedTemplate, setSelectedTemplate] = useState('cubesat');
+    
+    // Section visibility states
+    const [showSystemTemplate, setShowSystemTemplate] = useState(false);
+    const [showStructure, setShowStructure] = useState(true);
+    const [showCommunications, setShowCommunications] = useState(false);
+    const [showOrbitalParams, setShowOrbitalParams] = useState(true);
+    
     const [formData, setFormData] = useState({
         name: '',
         mass: 100,
@@ -28,7 +124,17 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
         trueAnomaly: 0,
         angleOfAttack: 0,
         referenceFrame: 'equatorial',
-        circular: false
+        circular: false,
+        // Communications parameters
+        commsEnabled: true,
+        antennaGain: 12.0,
+        transmitPower: 10.0,
+        antennaType: 'omnidirectional',
+        transmitFrequency: 2.4,
+        dataRate: 1000,
+        minElevationAngle: 5.0,
+        networkId: 'default',
+        encryption: true
     });
     const [selectedBody, setSelectedBody] = useState(initialSelectedBody || availableBodies[0]);
     // Search state for central body dropdown
@@ -56,8 +162,46 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
         }
     }, [popoverOpen]);
 
+    // Update selected body when the prop changes (e.g., when navbar selection changes)
+    useEffect(() => {
+        if (initialSelectedBody) {
+            setSelectedBody(initialSelectedBody);
+        }
+    }, [initialSelectedBody]);
+
     const handlePresetBC = (value) => {
         setFormData(prev => ({ ...prev, ballisticCoefficient: value }));
+    };
+
+    const handleTemplateChange = (templateKey) => {
+        setSelectedTemplate(templateKey);
+        const template = SATELLITE_TEMPLATES[templateKey];
+        if (template) {
+            // Get the communication preset details
+            const commsPresets = {
+                cubesat: { antennaGain: 2.0, transmitPower: 1.0, antennaType: 'omnidirectional', dataRate: 100, minElevationAngle: 10.0 },
+                communications_satellite: { antennaGain: 25.0, transmitPower: 50.0, antennaType: 'directional', dataRate: 10000, minElevationAngle: 5.0 },
+                scientific_probe: { antennaGain: 35.0, transmitPower: 20.0, antennaType: 'high_gain', dataRate: 500, minElevationAngle: 0.0 },
+                earth_observation: { antennaGain: 15.0, transmitPower: 25.0, antennaType: 'directional', dataRate: 2000, minElevationAngle: 5.0 },
+                military_satellite: { antennaGain: 20.0, transmitPower: 100.0, antennaType: 'phased_array', dataRate: 5000, minElevationAngle: 3.0 }
+            };
+            
+            const commsConfig = commsPresets[templateKey] || commsPresets.cubesat;
+            
+            setFormData(prev => ({
+                ...prev,
+                mass: template.mass,
+                size: template.size,
+                ballisticCoefficient: template.ballisticCoefficient,
+                name: prev.name || template.name,
+                // Apply communication settings from template
+                antennaGain: commsConfig.antennaGain,
+                transmitPower: commsConfig.transmitPower,
+                antennaType: commsConfig.antennaType,
+                dataRate: commsConfig.dataRate,
+                minElevationAngle: commsConfig.minElevationAngle
+            }));
+        }
     };
 
     useImperativeHandle(ref, () => ({
@@ -131,7 +275,8 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined,
-                    planetNaifId: selectedBody?.naifId
+                    planetNaifId: selectedBody?.naifId,
+                    commsConfig: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig || { preset: 'cubesat' }
                 };
                 console.log('[SatelliteCreator] Submitting latlon satellite with:', outParams);
                 await onCreateSatellite(outParams);
@@ -149,7 +294,8 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     size: params.size,
                     ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined,
-                    planetNaifId: selectedBody?.naifId
+                    planetNaifId: selectedBody?.naifId,
+                    commsConfig: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig || { preset: 'cubesat' }
                 };
                 console.log('[SatelliteCreator] Submitting orbital satellite with:', outParams);
                 await onCreateSatellite(outParams);
@@ -255,9 +401,9 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
     );
 
     return (
-        <div className="text-xs p-4">
+        <div className="text-xs">
             {/* Central body selector */}
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 p-2 border-b border-border/50">
                 <Label htmlFor="central-body" className="text-xs text-muted-foreground text-right pr-1">Central Body:</Label>
                 <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                     <PopoverTrigger asChild>
@@ -296,128 +442,266 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     </PopoverContent>
                 </Popover>
             </div>
-            {/* General satellite properties */}
-            <div className="flex flex-col gap-y-2 mb-4">
-                {renderField("name", "Name", "text")}
-                {renderField("mass", "Mass", "number", 1, 1000000, 1, "kg")}
-                {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
-                {renderField("ballisticCoefficient", "Ballistic Coeff", "number", 1, 1000, 1, "kg/m²")}
-                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-1 mt-2">
-                    <Label htmlFor="bc-presets" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
-                        BC Presets:
-                    </Label>
-                    <div className="col-span-6">
+
+            <div className="space-y-0">
+                {/* Quick Start Templates - Optional */}
+                <Section
+                    title="Quick Start (Optional)"
+                    isOpen={showSystemTemplate}
+                    onToggle={() => setShowSystemTemplate(!showSystemTemplate)}
+                >
+                    <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground mb-1">Load preset configurations:</div>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="justify-start">
-                                    {bcLabel}
+                                <Button variant="ghost" size="sm" className="w-full justify-start text-xs">
+                                    Load Template...
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                                <DropdownMenuItem onSelect={() => handlePresetBC(30)}>CubeSat (30)</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handlePresetBC(100)}>Standard (100) — typical small-satellite BC</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handlePresetBC(500)}>LargeSat (500)</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handlePresetBC(40)}>Space Capsule (40)</DropdownMenuItem>
+                            <DropdownMenuContent className="w-64">
+                                {Object.entries(SATELLITE_TEMPLATES).map(([key, template]) => (
+                                    <DropdownMenuItem
+                                        key={key}
+                                        onSelect={() => handleTemplateChange(key)}
+                                        className="flex-col items-start space-y-1 p-3"
+                                    >
+                                        <div className="font-medium text-sm">{template.name}</div>
+                                        <div className="text-xs text-muted-foreground">{template.description}</div>
+                                        <div className="text-xs text-muted-foreground">
+                                            {template.mass}kg • {template.size}m • BC:{template.ballisticCoefficient}
+                                        </div>
+                                    </DropdownMenuItem>
+                                ))}
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
-                    <div className="col-span-3" />
-                </div>
-            </div>
-            <div className="mb-2">
-                <Tabs value={mode} onValueChange={setMode}>
-                    <TabsList className="flex justify-center gap-0 text-xs mb-2">
-                        <TabsTrigger value="latlon" className="w-1/2 text-xs transition-colors hover:bg-primary/10">Lat/Lon</TabsTrigger>
-                        <TabsTrigger value="orbital" className="w-1/2 text-xs transition-colors hover:bg-primary/10">Orbital</TabsTrigger>
-                    </TabsList>
-                </Tabs>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-0.5 mb-0">
-                <div className="flex flex-col gap-y-2">
-                    {mode === 'latlon' && (
-                        <>
-                            {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
-                            {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
-                            {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
-                            {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
-                            {renderField("velocity", "Velocity", "number", null, null, 0.1, "km/s")}
-                            {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
-                            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
-                                <Label htmlFor="circular" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
-                                    Circular:
-                                </Label>
-                                <div className="col-span-9 flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="circular"
-                                        name="circular"
-                                        checked={formData.circular}
-                                        onChange={handleInputChange}
-                                        className="h-4 w-4"
-                                    />
-                                    <span className="text-xs text-muted-foreground">
-                                        {circularVelocity === 'auto' ? '(auto)' : ''}
-                                    </span>
-                                    {!formData.circular && (
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 px-2 text-xs"
-                                            onClick={() => {
-                                                setFormData(prev => ({ 
-                                                    ...prev, 
-                                                    velocity: 7.5, // Approximate circular velocity for display 
-                                                    circular: true 
-                                                }));
-                                            }}
-                                        >
-                                            Use
+                </Section>
+
+                {/* Structure & Mass Properties Section */}
+                <Section
+                    title="Structure & Mass Properties"
+                    isOpen={showStructure}
+                    onToggle={() => setShowStructure(!showStructure)}
+                >
+                    <div className="space-y-1">
+                        {renderField("name", "Name", "text")}
+                        {renderField("mass", "Mass", "number", 1, 1000000, 1, "kg")}
+                        {renderField("size", "Size", "number", 0.1, 10, 0.1, "m")}
+                        {renderField("ballisticCoefficient", "Ballistic Coeff", "number", 1, 1000, 1, "kg/m²")}
+                        <div className="grid grid-cols-12 items-center gap-x-2 gap-y-1">
+                            <Label htmlFor="bc-presets" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                BC Presets:
+                            </Label>
+                            <div className="col-span-9">
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="sm" className="justify-start text-xs">
+                                            {bcLabel}
                                         </Button>
-                                    )}
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent>
+                                        <DropdownMenuItem onSelect={() => handlePresetBC(30)}>CubeSat (30)</DropdownMenuItem>
+                                        <DropdownMenuItem onSelect={() => handlePresetBC(100)}>Standard (100)</DropdownMenuItem>
+                                        <DropdownMenuItem onSelect={() => handlePresetBC(500)}>LargeSat (500)</DropdownMenuItem>
+                                        <DropdownMenuItem onSelect={() => handlePresetBC(40)}>Space Capsule (40)</DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </div>
+                        </div>
+                    </div>
+                </Section>
+
+                {/* Communications Subsystem Section */}
+                <Section
+                    title="Communications Subsystem"
+                    isOpen={showCommunications}
+                    onToggle={() => setShowCommunications(!showCommunications)}
+                >
+                    <div className="space-y-1">
+                        <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                            <Label className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                Enabled:
+                            </Label>
+                            <div className="col-span-9 flex items-center">
+                                <Switch
+                                    checked={formData.commsEnabled}
+                                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, commsEnabled: checked }))}
+                                />
+                            </div>
+                        </div>
+                        
+                        {formData.commsEnabled && (
+                            <div className="space-y-1">
+                                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                                    <Label className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                        Antenna Type:
+                                    </Label>
+                                    <div className="col-span-9">
+                                        <Select 
+                                            value={formData.antennaType}
+                                            onValueChange={(value) => setFormData(prev => ({ ...prev, antennaType: value }))}
+                                        >
+                                            <SelectTrigger className="h-6 text-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="omnidirectional">Omnidirectional</SelectItem>
+                                                <SelectItem value="directional">Directional</SelectItem>
+                                                <SelectItem value="high_gain">High Gain</SelectItem>
+                                                <SelectItem value="phased_array">Phased Array</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                {renderField("antennaGain", "Antenna Gain", "number", 0, 50, 0.1, "dBi")}
+                                {renderField("transmitPower", "Transmit Power", "number", 0.1, 200, 0.1, "W")}
+                                {renderField("transmitFrequency", "Frequency", "number", 0.1, 50, 0.1, "GHz")}
+                                {renderField("dataRate", "Data Rate", "number", 1, 50000, 1, "kbps")}
+                                {renderField("minElevationAngle", "Min Elevation", "number", 0, 45, 0.1, "°")}
+                                
+                                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                                    <Label className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                        Network:
+                                    </Label>
+                                    <div className="col-span-9">
+                                        <Select 
+                                            value={formData.networkId}
+                                            onValueChange={(value) => setFormData(prev => ({ ...prev, networkId: value }))}
+                                        >
+                                            <SelectTrigger className="h-6 text-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="default">Default Network</SelectItem>
+                                                <SelectItem value="cubesat_network">CubeSat Network</SelectItem>
+                                                <SelectItem value="commercial_network">Commercial Network</SelectItem>
+                                                <SelectItem value="military_network">Military Network</SelectItem>
+                                                <SelectItem value="deep_space_network">Deep Space Network</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                                    <Label className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                        Encryption:
+                                    </Label>
+                                    <div className="col-span-9 flex items-center">
+                                        <Switch
+                                            checked={formData.encryption}
+                                            onCheckedChange={(checked) => setFormData(prev => ({ ...prev, encryption: checked }))}
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                        </>
-                    )}
-                    {mode === 'orbital' && (
-                        <>
-                            {renderField("semiMajorAxis", "SMA", "number", null, null, 0.1, "km")}
-                            {renderField("eccentricity", "Ecc", "number", 0, 1, 0.01)}
-                            {renderField("inclination", "Inc", "number", -180, 180, 0.1, "deg")}
-                            {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
-                            {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
-                            {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
-                            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-1 mt-2">
-                                <Label htmlFor="referenceFrame" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
-                                    Reference:
-                                </Label>
-                                <div className="col-span-6">
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="sm" className="justify-start">
-                                                {rfLabel}
+                        )}
+                    </div>
+                </Section>
+
+                {/* Orbital Parameters Section */}
+                <Section
+                    title="Orbital Parameters"
+                    isOpen={showOrbitalParams}
+                    onToggle={() => setShowOrbitalParams(!showOrbitalParams)}
+                >
+                    <div className="space-y-1">
+                        <div className="mb-1">
+                            <Tabs value={mode} onValueChange={setMode}>
+                                <TabsList className="flex justify-center gap-0 text-xs mb-1">
+                                    <TabsTrigger value="latlon" className="w-1/2 text-xs transition-colors hover:bg-primary/10">Lat/Lon</TabsTrigger>
+                                    <TabsTrigger value="orbital" className="w-1/2 text-xs transition-colors hover:bg-primary/10">Orbital</TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                        </div>
+                        
+                        {mode === 'latlon' && (
+                            <div className="space-y-1">
+                                {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
+                                {renderField("longitude", "Lon", "number", -180, 180, 0.1, "deg")}
+                                {renderField("altitude", "Alt", "number", null, null, 0.1, "km")}
+                                {renderField("azimuth", "Azimuth", "number", 0, 360, 0.1, "deg")}
+                                {renderField("velocity", "Velocity", "number", null, null, 0.1, "km/s")}
+                                {renderField("angleOfAttack", "AoA", "number", -90, 90, 0.1, "deg")}
+                                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                                    <Label htmlFor="circular" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                        Circular:
+                                    </Label>
+                                    <div className="col-span-9 flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="circular"
+                                            name="circular"
+                                            checked={formData.circular}
+                                            onChange={handleInputChange}
+                                            className="h-4 w-4"
+                                        />
+                                        <span className="text-xs text-muted-foreground">
+                                            {circularVelocity === 'auto' ? '(auto)' : ''}
+                                        </span>
+                                        {!formData.circular && (
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-6 px-2 text-xs"
+                                                onClick={() => {
+                                                    setFormData(prev => ({ 
+                                                        ...prev, 
+                                                        velocity: 7.5, // Approximate circular velocity for display 
+                                                        circular: true 
+                                                    }));
+                                                }}
+                                            >
+                                                Use
                                             </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent sideOffset={4}>
-                                            <DropdownMenuItem onSelect={() => setFormData(prev => ({ ...prev, referenceFrame: 'equatorial' }))}>
-                                                Equatorial
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onSelect={() => setFormData(prev => ({ ...prev, referenceFrame: 'ecliptic' }))}>
-                                                Ecliptic
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="col-span-3" />
                             </div>
-                        </>
-                    )}
-                </div>
-                <div className="pt-8">
-                    <Button type="submit" className="w-full h-7 text-xs py-0 mb-2" size="sm">
-                        Create
-                    </Button>
-                </div>
+                        )}
+                        
+                        {mode === 'orbital' && (
+                            <div className="space-y-1">
+                                {renderField("semiMajorAxis", "SMA", "number", null, null, 0.1, "km")}
+                                {renderField("eccentricity", "Ecc", "number", 0, 1, 0.01)}
+                                {renderField("inclination", "Inc", "number", -180, 180, 0.1, "deg")}
+                                {renderField("raan", "RAAN", "number", 0, 360, 0.1, "deg")}
+                                {renderField("argumentOfPeriapsis", "AoP", "number", 0, 360, 0.1, "deg")}
+                                {renderField("trueAnomaly", "TA", "number", 0, 360, 0.1, "deg")}
+                                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-1 mt-2">
+                                    <Label htmlFor="referenceFrame" className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                                        Reference:
+                                    </Label>
+                                    <div className="col-span-6">
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="sm" className="justify-start">
+                                                    {rfLabel}
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent sideOffset={4}>
+                                                <DropdownMenuItem onSelect={() => setFormData(prev => ({ ...prev, referenceFrame: 'equatorial' }))}>
+                                                    Equatorial
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => setFormData(prev => ({ ...prev, referenceFrame: 'ecliptic' }))}>
+                                                    Ecliptic
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+                                    <div className="col-span-3" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </Section>
+
+            </div>
+
+            <form onSubmit={handleSubmit} className="border-t border-border/50 p-2">
+                <Button type="submit" className="w-full h-7 text-xs py-0" size="sm">
+                    Create
+                </Button>
             </form>
         </div>
     );

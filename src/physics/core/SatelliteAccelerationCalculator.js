@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
+import { PhysicsConstants } from './PhysicsConstants.js';
 import { GravityCalculator } from './GravityCalculator.js';
 import { AtmosphericModels } from './AtmosphericModels.js';
 
@@ -135,9 +135,9 @@ export class SatelliteAccelerationCalculator {
             
             const distance = bodyPos.distanceTo(satGlobalPos);
             if (distance < sphereOfInfluence) {
-                const mu = body.GM || (Constants.G * body.mass);
+                const mu = body.GM || (PhysicsConstants.PHYSICS.G * body.mass);
                 const gravAccel = mu / (distance * distance);
-                const centralGravAccel = (centralBody.GM || Constants.G * centralBody.mass) / (satAltitude * satAltitude);
+                const centralGravAccel = (centralBody.GM || PhysicsConstants.PHYSICS.G * centralBody.mass) / (satAltitude * satAltitude);
                 
                 // Include if perturbation is at least 0.1% of central body's gravity
                 if (gravAccel > centralGravAccel * 0.001) {

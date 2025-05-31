@@ -26,7 +26,7 @@ import * as THREE from 'three';
 // Core physics modules
 import { OrbitPropagator } from './core/OrbitPropagator.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
-import { ApsisCalculator } from './core/ApsisCalculator.js';
+import { ApsisCalculations } from './core/ApsisCalculations.js';
 import { GravityCalculator } from './core/GravityCalculator.js';
 import { AtmosphericModels } from './core/AtmosphericModels.js';
 import { SatelliteAccelerationCalculator } from './core/SatelliteAccelerationCalculator.js';
@@ -41,7 +41,10 @@ import { PositionManager } from './PositionManager.js';
 import { SolarSystemHierarchy } from './SolarSystemHierarchy.js';
 
 // Body data
-import { solarSystemDataManager as PlanetaryDataManager } from './bodies/PlanetaryDataManager.js';
+import { solarSystemDataManager } from './PlanetaryDataManager.js';
+
+// Constants
+import { PhysicsConstants } from './core/PhysicsConstants.js';
 
 /**
  * Orbital Mechanics Calculations
@@ -120,8 +123,9 @@ export const Orbital = {
      * Calculate apsis information (periapsis/apoapsis)
      */
     calculateApsis: (elements, centralBody) => {
-        const calculator = new ApsisCalculator();
-        return calculator.calculate(elements, centralBody);
+        const mu = centralBody.GM || centralBody.mu;
+        const period = OrbitalMechanics.calculatePeriod(elements.semiMajorAxis, mu);
+        return ApsisCalculations.getApsisInformation(elements, mu, elements.trueAnomaly, period);
     },
 
     /**
@@ -213,7 +217,7 @@ export const Bodies = {
      * Get planetary data for a body
      */
     getData: (bodyName) => {
-        const manager = PlanetaryDataManager;
+        const manager = solarSystemDataManager;
         return manager.getBodyData(bodyName);
     },
 
@@ -244,8 +248,16 @@ export const Bodies = {
      * Get all available bodies
      */
     getAll: () => {
-        const manager = PlanetaryDataManager;
+        const manager = solarSystemDataManager;
         return manager.getAllBodies();
+    },
+
+    /**
+     * Get body data by NAIF ID
+     */
+    getByNaif: (naifId) => {
+        const manager = solarSystemDataManager;
+        return manager.getBodyByNaif(naifId);
     }
 };
 
@@ -268,6 +280,64 @@ export const Forces = {
         const calculator = new SatelliteAccelerationCalculator();
         return calculator.calculate(satellite, centralBody, atmosphericData);
     }
+};
+
+/**
+ * Physics Constants - Single Source of Truth
+ */
+export const Constants = {
+    /**
+     * Fundamental physics constants
+     */
+    PHYSICS: PhysicsConstants.PHYSICS,
+    
+    /**
+     * Time conversion constants
+     */
+    TIME: PhysicsConstants.TIME,
+    
+    /**
+     * Simulation parameters
+     */
+    SIMULATION: PhysicsConstants.SIMULATION,
+    
+    /**
+     * Validation limits
+     */
+    VELOCITY_LIMITS: PhysicsConstants.VELOCITY_LIMITS,
+    POSITION_LIMITS: PhysicsConstants.POSITION_LIMITS,
+    
+    /**
+     * Atmospheric constants
+     */
+    ATMOSPHERIC: PhysicsConstants.ATMOSPHERIC,
+    
+    /**
+     * Numerical method constants
+     */
+    NUMERICAL: PhysicsConstants.NUMERICAL,
+    
+    /**
+     * Default satellite properties
+     */
+    SATELLITE_DEFAULTS: PhysicsConstants.SATELLITE_DEFAULTS,
+    
+    /**
+     * Mathematical constants
+     */
+    MATH: PhysicsConstants.MATH,
+    
+    /**
+     * SOI detection thresholds
+     */
+    SOI_THRESHOLDS: PhysicsConstants.SOI_THRESHOLDS,
+    
+    // Legacy compatibility (deprecated - use PHYSICS.* or TIME.* instead)
+    get G() { return this.PHYSICS.G; },
+    get AU() { return this.PHYSICS.AU; },
+    get siderialDay() { return this.TIME.SIDEREAL_DAY; },
+    get secondsInDay() { return this.TIME.SECONDS_IN_DAY; },
+    get ECLIPIC_J2000_JD() { return this.PHYSICS.J2000_EPOCH; },
 };
 
 /**
@@ -353,14 +423,14 @@ export const Advanced = {
      */
     OrbitPropagator,
     OrbitalMechanics,
-    ApsisCalculator,
+    ApsisCalculations,
     GravityCalculator,
     AtmosphericModels,
     SatelliteAccelerationCalculator,
     StateVectorCalculator,
     PositionManager,
     SolarSystemHierarchy,
-    PlanetaryDataManager
+    solarSystemDataManager
 };
 
 /**

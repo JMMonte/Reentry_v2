@@ -1,15 +1,11 @@
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
 
 /**
  * Centralized atmospheric models and drag calculations
  * Handles atmospheric density profiles and aerodynamic forces
  */
 export class AtmosphericModels {
-    /**
-     * Earth's rotation rate (rad/s)
-     */
-    static OMEGA_EARTH = 2 * Math.PI / Constants.siderialDay;
+    // Note: Rotation rates should be calculated dynamically from body data
 
     /**
      * Default ballistic coefficient for satellites (kg/m²)
@@ -75,7 +71,7 @@ export class AtmosphericModels {
         // Atmospheric velocity due to planet rotation
         const omega = planet.rotationPeriod 
             ? (2 * Math.PI / planet.rotationPeriod) 
-            : this.OMEGA_EARTH;
+            : 0; // No rotation if period not specified
         
         // Atmosphere co-rotates with planet (simplified model)
         const vAtm = [-omega * y, omega * x, 0];
