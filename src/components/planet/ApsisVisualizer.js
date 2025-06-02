@@ -3,30 +3,39 @@ import * as THREE from 'three';
 export class ApsisVisualizer {
     /** Shared sphere geometry for periapsis and apoapsis markers */
     static _sphereGeometry = new THREE.SphereGeometry(1, 8, 8);
-    /** Shared materials */
-    static _periMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, depthWrite: false });
-    static _apoMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, transparent: true, opacity: 0.8, depthWrite: false });
     constructor(parent, color) {
-        this.parent = parent; // Should always be an orbit group
+        this.parent = parent; // Can be orbit group or scene
         this.color = color;
+        this.isOrbitGroup = parent && parent.isGroup && parent.type !== 'Scene';
+        
+        // Create unique materials for each instance to avoid conflicts
+        this.periMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 1.0, transparent: false });
+        this.apoMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, opacity: 1.0, transparent: false });
+        
         this.initializeApsides();
     }
 
     initializeApsides() {
-        // Create meshes using shared geometry and materials
-        this.periapsisMesh = new THREE.Mesh(ApsisVisualizer._sphereGeometry, ApsisVisualizer._periMaterial);
-        this.apoapsisMesh = new THREE.Mesh(ApsisVisualizer._sphereGeometry, ApsisVisualizer._apoMaterial);
+        // Create meshes using shared geometry and unique materials
+        this.periapsisMesh = new THREE.Mesh(ApsisVisualizer._sphereGeometry, this.periMaterial);
+        this.apoapsisMesh = new THREE.Mesh(ApsisVisualizer._sphereGeometry, this.apoMaterial);
 
-        // Add onBeforeRender callback to maintain relative size
-        const targetSize = 0.003; // Adjust this value to change the relative size
+        // Add camera-relative scaling using world position
+        const targetSize = 0.003; // Screen-space relative size
         this.periapsisMesh.onBeforeRender = (renderer, scene, camera) => {
-            const distance = camera.position.distanceTo(this.periapsisMesh.position);
+            // Get world position for distance calculation
+            const worldPos = new THREE.Vector3();
+            this.periapsisMesh.getWorldPosition(worldPos);
+            const distance = camera.position.distanceTo(worldPos);
             const scale = distance * targetSize;
             this.periapsisMesh.scale.set(scale, scale, scale);
         };
 
         this.apoapsisMesh.onBeforeRender = (renderer, scene, camera) => {
-            const distance = camera.position.distanceTo(this.apoapsisMesh.position);
+            // Get world position for distance calculation  
+            const worldPos = new THREE.Vector3();
+            this.apoapsisMesh.getWorldPosition(worldPos);
+            const distance = camera.position.distanceTo(worldPos);
             const scale = distance * targetSize;
             this.apoapsisMesh.scale.set(scale, scale, scale);
         };
@@ -51,19 +60,15 @@ export class ApsisVisualizer {
 
         // Update periapsis mesh position (position comes as [x, y, z] array)
         if (apsisData.periapsis.position) {
-            // Transform from world coordinates to orbit group local coordinates
-            const worldPos = new THREE.Vector3().fromArray(apsisData.periapsis.position);
-            const localPos = this.parent.worldToLocal(worldPos);
-            this.periapsisMesh.position.copy(localPos);
+            // Apsis positions are already planet-relative coordinates, use directly
+            this.periapsisMesh.position.fromArray(apsisData.periapsis.position);
             this.periapsisMesh.visible = true;
         }
 
         // Update apoapsis mesh position (only for elliptical orbits)
         if (apsisData.apoapsis && apsisData.apoapsis.position) {
-            // Transform from world coordinates to orbit group local coordinates
-            const worldPos = new THREE.Vector3().fromArray(apsisData.apoapsis.position);
-            const localPos = this.parent.worldToLocal(worldPos);
-            this.apoapsisMesh.position.copy(localPos);
+            // Apsis positions are already planet-relative coordinates, use directly
+            this.apoapsisMesh.position.fromArray(apsisData.apoapsis.position);
             if (!this.apoapsisMesh.parent) this.parent.add(this.apoapsisMesh);
             this.apoapsisMesh.visible = true;
         } else {
@@ -112,19 +117,15 @@ export class ApsisVisualizer {
             }
         }
 
-        // Update mesh positions
+        // Update mesh positions - use coordinates directly (same as satellite positioning)
         if (periapsisPoint) {
-            const worldPos = new THREE.Vector3().fromArray(periapsisPoint);
-            const localPos = this.parent.worldToLocal(worldPos);
-            this.periapsisMesh.position.copy(localPos);
+            this.periapsisMesh.position.fromArray(periapsisPoint);
             this.periapsisMesh.visible = true;
         }
 
         if (apoapsisPoint && Math.abs(maxDistance - minDistance) > centralBody.radius * 0.01) {
             // Only show apoapsis if it's significantly different from periapsis
-            const worldPos = new THREE.Vector3().fromArray(apoapsisPoint);
-            const localPos = this.parent.worldToLocal(worldPos);
-            this.apoapsisMesh.position.copy(localPos);
+            this.apoapsisMesh.position.fromArray(apoapsisPoint);
             if (!this.apoapsisMesh.parent) this.parent.add(this.apoapsisMesh);
             this.apoapsisMesh.visible = true;
         } else {
@@ -164,9 +165,9 @@ export class ApsisVisualizer {
         if (this.apoapsisMesh.parent) {
             this.parent.remove(this.apoapsisMesh);
         }
-        this.periapsisMesh.material.dispose();
-        this.apoapsisMesh.material.dispose();
-        this.periapsisMesh.geometry.dispose();
-        this.apoapsisMesh.geometry.dispose();
+        // Dispose unique materials
+        this.periMaterial.dispose();
+        this.apoMaterial.dispose();
+        // Don't dispose shared geometry
     }
 }

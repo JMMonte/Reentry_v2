@@ -12,7 +12,6 @@ import PropTypes from 'prop-types';
 import { ResetPasswordModal } from './auth/ResetPasswordModal';
 import { SimulationWindow } from './simulation/SimulationWindow';
 import { SatelliteManeuverWindow } from './satellite/SatelliteManeuverWindow';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './dropdown-menu';
 import { Button } from './button';
 import { GroundTrackWindow } from './groundtrack/GroundTrackWindow';
 
@@ -320,7 +319,6 @@ export function Layout({
                 <ChatModal {...chatModalProps} />
                 <DisplayOptions {...displayOptionsProps} />
                 {debugWindows && debugWindows.map(({ id, satellite, earth, onBodySelect, onClose }) => {
-                    // console.log('[Layout] Rendering SatelliteDebugWindow for id:', id, 'satellitesPhysics keys:', Object.keys(satellitesPhysics));
                     return (
                         <SatelliteDebugWindow
                             key={id}

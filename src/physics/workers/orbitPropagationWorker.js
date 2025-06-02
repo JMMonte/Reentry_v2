@@ -33,11 +33,6 @@ messageHandler.addHandler('propagate', async (data) => {
     await propagateOrbitUsingUnifiedPropagator(data);
 });
 
-messageHandler.addHandler('cancel', () => {
-    // UnifiedSatellitePropagator doesn't have stop method - stateless
-    console.log('[orbitPropagationWorker] Cancel requested - UnifiedSatellitePropagator is stateless');
-});
-
 // Set up message listener
 self.onmessage = (event) => messageHandler.handleMessage(event);
 

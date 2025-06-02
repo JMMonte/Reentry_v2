@@ -31,12 +31,9 @@ self.onmessage = function (e) {
             
             // Update configuration if provided
             if (e.data.config) {
-                console.log('[lineOfSightWorker] Received config:', e.data.config);
                 Object.assign(CONFIG, e.data.config);
-                console.log('[lineOfSightWorker] Updated CONFIG:', CONFIG);
             }
             
-            console.log('[lineOfSightWorker] Processing:', satellites.length, 'satellites,', bodies.length, 'bodies');
             calculateLineOfSight();
             break;
             
@@ -64,8 +61,6 @@ function calculateLineOfSight() {
     const connections = [];
     const currentTime = physicsState?.currentTime || Date.now();
     
-    console.log('[lineOfSightWorker] calculateLineOfSight called with', satellites.length, 'satellites');
-    
     // Satellite-to-satellite visibility
     for (let i = 0; i < satellites.length; i++) {
         for (let j = i + 1; j < satellites.length; j++) {
@@ -86,8 +81,6 @@ function calculateLineOfSight() {
                     color: getConnectionColor(visibility),
                     metadata: visibility
                 });
-            } else {
-                console.log('[lineOfSightWorker] Connection rejected:', satellites[i].id, '->', satellites[j].id, 'reason:', visibility.reason);
             }
         }
     }
@@ -115,8 +108,6 @@ function calculateLineOfSight() {
             }
         }
     }
-    
-    console.log('[lineOfSightWorker] Calculated', connections.length, 'connections');
     
     self.postMessage({ 
         type: 'CONNECTIONS_UPDATED', 

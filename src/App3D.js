@@ -481,9 +481,6 @@ class App3D extends EventTarget {
         const sats = physicsEngine.getSatellitesForLineOfSight();
         const bodies = physicsEngine.getBodiesForLineOfSight();
         
-        console.log('[App3D] Got', sats?.length, 'satellites and', bodies?.length, 'bodies for LOS');
-        console.log('[App3D] Satellite data for LOS:', sats);
-        
         if (this.lineOfSightManager) {
             this.lineOfSightManager.updateConnections(sats, bodies, []);
         } else {

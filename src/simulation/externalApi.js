@@ -695,9 +695,8 @@ export function setupExternalApi(app3d) {
         /**
          * Get ground track projection for a satellite
          * @param {string|number} id - Satellite ID
-         * @param {number} duration - Duration in seconds to propagate (default: one orbit period)
          */
-        getGroundTrack: (id, duration = null) => {
+        getGroundTrack: (id) => {
             try {
                 const satResult = window.api.getSatellite(id);
                 if (!satResult.success) return satResult;
@@ -801,7 +800,6 @@ export function setupExternalApi(app3d) {
          * @returns {Object} Success acknowledgment
          */
         runCodeInterpreter: (params) => {
-            console.log('[Code Interpreter] Tool call received:', params);
             
             // The actual code execution is handled by OpenAI's built-in environment
             // We just need to acknowledge the tool call was received

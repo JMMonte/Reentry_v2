@@ -43,8 +43,6 @@ export function stateToKeplerian(r_vec, v_vec, mu, epochJD = 0, bodyRadius = 0) 
     const v_sq = VectorOps.dot(v_obj, v_obj);
     const energy = v_sq / 2 - mu / r;
     const a = -mu / (2 * energy);
-    // Debug log
-    // console.log('[KeplerianDebug] r:', r, 'v_sq:', v_sq, 'energy:', energy, 'a:', a, 'mu:', mu);
 
     const h_vec = VectorOps.cross(r_obj, v_obj); // Specific angular momentum vector
     const h = VectorOps.magnitude(h_vec);

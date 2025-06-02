@@ -15,7 +15,48 @@ import { stateToKeplerian } from '../physics/utils/KeplerianUtils.js';
 
 export class ApsisService {
     /**
-     * Get next apsis time for a satellite
+     * Get next apsis time from pre-calculated orbital elements
+     * @param {Object} orbitalElements - Pre-calculated orbital elements
+     * @param {string} apsisType - 'periapsis' or 'apoapsis'
+     * @param {Date} currentTime - Current simulation time
+     * @param {Object} centralBody - Central body data
+     * @returns {Date} - Time of next apsis occurrence
+     */
+    static getNextApsisTimeFromElements(orbitalElements, apsisType, currentTime, centralBody) {
+        try {
+            // Validate pre-calculated elements
+            if (!orbitalElements || !Number.isFinite(orbitalElements.semiMajorAxis) || orbitalElements.semiMajorAxis <= 0) {
+                console.warn('[ApsisService] Invalid pre-calculated orbital elements');
+                return new Date(currentTime.getTime() + 86400000); // Return +1 day as fallback
+            }
+
+            // For hyperbolic orbits, return fallback
+            if (orbitalElements.eccentricity >= 1.0) {
+                console.warn('[ApsisService] Cannot calculate apsis timing for hyperbolic orbit');
+                return new Date(currentTime.getTime() + 86400000);
+            }
+
+            // Calculate orbital period using existing API
+            const period = Orbital.calculatePeriodFromSMA(orbitalElements.semiMajorAxis, centralBody.GM || centralBody.mu);
+            
+            // Get time offset to next apsis - simplified calculation
+            const targetTrueAnomaly = apsisType === 'periapsis' ? 0 : Math.PI;
+            let deltaAnomaly = targetTrueAnomaly - orbitalElements.trueAnomaly;
+            while (deltaAnomaly <= 0) {
+                deltaAnomaly += 2 * Math.PI;
+            }
+            const timeOffset = (deltaAnomaly / (2 * Math.PI)) * period;
+
+            // Return absolute time
+            return new Date(currentTime.getTime() + (timeOffset * 1000));
+        } catch (error) {
+            console.error('[ApsisService] Error calculating next apsis time from elements:', error);
+            return new Date(currentTime.getTime() + 86400000); // Return +1 day as fallback
+        }
+    }
+
+    /**
+     * Get next apsis time for a satellite (LEGACY METHOD - may have calculation discrepancies)
      * @param {Object} satellite - Satellite with position, velocity, centralBodyNaifId
      * @param {string} apsisType - 'periapsis' or 'apoapsis'
      * @param {Date} currentTime - Current simulation time

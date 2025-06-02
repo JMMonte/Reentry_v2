@@ -42,7 +42,6 @@ export function useSocket(socket) {
 
     useEffect(() => {
         if (!socket) {
-            console.log('[useSocket] No socket provided - chat functionality will be disabled');
             return;
         }
 

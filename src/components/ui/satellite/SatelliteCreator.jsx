@@ -278,7 +278,6 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     planetNaifId: selectedBody?.naifId,
                     commsConfig: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig || { preset: 'cubesat' }
                 };
-                console.log('[SatelliteCreator] Submitting latlon satellite with:', outParams);
                 await onCreateSatellite(outParams);
             } else if (mode === 'orbital') {
                 const outParams = {
@@ -297,7 +296,6 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     planetNaifId: selectedBody?.naifId,
                     commsConfig: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig || { preset: 'cubesat' }
                 };
-                console.log('[SatelliteCreator] Submitting orbital satellite with:', outParams);
                 await onCreateSatellite(outParams);
             }
             setFormData(prev => ({

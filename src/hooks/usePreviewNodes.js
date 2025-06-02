@@ -60,7 +60,6 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
             }
         } else if (maneuverMode === 'hohmann') {
             // TODO: Create Hohmann preview using new architecture
-            console.log('Hohmann preview temporarily disabled during refactoring');
             // The following code is commented out for now, as preview node creation is disabled during refactoring.
             /*
             const data = getHohmannPreviewData();

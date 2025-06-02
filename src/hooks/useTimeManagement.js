@@ -11,7 +11,6 @@ export function useTimeManagement(app3d, controller, setSimTime) {
     
     
     if (app3d?.timeUtils) {
-      console.log('[TimeManagement] handleSimulatedTimeChange - Using local time management');
       app3d.timeUtils.setSimulatedTime(newTime);
       
       if (app3d.physicsIntegration) {

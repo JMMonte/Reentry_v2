@@ -450,7 +450,6 @@ export class CelestialOrbitCalculator {
         const poleOnlyQuaternion = new THREE.Quaternion();
         poleOnlyQuaternion.setFromUnitVectors(zAxis, poleVector.normalize());
 
-        console.log(`[CelestialOrbitCalculator] Created STATIC pole orientation for ${planetName}: RA=${poleRA}°, Dec=${poleDec}°`);
         return poleOnlyQuaternion;
     }
 

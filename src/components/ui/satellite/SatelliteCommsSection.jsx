@@ -6,19 +6,18 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { Button } from '../button';
 import { Input } from '../input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import { Switch } from '../switch';
 import { Separator } from '../separator';
 import { Badge } from '../badge';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../tooltip';
 import { Card, CardContent, CardHeader, CardTitle } from '../card';
 import { 
     Radio, 
     Antenna, 
     Signal, 
-    Zap, 
     Settings, 
     Info, 
     CheckCircle, 
@@ -47,13 +46,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                 if (commsSubsystem) {
                     status = commsSubsystem.getStatus();
                     activeConnections = commsSubsystem.getActiveConnections() || [];
-                    console.log(`[SatelliteCommsSection] Got physics subsystem data for ${satelliteId}:`, {
-                        status,
-                        connections: activeConnections,
-                        subsystemType: commsSubsystem.constructor.name
-                    });
-                } else {
-                    console.log(`[SatelliteCommsSection] No communication subsystem found for satellite ${satelliteId} in physics engine`);
                 }
             }
 
@@ -63,7 +55,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                 if (commsSystem) {
                     status = commsSystem.getStatus();
                     activeConnections = commsSystem.getActiveConnections() || [];
-                    console.log(`[SatelliteCommsSection] Got SatelliteCommsManager data for ${satelliteId}:`, status);
                 }
             }
 
@@ -73,7 +64,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                 if (commsSystem) {
                     status = commsSystem.getStatus();
                     activeConnections = commsSystem.getActiveConnections() || [];
-                    console.log(`[SatelliteCommsSection] Got LineOfSightManager data for ${satelliteId}:`, status);
                 }
             }
 
@@ -81,7 +71,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                 setCommsStatus(status);
                 setConnections(activeConnections);
             } else {
-                console.log(`[SatelliteCommsSection] No communication data found for satellite ${satelliteId}`);
                 setCommsStatus(null);
                 setConnections([]);
             }
@@ -107,7 +96,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
             if (success) {
                 setTempConfig({});
                 setEditMode(false);
-                console.log(`[SatelliteCommsSection] Updated physics subsystem config for ${satelliteId}:`, tempConfig);
                 return;
             }
         }
@@ -117,7 +105,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
             app.satelliteCommsManager.updateSatelliteComms(satelliteId, tempConfig);
             setTempConfig({});
             setEditMode(false);
-            console.log(`[SatelliteCommsSection] Updated SatelliteCommsManager config for ${satelliteId}:`, tempConfig);
             return;
         }
 
@@ -126,7 +113,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
             app.lineOfSightManager.commsManager.updateSatelliteComms(satelliteId, tempConfig);
             setTempConfig({});
             setEditMode(false);
-            console.log(`[SatelliteCommsSection] Updated LineOfSightManager config for ${satelliteId}:`, tempConfig);
         }
     };
 
@@ -168,7 +154,6 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                 app.lineOfSightManager.commsManager.updateSatelliteComms(satelliteId, preset);
             }
 
-            console.log(`[SatelliteCommsSection] Applied preset ${presetName} to satellite ${satelliteId}:`, preset);
         }
     };
 
@@ -485,3 +470,8 @@ export function SatelliteCommsSection({ satelliteId, app }) {
         </Card>
     );
 }
+
+SatelliteCommsSection.propTypes = {
+    satelliteId: PropTypes.string.isRequired,
+    app: PropTypes.object.isRequired
+};

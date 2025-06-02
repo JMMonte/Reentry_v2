@@ -21,7 +21,6 @@ export function useApp3DSetup(app3d, modalState, handleBodyChange, showToast) {
       }
       modalState.setDebugWindows(prev => {
         if (prev.some(w => w.id === satellite.id)) return prev;
-        console.log(`Creating debug window for satellite ${satellite.id}`);
         return [
           ...prev,
           {

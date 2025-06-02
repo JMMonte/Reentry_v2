@@ -233,18 +233,18 @@ export class SolarSystemDataManager {
     _registerBody(bodyConfig) {
         // Clone the configuration to avoid modifying the original
         const config = { ...bodyConfig };
-        
+
         // Normalize NAIF ID: always use naifId (camelCase)
         if (config.naif_id !== undefined) {
             config.naifId = config.naif_id;
             delete config.naif_id;
         }
-        
+
         // Resolve LOD levels if lodLevelsKey is present but lodLevels is not
         if (config.lodLevelsKey && !config.lodLevels && config.radius) {
             config.lodLevels = SolarSystemDataManager.generateLodLevelsForRadius(config.radius, config.lodLevelsKey);
         }
-        
+
         // Map orbitalElements to canonicalOrbit if needed
         if (!config.canonicalOrbit && config.orbitalElements) {
             config.canonicalOrbit = {
@@ -257,7 +257,7 @@ export class SolarSystemDataManager {
                 epoch: config.orbitalElements.epoch
             };
         }
-        
+
         this.bodies.set(config.name, config);
         if (config.naifId !== undefined) {
             this.naifToBody.set(config.naifId, config);
@@ -336,14 +336,13 @@ export class SolarSystemDataManager {
 
                 // Create CelestialBody instance
                 const celestialBody = CelestialBody.fromConfig(config);
-                
+
                 // Store in maps
                 this.celestialBodies.set(name, celestialBody);
                 if (celestialBody.naifId !== undefined) {
                     this.naifToCelestialBody.set(celestialBody.naifId, celestialBody);
                 }
 
-                console.log(`[SolarSystemDataManager] Created CelestialBody: ${name} (NAIF: ${celestialBody.naifId})`);
             } catch (error) {
                 console.error(`[SolarSystemDataManager] Failed to create CelestialBody for ${name}:`, error);
             }
@@ -358,8 +357,6 @@ export class SolarSystemDataManager {
                 }
             }
         });
-
-        console.log(`[SolarSystemDataManager] Created ${this.celestialBodies.size} CelestialBody instances`);
     }
 
     /**

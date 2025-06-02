@@ -382,7 +382,7 @@ DraggableModal.propTypes = {
   onClose: PropTypes.func,
   defaultCollapsed: PropTypes.bool,
   minHeight: PropTypes.number,
-  maxHeight: PropTypes.number,
+  maxHeight: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   minWidth: PropTypes.number,
   maxWidth: PropTypes.number,
   resizable: PropTypes.bool,

@@ -5,7 +5,7 @@ import { ManeuverUtils } from '../utils/ManeuverUtils.js';
 import formatTimeDelta from '../utils/FormatUtils.js';
 import { usePreviewNodes } from './usePreviewNodes.js';
 import { useManeuverApsisData } from './useApsisData.js';
-import { Orbital, Bodies, Utils, Constants } from '../physics/PhysicsAPI.js';
+import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
 
 export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Remove dependency on SimulationContext - currentTime is now a prop
@@ -395,7 +395,6 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Compute additional details for Moon TLI
     const computeMoonTransferDetails = useCallback(() => {
         // placeholder for optimal plane change/time adjustment calculations
-        console.log('Computing Moon TLI details...');
     }, []);
 
     // Save or update a maneuver node
@@ -430,9 +429,7 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         }
         
         // Add new maneuver node
-        const newNode = manager.sat.addManeuverNode(execTime, dvLocal.clone());
-        // newNode is now a DTO, no need to set localDV or call update()
-        // The physics engine and visualization will handle updates through events
+        manager.sat.addManeuverNode(execTime, dvLocal.clone());
         // Reset selection and add-mode
         setSelectedIndex(null);
         setIsAdding(false);

@@ -298,16 +298,10 @@ describe('SubsystemManager', () => {
                 }
             }
 
-            const consoleSpy = vi.spyOn(console, 'log').mockImplementation();
-
             subsystemManager.registerSubsystemType('test', TestSubsystem);
 
             expect(subsystemManager.subsystemTypes.has('test')).toBe(true);
-            expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('Registered subsystem type: test')
-            );
-
-            consoleSpy.mockRestore();
+            expect(subsystemManager.getAvailableSubsystemTypes()).toContain('test');
         });
 
         it('should throw error for unknown subsystem type', () => {

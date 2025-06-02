@@ -126,7 +126,6 @@ export function handleToolCallSent({ setMessages, socket, outstandingToolCalls, 
     return (data) => {
         data.toolCalls.forEach(toolCall => {
             const { call_id: toolCallId, name, arguments: args } = toolCall;
-            // console.log('[TOOL CALL RECEIVED]', { toolCallId, name, args });
             setMessages(prev => [
                 ...prev,
                 {
@@ -148,7 +147,6 @@ export function handleToolCallSent({ setMessages, socket, outstandingToolCalls, 
                     let parsedArgs;
                     try {
                         parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
-                        // console.log('[TOOL CALL PARSED ARGS]', { toolCallId, name, parsedArgs });
                         if (!parsedArgs || typeof parsedArgs !== 'object') {
                             throw new Error('Tool call arguments are missing or invalid');
                         }
@@ -281,7 +279,6 @@ export function handleDisconnect({ setIsConnected, setIsLoading }) {
 
 export function handleCodeInterpreterResult({ setMessages }) {
     return (data) => {
-        console.log('[Code Interpreter Result]', data);
         setMessages(prev => [
             ...prev,
             {

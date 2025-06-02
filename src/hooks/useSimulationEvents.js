@@ -55,7 +55,6 @@ export function useSimulationEvents({
       setIsSimReady(true);
       setLoadingProgress(100);
       setLoadingStage('Ready to Explore!');
-      console.log('[App.jsx] sceneReady event received, hiding spinner.');
     };
     
     window.addEventListener('sceneReadyFromBackend', handleSceneReady);

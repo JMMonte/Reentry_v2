@@ -89,7 +89,6 @@ export function Navbar({
 
   // Debug: log timewarp changes
   const handleTimeWarpChange = (newWarp) => {
-    console.log('[Navbar] handleTimeWarpChange', newWarp);
     onTimeWarpChange(newWarp);
   };
 

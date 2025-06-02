@@ -1,12 +1,10 @@
 // Satellite.js
 import * as THREE from 'three';
 import { ApsisVisualizer } from '../planet/ApsisVisualizer.js';
-// import { OrbitPath } from './OrbitPath.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { GroundtrackPath } from './GroundtrackPath.js';
 import { ManeuverVisualizationManager } from './ManeuverNodeVisualizer.js';
 import { createManeuverNodeDTO } from '../../types/DataTransferObjects.js';
-import { SatelliteComms } from './SatelliteComms.js';
 
 /**
  * Satellite (UI/View only)
@@ -77,8 +75,9 @@ export class Satellite {
         // this.orbitPath = new OrbitPath(this.color);
         // this.scene.add(this.orbitPath.orbitLine);
         // this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
-        // Add apsis visualizer to the orbit group (same as satellite mesh)
-        this.apsisVisualizer = new ApsisVisualizer(orbitGroup, this.color);
+        // Add apsis visualizer to the same parent as satellite mesh
+        const apsisParent = orbitGroup || this.scene;
+        this.apsisVisualizer = new ApsisVisualizer(apsisParent, this.color);
         this.apsisVisualizer.setVisible(
             this.app3d.getDisplaySetting('showOrbits') && 
             this.app3d.getDisplaySetting('showApsis')
@@ -117,28 +116,8 @@ export class Satellite {
                 return;
             }
             
-            // Debug extreme velocity issue
-            const velMag = Math.sqrt(satState.velocity[0]**2 + satState.velocity[1]**2 + satState.velocity[2]**2);
-            if (velMag > 50) {
-                console.error(`[Satellite.updateVisualsFromState] EXTREME VELOCITY for satellite ${this.id}:`);
-                console.error(`  Velocity: [${satState.velocity[0].toFixed(3)}, ${satState.velocity[1].toFixed(3)}, ${satState.velocity[2].toFixed(3)}] km/s`);
-                console.error(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
-                console.error(`  Position: [${satState.position[0].toFixed(1)}, ${satState.position[1].toFixed(1)}, ${satState.position[2].toFixed(1)}] km`);
-                // Clamp velocity to reasonable values to prevent crashes
-                const maxVel = 50; // km/s
-                if (velMag > maxVel) {
-                    const scale = maxVel / velMag;
-                    satState.velocity = satState.velocity.map(v => v * scale);
-                    console.warn(`[Satellite] Clamped velocity to ${maxVel} km/s`);
-                }
-            }
-        }
-        
-        // Debug: Log position updates
-        if (!this._lastUpdateLogTime || Date.now() - this._lastUpdateLogTime > 1000) {
-            // console.log(`[Satellite ${this.id}] updateVisualsFromState - position: [${satState.position.map(v => v.toFixed(1)).join(', ')}] km`);
-            // console.log(`  velocity: [${satState.velocity.map(v => v.toFixed(3)).join(', ')}] km/s, speed: ${satState.speed?.toFixed(3)} km/s`);
-            this._lastUpdateLogTime = Date.now();
+            // Note: Velocity validation should be handled by physics engine
+            // This UI component should only handle valid data from physics layer
         }
         
         // satState.position is already planet-centric (relative to central body)
@@ -353,15 +332,11 @@ export class Satellite {
             }
         });
         
-        console.log(`[Satellite] Created maneuver node DTO:`, maneuverNode);
-        
         // Add to physics engine
         const nodeId = this.app3d.physicsIntegration.physicsEngine.addManeuverNode(
             this.id,
             maneuverNode
         );
-        
-        console.log(`[Satellite] Physics engine returned nodeId:`, nodeId);
         
         if (nodeId) {
             this.maneuverNodes.push(maneuverNode);

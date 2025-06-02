@@ -124,12 +124,10 @@ export class DisplaySettingsManager {
                 break;
             case 'showSatVectors':
                 // Toggle satellite-centric velocity/gravity arrows only
-                console.log(`[DisplaySettingsManager] Setting satellite vectors visibility to ${value}`);
                 if (app3d.satelliteVectors) {
                     app3d.satelliteVectors.setVisible(value);
                     // If using new implementation, force update
                     if (value && app3d.satelliteVectors.update) {
-                        console.log('[DisplaySettingsManager] Forcing satellite vectors update');
                         app3d.satelliteVectors.update();
                     }
                 }
@@ -216,7 +214,6 @@ export class DisplaySettingsManager {
             case 'orbitPointsPerPeriod':
                 // Just update visualization - don't clear cache
                 if (app3d.satelliteOrbitManager) {
-                    console.log('[DisplaySettingsManager] Orbit settings changed, updating visualization');
                     if (app3d.physicsIntegration?.physicsEngine?.satellites) {
                         for (const satelliteId of app3d.physicsIntegration.physicsEngine.satellites.keys()) {
                             app3d.satelliteOrbitManager.updateSatelliteOrbit(satelliteId);
@@ -269,25 +266,6 @@ export class DisplaySettingsManager {
     _updateApsisVisibility(app3d) {
         const showOrbits = this.getSetting('showOrbits');
         const showApsis = this.getSetting('showApsis');
-        const apsisVisible = showOrbits && showApsis;
-
-        // Update through satellite manager if available
-        if (app3d.satellites?.satellites) {
-            for (const satellite of app3d.satellites.satellites.values()) {
-                if (satellite.apsisVisualizer) {
-                    satellite.apsisVisualizer.setVisible(apsisVisible);
-                }
-            }
-        }
-    }
-
-    /**
-     * Update apsis marker visibility for all satellites
-     * @private
-     */
-    _updateApsisVisibility(app3d) {
-        const showOrbits = this.getSetting('showOrbits');
-        const showApsis = this.getSetting('showApsis');
         const visible = showOrbits && showApsis;
         
         // Update satellite apsis visualizers
@@ -298,8 +276,6 @@ export class DisplaySettingsManager {
                 }
             });
         }
-        
-        console.log(`[DisplaySettingsManager] Updated apsis visibility: showOrbits=${showOrbits}, showApsis=${showApsis}, visible=${visible}`);
     }
 
     /**

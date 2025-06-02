@@ -9,6 +9,7 @@ import PropTypes from 'prop-types';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
 import { Bodies, Orbital } from '../../../physics/PhysicsAPI.js';
+import { ApsisService } from '../../../services/ApsisService.js';
 import * as THREE from 'three';
 import { SatelliteCommsSection } from './SatelliteCommsSection.jsx';
 import { SatelliteCommsTimeline } from './SatelliteCommsTimeline.jsx';
@@ -21,7 +22,6 @@ const Section = ({ title, isOpen, onToggle, children }) => {
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          console.log(`[Section] Clicked ${title}, isOpen=${isOpen}`);
           onToggle();
         }}
         className="w-full flex items-center justify-between py-2 px-1 hover:bg-accent/5 transition-colors cursor-pointer text-left"
@@ -150,82 +150,92 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   useEffect(() => {
     if (!physics || !physics.position || !physics.velocity || !physics.centralBodyNaifId) return;
     
+    // Wait a small amount of time to ensure physics data is stabilized
+    const timer = setTimeout(() => {
+      calculateOrbitalElements();
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [physics, celestialBodies]);
+
+  const calculateOrbitalElements = () => {
+    if (!physics || !physics.position || !physics.velocity || !physics.centralBodyNaifId) return;
+    
     try {
       // Convert arrays to THREE.Vector3
       const position = new THREE.Vector3(...physics.position);
       const velocity = new THREE.Vector3(...physics.velocity);
       
-      // Get central body from celestialBodies or use fallback
+      // Get central body - simplified approach
       let centralBody = null;
-      let bodyRadius = 0;
-      
-      if (celestialBodies && celestialBodies.length > 0) {
+      if (celestialBodies?.length > 0) {
         centralBody = celestialBodies.find(b => 
           b.naif_id === parseInt(physics.centralBodyNaifId) || b.naifId === parseInt(physics.centralBodyNaifId)
         );
       }
       
-      // If not found in celestialBodies, try to get from physics engine or use defaults
+      // Fallback to Bodies API or defaults
       if (!centralBody) {
-        // Try to get from app3d physics engine
-        const physicsBody = window.app3d?.physicsIntegration?.physicsEngine?.bodies?.[physics.centralBodyNaifId];
-        if (physicsBody) {
-          centralBody = physicsBody;
-          bodyRadius = physicsBody.radius || 0;
-        } else {
-          // Get body data from PhysicsAPI
-          try {
-            const bodyData = Bodies.getByNaif(physics.centralBodyNaifId);
-            
-            if (bodyData) {
-              centralBody = {
-                name: bodyData.name,
-                GM: bodyData.GM || Bodies.getGM(physics.centralBodyNaifId),
-                radius: bodyData.radius
-              };
-              bodyRadius = bodyData.radius;
-            } else {
-              // Fallback to Bodies.getGM if no body data found
-              const GM = Bodies.getGM(physics.centralBodyNaifId);
-              
-              if (GM) {
-                centralBody = {
-                  name: `Body ${physics.centralBodyNaifId}`,
-                  GM: GM,
-                  radius: 1000 // Default radius - should be improved to get from constants
-                };
-                bodyRadius = 1000;
-              } else {
-                console.warn(`[SatelliteDebugWindow] Central body ${physics.centralBodyNaifId} not found in physics data, using Earth defaults`);
-                centralBody = { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
-                bodyRadius = 6371.0;
-              }
-            }
-          } catch (error) {
-            console.error(`[SatelliteDebugWindow] Error accessing physics data:`, error);
-            console.warn(`[SatelliteDebugWindow] Central body ${physics.centralBodyNaifId} not accessible, using Earth defaults`);
-            centralBody = { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
-            bodyRadius = 6371.0;
-          }
+        try {
+          const bodyData = Bodies.getByNaif(physics.centralBodyNaifId);
+          centralBody = bodyData ? {
+            name: bodyData.name,
+            GM: bodyData.GM || Bodies.getGM(physics.centralBodyNaifId),
+            radius: bodyData.radius
+          } : { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
+        } catch {
+          centralBody = { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
         }
-      } else {
-        bodyRadius = centralBody.radius || 0;
       }
       
-      // Calculate orbital elements using new Physics API
-      const elements = Orbital.calculateElements(
-        position,
-        velocity,
-        centralBody
-      );
+      // Calculate orbital elements
+      const elements = Orbital.calculateElements(position, velocity, centralBody);
+      
+      // Validate elements first - don't proceed with apsis calculations if invalid
+      if (!elements || !Number.isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0 || 
+          !Number.isFinite(elements.eccentricity) || elements.eccentricity < 0) {
+        console.warn('[SatelliteDebugWindow] Invalid orbital elements calculated, skipping apsis timing');
+        setOrbitalElements(elements);
+        setApsisData(elements);
+        return;
+      }
       
       setOrbitalElements(elements);
-      setApsisData(elements); // Also set apsis data for backward compatibility
+      
+      // Calculate apsis timing using pre-calculated orbital elements
+      if (elements.eccentricity < 1.0) {
+        try {
+          const currentTime = window.app3d?.timeUtils?.getSimulatedTime() || new Date();
+          const nextPeriapsisTime = ApsisService.getNextApsisTimeFromElements(
+            elements, 'periapsis', currentTime, centralBody
+          );
+          const nextApoapsisTime = ApsisService.getNextApsisTimeFromElements(
+            elements, 'apoapsis', currentTime, centralBody
+          );
+          
+          const timeToPeriapsis = (nextPeriapsisTime.getTime() - currentTime.getTime()) / (1000 * 60);
+          const timeToApoapsis = (nextApoapsisTime.getTime() - currentTime.getTime()) / (1000 * 60);
+          
+          setApsisData({
+            ...elements,
+            timeToPeriapsis: timeToPeriapsis > 0 ? timeToPeriapsis : null,
+            timeToApoapsis: timeToApoapsis > 0 ? timeToApoapsis : null,
+            periapsisAltitude: elements.periapsisAltitude,
+            apoapsisAltitude: elements.apoapsisAltitude
+          });
+        } catch (apsisError) {
+          console.warn('[SatelliteDebugWindow] Error calculating apsis timing:', apsisError);
+          setApsisData(elements);
+        }
+      } else {
+        // For hyperbolic/parabolic orbits, don't calculate apsis timing
+        setApsisData(elements);
+      }
       
     } catch (error) {
       console.error('[SatelliteDebugWindow] Error calculating orbital elements:', error);
     }
-  }, [physics, celestialBodies]);
+  };
 
   // Fetch propagation data from orbit manager
   useEffect(() => {
@@ -346,7 +356,6 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       (property === 'pointsPerPeriod' && Math.abs(value - previousPointsPerPeriod) > 30);
     
     // Emit event for Three.js layer to handle
-    console.log(`[SatelliteDebugWindow] Emitting satelliteSimPropertiesChanged event for satellite ${satellite.id}: ${property}=${value}, needsRecalc=${needsRecalculation}, forceRecalc=${forceRecalculation}`);
     
     const event = new CustomEvent('satelliteSimPropertiesChanged', {
       detail: {
@@ -365,8 +374,6 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
 
   const renderVector = (vector, label, isVelocity = false) => {
     if (!vector) return null;
-    // Position is in km
-    // Velocity is in km/s
     const unit = isVelocity ? 'km/s' : 'km';
     return (
       <div className="grid grid-cols-4 gap-1">
@@ -433,6 +440,13 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       </span>
     </div>
   );
+  
+  DataRow.propTypes = {
+    label: PropTypes.string.isRequired,
+    value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    unit: PropTypes.string,
+    className: PropTypes.string
+  };
 
   // const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -512,19 +526,9 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     
     // Fallback to common body names
     const commonBodies = {
-      10: 'Sun',
-      199: 'Mercury',
-      299: 'Venus',
-      399: 'Earth',
-      301: 'Moon',
-      499: 'Mars',
-      401: 'Phobos',
-      402: 'Deimos',
-      599: 'Jupiter',
-      699: 'Saturn',
-      799: 'Uranus',
-      899: 'Neptune',
-      999: 'Pluto'
+      10: 'Sun', 199: 'Mercury', 299: 'Venus', 399: 'Earth', 301: 'Moon',
+      499: 'Mars', 401: 'Phobos', 402: 'Deimos', 599: 'Jupiter', 699: 'Saturn',
+      799: 'Uranus', 899: 'Neptune', 999: 'Pluto'
     };
     
     return commonBodies[parseInt(naifId)] || `Body ${naifId}`;
@@ -593,7 +597,6 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               title="Satellite Properties"
               isOpen={showCharacteristics}
               onToggle={() => {
-                console.log('[Debug] Toggling characteristics from', showCharacteristics, 'to', !showCharacteristics);
                 setShowCharacteristics(!showCharacteristics);
               }}
             >
@@ -764,8 +767,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                       {showBreakdown && (
                         <div className="mt-1 space-y-0.5 max-h-32 overflow-y-auto">
                           {Object.entries(physics.a_bodies)
-                            .filter(([_, vec]) => vectorLength(vec) >= 1e-10)
-                            .sort(([_, a], [__, b]) => vectorLength(b) - vectorLength(a))
+                            .filter(([, vec]) => vectorLength(vec) >= 1e-10)
+                            .sort(([, a], [, b]) => vectorLength(b) - vectorLength(a))
                             .map(([bodyId, vec]) => {
                               const magnitude = vectorLength(vec);
                               const bodyName = getBodyName(bodyId);
@@ -838,6 +841,29 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                       <DataRow label="Altitude" value={formatNumber(orbitalElements.apoapsisAltitude)} unit="km" />
                       <DataRow label="Radius" value={formatNumber(orbitalElements.apoapsisRadial)} unit="km" />
                       <DataRow label="Velocity" value={formatNumber(orbitalElements.apoapsisVelocity)} unit="km/s" />
+                    </div>
+                  )}
+                  
+                  {/* Apsis Timing */}
+                  {apsisData && (apsisData.timeToPeriapsis !== undefined || apsisData.timeToApoapsis !== undefined) && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">Next Apsis Points</div>
+                      {apsisData.timeToPeriapsis !== undefined && apsisData.timeToPeriapsis !== null && (
+                        <div className="space-y-1">
+                          <DataRow label="Time to Periapsis" value={formatNumber(apsisData.timeToPeriapsis, 1)} unit="min" />
+                          {apsisData.periapsisAltitude !== undefined && (
+                            <DataRow label="Periapsis Alt" value={formatNumber(apsisData.periapsisAltitude)} unit="km" />
+                          )}
+                        </div>
+                      )}
+                      {apsisData.timeToApoapsis !== undefined && apsisData.timeToApoapsis !== null && (
+                        <div className="space-y-1">
+                          <DataRow label="Time to Apoapsis" value={formatNumber(apsisData.timeToApoapsis, 1)} unit="min" />
+                          {apsisData.apoapsisAltitude !== undefined && (
+                            <DataRow label="Apoapsis Alt" value={formatNumber(apsisData.apoapsisAltitude)} unit="km" />
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -58,10 +58,6 @@ export async function createSatellite(app, params = {}) {
         commsConfig = params.commsConfig || {}
     } = params;
 
-    // Log only essential info
-    const velMag = velocity ? Math.sqrt((velocity.x || velocity[0])**2 + (velocity.y || velocity[1])**2 + (velocity.z || velocity[2])**2) : 0;
-    console.log(`[createSatellite] ${name || 'Satellite'} - ${planetConfig?.name || 'unknown'} - v=${velMag.toFixed(3)} km/s`);
-
     const sat = await app.satellites.addSatellite({
         position,
         velocity,
@@ -79,7 +75,6 @@ export async function createSatellite(app, params = {}) {
     // Communication subsystem is automatically created by PhysicsEngine when satellite is added
     // Additional communication configuration can be applied via SatelliteCommsManager if needed
     if (commsConfig && Object.keys(commsConfig).length > 0) {
-        console.log(`[createSatellite] Communication config specified for ${name || 'Satellite'}:`, commsConfig);
         // This config will be available for the communication manager to use
         sat.commsConfig = {
             preset: commsConfig.preset || 'cubesat',
@@ -101,18 +96,9 @@ export async function createSatelliteFromLatLon(app, params = {}) {
     const planet = getPlanet(app, naifId);
     if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
 
-    // Log planet info only if needed for debugging
-    // console.log(`[createSatelliteFromLatLon] ${planet.name} (NAIF ${planet.naifId}), GM=${planet.GM} km³/s²`);
-
     // Use improved coordinate calculation with planet quaternion
     const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
     const { position, velocity } = CoordinateTransforms.createFromLatLon(params, planet, currentTime);
-
-    // Log final velocity for circular orbit verification
-    const velMag = Array.isArray(velocity) ? Math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2) : velocity.length();
-    if (params.velocity === undefined) {
-        console.log(`[createSatelliteFromLatLon] Circular orbit: v=${velMag.toFixed(3)} km/s at ${params.altitude} km, azimuth=${params.azimuth || 0}°`);
-    }
 
     const sat = await createSatellite(app, {
         ...params,
@@ -123,7 +109,7 @@ export async function createSatelliteFromLatLon(app, params = {}) {
         dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
         color: pickBrightColor(params.color)
     });
-    
+
     return { satellite: sat, position, velocity };
 }
 
@@ -153,7 +139,7 @@ export async function createSatelliteFromOrbitalElements(app, params = {}) {
         dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
         color: pickBrightColor(params.color)
     });
-    
+
     return { satellite: sat, position, velocity };
 }
 

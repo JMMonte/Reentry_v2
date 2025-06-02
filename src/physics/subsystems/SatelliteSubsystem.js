@@ -20,8 +20,6 @@ export class SatelliteSubsystem {
         this.lastUpdateTime = 0;
         this.updateInterval = config.updateInterval || 1000; // milliseconds
         this.physicsEngine = null; // Will be set by SubsystemManager
-        
-        console.log(`[${subsystemType}] Initialized for satellite ${satelliteId}`);
     }
     
     /**
@@ -58,8 +56,8 @@ export class SatelliteSubsystem {
     /**
      * Main physics update - called by physics engine each step
      * @param {number} deltaTime - Time since last update (seconds)
-     * @param {Object} satellite - Full satellite physics state
-     * @param {Object} environment - Environmental conditions
+     * @param {object} satellite - Satellite physics state
+     * @param {object} environment - Environmental conditions
      */
     update(deltaTime, satellite, environment) {
         if (!this.isEnabled) return;
@@ -80,11 +78,12 @@ export class SatelliteSubsystem {
     
     /**
      * Override in subclasses for subsystem-specific physics
-     * @param {number} deltaTime - Time since last update (seconds)
-     * @param {Object} satellite - Full satellite physics state
-     * @param {Object} environment - Environmental conditions
+     * @param {number} _deltaTime - Time since last update (seconds)
+     * @param {object} _satellite - Satellite physics state
+     * @param {object} _environment - Environmental conditions
      */
-    updateSubsystem(deltaTime, satellite, environment) {
+    // eslint-disable-next-line no-unused-vars
+    updateSubsystem(_deltaTime, _satellite, _environment) {
         // Override in subclasses
     }
     
@@ -113,7 +112,7 @@ export class SatelliteSubsystem {
     /**
      * Override in subclasses to handle configuration changes
      */
-    onConfigUpdate(newConfig) {
+    onConfigUpdate() {
         // Override in subclasses
     }
     
@@ -167,6 +166,5 @@ export class SatelliteSubsystem {
      */
     destroy() {
         this.isEnabled = false;
-        console.log(`[${this.subsystemType}] Destroyed for satellite ${this.satelliteId}`);
     }
 }

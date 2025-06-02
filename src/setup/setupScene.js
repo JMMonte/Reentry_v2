@@ -225,8 +225,8 @@ export async function createSceneObjects(app) {
     
     // Generate all planetary and moon orbits after establishing hierarchy
     // Note: CelestialOrbitManager will automatically initialize when physics engine is ready
-    console.log('Setting up orbit manager - will render orbits when physics engine is available...');
-    app.orbitManager.renderSolarSystemOrbits();
+
+    app.orbitManager.renderAllOrbits();
     
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('loadingProgress', { 
@@ -298,7 +298,6 @@ export async function createSceneObjects(app) {
         app3d: app,
         satelliteManager: app.satellites
     });
-    console.log('[setupScene] Initialized SatelliteVectors');
 
     // --- Parent moons to their barycenter's orbitGroup ---
     for (const [, config] of solarSystemDataManager.naifToBody.entries()) {
@@ -309,7 +308,6 @@ export async function createSceneObjects(app) {
                 // Place moons at barycenter level, same as their orbit lines
                 // This ensures consistent coordinate systems between moon positions and orbit visualization
                 parentBarycenter.getOrbitGroup().add(moonObj.getOrbitGroup());
-                console.log(`[setupScene] Added moon ${config.name} to barycenter ${parentBarycenter.name}`);
             }
         }
     }

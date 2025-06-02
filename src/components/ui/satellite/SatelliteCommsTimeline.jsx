@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { Button } from '../button';
 import { Badge } from '../badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../card';
@@ -83,11 +84,6 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
             }
 
             if (commsStatus) {
-                console.log(`[SatelliteCommsTimeline] Got comms status for ${satelliteId}:`, {
-                    status: commsStatus.state?.status,
-                    connectionCount: activeConnections.length,
-                    connections: activeConnections
-                });
                 
                 // Record current status in timeline
                 const timelineEntry = {
@@ -444,3 +440,8 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
         </Card>
     );
 }
+
+SatelliteCommsTimeline.propTypes = {
+    satelliteId: PropTypes.string.isRequired,
+    app: PropTypes.object.isRequired
+};

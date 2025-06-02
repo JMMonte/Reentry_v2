@@ -16,10 +16,6 @@ export class TimeUtils {
         this.simulatedTime = new Date(settings.simulatedTime);
         this.timeWarp = 1;
         this._lastUpdateTime = performance.now();
-        
-        // Log initial time setup for verification
-        console.log('[TimeUtils] Initialized with UTC time:', this.simulatedTime.toISOString());
-        console.log('[TimeUtils] Browser local time for comparison:', new Date().toString());
     }
 
     /**
