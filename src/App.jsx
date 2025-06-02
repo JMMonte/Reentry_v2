@@ -159,12 +159,12 @@ function App3DMain() {
     }
   }, [appState.importedState, app3d, appState.setDisplaySettings, appState.displaySettings]);
 
-  // Session sync
+  // Time sync
   useEffect(() => {
-    if (app3d && app3d.sessionId) {
+    if (app3d?.timeUtils) {
       appState.setSimTime(app3d.timeUtils.getSimulatedTime());
     }
-  }, [app3d?.sessionId, appState.setSimTime]);
+  }, [app3d?.timeUtils, appState.setSimTime]);
 
   // Satellite deletion handling
   useEffect(() => {

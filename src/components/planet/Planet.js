@@ -10,6 +10,7 @@ import { RadialGrid } from './RadialGrid.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
 import { SoiComponent } from './SoiComponent.js';
+import { DistantMeshComponent } from './DistantMeshComponent.js';
 
 /*
  * Planet.js
@@ -175,6 +176,12 @@ export class Planet {
         if (this.soiRadius) {
             this.soiComponent = new SoiComponent(this);
             this.components.push(this.soiComponent);
+        }
+
+        // --- Distant Mesh Component ---
+        if (!this.modelUrl) { // Only for procedural planets, not models
+            this.distantComponent = new DistantMeshComponent(this);
+            this.components.push(this.distantComponent);
         }
 
         if (config.addLight && config.lightOptions) {
@@ -532,6 +539,9 @@ export class Planet {
 
         // Dispose all components if they have a dispose method
         this.components.forEach(c => c.dispose?.());
+        
+        // Dispose distant component separately if it exists
+        this.distantComponent?.dispose();
 
         const i = Planet.instances.indexOf(this);
         if (i !== -1) Planet.instances.splice(i, 1);

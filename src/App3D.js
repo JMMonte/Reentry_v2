@@ -68,7 +68,6 @@ import { TextureManager } from './managers/textureManager.js';
 // Managers & engines
 import { SatelliteManager } from './managers/SatelliteManager.js';
 // import { LocalPhysicsProvider } from './providers/LocalPhysicsProvider.js';
-// import { RemotePhysicsProvider } from './providers/RemotePhysicsProvider.js';
 import { DisplaySettingsManager } from './managers/DisplaySettingsManager.js';
 import { SceneManager } from './managers/SceneManager.js';
 import { SimulationStateManager } from './managers/SimulationStateManager.js';

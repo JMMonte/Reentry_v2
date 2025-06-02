@@ -153,6 +153,90 @@ export class CelestialOrbitCalculator {
     }
 
     /**
+     * Calculate single orbital position from elements at given time
+     * This method should be used by BOTH orbit visualization AND moon positioning
+     * @param {Object} orbitalElements - Orbital element parameters
+     * @param {number} meanAnomaly - Mean anomaly in radians (0 to 2π)
+     * @param {Object} bodyConfig - Body configuration for reference frame
+     * @returns {THREE.Vector3} - Position vector
+     */
+    calculatePositionFromOrbitalElements(orbitalElements, meanAnomaly, bodyConfig = null) {
+        try {
+            // Calculate eccentric anomaly from mean anomaly (Newton-Raphson method)
+            let E = meanAnomaly; // Initial guess
+            for (let iter = 0; iter < 10; iter++) {
+                const dE = (E - orbitalElements.eccentricity * Math.sin(E) - meanAnomaly) / 
+                          (1 - orbitalElements.eccentricity * Math.cos(E));
+                E -= dE;
+                if (Math.abs(dE) < 1e-8) break;
+            }
+
+            // Calculate true anomaly
+            const trueAnomaly = 2 * Math.atan2(
+                Math.sqrt(1 + orbitalElements.eccentricity) * Math.sin(E / 2),
+                Math.sqrt(1 - orbitalElements.eccentricity) * Math.cos(E / 2)
+            );
+
+            // Calculate distance from focus
+            const r = orbitalElements.semiMajorAxis * (1 - orbitalElements.eccentricity * Math.cos(E));
+
+            // Position in orbital plane
+            const x_orb = r * Math.cos(trueAnomaly);
+            const y_orb = r * Math.sin(trueAnomaly);
+
+            // Convert angles to radians
+            const i = (orbitalElements.inclination || 0) * Math.PI / 180;
+            const omega = (orbitalElements.longitudeOfAscendingNode || 0) * Math.PI / 180;
+            const w = (orbitalElements.argumentOfPeriapsis || 0) * Math.PI / 180;
+
+            // Rotation matrices for orbital elements
+            const cos_omega = Math.cos(omega);
+            const sin_omega = Math.sin(omega);
+            const cos_i = Math.cos(i);
+            const sin_i = Math.sin(i);
+            const cos_w = Math.cos(w);
+            const sin_w = Math.sin(w);
+
+            // Check reference frame for coordinate system
+            const referenceFrame = orbitalElements.referenceFrame || bodyConfig?.referenceFrame;
+            
+            // Calculate position in J2000 ecliptic coordinates first (standard orbital mechanics)
+            const x_ecl = (cos_omega * cos_w - sin_omega * sin_w * cos_i) * x_orb +
+                         (-cos_omega * sin_w - sin_omega * cos_w * cos_i) * y_orb;
+
+            const y_ecl = (sin_omega * cos_w + cos_omega * sin_w * cos_i) * x_orb +
+                         (-sin_omega * sin_w + cos_omega * cos_w * cos_i) * y_orb;
+
+            const z_ecl = (sin_w * sin_i) * x_orb + (cos_w * sin_i) * y_orb;
+
+            // Check if we need to transform to planetary equatorial frame
+            if (referenceFrame && referenceFrame.toLowerCase().includes('equatorial')) {
+                // Extract planet name from reference frame (e.g., "saturn_equatorial" -> "saturn")
+                const planetName = referenceFrame.toLowerCase().replace('_equatorial', '');
+                
+                // Get planet's orientation to transform from ecliptic to equatorial frame
+                const planetConfig = this._getPlanetConfig(planetName);
+                if (planetConfig && planetConfig.poleRA !== undefined && planetConfig.poleDec !== undefined) {
+                    // Calculate transformation from ecliptic to planet's equatorial frame
+                    const eclipticVector = new THREE.Vector3(x_ecl, y_ecl, z_ecl);
+                    const equatorialVector = this._transformEclipticToEquatorial(eclipticVector, planetConfig);
+                    return equatorialVector;
+                }
+                
+                // Fallback: use ecliptic coordinates if planet config not found
+                console.warn(`[CelestialOrbitCalculator] Could not find planet config for ${planetName}, using ecliptic coordinates`);
+            }
+            
+            // Default: Return ecliptic coordinates
+            return new THREE.Vector3(x_ecl, y_ecl, z_ecl);
+
+        } catch (error) {
+            console.warn(`[CelestialOrbitCalculator] Failed to calculate position from orbital elements:`, error);
+            return new THREE.Vector3(0, 0, 0);
+        }
+    }
+
+    /**
      * Calculate orbit using orbital elements
      */
     calculateOrbitalElementsOrbit(orbit) {
@@ -194,94 +278,20 @@ export class CelestialOrbitCalculator {
         orbit.inclination = orbitalElements.i || orbitalElements.inclination;
 
         const numPoints = orbit.getNumPoints();
-        const dt = periodSeconds / numPoints;
 
         const points = [];
 
-        // Generate orbit points directly from orbital elements using Kepler's laws
+        // Generate orbit points using shared positioning algorithm
         for (let i = 0; i <= numPoints; i++) {
             const meanAnomaly = (2 * Math.PI * i) / numPoints; // 0 to 2π
-
-            try {
-                // Calculate eccentric anomaly from mean anomaly (Newton-Raphson method)
-                let E = meanAnomaly; // Initial guess
-                for (let iter = 0; iter < 10; iter++) {
-                    const dE = (E - orbitalElements.eccentricity * Math.sin(E) - meanAnomaly) / 
-                              (1 - orbitalElements.eccentricity * Math.cos(E));
-                    E -= dE;
-                    if (Math.abs(dE) < 1e-8) break;
-                }
-
-                // Calculate true anomaly
-                const trueAnomaly = 2 * Math.atan2(
-                    Math.sqrt(1 + orbitalElements.eccentricity) * Math.sin(E / 2),
-                    Math.sqrt(1 - orbitalElements.eccentricity) * Math.cos(E / 2)
-                );
-
-                // Calculate distance from focus
-                const r = orbitalElements.semiMajorAxis * (1 - orbitalElements.eccentricity * Math.cos(E));
-
-                // Position in orbital plane
-                const x_orb = r * Math.cos(trueAnomaly);
-                const y_orb = r * Math.sin(trueAnomaly);
-                const z_orb = 0;
-
-                // Convert angles to radians
-                const i = (orbitalElements.inclination || 0) * Math.PI / 180;
-                const omega = (orbitalElements.longitudeOfAscendingNode || 0) * Math.PI / 180;
-                const w = (orbitalElements.argumentOfPeriapsis || 0) * Math.PI / 180;
-
-                // Rotation matrices for orbital elements
-                const cos_omega = Math.cos(omega);
-                const sin_omega = Math.sin(omega);
-                const cos_i = Math.cos(i);
-                const sin_i = Math.sin(i);
-                const cos_w = Math.cos(w);
-                const sin_w = Math.sin(w);
-
-                // Check reference frame for coordinate system
-                const referenceFrame = orbitalElements.referenceFrame || bodyConfig?.referenceFrame;
-                
-                if (referenceFrame && referenceFrame.toLowerCase().includes('equatorial')) {
-                    // Extract planet name from reference frame (e.g., "saturn_equatorial" -> "saturn")
-                    const planetName = referenceFrame.toLowerCase().replace('_equatorial', '');
-                    
-                    // Calculate position in planetary equatorial frame first
-                    const x_eq = (cos_w * cos_i) * x_orb + (-sin_w) * y_orb;
-                    const y_eq = (sin_w * cos_i) * x_orb + (cos_w) * y_orb;
-                    const z_eq = (sin_i) * x_orb; // Inclination relative to equatorial plane
-                    
-                    // Find the dominant planet in this barycenter system to get its quaternion
-                    const dominantPlanet = this._findDominantPlanet(parentId, planetName);
-                    
-                    if (dominantPlanet && dominantPlanet.targetOrientation) {
-                        // Apply the planet's quaternion to transform from its equatorial frame to barycenter frame
-                        const eqVector = new THREE.Vector3(x_eq, y_eq, z_eq);
-                        eqVector.applyQuaternion(dominantPlanet.targetOrientation);
-                        
-                        points.push(eqVector);
-                    } else {
-                        // Fallback: use raw coordinates if planet not found
-                        points.push(new THREE.Vector3(x_eq, y_eq, z_eq));
-                    }
-                    continue;
-                }
-                
-                // Default: Transform to 3D space (J2000 ecliptic coordinates) for non-equatorial frames
-                const x = (cos_omega * cos_w - sin_omega * sin_w * cos_i) * x_orb +
-                         (-cos_omega * sin_w - sin_omega * cos_w * cos_i) * y_orb;
-
-                const y = (sin_omega * cos_w + cos_omega * sin_w * cos_i) * x_orb +
-                         (-sin_omega * sin_w + cos_omega * cos_w * cos_i) * y_orb;
-
-                const z = (sin_w * sin_i) * x_orb + (cos_w * sin_i) * y_orb;
-
-                const point = new THREE.Vector3(x, y, z);
+            
+            // Use shared positioning method to ensure consistency with moon positioning
+            const point = this.calculatePositionFromOrbitalElements(orbitalElements, meanAnomaly, bodyConfig);
+            
+            if (point && !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.z)) {
                 points.push(point);
-
-            } catch (error) {
-                console.warn(`[CelestialOrbitCalculator] Failed to calculate orbital elements point for body ${bodyId}:`, error);
-                continue;
+            } else {
+                console.warn(`[CelestialOrbitCalculator] Invalid point calculated for body ${bodyId} at mean anomaly ${meanAnomaly}`);
             }
         }
 
@@ -388,5 +398,149 @@ export class CelestialOrbitCalculator {
         }
         
         return planet;
+    }
+
+    /**
+     * Extract static pole orientation from planet configuration
+     * Creates a time-independent quaternion based only on pole RA/Dec
+     * @param {Object} planet - Planet object (unused, kept for compatibility)
+     * @param {string} planetName - Name of the planet for config lookup
+     * @returns {THREE.Quaternion} - Static pole orientation quaternion
+     */
+    _extractPoleOrientationOnly(planet, planetName) {
+        // Get planet configuration for pole coordinates
+        const planetConfig = this._getPlanetConfig(planetName);
+        
+        if (!planetConfig) {
+            console.warn(`[CelestialOrbitCalculator] No configuration found for planet ${planetName}, using identity quaternion`);
+            return new THREE.Quaternion(); // Identity quaternion
+        }
+
+        // Check for pole coordinates (either as numbers or as undefined)
+        const poleRA = planetConfig.poleRA;
+        const poleDec = planetConfig.poleDec;
+        
+        if (poleRA === undefined || poleDec === undefined || 
+            typeof poleRA !== 'number' || typeof poleDec !== 'number') {
+            console.warn(`[CelestialOrbitCalculator] No valid pole coordinates found for planet ${planetName} (poleRA: ${poleRA}, poleDec: ${poleDec}), using identity quaternion`);
+            return new THREE.Quaternion(); // Identity quaternion
+        }
+
+        // CRITICAL: Use STATIC pole coordinates from config, not live planet orientation
+        // This ensures moon orbits don't rotate with planet's daily spin
+        
+        // Calculate pole-only orientation from STATIC RA/Dec coordinates
+        const poleRArad = poleRA * Math.PI / 180; // Convert to radians
+        const poleDecRad = poleDec * Math.PI / 180; // Convert to radians
+
+        // Convert pole RA/Dec to Cartesian coordinates (J2000 equatorial frame)
+        const poleX = Math.cos(poleDecRad) * Math.cos(poleRArad);
+        const poleY = Math.cos(poleDecRad) * Math.sin(poleRArad);
+        const poleZ = Math.sin(poleDecRad);
+        const poleVector = new THREE.Vector3(poleX, poleY, poleZ);
+
+        // Apply J2000 equatorial to ecliptic transformation (23.44° rotation around X-axis)
+        const obliquity = 23.43929111 * Math.PI / 180;
+        const equatorialToEcliptic = new THREE.Quaternion();
+        equatorialToEcliptic.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -obliquity);
+        poleVector.applyQuaternion(equatorialToEcliptic);
+
+        // Create quaternion that aligns Z-axis with the pole vector
+        const zAxis = new THREE.Vector3(0, 0, 1);
+        const poleOnlyQuaternion = new THREE.Quaternion();
+        poleOnlyQuaternion.setFromUnitVectors(zAxis, poleVector.normalize());
+
+        console.log(`[CelestialOrbitCalculator] Created STATIC pole orientation for ${planetName}: RA=${poleRA}°, Dec=${poleDec}°`);
+        return poleOnlyQuaternion;
+    }
+
+    /**
+     * Transform coordinates from J2000 ecliptic to planetary equatorial reference frame
+     * This aligns moon orbits with their planet's equatorial plane
+     * @param {THREE.Vector3} eclipticVector - Position in J2000 ecliptic coordinates
+     * @param {Object} planetConfig - Planet configuration with pole coordinates
+     * @returns {THREE.Vector3} - Position in planetary equatorial coordinates
+     */
+    _transformEclipticToEquatorial(eclipticVector, planetConfig) {
+        // Calculate planet's pole orientation from RA/Dec
+        const poleRA = planetConfig.poleRA * Math.PI / 180; // Convert to radians
+        const poleDec = planetConfig.poleDec * Math.PI / 180; // Convert to radians
+
+        // Convert pole RA/Dec to Cartesian coordinates (J2000 equatorial frame)
+        const poleX = Math.cos(poleDec) * Math.cos(poleRA);
+        const poleY = Math.cos(poleDec) * Math.sin(poleRA);
+        const poleZ = Math.sin(poleDec);
+        const poleVector = new THREE.Vector3(poleX, poleY, poleZ);
+
+        // Apply J2000 equatorial to ecliptic transformation to get pole in ecliptic frame
+        const obliquity = 23.43929111 * Math.PI / 180;
+        const equatorialToEcliptic = new THREE.Quaternion();
+        equatorialToEcliptic.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -obliquity);
+        poleVector.applyQuaternion(equatorialToEcliptic);
+
+        // Create transformation from ecliptic to planetary equatorial frame
+        // The planet's Z-axis points along its north pole
+        const planetZ = poleVector.clone().normalize();
+        
+        // Create an arbitrary X-axis perpendicular to the pole
+        // Use ecliptic X-axis as reference, project onto plane perpendicular to pole
+        const eclipticX = new THREE.Vector3(1, 0, 0);
+        const planetX = eclipticX.clone().sub(planetZ.clone().multiplyScalar(eclipticX.dot(planetZ))).normalize();
+        
+        // Y-axis completes the right-handed system: Y = Z × X
+        const planetY = new THREE.Vector3().crossVectors(planetZ, planetX);
+
+        // Create rotation matrix from ecliptic to planetary equatorial frame
+        const transformMatrix = new THREE.Matrix3();
+        transformMatrix.set(
+            planetX.x, planetY.x, planetZ.x,
+            planetX.y, planetY.y, planetZ.y,
+            planetX.z, planetY.z, planetZ.z
+        );
+
+        // Apply transformation
+        const equatorialVector = eclipticVector.clone();
+        equatorialVector.applyMatrix3(transformMatrix);
+
+        return equatorialVector;
+    }
+
+    /**
+     * Get planet configuration by name
+     * @param {string} planetName - Name of the planet
+     * @returns {Object|null} - Planet configuration or null
+     */
+    _getPlanetConfig(planetName) {
+        // Use the StateVectorCalculator's existing bodiesConfigMap
+        if (this.stateCalculator.bodiesConfigMap) {
+            for (const [config] of this.stateCalculator.bodiesConfigMap) {
+                if (config.name && config.name.toLowerCase() === planetName.toLowerCase()) {
+                    return config;
+                }
+            }
+        }
+
+        // Fallback: try to get from _getFullBodyConfig by searching for the planet
+        // First find the planet's NAIF ID by searching through known planet IDs
+        const knownPlanetIds = [10, 199, 299, 399, 499, 599, 699, 799, 899, 999]; // Sun, Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
+        
+        for (const naifId of knownPlanetIds) {
+            const config = this.stateCalculator._getFullBodyConfig?.(naifId);
+            if (config && config.name && config.name.toLowerCase() === planetName.toLowerCase()) {
+                return config;
+            }
+        }
+
+        // Final fallback: check barycenter configurations (which often have pole coordinates)
+        const barycenters = [1, 2, 3, 4, 5, 6, 7, 8, 9]; // Planet barycenter NAIF IDs
+        for (const naifId of barycenters) {
+            const config = this.stateCalculator._getFullBodyConfig?.(naifId);
+            if (config && config.name && config.name.toLowerCase().includes(planetName.toLowerCase())) {
+                return config;
+            }
+        }
+
+        console.warn(`[CelestialOrbitCalculator] Could not find config for planet ${planetName}`);
+        return null;
     }
 }

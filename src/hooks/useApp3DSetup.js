@@ -30,7 +30,6 @@ export function useApp3DSetup(app3d, modalState, handleBodyChange, showToast) {
             earth: app3d.earth,
             onBodySelect: handleBodyChange,
             onClose: () => app3d.removeDebugWindow(satellite.id),
-            sessionId: app3d.sessionId,
             app3d
           }
         ];

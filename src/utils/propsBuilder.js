@@ -109,7 +109,7 @@ export function buildModalProps({
       isOpen: modalState.isDisplayOptionsOpen,
       onOpenChange: modalState.setIsDisplayOptionsOpen,
       app3DRef: { current: app3d },
-      physicsProviderType: app3d?.physicsProviderType || 'unknown'
+      physicsProviderType: 'local'
     },
     
     satelliteListWindow: {

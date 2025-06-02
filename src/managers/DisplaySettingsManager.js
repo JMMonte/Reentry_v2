@@ -259,9 +259,6 @@ export class DisplaySettingsManager {
                 }
                 break;
             }
-            case 'useRemoteCompute':
-                // No longer supported: only local physics is used
-                break;
         }
     }
     

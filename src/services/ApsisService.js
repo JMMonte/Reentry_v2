@@ -200,7 +200,7 @@ export class ApsisService {
      * Create visualization data for rendering layers
      * @private
      */
-    static _createVisualizationData(apsisData, centralBody) {
+    static _createVisualizationData(apsisData) {
         const visualization = {
             periapsis: {
                 position: apsisData.periapsis.position,

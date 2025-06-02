@@ -2,7 +2,6 @@ import * as Astronomy from 'astronomy-engine';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 import { dateToJd } from '../utils/TimeUtils.js';
 import { solarSystemDataManager } from './PlanetaryDataManager.js';
-import * as THREE from 'three';
 import { PhysicsConstants } from './core/PhysicsConstants.js';
 
 // Extract the functions we need from the Astronomy module
@@ -28,9 +27,17 @@ export class StateVectorCalculator {
         this.AU_TO_KM = PhysicsConstants.PHYSICS.AU; // Astronomical unit in km
         this.DAYS_TO_SEC = PhysicsConstants.TIME.SECONDS_IN_DAY; // Seconds in a day
         this._debugEarthState = false; // Flag for detailed Earth state debugging
+        this._orbitCalculator = null; // Will be set by orbit manager for shared positioning
 
         // Initialize planetary data manager
         this._initializePlanetaryData();
+    }
+
+    /**
+     * Set the orbit calculator for shared positioning algorithms
+     */
+    setOrbitCalculator(orbitCalculator) {
+        this._orbitCalculator = orbitCalculator;
     }
 
     /**
@@ -251,32 +258,61 @@ export class StateVectorCalculator {
                 }
             }
 
-            // Check if coordinate transformation is needed
-            const referenceFrame = orbitalElements.referenceFrame || bodyConfig?.referenceFrame;
-
-            // Handle coordinate frame transformations using planet quaternions
-            if (referenceFrame && referenceFrame.toLowerCase().includes('equatorial')) {
-                // Extract planet name from reference frame (e.g., "saturn_equatorial" -> "saturn")  
-                const planetName = referenceFrame.toLowerCase().replace('_equatorial', '');
+            // Check if we can use shared positioning algorithm
+            if (this._orbitCalculator) {
+                // Use shared positioning method to ensure consistency with orbit visualization
+                const epochTime = new Date((elementsWithEpoch.epoch - 2440587.5) * 86400 * 1000); // Convert JD to JS Date
+                const timeElapsed = (time.getTime() - epochTime.getTime()) / 1000; // seconds
                 
-                // Find the dominant planet to get its quaternion
-                const dominantPlanet = this._findDominantPlanetForMoon(parentId, planetName);
+                // Calculate mean motion (rad/s)
+                const n = Math.sqrt(GM / Math.pow(elementsWithEpoch.a, 3));
+                const meanAnomaly = (elementsWithEpoch.M0 * Math.PI / 180) + n * timeElapsed;
                 
-                if (dominantPlanet && dominantPlanet.targetOrientation) {
-                    // Apply the planet's quaternion to transform from its equatorial frame to barycenter frame
-                    const eqVector = new THREE.Vector3(state.position.x, state.position.y, state.position.z);
-                    const velVector = new THREE.Vector3(state.velocity.x, state.velocity.y, state.velocity.z);
+                // Get reference frame from orbital elements or body config
+                const referenceFrame = orbitalElements.referenceFrame || bodyConfig?.referenceFrame;
+                
+                // Use shared positioning method with proper reference frame
+                const position = this._orbitCalculator.calculatePositionFromOrbitalElements(
+                    {
+                        semiMajorAxis: elementsWithEpoch.a,
+                        eccentricity: elementsWithEpoch.e,
+                        inclination: elementsWithEpoch.i,
+                        longitudeOfAscendingNode: elementsWithEpoch.Omega,
+                        argumentOfPeriapsis: elementsWithEpoch.omega,
+                        referenceFrame: referenceFrame // CRITICAL: Pass reference frame for proper coordinate transformation
+                    },
+                    meanAnomaly,
+                    bodyConfig
+                );
+                
+                if (position) {
+                    // Calculate velocity using finite difference (simple approximation)
+                    const dt = 10; // seconds
+                    const futureAnomaly = meanAnomaly + n * dt;
+                    const futurePosition = this._orbitCalculator.calculatePositionFromOrbitalElements(
+                        {
+                            semiMajorAxis: elementsWithEpoch.a,
+                            eccentricity: elementsWithEpoch.e,
+                            inclination: elementsWithEpoch.i,
+                            longitudeOfAscendingNode: elementsWithEpoch.Omega,
+                            argumentOfPeriapsis: elementsWithEpoch.omega,
+                            referenceFrame: referenceFrame // CRITICAL: Pass reference frame for velocity calculation too
+                        },
+                        futureAnomaly,
+                        bodyConfig
+                    );
                     
-                    eqVector.applyQuaternion(dominantPlanet.targetOrientation);
-                    velVector.applyQuaternion(dominantPlanet.targetOrientation);
+                    const velocity = futurePosition ? [
+                        (futurePosition.x - position.x) / dt,
+                        (futurePosition.y - position.y) / dt,
+                        (futurePosition.z - position.z) / dt
+                    ] : [0, 0, 0];
                     
                     return {
-                        position: [eqVector.x, eqVector.y, eqVector.z],
-                        velocity: [velVector.x, velVector.y, velVector.z]
+                        position: [position.x, position.y, position.z],
+                        velocity: velocity
                     };
                 }
-                // If we can't find the planet (e.g., during early initialization), 
-                // fall back to using the orbital elements as-is without transformation
             }
 
             // Default: assume elements are already in the correct coordinate system

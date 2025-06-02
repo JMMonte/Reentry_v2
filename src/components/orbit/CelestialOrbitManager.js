@@ -54,6 +54,10 @@ export class CelestialOrbitManager {
             this.app.hierarchy
         );
         
+        // Set up shared positioning between orbit visualization and moon positioning
+        stateCalculator.setOrbitCalculator(this.calculator);
+        console.log('[CelestialOrbitManager] Shared positioning algorithm enabled between orbits and moon positions');
+        
     }
     
     /**
@@ -281,24 +285,12 @@ export class CelestialOrbitManager {
     
     /**
      * Get visual parent for orbit rendering (replaces OrbitHierarchy.getVisualParent)
-     * For moons, returns the planet instead of barycenter for visual orbit placement
+     * Moons should always use their actual barycenter parent, not the planet
      */
     getVisualParent(bodyId, hierarchyInfo) {
-        const hierarchy = this.app.hierarchy;
-        if (!hierarchy) return undefined;
-        
-        // For moons orbiting barycenters, use the planet for visual parent
-        if (hierarchy.isMoon(bodyId) && hierarchy.isBarycenter(hierarchyInfo.parent)) {
-            const children = hierarchy.getChildren(hierarchyInfo.parent);
-            const planetId = children.find(id => hierarchy.isPlanet(id));
-            
-            // Special case: Pluto-Charon is a true binary system, keep barycenter
-            if (hierarchyInfo.parent !== 9 && planetId) { // Not Pluto System Barycenter
-                return planetId;
-            }
-        }
-        
-        return undefined; // Use actual parent
+        // Always use actual hierarchical parent - moons orbit barycenters, not planets
+        // This ensures moons don't rotate with their planet's daily spin
+        return undefined; // Use actual parent (barycenter)
     }
     
     /**
@@ -315,6 +307,8 @@ export class CelestialOrbitManager {
         const parentBody = this.app.bodiesByNaifId?.[parentId];
         
         if (parentBody && parentBody.getOrbitGroup) {
+            // All orbits use their parent's orbit group (position only, no rotation)
+            // This ensures proper hierarchy: moons orbit barycenters, not planets
             return parentBody.getOrbitGroup();
         }
         

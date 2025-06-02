@@ -258,7 +258,7 @@ export async function createSceneObjects(app) {
 
     // --- Refactored Helper Population ---
 
-    // 4. Populate mapping for planets/moons needed by simSocket
+    // 4. Populate mapping for planets/moons
     app.planetsByNaifId = {};
     app.celestialBodies.forEach(planet => {
         if (planet instanceof Planet && typeof planet.naifId === 'number') {
@@ -300,13 +300,16 @@ export async function createSceneObjects(app) {
     });
     console.log('[setupScene] Initialized SatelliteVectors');
 
-    // --- Parent moons to their planet's equatorialGroup ---
+    // --- Parent moons to their barycenter's orbitGroup ---
     for (const [, config] of solarSystemDataManager.naifToBody.entries()) {
         if (config.type === 'moon') {
             const moonObj = app.bodiesByNaifId[config.naifId];
-            const parentPlanet = app.bodiesByNaifId[config.parent];
-            if (moonObj && parentPlanet && parentPlanet.getEquatorialGroup) {
-                parentPlanet.getEquatorialGroup().add(moonObj.getOrbitGroup());
+            const parentBarycenter = app.bodiesByNaifId[config.parent];
+            if (moonObj && parentBarycenter && parentBarycenter.getOrbitGroup) {
+                // Place moons at barycenter level, same as their orbit lines
+                // This ensures consistent coordinate systems between moon positions and orbit visualization
+                parentBarycenter.getOrbitGroup().add(moonObj.getOrbitGroup());
+                console.log(`[setupScene] Added moon ${config.name} to barycenter ${parentBarycenter.name}`);
             }
         }
     }
