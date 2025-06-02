@@ -15,7 +15,7 @@ global.window = {
 import { CelestialOrbitManager } from '../src/components/orbit/CelestialOrbitManager.js';
 import { StateVectorCalculator } from '../src/physics/StateVectorCalculator.js';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { planetaryDataManager } from '../src/physics/bodies/PlanetaryDataManager.js';
+import { planetaryDataManager } from '../src/physics/PlanetaryDataManager.js';
 
 // Mock Three.js scene
 const createMockScene = () => ({

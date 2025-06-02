@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StateVectorCalculator } from '../src/physics/StateVectorCalculator.js';
 import { SolarSystemHierarchy } from '../src/physics/SolarSystemHierarchy.js';
-import { planetaryDataManager } from '../src/physics/bodies/PlanetaryDataManager.js';
+import { planetaryDataManager } from '../src/physics/PlanetaryDataManager.js';
 import * as Astronomy from 'astronomy-engine';
 
 describe('State Vector Debug', () => {

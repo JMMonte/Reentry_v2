@@ -1,6 +1,6 @@
 /* Planet.js */
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
+import { PhysicsConstants } from '../../physics/core/PhysicsConstants.js';
 import { PlanetMaterials } from './PlanetMaterials.js';
 import atmosphereMeshVertexShader from '../../shaders/atmosphereMesh.vert?raw';
 import atmosphereMeshFragmentShader from '../../shaders/atmosphereMesh.frag?raw';
@@ -505,7 +505,7 @@ export class Planet {
      * @returns {number} Rotation angle in radians
      */
     static getRotationAngleAtTime(JD, rotPeriod, rotOffset = 0) {
-        const secs = (JD - 2451545.0) * Constants.secondsInDay;
+        const secs = (JD - 2451545.0) * PhysicsConstants.TIME.SECONDS_IN_DAY;
         return (2 * Math.PI * (secs / rotPeriod % 1)) + rotOffset;
     }
 

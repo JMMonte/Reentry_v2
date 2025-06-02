@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('Perturbation Calculations', () => {
     let physicsEngine;
@@ -58,7 +58,7 @@ describe('Perturbation Calculations', () => {
                 satellite.position
             ).length();
             
-            const expectedMoonAccel = (Constants.G * physicsEngine.bodies[301].mass) / (moonDistance * moonDistance);
+            const expectedMoonAccel = (PhysicsConstants.PHYSICS.G * physicsEngine.bodies[301].mass) / (moonDistance * moonDistance);
             
             // The acceleration breakdown is stored on the satellite object
             expect(satellite.a_bodies[301]).toBeDefined();
@@ -72,7 +72,7 @@ describe('Perturbation Calculations', () => {
             console.log(`Moon distance: ${moonDistance} km`);
             console.log(`Expected Moon accel: ${expectedMoonAccel} km/s²`);
             console.log(`Actual Moon accel: ${moonAccelMagnitude} km/s²`);
-            console.log(`Moon GM: ${Constants.G * physicsEngine.bodies[301].mass} km³/s²`);
+            console.log(`Moon GM: ${PhysicsConstants.PHYSICS.G * physicsEngine.bodies[301].mass} km³/s²`);
             
             // The Moon perturbation at LEO is actually quite small
             // At ~380,000 km distance, it's about 3.4e-8 km/s²
@@ -214,7 +214,7 @@ describe('Perturbation Calculations', () => {
             // nearly cancelled by the Sun's pull on Earth
             
             // The net acceleration should be dominated by Earth's gravity
-            const earthGM = Constants.G * physicsEngine.bodies[399].mass;
+            const earthGM = PhysicsConstants.PHYSICS.G * physicsEngine.bodies[399].mass;
             const expectedEarthAccel = earthGM / (6771 * 6771);
             
             expect(totalAccel.length()).toBeCloseTo(expectedEarthAccel, 3);

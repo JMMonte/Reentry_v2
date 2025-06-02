@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 import { SolarSystemHierarchy } from '../src/physics/SolarSystemHierarchy.js';
 
 // Mock the dependencies like in PhysicsEngine.test.js
@@ -50,7 +50,7 @@ vi.mock('../src/physics/PositionManager.js', () => ({
     }
 }));
 
-vi.mock('../src/physics/bodies/PlanetaryDataManager.js', () => ({
+vi.mock('../src/physics/PlanetaryDataManager.js', () => ({
     planetaryDataManager: {
         initialize: vi.fn().mockResolvedValue(undefined),
         getBodyByNaif: vi.fn((naifId) => {

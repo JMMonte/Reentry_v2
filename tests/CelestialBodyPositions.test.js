@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('Celestial Body Positions', () => {
     let physicsEngine;
@@ -38,7 +38,7 @@ describe('Celestial Body Positions', () => {
                 
                 // Calculate distance from Sun in AU
                 const distanceKm = planet.position.distanceTo(sunPosition);
-                const distanceAU = distanceKm / Constants.AU;
+                const distanceAU = distanceKm / PhysicsConstants.PHYSICS.AU;
                 
                 console.log(`${range.name}: ${distanceAU.toFixed(3)} AU from Sun`);
                 

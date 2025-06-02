@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 import { SolarSystemHierarchy } from '../src/physics/SolarSystemHierarchy.js';
 
 // Mock StateVectorCalculator
@@ -47,7 +47,7 @@ vi.mock('../src/physics/PositionManager.js', () => ({
 }));
 
 // Mock PlanetaryDataManager
-vi.mock('../src/physics/bodies/PlanetaryDataManager.js', () => ({
+vi.mock('../src/physics/PlanetaryDataManager.js', () => ({
     planetaryDataManager: {
         getAllBodies: () => []
     },
@@ -206,7 +206,7 @@ vi.mock('../src/physics/SolarSystemHierarchy.js', () => ({
 }));
 
 // Mock celestial bodies data
-vi.mock('../src/physics/bodies/planets/Earth.js', () => ({
+vi.mock('../src/physics/data/planets/Earth.js', () => ({
     EarthData: {
         naif: 399,
         name: 'Earth',
@@ -225,7 +225,7 @@ vi.mock('../src/physics/bodies/planets/Earth.js', () => ({
     }
 }));
 
-vi.mock('../src/physics/bodies/planets/Sun.js', () => ({
+vi.mock('../src/physics/data/planets/Sun.js', () => ({
     SunData: {
         naif: 10,
         name: 'Sun',
@@ -236,7 +236,7 @@ vi.mock('../src/physics/bodies/planets/Sun.js', () => ({
     }
 }));
 
-vi.mock('../src/physics/bodies/moons/EarthMoons.js', () => ({
+vi.mock('../src/physics/data/moons/EarthMoons.js', () => ({
     MoonData: {
         naif: 301,
         name: 'Moon',

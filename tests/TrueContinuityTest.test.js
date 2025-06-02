@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('True Continuity at SOI Boundary', () => {
     it('should check actual continuity at the exact SOI boundary', () => {

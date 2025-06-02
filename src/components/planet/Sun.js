@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
+import { PhysicsConstants } from '../../physics/core/PhysicsConstants.js';
 import { Lensflare, LensflareElement } from '../../addons/Lensflare.js';
 
 export class Sun {
@@ -29,7 +29,7 @@ export class Sun {
             { url: '/assets/texture/lensflare/lensflare3.png', size: 120, distance: 1.0 }
         ];
         // Define a reference distance (e.g., Earth's average orbit radius) for 1x scale
-        this.referenceDistance = Constants.AU; // Earth's average orbital radius
+        this.referenceDistance = PhysicsConstants.PHYSICS.AU; // Earth's average orbital radius
 
         // Get the sun surface texture from the texture manager
         const sunTexture = this.textureManager?.getTexture('sunTexture');

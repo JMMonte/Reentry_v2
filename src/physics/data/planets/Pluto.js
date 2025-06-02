@@ -35,6 +35,9 @@ export default {
     orbitalPeriod: 6.387230 * 24 * 3600, // seconds - same as Charon (tidally locked)
     semiMajorAxis: 5906.44e6, // km (39.48 AU from Sun - this is for heliocentric orbit)
     
+    // Multi-body system configuration
+    multiBodySystemComponent: true, // Enable general multi-body system positioning based on all moon positions
+    
     // Pluto orbits around the Pluto-Charon barycenter
     // Distance: ~2110 km from Pluto center (based on mass ratio)
     orbitalElements: {

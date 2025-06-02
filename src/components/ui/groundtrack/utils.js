@@ -1,6 +1,5 @@
-import { Constants } from '../../../utils/Constants';
-
-const R_EARTH = Constants.earthRadius;
+// Earth radius fallback - should be retrieved from PhysicsAPI in the future
+const R_EARTH = 6371; // km - Earth mean radius
 const GRID_MAJOR = 10;
 const GRID_MINOR = 5;
 

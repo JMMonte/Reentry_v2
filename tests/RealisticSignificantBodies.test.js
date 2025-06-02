@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('Realistic Significant Bodies Algorithm', () => {
     let physicsEngine;
@@ -69,7 +69,7 @@ describe('Realistic Significant Bodies Algorithm', () => {
                     id: `earth-${alt}`,
                     centralBodyNaifId: 399,
                     position: new THREE.Vector3(6371 + alt, 0, 0),
-                    velocity: new THREE.Vector3(0, Math.sqrt(Constants.G * 5.972e24 / (6371 + alt)), 0)
+                    velocity: new THREE.Vector3(0, Math.sqrt(PhysicsConstants.PHYSICS.G * 5.972e24 / (6371 + alt)), 0)
                 };
                 
                 const significantBodies = physicsEngine._getSignificantBodies(satellite, physicsEngine.bodies[399]);
@@ -95,7 +95,7 @@ describe('Realistic Significant Bodies Algorithm', () => {
                     id: `earth-${test.alt}`,
                     centralBodyNaifId: 399,
                     position: new THREE.Vector3(6371 + test.alt, 0, 0),
-                    velocity: new THREE.Vector3(0, Math.sqrt(Constants.G * 5.972e24 / (6371 + test.alt)), 0)
+                    velocity: new THREE.Vector3(0, Math.sqrt(PhysicsConstants.PHYSICS.G * 5.972e24 / (6371 + test.alt)), 0)
                 };
                 
                 const significantBodies = physicsEngine._getSignificantBodies(satellite, physicsEngine.bodies[399]);
@@ -118,12 +118,12 @@ describe('Realistic Significant Bodies Algorithm', () => {
             const significantBodies = physicsEngine._getSignificantBodies(satellite, centralBody);
             
             // Calculate actual perturbation magnitudes
-            const centralAccel = (Constants.G * centralBody.mass) / (6771 * 6771);
+            const centralAccel = (PhysicsConstants.PHYSICS.G * centralBody.mass) / (6771 * 6771);
             
             // Moon perturbation
             const moonPos = physicsEngine.bodies[301].position.clone().sub(centralBody.position);
             const moonDist = moonPos.distanceTo(satellite.position);
-            const moonAccel = (Constants.G * physicsEngine.bodies[301].mass) / (moonDist * moonDist);
+            const moonAccel = (PhysicsConstants.PHYSICS.G * physicsEngine.bodies[301].mass) / (moonDist * moonDist);
             const moonRelative = moonAccel / centralAccel;
             
             console.log('\nLEO Satellite Perturbation Analysis:');

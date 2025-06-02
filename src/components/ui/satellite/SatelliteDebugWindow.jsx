@@ -56,6 +56,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   // Simulation properties state
   const [orbitPeriods, setOrbitPeriods] = useState(satellite?.orbitSimProperties?.periods || 1);
   const [pointsPerPeriod, setPointsPerPeriod] = useState(satellite?.orbitSimProperties?.pointsPerPeriod || 180);
+  const [propagationStatus, setPropagationStatus] = useState(null);
   
   // Section visibility states
   const [showCharacteristics, setShowCharacteristics] = useState(true);
@@ -79,6 +80,39 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       setPointsPerPeriod(satellite.orbitSimProperties.pointsPerPeriod || 180);
     }
   }, [satellite?.orbitSimProperties]);
+
+  // Listen for orbit update events to show propagation status
+  useEffect(() => {
+    const handleOrbitUpdate = (e) => {
+      if (e.detail?.satelliteId === satellite?.id) {
+        setPropagationStatus('Calculating orbit...');
+        
+        // Clear status after a delay
+        setTimeout(() => {
+          setPropagationStatus(null);
+        }, 2000);
+      }
+    };
+    
+    const handleOrbitComplete = (e) => {
+      if (e.detail?.satelliteId === satellite?.id) {
+        setPropagationStatus('✓ Orbit updated');
+        
+        // Clear status after a delay
+        setTimeout(() => {
+          setPropagationStatus(null);
+        }, 1500);
+      }
+    };
+    
+    document.addEventListener('orbitCalculationStarted', handleOrbitUpdate);
+    document.addEventListener('orbitUpdated', handleOrbitComplete);
+    
+    return () => {
+      document.removeEventListener('orbitCalculationStarted', handleOrbitUpdate);
+      document.removeEventListener('orbitUpdated', handleOrbitComplete);
+    };
+  }, [satellite?.id]);
 
 
   // Only keep useEffect for non-physics debug data
@@ -276,6 +310,10 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   const handleSimPropertyChange = (property, value) => {
     if (!satellite) return;
     
+    // Store previous values to detect significant changes
+    const previousPeriods = satellite.orbitSimProperties?.periods;
+    const previousPointsPerPeriod = satellite.orbitSimProperties?.pointsPerPeriod;
+    
     // Update satellite's simulation properties
     if (!satellite.orbitSimProperties) {
       satellite.orbitSimProperties = {};
@@ -283,15 +321,28 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     
     satellite.orbitSimProperties[property] = value;
     
+    // Determine if this change requires immediate recalculation
+    const needsRecalculation = 
+      (property === 'periods' && value !== previousPeriods) ||
+      (property === 'pointsPerPeriod' && value !== previousPointsPerPeriod);
+    
+    // Force cache invalidation for significant changes (especially when reducing periods)
+    const forceRecalculation = 
+      (property === 'periods' && value < previousPeriods) ||
+      (property === 'pointsPerPeriod' && Math.abs(value - previousPointsPerPeriod) > 30);
+    
     // Emit event for Three.js layer to handle
-    console.log(`[SatelliteDebugWindow] Emitting satelliteSimPropertiesChanged event for satellite ${satellite.id}`);
+    console.log(`[SatelliteDebugWindow] Emitting satelliteSimPropertiesChanged event for satellite ${satellite.id}: ${property}=${value}, needsRecalc=${needsRecalculation}, forceRecalc=${forceRecalculation}`);
     
     const event = new CustomEvent('satelliteSimPropertiesChanged', {
       detail: {
         satelliteId: satellite.id,
         property: property,
         value: value,
-        allProperties: satellite.orbitSimProperties
+        previousValue: property === 'periods' ? previousPeriods : previousPointsPerPeriod,
+        allProperties: satellite.orbitSimProperties,
+        needsRecalculation: needsRecalculation,
+        forceRecalculation: forceRecalculation
       }
     });
     
@@ -797,6 +848,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                       onChange={(e) => {
                         const value = parseFloat(e.target.value) || 1;
                         setOrbitPeriods(value);
+                        setPropagationStatus('Updating orbit...');
                         handleSimPropertyChange('periods', value);
                       }}
                       className="h-7 text-xs flex-1 bg-background"
@@ -817,6 +869,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                       onChange={(e) => {
                         const value = parseInt(e.target.value) || 180;
                         setPointsPerPeriod(value);
+                        setPropagationStatus('Updating resolution...');
                         handleSimPropertyChange('pointsPerPeriod', value);
                       }}
                       className="h-7 text-xs flex-1 bg-background"
@@ -828,6 +881,12 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                 <div className="text-xs text-muted-foreground pt-1">
                   Higher values increase accuracy but may impact performance
                 </div>
+                
+                {propagationStatus && (
+                  <div className="text-xs text-primary pt-1 font-medium">
+                    {propagationStatus}
+                  </div>
+                )}
               </div>
             </Section>
 

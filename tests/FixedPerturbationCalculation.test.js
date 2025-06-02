@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('Fixed Perturbation Calculation', () => {
     it('should correctly calculate perturbations in central body reference frame', () => {
@@ -134,7 +134,7 @@ describe('Fixed Perturbation Calculation', () => {
                 id: `sat-${alt}`,
                 centralBodyNaifId: 399,
                 position: new THREE.Vector3(6371 + alt, 0, 0),
-                velocity: new THREE.Vector3(0, Math.sqrt(Constants.G * 5.972e24 / (6371 + alt)), 0),
+                velocity: new THREE.Vector3(0, Math.sqrt(PhysicsConstants.PHYSICS.G * 5.972e24 / (6371 + alt)), 0),
                 mass: 1000,
                 crossSectionalArea: 10,
                 dragCoefficient: 2.2

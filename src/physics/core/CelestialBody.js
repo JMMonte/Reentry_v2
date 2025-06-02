@@ -77,7 +77,7 @@ export class CelestialBody {
      */
     get GM() {
         if (this._GM === undefined || this._GM === null) {
-            if (this.mass) {
+            if (this.mass !== undefined && this.mass !== null) {
                 this._GM = PhysicsConstants.PHYSICS.G * this.mass;
             } else {
                 console.warn(`[CelestialBody] No mass data for ${this.name}, GM unavailable`);

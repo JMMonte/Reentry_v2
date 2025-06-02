@@ -73,9 +73,6 @@ export class StateVectorCalculator {
 
         // Fallback to solarSystemDataManager
         const pmConfig = solarSystemDataManager.getBodyByNaif(naifId);
-        // if (naifId === 399) {
-        //     console.log('  solarSystemDataManager result for Earth:', pmConfig);
-        // }
         return pmConfig;
     }
 
@@ -152,8 +149,14 @@ export class StateVectorCalculator {
         // They should always be positioned relative to their barycenter
         if (bodyInfo.type === 'planet' || bodyInfo.type === 'dwarf_planet') {
             if (parentInfo.type === 'barycenter') {
-                // Check for orbital elements first (for multi-body systems like Pluto-Charon)
                 const fullBodyConfig = this._getFullBodyConfig(naifId);
+                
+                // Special handling for multi-body systems
+                if (fullBodyConfig?.multiBodySystemComponent) {
+                    return this._calculateMultiBodySystemPosition(naifId, time, parentId);
+                }
+                
+                // Check for orbital elements for other multi-body systems
                 const orbitalElements = fullBodyConfig?.orbitalElements ?? fullBodyConfig?.canonical_orbit;
                 
                 if (orbitalElements && orbitalElements.semiMajorAxis > 0) {
@@ -213,7 +216,7 @@ export class StateVectorCalculator {
             }
 
             if (!GM) {
-                console.warn(`No GM found for parent ${parentId} of body ${naifId}. Parent config:`, parentFullConfig);
+                console.warn(`No GM found for parent ${parentId} of body ${naifId}`);
                 return null;
             }
             
@@ -243,20 +246,6 @@ export class StateVectorCalculator {
             // Calculate state vector using OrbitalMechanics
             const state = OrbitalMechanics.orbitalElementsToStateVector(elementsWithEpoch, jd, GM);
 
-            // DIAGNOSTIC: Check for NaN/Inf in Neptune system moons
-            if (parentFullConfig && parentFullConfig.name === 'neptune_barycenter') {
-                const isBad = (v) => !isFinite(v) || isNaN(v);
-                const badPos = state && (isBad(state.position.x) || isBad(state.position.y) || isBad(state.position.z));
-                const badVel = state && (isBad(state.velocity.x) || isBad(state.velocity.y) || isBad(state.velocity.z));
-                if (badPos || badVel) {
-                    const moonConfig = this._getFullBodyConfig(naifId);
-                    console.warn('[NeptuneMoonBug] Bad state vector for', moonConfig?.name || naifId, {
-                        naifId,
-                        elementsWithEpoch,
-                        state
-                    });
-                }
-            }
 
             // Check if we can use shared positioning algorithm
             if (this._orbitCalculator) {
@@ -394,7 +383,6 @@ export class StateVectorCalculator {
             }
             
             if (!planetConfig?.poleRA || !planetConfig?.poleDec) {
-                console.warn(`No pole orientation data for transforming orbital elements of parent ${parentId}`);
                 return null;
             }
             
@@ -467,7 +455,6 @@ export class StateVectorCalculator {
                 return { position, velocity };
             }
 
-            console.warn(`No orientation data found for planet NAIF ${parentNaifId}, returning unchanged coordinates`);
             return { position, velocity };
 
         } catch (error) {
@@ -506,14 +493,6 @@ export class StateVectorCalculator {
             // Calculate mass ratio
             const MOON_MASS_RATIO = MOON_MASS / (EARTH_MASS + MOON_MASS);
 
-            // Debug logging for Earth state calculation - enabled for orbit debugging
-            if (this._debugEarthState) {
-                console.log(`[StateVectorCalculator] Earth state at ${time.toISOString()}:`);
-                console.log('  moonGeo (AU):', moonGeo);
-                console.log('  moonGeoECL (km):', moonGeoECL);
-                console.log('  MOON_MASS_RATIO:', MOON_MASS_RATIO);
-                console.log('  Earth offset (km):', -(MOON_MASS_RATIO * moonGeoECL.x), -(MOON_MASS_RATIO * moonGeoECL.y), -(MOON_MASS_RATIO * moonGeoECL.z));
-            }
 
             // Calculate velocity using higher precision finite differences with smaller timestep
             // Use smaller timestep for better precision on small EMB-relative motions
@@ -548,9 +527,6 @@ export class StateVectorCalculator {
                 const earthVelY = -(MOON_MASS_RATIO * (futureMoonGeoECL.y - pastMoonGeoECL.y)) / (2 * dt);
                 const earthVelZ = -(MOON_MASS_RATIO * (futureMoonGeoECL.z - pastMoonGeoECL.z)) / (2 * dt);
 
-                // Debug velocity calculation - temporarily enabled
-                // console.log('[StateVectorCalculator] Earth EMB-relative velocity (km/s):', [earthVelX, earthVelY, earthVelZ]);
-                // console.log('[StateVectorCalculator] Velocity magnitude (km/s):', Math.sqrt(earthVelX*earthVelX + earthVelY*earthVelY + earthVelZ*earthVelZ));
 
                 // Return RELATIVE position (no EMB offset added)
                 return {
@@ -866,7 +842,7 @@ export class StateVectorCalculator {
 
     /**
      * Calculate a planet's position based on mass displacement from its moons
-     * This is physically accurate for binary systems like Pluto-Charon
+     * This is physically accurate for multi-body systems like Pluto-Charon
      * 
      * Physics principle: Center of mass must remain at barycenter (0,0,0)
      * Therefore: r_planet = -∑(m_moon * r_moon) / m_planet
@@ -994,6 +970,108 @@ export class StateVectorCalculator {
             position: weightedPos.map(x => -x / bodyConfig.mass),
             velocity: weightedVel.map(x => -x / bodyConfig.mass)
         };
+    }
+
+    /**
+     * Calculate position for multi-body system components (general method)
+     * Planet is displaced from barycenter based on actual positions and mass ratios of ALL moons in the system
+     */
+    _calculateMultiBodySystemPosition(naifId, time, barycenterId) {
+        try {
+            const planetConfig = this._getFullBodyConfig(naifId);
+            if (!planetConfig || !planetConfig.mass) {
+                return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+            }
+
+            // Find all moons in this barycenter system
+            const systemMoons = [];
+            const children = this.hierarchy.getChildren(barycenterId);
+            
+            for (const childId of children) {
+                const childInfo = this.hierarchy.getBodyInfo(childId);
+                if (childInfo && childInfo.type === 'moon') {
+                    const moonConfig = this._getFullBodyConfig(childId);
+                    if (moonConfig && moonConfig.mass) {
+                        systemMoons.push({
+                            naifId: childId,
+                            config: moonConfig,
+                            mass: moonConfig.mass
+                        });
+                    }
+                }
+            }
+
+            if (systemMoons.length === 0) {
+                return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+            }
+
+            // Calculate mass-weighted position of all moons
+            let totalMoonMass = 0;
+            const weightedMoonPosition = [0, 0, 0];
+            const weightedMoonVelocity = [0, 0, 0];
+
+            for (const moon of systemMoons) {
+                // Calculate moon's position using orbital elements
+                const moonState = this._calculateFromOrbitalElements(moon.naifId, time, moon.config.orbitalElements);
+                if (moonState && moonState.position) {
+                    const mass = moon.mass;
+                    totalMoonMass += mass;
+                    
+                    // Add mass-weighted contribution
+                    weightedMoonPosition[0] += mass * moonState.position[0];
+                    weightedMoonPosition[1] += mass * moonState.position[1];
+                    weightedMoonPosition[2] += mass * moonState.position[2];
+                    
+                    if (moonState.velocity) {
+                        weightedMoonVelocity[0] += mass * moonState.velocity[0];
+                        weightedMoonVelocity[1] += mass * moonState.velocity[1];
+                        weightedMoonVelocity[2] += mass * moonState.velocity[2];
+                    }
+                }
+            }
+
+            if (totalMoonMass === 0) {
+                return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+            }
+
+            // Calculate center of mass of moon system
+            const moonCenterOfMass = [
+                weightedMoonPosition[0] / totalMoonMass,
+                weightedMoonPosition[1] / totalMoonMass,
+                weightedMoonPosition[2] / totalMoonMass
+            ];
+
+            const moonCenterOfMassVelocity = [
+                weightedMoonVelocity[0] / totalMoonMass,
+                weightedMoonVelocity[1] / totalMoonMass,
+                weightedMoonVelocity[2] / totalMoonMass
+            ];
+
+            // Planet is displaced opposite to moon center of mass, scaled by mass ratio
+            const planetMass = planetConfig.mass;
+            const massRatio = totalMoonMass / planetMass;
+
+            const planetDisplacement = [
+                -moonCenterOfMass[0] * massRatio,
+                -moonCenterOfMass[1] * massRatio,
+                -moonCenterOfMass[2] * massRatio
+            ];
+
+            const planetVelocity = [
+                -moonCenterOfMassVelocity[0] * massRatio,
+                -moonCenterOfMassVelocity[1] * massRatio,
+                -moonCenterOfMassVelocity[2] * massRatio
+            ];
+
+
+            return {
+                position: planetDisplacement,
+                velocity: planetVelocity
+            };
+
+        } catch {
+            return { position: StateVectorCalculator.ZERO_VECTOR, velocity: StateVectorCalculator.ZERO_VECTOR };
+        }
     }
 }
 

@@ -47,6 +47,21 @@ export class PhysicsEngine {
         
         // Subsystem manager for physics-based satellite subsystems
         this.subsystemManager = null;
+        
+        // Performance optimization caches
+        this._satelliteInfluenceCache = new Map(); // Cache significant bodies per satellite
+        this._bodyDistanceCache = new Map(); // Cache body distances
+        this._lastCacheUpdate = 0;
+        this._cacheValidityPeriod = 5000; // 5 seconds
+        
+        // Pre-allocated vectors for calculations to avoid GC pressure
+        this._tempVectors = {
+            satGlobalPos: new THREE.Vector3(),
+            bodyDistance: new THREE.Vector3(),
+            acceleration: new THREE.Vector3(),
+            position: new THREE.Vector3(),
+            velocity: new THREE.Vector3()
+        };
     }
 
     /**
@@ -471,9 +486,6 @@ export class PhysicsEngine {
      * @param {Object} satellite - Must include centralBodyNaifId (the NAIF ID of the central body)
      */
     addSatellite(satellite) {
-        console.log('[PhysicsEngine.addSatellite] Adding satellite with:');
-        console.log('  Position:', satellite.position);
-        console.log('  Velocity:', satellite.velocity);
         
         if (!satellite.centralBodyNaifId) {
             throw new Error('Satellite must specify centralBodyNaifId (NAIF ID of central body)');
@@ -488,10 +500,7 @@ export class PhysicsEngine {
         const velMag = Math.sqrt(velArray[0]**2 + velArray[1]**2 + velArray[2]**2);
         
         if (velMag > PhysicsConstants.VELOCITY_LIMITS.PLANETARY_MAX) {
-            console.error(`[PhysicsEngine.addSatellite] EXTREME VELOCITY on creation for satellite ${id}:`);
-            console.error(`  Velocity array: [${velArray[0].toFixed(3)}, ${velArray[1].toFixed(3)}, ${velArray[2].toFixed(3)}] km/s`);
-            console.error(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
-            console.error(`  Input velocity:`, satellite.velocity);
+            console.warn(`[PhysicsEngine] Extreme velocity on satellite creation: ${velMag.toFixed(3)} km/s`);
         }
         
         const satData = {
@@ -530,17 +539,9 @@ export class PhysicsEngine {
             const appropriateCentralBodyId = this._findAppropriateSOI(globalPos);
             
             if (appropriateCentralBodyId !== satellite.centralBodyNaifId) {
-                const distanceFromCentral = satData.position.length();
-                const soiRadius = centralBody.soiRadius || 1e12;
+                
                 const newCentralBody = this.bodies[appropriateCentralBodyId];
                 
-                if (distanceFromCentral > soiRadius) {
-                    console.log(`[PhysicsEngine.addSatellite] Satellite outside ${centralBody.name} SOI (${distanceFromCentral.toFixed(0)} km > ${soiRadius.toFixed(0)} km)`);
-                } else {
-                    console.log(`[PhysicsEngine.addSatellite] Satellite is within ${newCentralBody?.name || 'SSB'} SOI despite being within ${centralBody.name} SOI`);
-                }
-                
-                console.log(`[PhysicsEngine.addSatellite] Switching central body from ${centralBody.name} to ${newCentralBody?.name || 'SSB'}`);
                 
                 // Convert to new reference frame
                 satData.centralBodyNaifId = appropriateCentralBodyId;
@@ -559,11 +560,6 @@ export class PhysicsEngine {
         // Validate initial state
         this._validateSatelliteState(satData, "on creation");
         
-        // Final check
-        const storedVelMag = satData.velocity.length();
-        if (storedVelMag > 50) {
-            console.error(`[PhysicsEngine.addSatellite] Stored velocity still extreme: ${storedVelMag.toFixed(3)} km/s`);
-        }
         
         this.satellites.set(id, satData);
         
@@ -597,7 +593,6 @@ export class PhysicsEngine {
             }
             
             this.satellites.delete(strId);
-            // console.log('[PhysicsEngine] Removed satellite', strId);
             // Dispatch event for UI cleanup
             this._dispatchSatelliteEvent('satelliteRemoved', { id: strId });
         }
@@ -698,8 +693,6 @@ export class PhysicsEngine {
         const nextNode = nodes[0];
         if (currentTime >= nextNode.executionTime) {
             // Execute the maneuver
-            console.log(`[PhysicsEngine] Executing maneuver for satellite ${satellite.id}`);
-            console.log(`  Delta-V: P=${nextNode.deltaV.prograde}, N=${nextNode.deltaV.normal}, R=${nextNode.deltaV.radial} km/s`);
             
             // Convert local delta-V to world coordinates
             const worldDeltaV = OrbitalMechanics.localToWorldDeltaV(
@@ -732,32 +725,17 @@ export class PhysicsEngine {
         }
     }
 
-    // Satellite integration methods (copied from original PhysicsEngine)
+    // Satellite integration methods (optimized for performance)
     async _integrateSatellites(deltaTime) {
-        // Debug: Log integration call (every 10 seconds)
-        if (!this._lastIntegrateLogTime || Date.now() - this._lastIntegrateLogTime > PhysicsConstants.SIMULATION.LOG_THROTTLE_INTERVAL) {
-            // console.log(`[PhysicsEngine] _integrateSatellites called with deltaTime: ${deltaTime} seconds, ${this.satellites.size} satellites`);
-            this._lastIntegrateLogTime = Date.now();
-        }
+        // Clear caches periodically
+        this._clearCacheIfNeeded();
         
         for (const [, satellite] of this.satellites) {
             // Check for maneuvers before integration
             this._checkAndExecuteManeuvers(satellite, this.simulationTime);
-            // Check velocity BEFORE computing acceleration
-            const velBeforeAccel = satellite.velocity.length();
-            if (velBeforeAccel > 50) {
-                console.error(`[PhysicsEngine._integrateSatellites] HIGH VELOCITY BEFORE acceleration computation: ${velBeforeAccel.toFixed(3)} km/s for satellite ${satellite.id}`);
-            }
             
             const acceleration = this._computeSatelliteAcceleration(satellite);
             
-            // Check velocity AFTER computing acceleration but BEFORE integration
-            const velAfterAccel = satellite.velocity.length();
-            if (velAfterAccel > 50 && velAfterAccel !== velBeforeAccel) {
-                console.error(`[PhysicsEngine._integrateSatellites] VELOCITY CHANGED during acceleration computation!`);
-                console.error(`  Before: ${velBeforeAccel.toFixed(3)} km/s`);
-                console.error(`  After: ${velAfterAccel.toFixed(3)} km/s`);
-            }
             
             this._integrateRK4(satellite, acceleration, deltaTime);
             satellite.lastUpdate = new Date(this.simulationTime.getTime());
@@ -782,8 +760,6 @@ export class PhysicsEngine {
                     // Recalculate new planet-centric state
                     const newPos = satGlobalPos.clone().sub(newCentral.position);
                     const newVel = satGlobalVel.clone().sub(newCentral.velocity);
-                    // Log transition
-                    // console.log(`[PhysicsEngine] Satellite ${satellite.id} exited SOI of ${centralBody.name}, switching to ${newCentral.name}`);
                     // Update satellite's reference frame
                     satellite.centralBodyNaifId = parentNaifId;
                     satellite.position.copy(newPos);
@@ -792,7 +768,6 @@ export class PhysicsEngine {
                     // If no parent, reference to SSB (0,0,0)
                     const newPos = satGlobalPos.clone();
                     const newVel = satGlobalVel.clone();
-                    // console.log(`[PhysicsEngine] Satellite ${satellite.id} exited all SOIs, switching to SSB`);
                     satellite.centralBodyNaifId = 0;
                     satellite.position.copy(newPos);
                     satellite.velocity.copy(newVel);
@@ -811,32 +786,11 @@ export class PhysicsEngine {
         }
         // Convert satellite from planet-centric to solar system coordinates
         const satGlobalPos = satellite.position.clone().add(centralBody.position);
-        
-        // Debug logging for extreme velocity issue
-        const velMag = satellite.velocity.length();
-        if (velMag > PhysicsConstants.VELOCITY_LIMITS.PLANETARY_MAX) { // Log if velocity exceeds 50 km/s
-            console.warn(`[PhysicsEngine._computeSatelliteAcceleration] HIGH VELOCITY DETECTED for satellite ${satellite.id}:`);
-            console.warn(`  Velocity: ${satellite.velocity.toArray().map(v => v.toFixed(3)).join(', ')} km/s`);
-            console.warn(`  Velocity magnitude: ${velMag.toFixed(3)} km/s`);
-            console.warn(`  Position: ${satellite.position.toArray().map(v => v.toFixed(1)).join(', ')} km`);
-            console.warn(`  Central body: ${centralBody.name} (${satellite.centralBodyNaifId})`);
-        }
-        
-        // Debug logging for extreme cases
-        const debugAccel = false; // Disabled - was causing excessive logging for normal satellites
 
         // === GRAVITATIONAL ACCELERATION FROM SIGNIFICANT BODIES ONLY ===
         // Apply sphere of influence filtering to avoid computational issues
         const significantBodies = this._getSignificantBodies(satellite, centralBody);
         
-        // Debug: Check for suspiciously massive bodies
-        if (debugAccel) {
-            for (const [bodyId, body] of Object.entries(this.bodies)) {
-                if (body.mass > 2e30) { // More massive than the Sun
-                    console.warn(`[PhysicsEngine] WARNING: Body ${body.name} (${bodyId}) has extreme mass: ${body.mass.toExponential(3)} kg`);
-                }
-            }
-        }
         
         // First pass: Calculate accelerations from ALL bodies for consistency
         const allBodyAccels = {};
@@ -868,15 +822,10 @@ export class PhysicsEngine {
             if (shouldStore && allBodyAccels[bodyId]) {
                 a_bodies[bodyId] = [allBodyAccels[bodyId].x, allBodyAccels[bodyId].y, allBodyAccels[bodyId].z];
                 
-                // Debug large accelerations only if truly suspicious (> 100 km/s² which would be extreme)
+                // Check for extremely large accelerations
                 const accVec = allBodyAccels[bodyId];
                 if (accVec.length() > 100) {
-                    console.warn(`[PhysicsEngine] Extremely large acceleration from ${body.name} (${bodyId}):`);
-                    console.warn(`  Type: ${body.type || 'unknown'}`);
-                    console.warn(`  Acceleration: ${accVec.length().toExponential(3)} km/s²`);
-                    console.warn(`  Distance: ${body.position.distanceTo(satGlobalPos).toFixed(1)} km`);
-                    console.warn(`  Mass: ${body.mass.toExponential(3)} kg`);
-                    console.warn(`  GM: ${(PhysicsConstants.PHYSICS.G * body.mass).toExponential(3)} km³/s²`);
+                    console.warn(`[PhysicsEngine] Extreme acceleration from ${body.name}: ${accVec.length().toExponential(3)} km/s²`);
                 }
             }
         }
@@ -905,12 +854,6 @@ export class PhysicsEngine {
         // Subtract central body's acceleration to get planet-centric acceleration
         totalAccel.sub(centralAccel);
         
-        // if (debugAccel) {
-        //     console.log(`[PhysicsEngine] Satellite ${satellite.id} acceleration components:`);
-        //     console.log(`  Total accel before central subtraction: ${totalAccel.clone().add(centralAccel).length().toFixed(6)} km/s²`);
-        //     console.log(`  Central body accel: ${centralAccel.length().toFixed(6)} km/s²`);
-        //     console.log(`  Net gravitational accel: ${totalAccel.length().toFixed(6)} km/s²`);
-        // }
 
         // === J2 PERTURBATION (Earth oblateness) ===
         const j2Accel = this._computeJ2Perturbation(satellite, centralBody);
@@ -920,11 +863,6 @@ export class PhysicsEngine {
         const dragAccel = this._computeAtmosphericDrag(satellite);
         totalAccel.add(dragAccel);
         
-        // if (debugAccel) {
-        //     console.log(`  J2 accel: ${j2Accel.length().toFixed(6)} km/s²`);
-        //     console.log(`  Drag accel: ${dragAccel.length().toFixed(6)} km/s²`);
-        //     console.log(`  TOTAL ACCELERATION: ${totalAccel.length().toFixed(6)} km/s²`);
-        // }
 
         // === STORE FORCE COMPONENTS FOR VISUALIZATION ===
         satellite.a_bodies = a_bodies;
@@ -939,15 +877,6 @@ export class PhysicsEngine {
         }
         satellite.a_gravity_total = [gravityTotal.x, gravityTotal.y, gravityTotal.z];
         
-        // Debug logging for extreme accelerations
-        const accelMag = totalAccel.length();
-        if (accelMag > 0.1) { // More than 0.1 km/s² is high
-            console.warn(`[PhysicsEngine._computeSatelliteAcceleration] HIGH ACCELERATION for satellite ${satellite.id}:`);
-            console.warn(`  Total acceleration: ${totalAccel.toArray().map(v => v.toFixed(6)).join(', ')} km/s²`);
-            console.warn(`  Acceleration magnitude: ${accelMag.toFixed(6)} km/s²`);
-            console.warn(`  J2 contribution: ${j2Accel.length().toFixed(6)} km/s²`);
-            console.warn(`  Drag contribution: ${dragAccel.length().toFixed(6)} km/s²`);
-        }
         
         return totalAccel;
     }
@@ -1143,69 +1072,78 @@ export class PhysicsEngine {
 
     /**
      * Determine which bodies have significant gravitational influence on the satellite
-     * This prevents computational issues from distant solar system body perturbations
+     * Uses caching and spatial indexing for performance optimization
      */
     _getSignificantBodies(satellite, centralBody) {
+        const satAltitude = satellite.position.length();
+        const cacheKey = `${satellite.centralBodyNaifId}_${Math.floor(satAltitude / 10000)}`; // 10km bins
+        const now = Date.now();
+        
+        // Check cache validity
+        if (this._satelliteInfluenceCache.has(cacheKey) && 
+            (now - this._lastCacheUpdate) < this._cacheValidityPeriod) {
+            return this._satelliteInfluenceCache.get(cacheKey);
+        }
+        
         const significantBodies = new Set();
-        const satGlobalPos = satellite.position.clone().add(centralBody.position);
-        const satAltitude = satellite.position.length(); // Distance from central body center
+        
+        // Use temp vector to avoid allocations
+        this._tempVectors.satGlobalPos.copy(satellite.position).add(centralBody.position);
         
         // Define sphere of influence based on central body and satellite altitude
         let sphereOfInfluence;
         
         switch (satellite.centralBodyNaifId) {
             case 399: // Earth
-                sphereOfInfluence = Math.max(1e6, satAltitude * 5); // At least 1M km or 5x satellite altitude
-                // Always include Moon for Earth satellites
+                sphereOfInfluence = Math.max(1e6, satAltitude * 5);
+                // Always include key bodies for Earth satellites
                 if (this.bodies[301]) significantBodies.add(301); // Moon
-                // Always include Sun for Earth satellites
                 if (this.bodies[10]) significantBodies.add(10); // Sun
-                // Include other planets if they exist
                 if (this.bodies[599]) significantBodies.add(599); // Jupiter
                 if (this.bodies[699]) significantBodies.add(699); // Saturn
                 break;
                 
             case 499: // Mars  
-                sphereOfInfluence = Math.max(5e5, satAltitude * 3); // 500k km or 3x altitude
-                // Include Sun for Mars satellites
+                sphereOfInfluence = Math.max(5e5, satAltitude * 3);
                 significantBodies.add(10); // Sun
-                // Include Jupiter for Mars (significant perturbation)
                 if (this.bodies[599]) significantBodies.add(599); // Jupiter
                 break;
                 
-            case 301: // Moon (if satellite around Moon)
-                sphereOfInfluence = Math.max(1e5, satAltitude * 2); // 100k km or 2x altitude  
-                // Include Earth for lunar satellites
+            case 301: // Moon
+                sphereOfInfluence = Math.max(1e5, satAltitude * 2);
                 significantBodies.add(399); // Earth
                 significantBodies.add(10);  // Sun
                 break;
                 
             default:
-                // For other bodies, use conservative sphere of influence
                 sphereOfInfluence = Math.max(1e6, satAltitude * 10);
-                // Always include Sun
                 significantBodies.add(10); // Sun
                 break;
         }
         
-        // Check all bodies within sphere of influence
+        // Check all bodies within sphere of influence (optimized)
+        const centralGravAccel = (PhysicsConstants.PHYSICS.G * centralBody.mass) / (satAltitude * satAltitude);
+        const minGravAccel = centralGravAccel * 0.0001; // 0.01% threshold
+        
         for (const [bodyId, body] of Object.entries(this.bodies)) {
             const bId = Number(bodyId);
-            if (bId === satellite.centralBodyNaifId) continue; // Skip central body (handled separately)
-            if (significantBodies.has(bId)) continue; // Already added
+            if (bId === satellite.centralBodyNaifId || significantBodies.has(bId)) continue;
             
-            const distance = body.position.distanceTo(satGlobalPos);
+            // Use temp vector for distance calculation
+            this._tempVectors.bodyDistance.copy(body.position).sub(this._tempVectors.satGlobalPos);
+            const distance = this._tempVectors.bodyDistance.length();
+            
             if (distance < sphereOfInfluence) {
-                // Additional check: only include if gravitational acceleration is significant
                 const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
-                const centralGravAccel = (PhysicsConstants.PHYSICS.G * centralBody.mass) / (satAltitude * satAltitude);
-                
-                // Include if perturbation is at least 0.01% of central body's gravity (more inclusive)
-                if (gravAccel > centralGravAccel * 0.0001) {
+                if (gravAccel > minGravAccel) {
                     significantBodies.add(bId);
                 }
             }
         }
+        
+        // Cache the result
+        this._satelliteInfluenceCache.set(cacheKey, significantBodies);
+        this._lastCacheUpdate = now;
         
         return significantBodies;
     }
@@ -1219,19 +1157,8 @@ export class PhysicsEngine {
         // Validate state before integration
         this._validateSatelliteState(satellite, "before RK4");
 
-        const pos0 = satellite.position.clone(); // planet-centric
         const vel0 = satellite.velocity.clone();
         
-        // Debug: Check for extreme accelerations
-        const accMag = acceleration.length();
-        if (accMag > 1.0) { // More than 1 km/s² is suspicious
-            console.warn(`[PhysicsEngine] EXTREME ACCELERATION DETECTED for satellite ${satellite.id}: ${accMag.toFixed(3)} km/s²`);
-            console.warn(`  Position: ${pos0.toArray().map(v => v.toFixed(1)).join(', ')} km`);
-            console.warn(`  Velocity: ${vel0.toArray().map(v => v.toFixed(3)).join(', ')} km/s (mag: ${vel0.length().toFixed(3)})`);
-            console.warn(`  Acceleration: ${acceleration.toArray().map(v => v.toFixed(6)).join(', ')} km/s²`);
-            console.warn(`  dt: ${dt} seconds`);
-            console.warn(`  Central body: ${centralBody.name} (${satellite.centralBodyNaifId})`);
-        }
 
         // Create acceleration function for the integrator
         const accelerationFunc = (position, velocity) => {
@@ -1256,6 +1183,7 @@ export class PhysicsEngine {
         const newVelMag = satellite.velocity.length();
         const velChange = satellite.velocity.clone().sub(vel0).length();
         
+        const accMag = acceleration.length();
         // Add to velocity history if significant change
         if (!satellite.velocityHistory) {
             satellite.velocityHistory = [];
@@ -1277,20 +1205,10 @@ export class PhysicsEngine {
             }
         }
         
-        // Debug: Check for extreme velocities
-        if (newVelMag > 100) { // More than 100 km/s is very suspicious
-            console.error(`[PhysicsEngine] EXTREME VELOCITY after RK4 for satellite ${satellite.id}: ${newVelMag.toFixed(3)} km/s`);
-            console.error(`  Old velocity: ${vel0.length().toFixed(3)} km/s`);
-            console.error(`  Velocity change: ${velChange.toFixed(3)} km/s in ${dt} seconds`);
-            console.error(`  Effective acceleration: ${(velChange/dt).toFixed(3)} km/s²`);
-            console.error(`  Computed acceleration: ${accMag.toFixed(3)} km/s²`);
-            console.error(`  Velocity history:`, satellite.velocityHistory);
-            
-            // Cap velocity to prevent runaway
-            if (newVelMag > 299792) { // Speed of light
-                console.error(`  CAPPING VELOCITY TO 100 km/s to prevent runaway!`);
-                satellite.velocity.normalize().multiplyScalar(100);
-            }
+        // Cap extreme velocities to prevent runaway
+        if (newVelMag > 299792) { // Speed of light
+            console.error(`[PhysicsEngine] Capping extreme velocity for satellite ${satellite.id}`);
+            satellite.velocity.normalize().multiplyScalar(100);
         }
         
         // Validate state after integration
@@ -1346,24 +1264,6 @@ export class PhysicsEngine {
             const speed = satellite.velocity.length();
             // Optionally, add more derived fields here
 
-            // Debug extreme velocity issue
-            if (speed > 50) {
-                console.error(`[PhysicsEngine._getSatelliteStates] EXTREME VELOCITY for satellite ${id}:`);
-                console.error(`  Velocity: ${satellite.velocity.toArray().map(v => v.toFixed(3)).join(', ')} km/s`);
-                console.error(`  Speed: ${speed.toFixed(3)} km/s`);
-                console.error(`  Position: ${satellite.position.toArray().map(v => v.toFixed(1)).join(', ')} km`);
-                console.error(`  Central body: ${centralBody?.name || 'unknown'} (${satellite.centralBodyNaifId})`);
-                console.error(`  Velocity history:`, satellite.velocityHistory);
-            }
-            
-            // Additional check: Compare with stored velocity
-            const velArray = satellite.velocity.toArray();
-            const storedSpeed = Math.sqrt(velArray[0]**2 + velArray[1]**2 + velArray[2]**2);
-            if (Math.abs(storedSpeed - speed) > 0.001) {
-                console.error(`[PhysicsEngine._getSatelliteStates] VELOCITY MISMATCH!`);
-                console.error(`  Speed from .length(): ${speed}`);
-                console.error(`  Speed from array: ${storedSpeed}`);
-            }
             
             states[id] = {
                 id: id,
@@ -1461,5 +1361,40 @@ export class PhysicsEngine {
             });
         }
         return sats;
+    }
+    
+    /**
+     * Clear cached data periodically for memory management
+     */
+    _clearCacheIfNeeded() {
+        const now = Date.now();
+        if (now - this._lastCacheUpdate > this._cacheValidityPeriod * 2) {
+            this._satelliteInfluenceCache.clear();
+            this._bodyDistanceCache.clear();
+            this._lastCacheUpdate = now;
+        }
+    }
+    
+    /**
+     * Cleanup function to call on removal
+     */
+    cleanup() {
+        this._satelliteInfluenceCache.clear();
+        this._bodyDistanceCache.clear();
+        if (this.subsystemManager) {
+            this.subsystemManager.cleanup?.();
+        }
+    }
+    
+    /**
+     * Get performance statistics
+     */
+    getPerformanceStats() {
+        return {
+            satelliteCount: this.satellites.size,
+            bodyCount: Object.keys(this.bodies).length,
+            cacheSize: this._satelliteInfluenceCache.size,
+            lastCacheUpdate: this._lastCacheUpdate
+        };
     }
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('Debug Significant Bodies', () => {
     it('should show why Sun is included for LEO satellites', () => {
@@ -39,13 +39,13 @@ describe('Debug Significant Bodies', () => {
         };
         
         const centralBody = physicsEngine.bodies[399];
-        const centralGravAccel = (Constants.G * centralBody.mass) / (6771 * 6771);
+        const centralGravAccel = (PhysicsConstants.PHYSICS.G * centralBody.mass) / (6771 * 6771);
         
         // Calculate Sun perturbation manually
         const sunBody = physicsEngine.bodies[10];
         const sunRelativeToCentral = sunBody.position.clone().sub(centralBody.position);
         const distanceToSun = sunRelativeToCentral.distanceTo(satellite.position);
-        const sunAccel = (Constants.G * sunBody.mass) / (distanceToSun * distanceToSun);
+        const sunAccel = (PhysicsConstants.PHYSICS.G * sunBody.mass) / (distanceToSun * distanceToSun);
         const sunRelative = sunAccel / centralGravAccel;
         
         console.log('\n=== LEO Sun Perturbation Debug ===');

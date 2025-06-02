@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 // import { Planet } from './Planet.js'; // Removed unused import
-import { Constants } from '../../utils/Constants.js';
+import { PhysicsConstants } from '../../physics/core/PhysicsConstants.js';
 import { RENDER_ORDER } from './Planet.js';
 
 export class AtmosphereComponent {
@@ -303,7 +303,7 @@ export class AtmosphereComponent {
 
         // Sun intensity
         const dist = this._planetPos.distanceTo(this._sunPos); // Distance between planet center and sun center
-        const AU_KM = (typeof Constants.AU === 'number') ? Constants.AU : 149597870.7;
+        const AU_KM = PhysicsConstants.PHYSICS.AU;
         const BASE = 10.6; // Base sun intensity factor
         const EPS = 1e-6;
         material.uniforms.uSunIntensity.value = BASE * (AU_KM * AU_KM) / Math.max(dist * dist, EPS);

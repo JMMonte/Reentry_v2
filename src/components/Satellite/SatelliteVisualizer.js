@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Constants } from '../../utils/Constants.js';
+// No longer need Constants - satellites use physics engine dimensions
 
 export class SatelliteVisualizer {
     /** Shared geometry and base material to reduce allocations */
@@ -20,7 +20,6 @@ export class SatelliteVisualizer {
         this.color = color;
         this.orientation = orientation ? orientation.clone() : new THREE.Quaternion();
         this.app3d = app3d;
-        this.baseScale = Constants.satelliteRadius;
         
         // Pre-allocate vectors for onBeforeRender to avoid GC pressure
         this._meshWorldPos = new THREE.Vector3();
@@ -45,7 +44,7 @@ export class SatelliteVisualizer {
         // Use the shared material (no cloning needed)
         const material = SatelliteVisualizer.getSharedMaterial();
         this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.scale.setScalar(Constants.satelliteRadius);
+        // Scale will be set dynamically based on physics engine satellite data
         // Maintain relative size and orientation
         const targetSize = 0.005;
         this.mesh.onBeforeRender = (renderer, scene, camera) => {

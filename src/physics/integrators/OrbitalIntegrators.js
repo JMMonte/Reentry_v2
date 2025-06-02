@@ -9,9 +9,17 @@ import { PhysicsConstants } from '../core/PhysicsConstants.js';
  * Consolidates RK4, RK45, Euler, and other integration schemes
  */
 
+// Pre-allocated vector pools for RK4 integration to avoid GC pressure
+const _rk4VectorPools = {
+    positions: Array.from({ length: 8 }, () => new THREE.Vector3()),
+    velocities: Array.from({ length: 8 }, () => new THREE.Vector3()),
+    accelerations: Array.from({ length: 4 }, () => new THREE.Vector3()),
+    ks: Array.from({ length: 8 }, () => new THREE.Vector3())
+};
+
 /**
- * 4th-order Runge-Kutta (RK4) integration
- * Standard fixed-step integration for orbital mechanics
+ * 4th-order Runge-Kutta (RK4) integration with optimized memory allocation
+ * Uses pre-allocated vector pools to eliminate GC pressure in integration loops
  * 
  * @param {Vector3} position - Current position (km)
  * @param {Vector3} velocity - Current velocity (km/s)
@@ -20,49 +28,57 @@ import { PhysicsConstants } from '../core/PhysicsConstants.js';
  * @returns {{position: Vector3, velocity: Vector3}} - New state
  */
 export function integrateRK4(position, velocity, accelerationFunc, dt) {
-    const pos0 = position.clone();
-    const vel0 = velocity.clone();
+    // Get pooled vectors
+    const [pos0, pos1, pos2, pos3] = _rk4VectorPools.positions;
+    const [vel0, vel1, vel2, vel3] = _rk4VectorPools.velocities;
+    const [acc0, acc1, acc2, acc3] = _rk4VectorPools.accelerations;
+    const [k1p, k1v, k2p, k2v, k3p, k3v, k4p, k4v] = _rk4VectorPools.ks;
+    
+    // Initialize with input values
+    pos0.copy(position);
+    vel0.copy(velocity);
     
     // k1
-    const acc0 = accelerationFunc(pos0, vel0);
-    const k1v = acc0.clone().multiplyScalar(dt);
-    const k1p = vel0.clone().multiplyScalar(dt);
+    acc0.copy(accelerationFunc(pos0, vel0));
+    k1v.copy(acc0).multiplyScalar(dt);
+    k1p.copy(vel0).multiplyScalar(dt);
     
     // k2
-    const pos1 = pos0.clone().addScaledVector(k1p, 0.5);
-    const vel1 = vel0.clone().addScaledVector(k1v, 0.5);
-    const acc1 = accelerationFunc(pos1, vel1);
-    const k2v = acc1.clone().multiplyScalar(dt);
-    const k2p = vel1.clone().multiplyScalar(dt);
+    pos1.copy(pos0).addScaledVector(k1p, 0.5);
+    vel1.copy(vel0).addScaledVector(k1v, 0.5);
+    acc1.copy(accelerationFunc(pos1, vel1));
+    k2v.copy(acc1).multiplyScalar(dt);
+    k2p.copy(vel1).multiplyScalar(dt);
     
     // k3
-    const pos2 = pos0.clone().addScaledVector(k2p, 0.5);
-    const vel2 = vel0.clone().addScaledVector(k2v, 0.5);
-    const acc2 = accelerationFunc(pos2, vel2);
-    const k3v = acc2.clone().multiplyScalar(dt);
-    const k3p = vel2.clone().multiplyScalar(dt);
+    pos2.copy(pos0).addScaledVector(k2p, 0.5);
+    vel2.copy(vel0).addScaledVector(k2v, 0.5);
+    acc2.copy(accelerationFunc(pos2, vel2));
+    k3v.copy(acc2).multiplyScalar(dt);
+    k3p.copy(vel2).multiplyScalar(dt);
     
     // k4
-    const pos3 = pos0.clone().add(k3p);
-    const vel3 = vel0.clone().add(k3v);
-    const acc3 = accelerationFunc(pos3, vel3);
-    const k4v = acc3.clone().multiplyScalar(dt);
-    const k4p = vel3.clone().multiplyScalar(dt);
+    pos3.copy(pos0).add(k3p);
+    vel3.copy(vel0).add(k3v);
+    acc3.copy(accelerationFunc(pos3, vel3));
+    k4v.copy(acc3).multiplyScalar(dt);
+    k4p.copy(vel3).multiplyScalar(dt);
     
-    // Combine steps
-    const newPosition = pos0.clone()
+    // Combine steps (reuse pos0 and vel0 as output)
+    pos0.copy(position)
         .addScaledVector(k1p, 1/6)
         .addScaledVector(k2p, 1/3)
         .addScaledVector(k3p, 1/3)
         .addScaledVector(k4p, 1/6);
         
-    const newVelocity = vel0.clone()
+    vel0.copy(velocity)
         .addScaledVector(k1v, 1/6)
         .addScaledVector(k2v, 1/3)
         .addScaledVector(k3v, 1/3)
         .addScaledVector(k4v, 1/6);
     
-    return { position: newPosition, velocity: newVelocity };
+    // Return new Vector3s with the computed values
+    return { position: pos0.clone(), velocity: vel0.clone() };
 }
 
 /**
@@ -104,12 +120,14 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
     while (t < targetTime) {
         if (t + dt > targetTime) dt = targetTime - t;
         
-        // RK45 stages
-        const k1 = accelerationFunc(pos, vel).multiplyScalar(dt);
+            // RK45 stages (optimized to reuse acceleration result)
+        const acc = accelerationFunc(pos, vel);
+        const k1 = acc.clone().multiplyScalar(dt);
         
         const pos2 = pos.clone().addScaledVector(vel, a21 * dt).addScaledVector(k1, a21 * dt * 0.5);
         const vel2 = vel.clone().addScaledVector(k1, a21);
-        const k2 = accelerationFunc(pos2, vel2).multiplyScalar(dt);
+        acc.copy(accelerationFunc(pos2, vel2));
+        const k2 = acc.clone().multiplyScalar(dt);
         
         const pos3 = pos.clone()
             .addScaledVector(vel, (a31 + a32) * dt)
@@ -118,7 +136,8 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
         const vel3 = vel.clone()
             .addScaledVector(k1, a31)
             .addScaledVector(k2, a32);
-        const k3 = accelerationFunc(pos3, vel3).multiplyScalar(dt);
+        acc.copy(accelerationFunc(pos3, vel3));
+        const k3 = acc.clone().multiplyScalar(dt);
         
         const pos4 = pos.clone()
             .addScaledVector(vel, (a41 + a42 + a43) * dt)
@@ -129,7 +148,8 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
             .addScaledVector(k1, a41)
             .addScaledVector(k2, a42)
             .addScaledVector(k3, a43);
-        const k4 = accelerationFunc(pos4, vel4).multiplyScalar(dt);
+        acc.copy(accelerationFunc(pos4, vel4));
+        const k4 = acc.clone().multiplyScalar(dt);
         
         const pos5 = pos.clone()
             .addScaledVector(vel, (a51 + a52 + a53 + a54) * dt)
@@ -142,7 +162,8 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
             .addScaledVector(k2, a52)
             .addScaledVector(k3, a53)
             .addScaledVector(k4, a54);
-        const k5 = accelerationFunc(pos5, vel5).multiplyScalar(dt);
+        acc.copy(accelerationFunc(pos5, vel5));
+        const k5 = acc.clone().multiplyScalar(dt);
         
         const pos6 = pos.clone()
             .addScaledVector(vel, (a61 + a62 + a63 + a64 + a65) * dt)
@@ -157,7 +178,8 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
             .addScaledVector(k3, a63)
             .addScaledVector(k4, a64)
             .addScaledVector(k5, a65);
-        const k6 = accelerationFunc(pos6, vel6).multiplyScalar(dt);
+        acc.copy(accelerationFunc(pos6, vel6));
+        const k6 = acc.clone().multiplyScalar(dt);
         
         // 4th order solution
         const newPos4 = pos.clone()
@@ -178,7 +200,8 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
         // 5th order solution (for error estimation)
         const pos7 = newPos4.clone();
         const vel7 = newVel4.clone();
-        const k7 = accelerationFunc(pos7, vel7).multiplyScalar(dt);
+        acc.copy(accelerationFunc(pos7, vel7));
+        const k7 = acc.clone().multiplyScalar(dt);
         
         const newPos5 = pos.clone()
             .addScaledVector(vel, dt)
@@ -295,18 +318,32 @@ export function integrateLeapfrog(position, velocity, accelerationFunc, dt) {
     return { position: newPosition, velocity: newVelocity };
 }
 
+// Vector conversion pools to avoid allocations
+const _conversionVectorPool = Array.from({ length: 4 }, () => new THREE.Vector3());
+let _poolIndex = 0;
+
 /**
- * Helper function to convert array-based state to Vector3
+ * Helper function to convert array-based state to Vector3 using object pool
  */
 export function arrayToVector3(arr) {
-    return new THREE.Vector3(arr[0], arr[1], arr[2]);
+    const vec = _conversionVectorPool[_poolIndex];
+    _poolIndex = (_poolIndex + 1) % _conversionVectorPool.length;
+    return vec.set(arr[0], arr[1], arr[2]);
 }
 
 /**
- * Helper function to convert Vector3 to array
+ * Helper function to convert Vector3 to array (optimized)
  */
 export function vector3ToArray(vec) {
     return [vec.x, vec.y, vec.z];
+}
+
+/**
+ * Reset vector pools (call occasionally to prevent memory leaks)
+ */
+export function resetVectorPools() {
+    _poolIndex = 0;
+    // Vectors are reused, so no need to recreate
 }
 
 /**

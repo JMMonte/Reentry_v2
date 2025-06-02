@@ -291,8 +291,8 @@ export class SolarSystemDataManager {
 
         this.bodies.forEach((body, name) => {
             // Check required fields
-            if (!body.naif_id && body.naif_id !== 0) {
-                errors.push(`${name}: Missing naif_id`);
+            if (!body.naifId && body.naifId !== 0) {
+                errors.push(`${name}: Missing naifId`);
             }
             if (!body.type) {
                 errors.push(`${name}: Missing type`);

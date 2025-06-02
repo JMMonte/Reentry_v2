@@ -4,10 +4,10 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 // Mock the worker since we'll test the logic directly
-vi.mock('../src/workers/orbitPropagationWorker.js');
+vi.mock('../src/physics/workers/orbitPropagationWorker.js');
 
 describe('Orbit Propagation Tests', () => {
     let mockPhysicsState;
@@ -24,7 +24,7 @@ describe('Orbit Propagation Tests', () => {
                     mass: 5.972e24,
                     radius: 6371,
                     soiRadius: 929000, // km
-                    GM: Constants.G * 5.972e24,
+                    GM: PhysicsConstants.PHYSICS.G * 5.972e24,
                     type: 'planet'
                 },
                 10: { // Sun
@@ -34,7 +34,7 @@ describe('Orbit Propagation Tests', () => {
                     mass: 1.989e30,
                     radius: 695700,
                     soiRadius: 1e12, // Effectively infinite
-                    GM: Constants.G * 1.989e30,
+                    GM: PhysicsConstants.PHYSICS.G * 1.989e30,
                     type: 'star'
                 }
             }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import soiVertexShader from '../../shaders/soiVertexShader.glsl';
 import soiFragmentShader from '../../shaders/soiFragmentShader.glsl';
-import { Constants } from '../../utils/Constants.js';
+// No longer need Constants - world scale is managed by physics engine
 
 // Generic surface material creator for all planets/moons
 function createSurfaceMaterial(textureManager, anisotropy, config = {}) {
@@ -148,7 +148,7 @@ function createAtmosphereMaterial(earthRadius, {
             densityScale: { value: densityScale },
             atmoColorNear: { value: colorNear },
             atmoColorFar: { value: colorFar },
-            worldScale: { value: Constants.scale },
+            worldScale: { value: 1.0 }, // Default scale - physics engine manages actual scaling
             // Ellipsoid scaling uniforms (overridden per-mesh)
             polarScale:   { value: 1.0 },
             atmoYScale:   { value: 1.0 },

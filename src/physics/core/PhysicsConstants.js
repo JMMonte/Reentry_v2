@@ -28,6 +28,9 @@ export class PhysicsConstants {
         J2000_EPOCH: 2451545.0,            // Julian date of J2000 epoch
         C: 299792458,                      // Speed of light in m/s
         STEFAN_BOLTZMANN: 5.670374419e-8,  // Stefan-Boltzmann constant in W⋅m⁻²⋅K⁻⁴
+        
+        // NOTE: Celestial body properties (like Sun mass/radius/GM) are now data-driven
+        // through the PhysicsAPI and should NOT be hardcoded here. Use PhysicsAPI.getBodyData()
     };
 
     // ========== TIME CONSTANTS ==========

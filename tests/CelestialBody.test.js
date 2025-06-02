@@ -8,7 +8,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { CelestialBody } from '../src/physics/core/CelestialBody.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('CelestialBody Class', () => {
     let earthConfig, marsConfig, sunConfig, moonConfig;
@@ -111,7 +111,7 @@ describe('CelestialBody Class', () => {
     describe('Gravitational Parameter (GM)', () => {
         test('should calculate GM from mass when not provided', () => {
             const earth = new CelestialBody(earthConfig);
-            const expectedGM = Constants.G * earthConfig.mass;
+            const expectedGM = PhysicsConstants.PHYSICS.G * earthConfig.mass;
             
             expect(earth.GM).toBeCloseTo(expectedGM, -3);
         });

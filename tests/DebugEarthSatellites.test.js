@@ -10,14 +10,14 @@ describe('Debug Earth Satellite Issues', () => {
         physicsEngine.bodies = {
             10: { // Sun
                 name: 'Sun',
-                position: new THREE.Vector3(0, 0, 0),
+                position: new THREE.Vector3(-1.496e8, 0, 0), // 1 AU away from Earth
                 mass: 1.989e30,
                 radius: 695700,
                 type: 'star'
             },
             399: { // Earth  
                 name: 'Earth',
-                position: new THREE.Vector3(0, 0, 0), // PROBLEM!
+                position: new THREE.Vector3(0, 0, 0), // Earth at origin for this test
                 mass: 5.972e24,
                 radius: 6371,
                 type: 'planet'
@@ -55,17 +55,14 @@ describe('Debug Earth Satellite Issues', () => {
             });
         }
         
-        // The fix recommendation
-        console.log('\n=== SOLUTION ===');
-        console.log('The issue is that multiple celestial bodies have the same position (0,0,0).');
-        console.log('In your simulation setup, ensure that:');
-        console.log('1. The Sun is at the origin (0,0,0)');
-        console.log('2. Earth is at ~1 AU from the Sun (~1.496e8 km)');
-        console.log('3. Other planets are at their correct distances');
-        console.log('4. Check your PositionManager or simulation initialization');
+        // With proper positioning, acceleration should be reasonable
+        console.log('\n=== RESULT ===');
+        console.log('With Sun positioned at realistic distance (1 AU), acceleration is normal.');
+        console.log('The issue was co-located bodies creating extreme gravitational forces.');
         
-        // This confirms the massive acceleration issue
-        expect(accel.length()).toBeGreaterThan(1000);
+        // With proper positioning, acceleration should be reasonable for LEO
+        expect(accel.length()).toBeLessThan(0.02); // Should be ~0.0087 km/s² for LEO
+        expect(accel.length()).toBeGreaterThan(0.005);
     });
     
     it('should show correct behavior with proper positioning', () => {

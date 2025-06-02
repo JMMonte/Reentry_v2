@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 
 describe('Satellite Coordinate System Issues', () => {
     it('should correctly handle satellite positions relative to Earth', () => {
@@ -74,22 +74,22 @@ describe('Satellite Coordinate System Issues', () => {
             drag: satellite.a_drag ? new THREE.Vector3(...satellite.a_drag).length() : 0
         });
         
-        // Expectations
-        expect(distToSun).toBeCloseTo(1.496e8, -4); // Should be ~1 AU
+        // Expectations (satellite is 6771 km from Earth center, so distance to Sun is 1 AU + 6771 km)
+        expect(distToSun).toBeCloseTo(1.496e8 + 6771, -4); // Should be ~1 AU + satellite distance
         expect(accel.length()).toBeLessThan(0.01); // Should be ~0.0087 km/s² for LEO
         expect(accel.length()).toBeGreaterThan(0.005);
     });
     
-    it('should show the problem when Earth is at origin', () => {
+    it('should handle Earth-centric satellites correctly', () => {
         const physicsEngine = new PhysicsEngine();
         
-        // Set up problematic configuration - both at origin
+        // Set up realistic configuration
         physicsEngine.bodies[10] = {
             name: 'Sun',
             type: 'star',
             mass: 1.989e30,
             radius: 695700,
-            position: new THREE.Vector3(0, 0, 0),
+            position: new THREE.Vector3(-1.496e8, 0, 0), // 1 AU away from Earth
             velocity: new THREE.Vector3(0, 0, 0),
             naifId: 10
         };
@@ -99,7 +99,7 @@ describe('Satellite Coordinate System Issues', () => {
             type: 'planet', 
             mass: 5.972e24,
             radius: 6371,
-            position: new THREE.Vector3(0, 0, 0), // PROBLEM: Same as Sun!
+            position: new THREE.Vector3(0, 0, 0), // Earth at origin for this test
             velocity: new THREE.Vector3(0, 0, 0),
             naifId: 399,
             j2: 0.00108263
@@ -117,14 +117,15 @@ describe('Satellite Coordinate System Issues', () => {
         
         physicsEngine.satellites = { 'test-sat': satellite };
         
-        // This will produce huge acceleration
+        // Compute acceleration with realistic Sun distance
         const accel = physicsEngine._computeSatelliteAcceleration(satellite);
         
-        console.log('\n=== Problem Case ===');
+        console.log('\n=== Realistic Configuration ===');
         console.log('Total acceleration:', accel.length(), 'km/s²');
         console.log('Sun acceleration:', satellite.a_bodies?.[10] ? new THREE.Vector3(...satellite.a_bodies[10]).length() : 0, 'km/s²');
         
-        // This will be huge because satellite appears to be 6771 km from Sun's center!
-        expect(accel.length()).toBeGreaterThan(1000);
+        // With Sun at 1 AU, acceleration should be reasonable for LEO
+        expect(accel.length()).toBeLessThan(0.02); // Should be ~0.0087 km/s² for LEO
+        expect(accel.length()).toBeGreaterThan(0.005);
     });
 });

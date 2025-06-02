@@ -53,7 +53,6 @@ export class PhysicsManager {
                 }
             }
 
-            // console.log('[PhysicsManager] Initializing with time:', currentTime.toISOString());
 
             // Initialize the physics engine
             await this.physicsEngine.initialize(currentTime);
@@ -71,7 +70,6 @@ export class PhysicsManager {
             this._startUpdateLoop();
 
             this.isInitialized = true;
-            // console.log('[PhysicsManager] Successfully initialized');
 
             return this;
         } catch (error) {
@@ -113,17 +111,9 @@ export class PhysicsManager {
         this._stepCallCount++;
         this._totalDeltaTime += deltaTime;
         
-        // Throttle log: only log every 10 seconds
-        if (!this._lastStepLogTime || Date.now() - this._lastStepLogTime > 10000) {
-            // console.log(`[PhysicsManager] stepSimulation: ${this._stepCallCount} calls in 10s, total deltaTime: ${this._totalDeltaTime.toFixed(3)}s, avg: ${(this._totalDeltaTime/this._stepCallCount).toFixed(4)}s`);
-            this._stepCallCount = 0;
-            this._totalDeltaTime = 0;
-            this._lastStepLogTime = Date.now();
-        }
         if (!this.isInitialized) return;
 
         const state = await this.physicsEngine.step(deltaTime);
-        // console.log('[PhysicsManager] stepSimulation: state.satellites keys:', Object.keys(state.satellites));
 
         // Sync with existing celestial bodies
         this._syncWithCelestialBodies(state);
@@ -149,18 +139,6 @@ export class PhysicsManager {
             return;
         }
 
-        // Debug logging for velocity tracking
-        console.log('[PhysicsManager.addSatellite] Adding satellite:');
-        console.log('  satelliteData:', satelliteData);
-        if (satelliteData.velocity) {
-            const vel = satelliteData.velocity;
-            const velMag = Math.sqrt(
-                (vel.x || vel[0] || 0)**2 + 
-                (vel.y || vel[1] || 0)**2 + 
-                (vel.z || vel[2] || 0)**2
-            );
-            console.log('  Velocity magnitude:', velMag.toFixed(3), 'km/s');
-        }
 
         // PhysicsEngine is the single source of truth
         const id = this.physicsEngine.addSatellite(satelliteData);
@@ -201,7 +179,6 @@ export class PhysicsManager {
         const parent = this._findParentBody(state.bodies, body);
 
         if (!body || !parent) {
-            console.warn(`[PhysicsManager] Cannot find body or parent for ${bodyName}`);
             return [];
         }
 
@@ -224,7 +201,6 @@ export class PhysicsManager {
         const satellite = state.satellites[satelliteId];
 
         if (!satellite) {
-            console.warn(`[PhysicsManager] Satellite ${satelliteId} not found`);
             return [];
         }
 
@@ -300,10 +276,8 @@ export class PhysicsManager {
         const satellitesMap = this.app.satellites.getSatellitesMap?.();
         if (!satellitesMap || satellitesMap.size === 0) return;
         
-        console.log(`[PhysicsManager] Syncing ${satellitesMap.size} existing satellites`);
-        
         // Add each satellite to the physics engine
-        for (const [id, satellite] of satellitesMap) {
+        for (const [satellite] of satellitesMap) {
             if (satellite.position && satellite.velocity) {
                 try {
                     this.physicsEngine.addSatellite({
@@ -316,8 +290,8 @@ export class PhysicsManager {
                         dragCoefficient: satellite.dragCoefficient || 2.2,
                         centralBodyNaifId: satellite.centralBodyNaifId || 399
                     });
-                } catch (error) {
-                    console.warn(`[PhysicsManager] Failed to sync satellite ${id}:`, error);
+                } catch {
+                    // Ignore failed syncs
                 }
             }
         }
@@ -530,7 +504,6 @@ export class PhysicsManager {
             return;
         }
 
-        // let bodiesUpdated = 0;
 
         for (const celestialBody of this.app.celestialBodies) {
             // Get the NAIF ID from the celestial body
@@ -638,7 +611,6 @@ export class PhysicsManager {
                     }
                 }
 
-                // bodiesUpdated++;
 
             } catch (error) {
                 console.warn(`[PhysicsManager] Failed to update ${celestialBody.name}:`, error);
@@ -756,39 +728,20 @@ export class PhysicsManager {
             }
         }
 
-        // if (bodiesUpdated > 0) {
-        //     console.log(`[PhysicsManager] Updated ${bodiesUpdated} celestial bodies with correct positions`);
-        // }
     }
 
     /**
      * Private: Sync satellite states with existing managers
      */
     _syncSatelliteStates(state) {
-        // console.log('[PhysicsManager] _syncSatelliteStates: called with satellites keys:', Object.keys(state.satellites));
         if (!this.app.satelliteManager?.satellites) return;
 
-        // Throttle log: only log every 5 seconds
-        if (!this._lastSyncLogTime || Date.now() - this._lastSyncLogTime > 5000) {
-            // console.log('[PhysicsManager] _syncSatelliteStates called, satellites:', Object.keys(state.satellites));
-            this._lastSyncLogTime = Date.now();
-        }
 
         for (const [id, satelliteState] of Object.entries(state.satellites)) {
             const satId = String(id);
             let satellite = this.app.satelliteManager.satellites.get(satId);
             if (satellite) {
-                // Only log every 5 seconds
-                if (!satellite._lastSyncLogTime || Date.now() - satellite._lastSyncLogTime > 5000) {
-                    // console.log('[PhysicsManager] Syncing satellite', satId, satelliteState.position);
-                    satellite._lastSyncLogTime = Date.now();
-                }
                 satellite.updateVisualsFromState(satelliteState);
-            } else {
-                if (!this._lastMissingLogTime || Date.now() - this._lastMissingLogTime > 5000) {
-                    console.warn('[PhysicsManager] No UI satellite found for id', satId, 'keys:', Array.from(this.app.satelliteManager.satellites.keys()));
-                    this._lastMissingLogTime = Date.now();
-                }
             }
         }
     }
@@ -881,7 +834,6 @@ export class PhysicsManager {
         const elements = OrbitalMechanics.calculateOrbitalElements(relPos, relVel, mu, parent.radius || 0);
         
         if (!elements || !isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
-            console.warn('Invalid orbital elements for', body.name);
             return [];
         }
 
@@ -927,7 +879,6 @@ export class PhysicsManager {
      */
     _setupTimeSync() {
         if (!this.app.timeUtils) {
-            console.warn('[PhysicsManager] No timeUtils found in app - time sync disabled');
             return;
         }
 

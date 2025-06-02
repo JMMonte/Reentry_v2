@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
 import * as THREE from 'three';
 
 describe('Atmospheric Rotation Drag Tests', () => {
@@ -25,7 +25,7 @@ describe('Atmospheric Rotation Drag Tests', () => {
         
         // Expected velocity at equator: v = omega * r
         // Earth rotation period ~ 86164 seconds (sidereal day)
-        const rotationPeriod = earth.rotationPeriod || Constants.siderialDay;
+        const rotationPeriod = earth.rotationPeriod || PhysicsConstants.TIME.SIDEREAL_DAY;
         const omega = (2 * Math.PI) / rotationPeriod;
         const expectedVelMag = omega * radius; // km/s
         
@@ -63,7 +63,7 @@ describe('Atmospheric Rotation Drag Tests', () => {
         
         // At geographic poles, due to Earth's 23.5° tilt, there's still some velocity
         // The velocity should be much smaller than at the equator
-        const equatorialVel = 2 * Math.PI * (earth.radius + altitude) / (earth.rotationPeriod || Constants.siderialDay);
+        const equatorialVel = 2 * Math.PI * (earth.radius + altitude) / (earth.rotationPeriod || PhysicsConstants.TIME.SIDEREAL_DAY);
         expect(atmosphereVel.length()).toBeLessThan(equatorialVel * 0.5); // Less than half of equatorial
     });
 

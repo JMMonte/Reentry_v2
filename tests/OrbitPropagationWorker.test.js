@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Worker from 'web-worker:../src/workers/orbitPropagationWorker.js';
+import Worker from 'web-worker:../src/physics/workers/orbitPropagationWorker.js';
 
 describe('OrbitPropagationWorker Tests', () => {
     let worker;

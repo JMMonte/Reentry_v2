@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
-import Earth from '../src/physics/bodies/planets/Earth.js';
-import Mars from '../src/physics/bodies/planets/Mars.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
+import Earth from '../src/physics/data/planets/Earth.js';
+import Mars from '../src/physics/data/planets/Mars.js';
 
 describe('Earth Orbit Propagation Issues', () => {
     let physicsEngine;
@@ -52,13 +52,13 @@ describe('Earth Orbit Propagation Issues', () => {
             naifId: 301
         };
         
-        // Set up Sun
+        // Set up Sun at realistic distance (1 AU from Earth)
         physicsEngine.bodies[10] = {
             name: 'Sun',
             type: 'star',
             mass: 1.989e30,
             radius: 695700,
-            position: new THREE.Vector3(0, 0, 0),
+            position: new THREE.Vector3(-1.496e8, 0, 0), // 1 AU away from Earth
             velocity: new THREE.Vector3(0, 0, 0),
             naifId: 10
         };
@@ -85,7 +85,7 @@ describe('Earth Orbit Propagation Issues', () => {
             
             // Propagate for one orbit
             const orbitalPeriod = 2 * Math.PI * Math.sqrt(
-                Math.pow(initialRadius, 3) / (Constants.G * physicsEngine.bodies[399].mass)
+                Math.pow(initialRadius, 3) / (PhysicsConstants.PHYSICS.G * physicsEngine.bodies[399].mass)
             );
             const dt = 10; // 10 second timestep
             const steps = Math.ceil(orbitalPeriod / dt);
@@ -190,7 +190,7 @@ describe('Earth Orbit Propagation Issues', () => {
             
             // Propagate for one orbit
             const orbitalPeriod = 2 * Math.PI * Math.sqrt(
-                Math.pow(initialRadius, 3) / (Constants.G * physicsEngine.bodies[499].mass)
+                Math.pow(initialRadius, 3) / (PhysicsConstants.PHYSICS.G * physicsEngine.bodies[499].mass)
             );
             const dt = 10;
             const steps = Math.ceil(orbitalPeriod / dt);
@@ -234,7 +234,7 @@ describe('Earth Orbit Propagation Issues', () => {
                     id: `earth-${alt}`,
                     centralBodyNaifId: 399,
                     position: new THREE.Vector3(6371 + alt, 0, 0),
-                    velocity: new THREE.Vector3(0, Math.sqrt(Constants.G * Earth.mass / (6371 + alt)), 0),
+                    velocity: new THREE.Vector3(0, Math.sqrt(PhysicsConstants.PHYSICS.G * Earth.mass / (6371 + alt)), 0),
                     mass: 1000,
                     crossSectionalArea: 10,
                     dragCoefficient: 2.2
@@ -277,6 +277,6 @@ PhysicsEngine.prototype._calculateOrbitalEnergy = function(satellite) {
     const centralBody = this.bodies[satellite.centralBodyNaifId];
     const r = satellite.position.length();
     const v = satellite.velocity.length();
-    const mu = Constants.G * centralBody.mass;
+    const mu = PhysicsConstants.PHYSICS.G * centralBody.mass;
     return (v * v / 2) - (mu / r);
 };

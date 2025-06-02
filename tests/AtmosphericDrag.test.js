@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { Constants } from '../src/utils/Constants.js';
-import Earth from '../src/physics/bodies/planets/Earth.js';
+import PhysicsConstants from '../src/physics/core/PhysicsConstants.js';
+import Earth from '../src/physics/data/planets/Earth.js';
 
 describe('Atmospheric Drag Calculations', () => {
     let physicsEngine;
@@ -246,7 +246,7 @@ describe('Atmospheric Drag Calculations', () => {
             // Track initial specific orbital energy
             const r0 = satellite.position.length();
             const v0 = satellite.velocity.length();
-            const mu = Constants.G * physicsEngine.bodies[399].mass;
+            const mu = PhysicsConstants.PHYSICS.G * physicsEngine.bodies[399].mass;
             const initialEnergy = (v0 * v0 / 2) - (mu / r0);
             
             // Calculate drag work over one orbit
