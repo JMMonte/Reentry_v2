@@ -8,7 +8,7 @@
  *   createSatelliteFromOrbitalElements
  *********************************************************************/
 
-import { SatelliteCoordinates } from '../../physics/utils/SatelliteCoordinates.js';
+import { CoordinateTransforms } from '../../physics/utils/CoordinateTransforms.js';
 
 /*─────────────────── constants ────────────────────*/
 const DEFAULT_SIZE = 1;           // m (radius, for visuals)
@@ -76,17 +76,16 @@ export async function createSatellite(app, params = {}) {
         color
     });
 
-    // Create communication system for the satellite
-    if (sat && app.lineOfSightManager?.createSatelliteComms) {
-        // Apply default communication configuration based on satellite type
-        const defaultCommsConfig = {
-            preset: commsConfig.preset || 'cubesat', // Default to cubesat communications
+    // Communication subsystem is automatically created by PhysicsEngine when satellite is added
+    // Additional communication configuration can be applied via SatelliteCommsManager if needed
+    if (commsConfig && Object.keys(commsConfig).length > 0) {
+        console.log(`[createSatellite] Communication config specified for ${name || 'Satellite'}:`, commsConfig);
+        // This config will be available for the communication manager to use
+        sat.commsConfig = {
+            preset: commsConfig.preset || 'cubesat',
             enabled: commsConfig.enabled !== false,
             ...commsConfig
         };
-        
-        app.lineOfSightManager.createSatelliteComms(sat.id, defaultCommsConfig);
-        console.log(`[createSatellite] Created communications for ${name || 'Satellite'} with config:`, defaultCommsConfig);
     }
 
     // Return the satellite object
@@ -107,7 +106,7 @@ export async function createSatelliteFromLatLon(app, params = {}) {
 
     // Use improved coordinate calculation with planet quaternion
     const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
-    const { position, velocity } = SatelliteCoordinates.createFromLatLon(params, planet, currentTime);
+    const { position, velocity } = CoordinateTransforms.createFromLatLon(params, planet, currentTime);
 
     // Log final velocity for circular orbit verification
     const velMag = Array.isArray(velocity) ? Math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2) : velocity.length();
@@ -143,7 +142,7 @@ export async function createSatelliteFromOrbitalElements(app, params = {}) {
     if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
 
     // Use improved coordinate calculation with planet quaternion
-    const { position, velocity } = SatelliteCoordinates.createFromOrbitalElements(params, planet);
+    const { position, velocity } = CoordinateTransforms.createFromOrbitalElements(params, planet);
 
     const sat = await createSatellite(app, {
         ...params,

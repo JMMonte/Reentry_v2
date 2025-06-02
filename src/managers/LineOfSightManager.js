@@ -7,12 +7,18 @@
  */
 
 import * as THREE from 'three';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 
 export class LineOfSightManager {
     constructor(scene, displaySettings, physicsState) {
         this.scene = scene;
         this.displaySettings = displaySettings;
         this.physicsState = physicsState;
+        
+        // Screen resolution for Line2 materials
+        this._resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
         
         // State management
         this._enabled = false;
@@ -251,15 +257,19 @@ export class LineOfSightManager {
             console.log('[LineOfSightManager] Added SatelliteLinks group to scene');
         }
         
-        // Add a test line at the origin for debugging
-        const testGeometry = new THREE.BufferGeometry();
-        const testPositions = new Float32Array([
+        // Add a test line at the origin for debugging using Line2
+        const testGeometry = new LineGeometry();
+        const testPositions = [
             0, 0, 0,
             1000, 1000, 1000  // 1000 km line
-        ]);
-        testGeometry.setAttribute('position', new THREE.BufferAttribute(testPositions, 3));
-        const testMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff, linewidth: 10 });
-        const testLine = new THREE.Line(testGeometry, testMaterial);
+        ];
+        testGeometry.setPositions(testPositions);
+        const testMaterial = new LineMaterial({ 
+            color: 0xff00ff, 
+            linewidth: 10,
+            resolution: this._resolution
+        });
+        const testLine = new Line2(testGeometry, testMaterial);
         testLine.name = 'TEST_LINE';
         testLine.renderOrder = 9999;
         testLine.frustumCulled = false;
@@ -284,33 +294,34 @@ export class LineOfSightManager {
             const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
             console.log('[LineOfSightManager] Line distance:', distance, 'km');
             
-            // Create line geometry
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array([
+            // Create Line2 geometry
+            const geometry = new LineGeometry();
+            const positions = [
                 connection.points[0][0], connection.points[0][1], connection.points[0][2],
                 connection.points[1][0], connection.points[1][1], connection.points[1][2]
-            ]);
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            ];
+            geometry.setPositions(positions);
             
             // Compute bounding sphere for debugging
             geometry.computeBoundingSphere();
             console.log('[LineOfSightManager] Line bounding sphere:', geometry.boundingSphere);
             
-            // Create material with appropriate color
+            // Create Line2 material with appropriate color
             const color = this._getConnectionColor(connection);
             console.log('[LineOfSightManager] Using color:', color.toString(16));
             
-            const material = new THREE.LineBasicMaterial({
+            const material = new LineMaterial({
                 color: color,
                 transparent: false,
                 opacity: 1.0,
-                depthTest: false,
+                depthTest: true,
                 depthWrite: false,
-                linewidth: 5 // This may not work in WebGL but try anyway
+                linewidth: 5, // Line2 supports actual linewidth
+                resolution: this._resolution
             });
             
-            // Create line mesh
-            const line = new THREE.Line(geometry, material);
+            // Create Line2 mesh
+            const line = new Line2(geometry, material);
             line.name = `Connection_${connection.from}_${connection.to}`;
             line.renderOrder = 9999;
             line.frustumCulled = false;
@@ -389,6 +400,22 @@ export class LineOfSightManager {
      */
     _requestWorkerUpdate() {
         this._lastWorkerSync = 0;
+    }
+    
+    /**
+     * Update screen resolution for Line2 materials (call on window resize)
+     */
+    updateResolution(width, height) {
+        this._resolution.set(width, height);
+        
+        // Update all existing Line2 materials
+        this._satelliteLinks.traverse((child) => {
+            if (child.material && child.material.isLineMaterial) {
+                child.material.resolution.copy(this._resolution);
+            }
+        });
+        
+        console.log(`[LineOfSightManager] Updated resolution to ${width}x${height}`);
     }
     
     /**

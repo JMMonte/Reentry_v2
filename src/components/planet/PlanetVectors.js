@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helveticaRegular from '../../assets/fonts/helvetiker_regular.typeface.json';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { ArrowUtils } from '../../utils/ArrowUtils.js';
 
 const ARROW_COLORS = {
     sun: 0xffff00,
@@ -110,76 +110,60 @@ export class PlanetVectors {
     }
 
     initVelocityVector() {
-        // Always create the velocity arrow (initially hidden if velocity is zero)
-        this.velocityArrow = new THREE.ArrowHelper(
-            new THREE.Vector3(1, 0, 0), // default direction
-            new THREE.Vector3(0, 0, 0),
-            this.arrowLength,
-            ARROW_COLORS.velocity
-        );
-        this.velocityArrow.setLength(
-            this.arrowLength,
-            this.arrowHeadLength,
-            this.arrowHeadWidth
-        );
-        this.velocityArrow.line.material.depthTest = true;
-        this.velocityArrow.line.material.depthWrite = true;
-        this.velocityArrow.line.material.transparent = false;
-        this.velocityArrow.line.material.opacity = 1;
-        this.velocityArrow.cone.material.depthTest = true;
-        this.velocityArrow.cone.material.depthWrite = true;
-        this.velocityArrow.cone.material.transparent = false;
-        this.velocityArrow.cone.material.opacity = 1;
-        if (this.body.orbitGroup) {
-            this.body.orbitGroup.add(this.velocityArrow);
-        } else {
-            this.group.add(this.velocityArrow);
+        // Create the velocity arrow using ArrowUtils
+        const velocityResult = ArrowUtils.createArrowWithLabel({
+            direction: new THREE.Vector3(1, 0, 0),
+            origin: new THREE.Vector3(0, 0, 0),
+            length: this.arrowLength,
+            color: ARROW_COLORS.velocity,
+            text: `${this.options.name} Velocity`,
+            labelType: 'sprite',
+            headLengthRatio: this.arrowHeadLength / this.arrowLength,
+            headWidthRatio: this.arrowHeadWidth / this.arrowLength,
+            depthTest: true,
+            depthWrite: true,
+            transparent: false,
+            opacity: 1,
+            visible: false // Initially hidden until toggled
+        });
+
+        this.velocityArrow = velocityResult.arrow;
+        this.velocityLabel = velocityResult.label;
+        this.velocityDispose = velocityResult.dispose;
+
+        // Add to appropriate parent
+        const parent = this.body.orbitGroup || this.group;
+        parent.add(this.velocityArrow);
+        if (this.velocityLabel) {
+            parent.add(this.velocityLabel);
         }
+
         this.directionalArrows.push(this.velocityArrow);
-        // Create the velocity label
-        this.velocityLabel = this.createLabel(
-            `${this.options.name} Velocity`,
-            new THREE.Vector3(this.arrowLength, 0, 0)
-        );
-        if (this.body.orbitGroup) {
-            this.body.orbitGroup.add(this.velocityLabel);
-        } else {
-            this.group.add(this.velocityLabel);
-        }
         this.directionalLabels.push(this.velocityLabel);
     }
 
     createLabel(text, position) {
-        const fontSize = LABEL_FONT_SIZE;
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
+        // Use ArrowUtils for consistent label creation
+        const labelResult = ArrowUtils.createTextSprite({
+            text,
+            fontSize: LABEL_FONT_SIZE,
+            fontFamily: 'Arial',
+            color: LABEL_COLOR,
+            position,
+            pixelScale: 0.0002,
+            sizeAttenuation: false,
+            renderOrder: 999
+        });
 
-        context.font = `${fontSize}px Arial`;
-        const textWidth = context.measureText(text).width;
-        const textHeight = fontSize;
+        this.group.add(labelResult.sprite);
+        
+        // Store dispose function for cleanup
+        if (!this.labelDisposeFunctions) {
+            this.labelDisposeFunctions = [];
+        }
+        this.labelDisposeFunctions.push(labelResult.dispose);
 
-        canvas.width = textWidth;
-        canvas.height = textHeight;
-
-        context.font = `${fontSize}px Arial`;
-        context.fillStyle = LABEL_COLOR;
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(text, canvas.width / 2, canvas.height / 2);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.minFilter = THREE.LinearFilter;
-        texture.needsUpdate = true;
-
-        const spriteMaterial = new THREE.SpriteMaterial({ map: texture, sizeAttenuation: false });
-        const sprite = new THREE.Sprite(spriteMaterial);
-        const pixelScale = 0.0002; // fraction of pixel dimensions for on-screen size
-        sprite.scale.set(textWidth * pixelScale, textHeight * pixelScale, 1);
-        sprite.position.copy(position);
-        sprite.renderOrder = 999;
-
-        this.group.add(sprite);
-        return sprite;
+        return labelResult.sprite;
     }
 
     initSunDirection() {
@@ -197,17 +181,17 @@ export class PlanetVectors {
             }
             sunDirection = sunPos.clone().sub(planetPos).normalize();
         }
-        this.sunDirectionArrow = new THREE.ArrowHelper(
-            sunDirection,
-            center,
-            this.arrowLength,
-            ARROW_COLORS.sun
-        );
-        this.sunDirectionArrow.setLength(
-            this.arrowLength,
-            this.arrowHeadLength,
-            this.arrowHeadWidth
-        );
+        // Create sun direction arrow using ArrowUtils
+        const sunResult = ArrowUtils.createArrowHelper({
+            direction: sunDirection,
+            origin: center,
+            length: this.arrowLength,
+            color: ARROW_COLORS.sun,
+            headLength: this.arrowHeadLength,
+            headWidth: this.arrowHeadWidth
+        });
+        this.sunDirectionArrow = sunResult.arrow;
+        this.sunDirectionDispose = sunResult.dispose;
         // Parent to orbitGroup for correct ecliptic/orbital frame
         if (this.body.orbitGroup) {
             this.body.orbitGroup.add(this.sunDirectionArrow);
@@ -246,7 +230,7 @@ export class PlanetVectors {
                 sunDirection = sunPos.clone().sub(planetPos).normalize();
             }
             this.sunDirectionArrow.position.copy(center);
-            this.sunDirectionArrow.setDirection(sunDirection);
+            ArrowUtils.updateArrowDirection(this.sunDirectionArrow, sunDirection);
             this.sunDirectionLabel.position.copy(center.clone().add(sunDirection.clone().multiplyScalar(this.arrowLength)));
         }
         // Always update the velocity arrow
@@ -258,13 +242,10 @@ export class PlanetVectors {
                 velocityLen = this.body.velocity.length();
             }
             this.velocityArrow.position.copy(center);
-            this.velocityArrow.setDirection(velocityDir);
-            // Always use fixed length (2x planet radius)
-            const len = this.arrowLength;
-            this.velocityArrow.setLength(len, this.arrowHeadLength, this.arrowHeadWidth);
+            ArrowUtils.updateArrowDirection(this.velocityArrow, velocityDir, this.arrowLength, this.arrowHeadLength, this.arrowHeadWidth);
             this.velocityArrow.visible = velocityLen > 0;
             if (this.velocityLabel) {
-                this.velocityLabel.position.copy(center.clone().add(velocityDir.clone().multiplyScalar(len)));
+                this.velocityLabel.position.copy(center.clone().add(velocityDir.clone().multiplyScalar(this.arrowLength)));
                 this.velocityLabel.visible = velocityLen > 0;
             }
         }
@@ -365,20 +346,29 @@ export class PlanetVectors {
             }
         };
         return axes.map(axis => {
-            const div = document.createElement('div');
-            div.className = 'axis-label';
-            div.textContent = axisLabels[context]?.[axis] || `${name} ${axis}`;
-            div.style.color = color[axis];
-            div.style.fontSize = '14px';
-            div.style.fontWeight = 'bold';
-            div.style.textShadow = '0 0 2px #000, 0 0 4px #000';
-            const lbl = new CSS2DObject(div);
-            lbl.position.set(
+            const position = new THREE.Vector3(
                 axis === 'X' ? size : 0,
                 axis === 'Y' ? size : 0,
                 axis === 'Z' ? size : 0
             );
-            return lbl;
+            
+            const labelResult = ArrowUtils.createCSS2DLabel({
+                text: axisLabels[context]?.[axis] || `${name} ${axis}`,
+                className: 'axis-label',
+                color: color[axis],
+                fontSize: '14px',
+                fontWeight: 'bold',
+                textShadow: '0 0 2px #000, 0 0 4px #000',
+                position
+            });
+
+            // Store dispose function for cleanup
+            if (!this.labelDisposeFunctions) {
+                this.labelDisposeFunctions = [];
+            }
+            this.labelDisposeFunctions.push(labelResult.dispose);
+
+            return labelResult.label;
         });
     }
 
@@ -402,7 +392,15 @@ export class PlanetVectors {
             this.body.removeEventListener('planetMeshLoaded', this.#initVectorsAsync);
         }
         
-        // Dispose directional arrows
+        // Dispose vectors using ArrowUtils dispose functions
+        if (this.velocityDispose) {
+            this.velocityDispose();
+        }
+        if (this.sunDirectionDispose) {
+            this.sunDirectionDispose();
+        }
+        
+        // Dispose any remaining directional arrows (fallback)
         this.directionalArrows.forEach(arrow => {
             if (arrow) {
                 if (arrow.line) {
@@ -419,7 +417,13 @@ export class PlanetVectors {
         });
         this.directionalArrows = [];
         
-        // Dispose directional labels (Sprites)
+        // Dispose label functions
+        if (this.labelDisposeFunctions) {
+            this.labelDisposeFunctions.forEach(dispose => dispose());
+            this.labelDisposeFunctions = [];
+        }
+        
+        // Dispose any remaining directional labels (fallback)
         this.directionalLabels.forEach(label => {
             if (label) {
                 if (label.parent) label.parent.remove(label);
@@ -443,7 +447,7 @@ export class PlanetVectors {
                 labels.forEach(lbl => {
                     if (lbl) {
                         if (lbl.parent) lbl.parent.remove(lbl);
-                        // CSS2DObject cleanup
+                        // CSS2DObject cleanup - handled by ArrowUtils dispose functions
                         if (lbl.element && lbl.element.parentNode) {
                             lbl.element.parentNode.removeChild(lbl.element);
                         }

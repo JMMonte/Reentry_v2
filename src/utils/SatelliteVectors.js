@@ -6,7 +6,7 @@
  */
 
 import * as THREE from 'three';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { ArrowUtils } from './ArrowUtils.js';
 
 export class SatelliteVectors {
     constructor({
@@ -292,30 +292,31 @@ export class SatelliteVectors {
     }
 
     /**
-     * Create an arrow with label
+     * Create an arrow with label using consolidated ArrowUtils
      */
     _createArrowWithLabel(color, text) {
-        // Create arrow
-        const dir = new THREE.Vector3(1, 0, 0);
-        const origin = new THREE.Vector3(0, 0, 0);
-        const length = this.config.baseLength;
-        const arrow = new THREE.ArrowHelper(dir, origin, length, color);
-        arrow.visible = this.visible;
+        const result = ArrowUtils.createArrowWithLabel({
+            direction: new THREE.Vector3(1, 0, 0),
+            origin: new THREE.Vector3(0, 0, 0),
+            length: this.config.baseLength,
+            color,
+            text,
+            labelType: 'css2d',
+            visible: this.visible,
+            headLengthRatio: this.config.headLength,
+            headWidthRatio: this.config.headWidth,
+            fontSize: '12px',
+            fontWeight: 'bold',
+            textShadow: '0 0 3px black',
+            pointerEvents: 'none'
+        });
 
-        // Create label
-        const labelDiv = document.createElement('div');
-        labelDiv.className = 'vector-label';
-        labelDiv.textContent = text;
-        labelDiv.style.color = `#${color.toString(16).padStart(6, '0')}`;
-        labelDiv.style.fontSize = '12px';
-        labelDiv.style.fontWeight = 'bold';
-        labelDiv.style.textShadow = '0 0 3px black';
-        labelDiv.style.pointerEvents = 'none';
-
-        const label = new CSS2DObject(labelDiv);
-        label.visible = this.visible;
-
-        return { arrow, label, div: labelDiv };
+        return { 
+            arrow: result.arrow, 
+            label: result.label, 
+            div: result.div,
+            dispose: result.dispose 
+        };
     }
 
     /**
@@ -353,10 +354,11 @@ export class SatelliteVectors {
         // Use fixed length for all vectors
         const length = this.config.baseLength;
         
-        arrow.setDirection(dirNormalized);
-        arrow.setLength(
-            length,
-            length * this.config.headLength,
+        ArrowUtils.updateArrowDirection(
+            arrow, 
+            dirNormalized, 
+            length, 
+            length * this.config.headLength, 
             length * this.config.headWidth
         );
 
@@ -414,17 +416,22 @@ export class SatelliteVectors {
         const disposeVectorObject = (v) => {
             if (!v) return;
             
-            // Dispose THREE.js objects
-            if (v.arrow) {
-                v.arrow.line.geometry.dispose();
-                v.arrow.line.material.dispose();
-                v.arrow.cone.geometry.dispose();
-                v.arrow.cone.material.dispose();
-            }
-            
-            // Remove label div from DOM - CRITICAL!
-            if (v.div && v.div.parentNode) {
-                v.div.parentNode.removeChild(v.div);
+            // Use ArrowUtils disposal if available, otherwise fallback to manual disposal
+            if (v.dispose) {
+                v.dispose();
+            } else {
+                // Fallback disposal for legacy objects
+                if (v.arrow) {
+                    if (v.arrow.line?.geometry) v.arrow.line.geometry.dispose();
+                    if (v.arrow.line?.material) v.arrow.line.material.dispose();
+                    if (v.arrow.cone?.geometry) v.arrow.cone.geometry.dispose();
+                    if (v.arrow.cone?.material) v.arrow.cone.material.dispose();
+                }
+                
+                // Remove label div from DOM - CRITICAL!
+                if (v.div && v.div.parentNode) {
+                    v.div.parentNode.removeChild(v.div);
+                }
             }
         };
 

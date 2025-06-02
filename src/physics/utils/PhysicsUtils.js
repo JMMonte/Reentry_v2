@@ -1,14 +1,30 @@
 /***********************************************************************
- *  PhysicsUtils.js — Z-up / ecliptic-world edition (April 2025)       *
+ *  PhysicsUtils.js — Classical Orbital Mechanics & Geodetic Utilities *
  *                                                                     *
- *  +Z = ecliptic (celestial) north pole.                              *
- *  Earth's geographic pole is obtained by tilting the globe about +X  *
- *  by Constants.earthInclination (≈ 23.44 °).                          *
+ *  RESPONSIBILITIES:                                                  *
+ *  • Low-level mathematical calculations for orbital mechanics         *
+ *  • Geodetic coordinate conversions (lat/lon ↔ cartesian)            *
+ *  • Earth-specific calculations (GMST, Earth tilt, ECEF/ECI)         *
+ *  • Classical Keplerian orbital element computations                 *
+ *  • Launch trajectory calculations from surface coordinates          *
+ *  • Atmospheric and drag force calculations                          *
  *                                                                     *
- *  ► All public APIs, argument lists and return types match the       *
- *    original Y-up file, so nothing else needs to change in your      *
- *    project.                                                         *
- *  ► ESLint: no unused-variable warnings.                              *
+ *  COORDINATE SYSTEMS:                                                *
+ *  • +Z = ecliptic (celestial) north pole                             *
+ *  • ECEF: Earth-Centered Earth-Fixed (rotating with Earth)          *
+ *  • ECI: Earth-Centered Inertial (non-rotating equatorial)          *
+ *  • Geodetic: lat/lon/altitude on ellipsoid surface                  *
+ *                                                                     *
+ *  USE THIS FOR:                                                      *
+ *  • Basic orbital calculations and coordinate math                   *
+ *  • Earth-specific coordinate transformations                       *
+ *  • Traditional orbital mechanics algorithms                         *
+ *                                                                     *
+ *  USE CoordinateTransforms.js FOR:                                   *
+ *  • Multi-planet coordinate system management                        *
+ *  • Quaternion-based transformations                                 *
+ *  • Satellite creation from lat/lon or orbital elements             *
+ *  • Reference frame transformations with physics engine integration *
  ***********************************************************************/
 
 import { PhysicsConstants } from '../core/PhysicsConstants.js';
@@ -47,6 +63,16 @@ export class PhysicsUtils {
     static calculateAcceleration(force, mass) { return force / mass; }
 
     /*───────────────────────── 1.2  Lat/Lon ↔ ECEF  ─────────────────────*/
+    
+    /**
+     * Convert lat/lon/altitude to cartesian coordinates (spherical approximation)
+     * @param {number} latDeg - Latitude in degrees
+     * @param {number} lonDeg - Longitude in degrees  
+     * @param {number} alt - Altitude in km (default: 0)
+     * @param {number} radius - Planet radius in km
+     * @param {THREE.Vector3} out - Output vector (optional)
+     * @returns {THREE.Vector3} Cartesian position
+     */
     static latLonAltToECEF(latDeg, lonDeg, alt = 0, radius, out = new THREE.Vector3()) {
         const φ = THREE.MathUtils.degToRad(latDeg);
         const λ = THREE.MathUtils.degToRad(lonDeg);
@@ -58,23 +84,72 @@ export class PhysicsUtils {
         );
     }
 
-    static ecefToGeodetic(x, y, z, a, b) {
-        const e2 = 1 - (b * b) / (a * a);
+    /**
+     * Convert lat/lon/altitude to cartesian coordinates using proper ellipsoid math
+     * @param {number} latDeg - Latitude in degrees
+     * @param {number} lonDeg - Longitude in degrees
+     * @param {number} alt - Altitude in km above ellipsoid
+     * @param {number} equatorialRadius - Equatorial radius in km (semi-major axis)
+     * @param {number} polarRadius - Polar radius in km (semi-minor axis, optional)
+     * @param {THREE.Vector3} out - Output vector (optional)
+     * @returns {THREE.Vector3} Cartesian position accounting for ellipsoid shape
+     */
+    static latLonAltToEllipsoid(latDeg, lonDeg, alt, equatorialRadius, polarRadius = null, out = new THREE.Vector3()) {
+        const lat = THREE.MathUtils.degToRad(latDeg);
+        const lon = THREE.MathUtils.degToRad(lonDeg);
+        
+        const a = equatorialRadius;
+        const b = polarRadius || a; // Default to sphere if no polar radius
+        
+        // Calculate ellipticity and eccentricity  
+        const f = (a - b) / a; // Flattening
+        const e2 = f * (2 - f); // First eccentricity squared
+        
+        // Prime vertical radius of curvature
+        const sinLat = Math.sin(lat);
+        const N = a / Math.sqrt(1 - e2 * sinLat * sinLat);
+        
+        // Ellipsoid cartesian coordinates
+        const X = (N + alt) * Math.cos(lat) * Math.cos(lon);
+        const Y = (N + alt) * Math.cos(lat) * Math.sin(lon);
+        const Z = ((1 - e2) * N + alt) * Math.sin(lat);
+        
+        return out.set(X, Y, Z);
+    }
 
-        const p = Math.hypot(x, y);
-        const θ = Math.atan2(z * a, p * b);
-        const lon = Math.atan2(y, x);
-        const lat = Math.atan2(
-            z + e2 * b * Math.pow(Math.sin(θ), 3),
-            p - e2 * a * Math.pow(Math.cos(θ), 3)
-        );
-        const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
-        const alt = p / Math.cos(lat) - N;
+    /**
+     * Convert cartesian coordinates to geodetic lat/lon/altitude using ellipsoid math
+     * @param {number} x - X coordinate in km
+     * @param {number} y - Y coordinate in km  
+     * @param {number} z - Z coordinate in km
+     * @param {number} a - Equatorial radius in km (semi-major axis)
+     * @param {number} b - Polar radius in km (semi-minor axis, optional)
+     * @returns {Object} {latitude, longitude, altitude} in degrees and km
+     */
+    static ecefToGeodetic(x, y, z, a, b = null) {
+        const bActual = b || a; // Default to sphere if no polar radius
+        const e2 = 1 - (bActual * bActual) / (a * a);
+
+        // Longitude is straightforward
+        const longitude = Math.atan2(y, x);
+
+        // Latitude requires iteration for accuracy
+        const p = Math.sqrt(x * x + y * y);
+        let lat = Math.atan2(z, p);
+        let N, altitude;
+
+        // Iterate to converge on latitude (Bowring's method)
+        for (let i = 0; i < 5; i++) {
+            const sinLat = Math.sin(lat);
+            N = a / Math.sqrt(1 - e2 * sinLat * sinLat);
+            altitude = p / Math.cos(lat) - N;
+            lat = Math.atan2(z, p * (1 - e2 * N / (N + altitude)));
+        }
 
         return {
             latitude: THREE.MathUtils.radToDeg(lat),
-            longitude: THREE.MathUtils.radToDeg(lon),
-            altitude: alt
+            longitude: THREE.MathUtils.radToDeg(longitude),
+            altitude: altitude
         };
     }
 

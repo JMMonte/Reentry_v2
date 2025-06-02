@@ -72,7 +72,6 @@ export function buildNavbarProps({
 
 export function buildModalProps({
   modalState,
-  controller,
   displaySettings,
   setDisplaySettings,
   app3d,

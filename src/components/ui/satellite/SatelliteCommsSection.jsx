@@ -35,14 +35,55 @@ export function SatelliteCommsSection({ satelliteId, app }) {
 
     // Get communication system status
     useEffect(() => {
-        if (!app?.lineOfSightManager?.commsManager) return;
-
         const updateCommsStatus = () => {
-            const commsSystem = app.lineOfSightManager.commsManager.getCommsSystem(satelliteId);
-            if (commsSystem) {
-                const status = commsSystem.getStatus();
+            let status = null;
+            let activeConnections = [];
+
+            // Try to get data from physics engine subsystem first (most accurate)
+            if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
+                const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
+                const commsSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
+                
+                if (commsSubsystem) {
+                    status = commsSubsystem.getStatus();
+                    activeConnections = commsSubsystem.getActiveConnections() || [];
+                    console.log(`[SatelliteCommsSection] Got physics subsystem data for ${satelliteId}:`, {
+                        status,
+                        connections: activeConnections,
+                        subsystemType: commsSubsystem.constructor.name
+                    });
+                } else {
+                    console.log(`[SatelliteCommsSection] No communication subsystem found for satellite ${satelliteId} in physics engine`);
+                }
+            }
+
+            // Fallback to SatelliteCommsManager if physics subsystem not available
+            if (!status && app?.satelliteCommsManager) {
+                const commsSystem = app.satelliteCommsManager.getCommsSystem(satelliteId);
+                if (commsSystem) {
+                    status = commsSystem.getStatus();
+                    activeConnections = commsSystem.getActiveConnections() || [];
+                    console.log(`[SatelliteCommsSection] Got SatelliteCommsManager data for ${satelliteId}:`, status);
+                }
+            }
+
+            // Final fallback to LineOfSightManager (legacy)
+            if (!status && app?.lineOfSightManager?.commsManager) {
+                const commsSystem = app.lineOfSightManager.commsManager.getCommsSystem(satelliteId);
+                if (commsSystem) {
+                    status = commsSystem.getStatus();
+                    activeConnections = commsSystem.getActiveConnections() || [];
+                    console.log(`[SatelliteCommsSection] Got LineOfSightManager data for ${satelliteId}:`, status);
+                }
+            }
+
+            if (status) {
                 setCommsStatus(status);
-                setConnections(commsSystem.getActiveConnections());
+                setConnections(activeConnections);
+            } else {
+                console.log(`[SatelliteCommsSection] No communication data found for satellite ${satelliteId}`);
+                setCommsStatus(null);
+                setConnections([]);
             }
         };
 
@@ -59,10 +100,33 @@ export function SatelliteCommsSection({ satelliteId, app }) {
     };
 
     const applyConfig = () => {
+        // Try to update physics subsystem first
+        if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
+            const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
+            const success = subsystemManager.updateSubsystemConfig(satelliteId, 'communication', tempConfig);
+            if (success) {
+                setTempConfig({});
+                setEditMode(false);
+                console.log(`[SatelliteCommsSection] Updated physics subsystem config for ${satelliteId}:`, tempConfig);
+                return;
+            }
+        }
+
+        // Fallback to SatelliteCommsManager
+        if (app?.satelliteCommsManager) {
+            app.satelliteCommsManager.updateSatelliteComms(satelliteId, tempConfig);
+            setTempConfig({});
+            setEditMode(false);
+            console.log(`[SatelliteCommsSection] Updated SatelliteCommsManager config for ${satelliteId}:`, tempConfig);
+            return;
+        }
+
+        // Final fallback to LineOfSightManager
         if (app?.lineOfSightManager?.commsManager) {
             app.lineOfSightManager.commsManager.updateSatelliteComms(satelliteId, tempConfig);
             setTempConfig({});
             setEditMode(false);
+            console.log(`[SatelliteCommsSection] Updated LineOfSightManager config for ${satelliteId}:`, tempConfig);
         }
     };
 
@@ -72,16 +136,61 @@ export function SatelliteCommsSection({ satelliteId, app }) {
     };
 
     const applyPreset = (presetName) => {
-        if (app?.lineOfSightManager?.commsManager) {
-            const presets = app.lineOfSightManager.commsManager.getPresets();
-            const preset = presets[presetName];
-            if (preset) {
+        let presets = {};
+        let preset = null;
+
+        // Try to get presets from SatelliteCommsManager first (most comprehensive)
+        if (app?.satelliteCommsManager) {
+            presets = app.satelliteCommsManager.getPresets();
+            preset = presets[presetName];
+        }
+
+        // Fallback to LineOfSightManager presets
+        if (!preset && app?.lineOfSightManager?.commsManager) {
+            presets = app.lineOfSightManager.commsManager.getPresets();
+            preset = presets[presetName];
+        }
+
+        if (preset) {
+            // Apply to physics subsystem first
+            if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
+                const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
+                subsystemManager.updateSubsystemConfig(satelliteId, 'communication', preset);
+            }
+
+            // Apply to SatelliteCommsManager
+            if (app?.satelliteCommsManager) {
+                app.satelliteCommsManager.updateSatelliteComms(satelliteId, preset);
+            }
+
+            // Apply to LineOfSightManager
+            if (app?.lineOfSightManager?.commsManager) {
                 app.lineOfSightManager.commsManager.updateSatelliteComms(satelliteId, preset);
             }
+
+            console.log(`[SatelliteCommsSection] Applied preset ${presetName} to satellite ${satelliteId}:`, preset);
         }
     };
 
     if (!commsStatus) {
+        // Show debug info about what sources are available
+        const debugInfo = [];
+        
+        if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
+            const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
+            const commsSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
+            debugInfo.push(`Physics Subsystem: ${commsSubsystem ? 'Found' : 'Not found'}`);
+        } else {
+            debugInfo.push('Physics Subsystem: Manager not available');
+        }
+        
+        if (app?.satelliteCommsManager) {
+            const commsSystem = app.satelliteCommsManager.getCommsSystem(satelliteId);
+            debugInfo.push(`SatelliteCommsManager: ${commsSystem ? 'Found' : 'Not found'}`);
+        } else {
+            debugInfo.push('SatelliteCommsManager: Not available');
+        }
+
         return (
             <Card className="w-full">
                 <CardHeader className="pb-3">
@@ -91,18 +200,26 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <AlertTriangle className="h-4 w-4" />
-                        No communication system found
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <AlertTriangle className="h-4 w-4" />
+                            No communication system found for satellite {satelliteId}
+                        </div>
+                        <div className="text-xs text-muted-foreground space-y-1">
+                            <div className="font-medium">Debug Info:</div>
+                            {debugInfo.map((info, idx) => (
+                                <div key={idx} className="pl-2">{info}</div>
+                            ))}
+                        </div>
                     </div>
                 </CardContent>
             </Card>
         );
     }
 
-    const config = commsStatus.config;
-    const state = commsStatus.state;
-    const metrics = commsStatus.metrics;
+    const config = commsStatus.config || {};
+    const state = commsStatus.state || {};
+    const metrics = commsStatus.metrics || {};
 
     // Get status color and icon
     const getStatusColor = (status) => {
@@ -123,7 +240,7 @@ export function SatelliteCommsSection({ satelliteId, app }) {
         }
     };
 
-    const StatusIcon = getStatusIcon(state.status);
+    const StatusIcon = getStatusIcon(state.status || 'offline');
 
     return (
         <Card className="w-full">
@@ -134,9 +251,9 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                         Communications
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className={`flex items-center gap-1 ${getStatusColor(state.status)}`}>
+                        <div className={`flex items-center gap-1 ${getStatusColor(state.status || 'offline')}`}>
                             <StatusIcon className="h-3 w-3" />
-                            <span className="text-xs capitalize">{state.status}</span>
+                            <span className="text-xs capitalize">{state.status || 'offline'}</span>
                         </div>
                         <Button
                             variant="ghost"
@@ -161,19 +278,19 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                         <div className="pl-5 space-y-1">
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Antenna:</span>
-                                <span className="capitalize">{config.antennaType}</span>
+                                <span className="capitalize">{config.antennaType || 'Unknown'}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Gain:</span>
-                                <span>{config.antennaGain} dBi</span>
+                                <span>{config.antennaGain || 0} dBi</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Power:</span>
-                                <span>{config.transmitPower} W</span>
+                                <span>{config.transmitPower || 0} W</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Frequency:</span>
-                                <span>{config.transmitFrequency} GHz</span>
+                                <span>{config.transmitFrequency || 0} GHz</span>
                             </div>
                         </div>
                     </div>
@@ -186,20 +303,20 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                         <div className="pl-5 space-y-1">
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Data Rate:</span>
-                                <span>{config.dataRate} kbps</span>
+                                <span>{config.dataRate || 0} kbps</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Min Elevation:</span>
-                                <span>{config.minElevationAngle}°</span>
+                                <span>{config.minElevationAngle || 0}°</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Network:</span>
-                                <span className="capitalize">{config.networkId.replace('_', ' ')}</span>
+                                <span className="capitalize">{(config.networkId || 'unknown').replace('_', ' ')}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Priority:</span>
                                 <Badge variant="outline" className="h-4 text-xs">
-                                    {config.priority}
+                                    {config.priority || 'normal'}
                                 </Badge>
                             </div>
                         </div>
@@ -262,15 +379,15 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">Data Sent:</span>
-                            <span>{(state.totalDataTransmitted / 1024).toFixed(1)} KB</span>
+                            <span>{((state.totalDataTransmitted || 0) / 1024).toFixed(1)} KB</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">Data Received:</span>
-                            <span>{(state.totalDataReceived / 1024).toFixed(1)} KB</span>
+                            <span>{((state.totalDataReceived || 0) / 1024).toFixed(1)} KB</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">Power Usage:</span>
-                            <span>{state.batteryUsage.toFixed(1)} W</span>
+                            <span>{(state.powerConsumption || state.batteryUsage || 0).toFixed(1)} W</span>
                         </div>
                     </div>
                 </div>
@@ -316,7 +433,7 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                                     <Input
                                         type="number"
                                         className="h-6 text-xs"
-                                        placeholder={config.transmitPower}
+                                        placeholder={config.transmitPower || '0'}
                                         value={tempConfig.transmitPower || ''}
                                         onChange={(e) => handleConfigChange('transmitPower', parseFloat(e.target.value))}
                                     />
@@ -326,7 +443,7 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                                     <Input
                                         type="number"
                                         className="h-6 text-xs"
-                                        placeholder={config.antennaGain}
+                                        placeholder={config.antennaGain || '0'}
                                         value={tempConfig.antennaGain || ''}
                                         onChange={(e) => handleConfigChange('antennaGain', parseFloat(e.target.value))}
                                     />
@@ -336,7 +453,7 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                                     <Input
                                         type="number"
                                         className="h-6 text-xs"
-                                        placeholder={config.dataRate}
+                                        placeholder={config.dataRate || '0'}
                                         value={tempConfig.dataRate || ''}
                                         onChange={(e) => handleConfigChange('dataRate', parseFloat(e.target.value))}
                                     />
@@ -346,7 +463,7 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                                     <Input
                                         type="number"
                                         className="h-6 text-xs"
-                                        placeholder={config.minElevationAngle}
+                                        placeholder={config.minElevationAngle || '0'}
                                         value={tempConfig.minElevationAngle || ''}
                                         onChange={(e) => handleConfigChange('minElevationAngle', parseFloat(e.target.value))}
                                     />

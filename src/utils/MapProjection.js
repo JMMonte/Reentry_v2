@@ -1,4 +1,4 @@
-import { SatelliteCoordinates } from '../physics/utils/SatelliteCoordinates.js';
+import { CoordinateTransforms } from '../physics/utils/CoordinateTransforms.js';
 
 /**
  * Project a world-space position to planet surface coordinates using generic transformations.
@@ -18,12 +18,12 @@ export function projectToGeodetic(worldPos, planet, time = new Date()) {
     const velocity = [0, 0, 0]; // Not needed for position-only transform
     
     // Transform from planet-centered inertial to planet-fixed frame
-    const result = SatelliteCoordinates.transformCoordinates(
+    const result = CoordinateTransforms.transformCoordinates(
         position, velocity, 'PCI', 'PF', planet, time
     );
     
     // Convert planet-fixed cartesian to geographic coordinates
-    const geo = SatelliteCoordinates.planetFixedToLatLonAlt(result.position, planet);
+    const geo = CoordinateTransforms.planetFixedToLatLonAlt(result.position, planet);
     
     return {
         latitude: geo[0],
@@ -77,12 +77,12 @@ export function projectToPlanetLatLon(satPos, planet, time = new Date()) {
     const velocity = [0, 0, 0];
     
     // Transform from planet-centered inertial to planet-fixed
-    const result = SatelliteCoordinates.transformCoordinates(
+    const result = CoordinateTransforms.transformCoordinates(
         position, velocity, 'PCI', 'PF', planet, time
     );
     
     // Convert to lat/lon/alt
-    const geo = SatelliteCoordinates.planetFixedToLatLonAlt(result.position, planet);
+    const geo = CoordinateTransforms.planetFixedToLatLonAlt(result.position, planet);
     
     return {
         lat: geo[0],

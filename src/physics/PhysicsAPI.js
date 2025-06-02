@@ -33,7 +33,7 @@ import { SatelliteAccelerationCalculator } from './core/SatelliteAccelerationCal
 
 // Physics utilities
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
-import { SatelliteCoordinates } from './utils/SatelliteCoordinates.js';
+import { CoordinateTransforms } from './utils/CoordinateTransforms.js';
 
 // State management
 import { StateVectorCalculator } from './StateVectorCalculator.js';
@@ -189,7 +189,7 @@ export const Coordinates = {
      * Convert lat/lon/alt to state vector
      */
     fromLatLonAlt: (latitude, longitude, altitude, velocity, azimuth, angleOfAttack, planet) => {
-        return SatelliteCoordinates.createFromLatLonCircular(
+        return CoordinateTransforms.createFromLatLonCircular(
             latitude, longitude, altitude, velocity, azimuth, angleOfAttack, planet
         );
     },
@@ -198,14 +198,14 @@ export const Coordinates = {
      * Convert state vector to lat/lon/alt
      */
     toLatLonAlt: (position, velocity, planet) => {
-        return SatelliteCoordinates.stateVectorToLatLonAlt(position, velocity, planet);
+        return CoordinateTransforms.stateVectorToLatLonAlt(position, velocity, planet);
     },
 
     /**
      * Transform between coordinate systems
      */
     transform: (coords, fromSystem, toSystem, body) => {
-        return SatelliteCoordinates.transform(coords, fromSystem, toSystem, body);
+        return CoordinateTransforms.transform(coords, fromSystem, toSystem, body);
     }
 };
 

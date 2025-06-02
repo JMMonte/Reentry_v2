@@ -30,7 +30,7 @@ export { SatelliteAccelerationCalculator } from './core/SatelliteAccelerationCal
 
 // Physics utilities
 export { PhysicsUtils } from './utils/PhysicsUtils.js';
-export { SatelliteCoordinates } from './utils/SatelliteCoordinates.js';
+export { CoordinateTransforms } from './utils/CoordinateTransforms.js';
 
 // Body data
 export { solarSystemDataManager as PlanetaryDataManager } from './PlanetaryDataManager.js';

@@ -11,6 +11,7 @@ import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
 import { Bodies, Orbital } from '../../../physics/PhysicsAPI.js';
 import * as THREE from 'three';
 import { SatelliteCommsSection } from './SatelliteCommsSection.jsx';
+import { SatelliteCommsTimeline } from './SatelliteCommsTimeline.jsx';
 
 // Section component for collapsible sections
 const Section = ({ title, isOpen, onToggle, children }) => {
@@ -232,12 +233,18 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     
     const updatePropagationData = () => {
       const orbitManager = window.app3d.satelliteOrbitManager;
-      const orbitData = orbitManager.orbitCache.get(satellite.id);
+      if (!orbitManager || !orbitManager.orbitCacheManager) {
+        setPropagationData(null);
+        return;
+      }
+
+      const orbitData = orbitManager.orbitCacheManager.getCachedOrbit(satellite.id);
+      
       
       if (orbitData && orbitData.points && orbitData.points.length > 0) {
-        // Calculate propagation duration
+        // Calculate propagation duration from data or use cached duration
         const lastPoint = orbitData.points[orbitData.points.length - 1];
-        const propagationDuration = lastPoint.time || 0; // seconds
+        const propagationDuration = orbitData.duration || lastPoint.time || 0; // seconds
         
         // Find SOI transitions
         const soiTransitions = [];
@@ -260,15 +267,22 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         
         setPropagationData({
           duration: propagationDuration,
-          pointCount: orbitData.points.length,
-          maxPeriods: orbitData.maxPeriods,
+          pointCount: orbitData.pointCount || orbitData.points.length,
+          maxPeriods: orbitData.maxPeriods || orbitData.requestedPeriods,
           soiTransitions: soiTransitions,
           partial: orbitData.partial || false,
           timestamp: orbitData.timestamp,
-          centralBodyId: orbitData.centralBodyNaifId
+          centralBodyId: orbitData.centralBodyNaifId,
+          pointsPerPeriod: orbitData.pointsPerPeriod,
+          requestedPeriods: orbitData.requestedPeriods
         });
       } else {
         setPropagationData(null);
+        
+        // Trigger orbit calculation if no data exists
+        if (orbitManager.updateSatelliteOrbit) {
+          orbitManager.updateSatelliteOrbit(satellite.id);
+        }
       }
     };
     
@@ -669,10 +683,11 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               isOpen={showCommTimeline}
               onToggle={() => setShowCommTimeline(!showCommTimeline)}
             >
-              <div className="p-1 space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  Communication subsystem integration coming soon...
-                </div>
+              <div className="p-1">
+                <SatelliteCommsTimeline 
+                  satelliteId={satellite.id} 
+                  app={satellite?.app3d || window.app3d} 
+                />
               </div>
             </Section>
 
@@ -905,10 +920,17 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                     {propagationData.maxPeriods && (
                       <DataRow label="Periods Shown" value={formatNumber(propagationData.maxPeriods, 1)} />
                     )}
+                    {propagationData.requestedPeriods && (
+                      <DataRow label="Requested Periods" value={formatNumber(propagationData.requestedPeriods, 1)} />
+                    )}
+                    {propagationData.pointsPerPeriod && (
+                      <DataRow label="Points/Period" value={propagationData.pointsPerPeriod} />
+                    )}
                     <DataRow label="Status" value={propagationData.partial ? 'Calculating...' : 'Complete'} />
                     {physics?.distance_traveled !== undefined && (
                       <DataRow label="Distance Traveled" value={formatNumber(physics.distance_traveled)} unit="km" />
                     )}
+                    <DataRow label="Central Body" value={getBodyName(propagationData.centralBodyId)} />
                   </div>
                   
                   {/* SOI Transitions */}
@@ -971,14 +993,45 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                     </div>
                   )}
                   
-                  {/* Last update time */}
-                  <div className="text-xs text-muted-foreground pt-1 border-t border-border/30">
-                    Updated {new Date(propagationData.timestamp).toLocaleTimeString()}
+                  {/* Calculation metadata */}
+                  <div className="space-y-1 pt-1 border-t border-border/30">
+                    <div className="text-xs font-semibold text-muted-foreground">Calculation Details</div>
+                    <DataRow label="Last Updated" value={new Date(propagationData.timestamp).toLocaleTimeString()} />
+                    {propagationData.duration && propagationData.pointCount && (
+                      <DataRow 
+                        label="Time Step" 
+                        value={formatNumber(propagationData.duration / propagationData.pointCount, 1)} 
+                        unit="s/point" 
+                      />
+                    )}
+                    {propagationData.maxPeriods && propagationData.pointCount && (
+                      <DataRow 
+                        label="Points/Period" 
+                        value={formatNumber(propagationData.pointCount / propagationData.maxPeriods, 0)} 
+                      />
+                    )}
                   </div>
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">
-                  No propagation data available
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">
+                    No cached orbit data available
+                  </div>
+                  {/* Show basic information even without cached data */}
+                  {satellite?.orbitSimProperties && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">Requested Settings</div>
+                      <DataRow 
+                        label="Requested Periods" 
+                        value={formatNumber(satellite.orbitSimProperties.periods || 1, 1)} 
+                      />
+                      <DataRow 
+                        label="Points/Period" 
+                        value={satellite.orbitSimProperties.pointsPerPeriod || 180} 
+                      />
+                      <DataRow label="Status" value="Orbit calculation pending..." />
+                    </div>
+                  )}
                 </div>
               )}
             </Section>

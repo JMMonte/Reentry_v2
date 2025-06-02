@@ -3,14 +3,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Worker from 'web-worker:../src/physics/workers/orbitPropagationWorker.js';
+import OrbitPropagationWorker from '../src/physics/workers/orbitPropagationWorker.js?worker';
 
 describe('OrbitPropagationWorker Tests', () => {
     let worker;
     let messages;
 
     beforeEach(() => {
-        worker = new Worker();
+        worker = new OrbitPropagationWorker();
         messages = [];
         
         // Capture worker messages

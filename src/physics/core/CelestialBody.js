@@ -293,7 +293,7 @@ export class CelestialBody {
      * Check if this body is a moon (has a planet parent)
      */
     isMoon() {
-        return this.type === 'moon' || (this.parent && this.parent !== 'sun' && this.parent !== 'ss_barycenter');
+        return this.type === 'moon' || (!!this.parent && this.parent !== 'sun' && this.parent !== 'ss_barycenter');
     }
     
     /**

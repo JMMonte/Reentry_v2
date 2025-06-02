@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { ArrowUtils } from '../../utils/ArrowUtils.js';
 
 /**
  * ManeuverNodeRenderer - Pure visualization component for maneuver nodes
@@ -80,44 +80,28 @@ export class ManeuverNodeRenderer {
         const dvMagnitude = this.nodeData.deltaVMagnitude || (this.nodeData.worldDeltaV ? this.nodeData.worldDeltaV.length() : 0);
         if (dvMagnitude < 0.001) return; // Skip tiny delta-Vs
 
-        // Create arrow geometry
-        const arrowGroup = new THREE.Group();
-        
-        // Arrow shaft - visual scaling only
-        const shaftLength = Math.min(dvMagnitude * 50, 200); // Scale with dV magnitude
-        const shaftGeometry = new THREE.CylinderGeometry(1, 1, shaftLength, 8);
-        const shaftMaterial = new THREE.MeshBasicMaterial({
-            color: this.color,
-            transparent: true,
-            opacity: this.opacity * 0.9
-        });
-        const shaft = new THREE.Mesh(shaftGeometry, shaftMaterial);
-        shaft.position.y = shaftLength / 2;
-        
-        // Arrow cone
-        const coneHeight = 10;
-        const coneGeometry = new THREE.ConeGeometry(4, coneHeight, 8);
-        const coneMaterial = new THREE.MeshBasicMaterial({
-            color: this.color,
-            transparent: true,
-            opacity: this.opacity
-        });
-        const cone = new THREE.Mesh(coneGeometry, coneMaterial);
-        cone.position.y = shaftLength + coneHeight / 2;
-        
-        arrowGroup.add(shaft);
-        arrowGroup.add(cone);
-        
-        // Orient arrow along delta-V direction
-        // Use pre-normalized direction if available, otherwise normalize worldDeltaV
+        // Get delta-V direction
         const dvDirection = this.nodeData.deltaVDirection 
             ? new THREE.Vector3(...this.nodeData.deltaVDirection)
             : (this.nodeData.worldDeltaV ? this.nodeData.worldDeltaV.clone().normalize() : new THREE.Vector3(0, 1, 0));
-        const quaternion = new THREE.Quaternion();
-        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dvDirection);
-        arrowGroup.quaternion.copy(quaternion);
+
+        // Create arrow using ArrowUtils - visual scaling only
+        const shaftLength = Math.min(dvMagnitude * 50, 200); // Scale with dV magnitude
+        const arrowResult = ArrowUtils.createCustomArrow({
+            direction: dvDirection,
+            origin: new THREE.Vector3(0, 0, 0),
+            length: shaftLength,
+            shaftRadius: 1,
+            coneRadius: 4,
+            coneHeight: 10,
+            color: this.color,
+            opacity: this.opacity,
+            transparent: true,
+            segments: 8
+        });
         
-        this.arrow = arrowGroup;
+        this.arrow = arrowResult.arrow;
+        this.arrowDispose = arrowResult.dispose;
         this.group.add(this.arrow);
     }
 
@@ -156,22 +140,39 @@ export class ManeuverNodeRenderer {
         const dvMag = this.nodeData.deltaVMagnitude || (this.nodeData.worldDeltaV ? this.nodeData.worldDeltaV.length() : 0);
         const labelText = `ΔV: ${dvMag.toFixed(1)} km/s`;
         
-        const textGeometry = new TextGeometry(labelText, {
-            font: this.font,
-            size: 10,
-            height: 0.1,
-            curveSegments: 4
-        });
-        
-        const textMaterial = new THREE.MeshBasicMaterial({
-            color: this.color,
-            transparent: true,
-            opacity: this.opacity * 0.9
-        });
-        
-        this.label = new THREE.Mesh(textGeometry, textMaterial);
-        this.label.position.set(10, 10, 0); // Offset from node
-        this.group.add(this.label);
+        if (this.font) {
+            // Use 3D text if font is available
+            const labelResult = ArrowUtils.create3DTextLabel({
+                text: labelText,
+                font: this.font,
+                size: 10,
+                height: 0.1,
+                curveSegments: 4,
+                color: this.color,
+                opacity: this.opacity * 0.9,
+                transparent: true,
+                position: new THREE.Vector3(10, 10, 0)
+            });
+            
+            this.label = labelResult.label;
+            this.labelDispose = labelResult.dispose;
+            if (this.label) {
+                this.group.add(this.label);
+            }
+        } else {
+            // Fallback to sprite label
+            const labelResult = ArrowUtils.createTextSprite({
+                text: labelText,
+                color: `#${this.color.toString(16).padStart(6, '0')}`,
+                position: new THREE.Vector3(10, 10, 0),
+                fontSize: 32,
+                pixelScale: 0.0002
+            });
+            
+            this.label = labelResult.sprite;
+            this.labelDispose = labelResult.dispose;
+            this.group.add(this.label);
+        }
     }
 
     /**
@@ -271,7 +272,15 @@ export class ManeuverNodeRenderer {
             this.orbitLine.parent.remove(this.orbitLine);
         }
         
-        // Dispose geometries and materials
+        // Use ArrowUtils dispose functions where available
+        if (this.arrowDispose) {
+            this.arrowDispose();
+        }
+        if (this.labelDispose) {
+            this.labelDispose();
+        }
+
+        // Dispose geometries and materials for remaining objects
         const disposeObject = (obj) => {
             if (obj.geometry) obj.geometry.dispose();
             if (obj.material) {
@@ -284,10 +293,14 @@ export class ManeuverNodeRenderer {
         };
         
         if (this.nodeMesh) disposeObject(this.nodeMesh);
-        if (this.arrow) {
+        if (this.orbitLine) disposeObject(this.orbitLine);
+        
+        // Fallback disposal for arrow and label if ArrowUtils dispose wasn't available
+        if (this.arrow && !this.arrowDispose) {
             this.arrow.children.forEach(child => disposeObject(child));
         }
-        if (this.orbitLine) disposeObject(this.orbitLine);
-        if (this.label) disposeObject(this.label);
+        if (this.label && !this.labelDispose) {
+            disposeObject(this.label);
+        }
     }
 }

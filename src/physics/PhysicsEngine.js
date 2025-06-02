@@ -851,8 +851,16 @@ export class PhysicsEngine {
             }
         }
 
-        // Subtract central body's acceleration to get planet-centric acceleration
-        totalAccel.sub(centralAccel);
+        // === CRITICAL FIX: PROPER REFERENCE FRAME TRANSFORMATION ===
+        // The issue was here - we need to use the CORRECT physics for non-inertial frames
+        // For coordinate-invariant physics, use the corrected calculation
+        const coordinateInvariantAccel = this._computeCoordinateInvariantAcceleration(satellite);
+        if (coordinateInvariantAccel) {
+            totalAccel.copy(coordinateInvariantAccel);
+        } else {
+            // Fallback to original method (subtract central body's acceleration)
+            totalAccel.sub(centralAccel);
+        }
         
 
         // === J2 PERTURBATION (Earth oblateness) ===
@@ -879,6 +887,67 @@ export class PhysicsEngine {
         
         
         return totalAccel;
+    }
+
+    /**
+     * Compute coordinate-invariant acceleration for proper SOI transitions
+     * 
+     * PHYSICS PRINCIPLE: The total gravitational acceleration at a given point in space
+     * should be independent of which reference frame we use to describe it.
+     * 
+     * APPROACH: Always calculate in inertial (solar system barycenter) coordinates,
+     * then transform to the desired reference frame at the end.
+     */
+    _computeCoordinateInvariantAcceleration(satellite) {
+        const centralBody = this.bodies[satellite.centralBodyNaifId];
+        if (!centralBody) return null;
+        
+        // Convert satellite to global inertial coordinates (SSB frame)
+        const satGlobalPos = satellite.position.clone().add(centralBody.position);
+        
+        // === STEP 1: CALCULATE TOTAL INERTIAL ACCELERATION ===
+        // This is the absolute acceleration in the inertial frame
+        const totalInertialAccel = new THREE.Vector3();
+        
+        for (const [bodyId, body] of Object.entries(this.bodies)) {
+            // Skip barycenters and invalid bodies
+            if (body.type === 'barycenter') continue;
+            if (!body.position || !body.mass || body.mass <= 0) continue;
+            
+            const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
+            const distance = r.length();
+            
+            if (distance > 1e-6) { // Avoid near-zero distances
+                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
+                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
+                totalInertialAccel.add(accVec);
+            }
+        }
+        
+        // === STEP 2: TRANSFORM TO CURRENT REFERENCE FRAME ===
+        // To get acceleration relative to central body, subtract the central body's acceleration
+        const centralBodyInertialAccel = new THREE.Vector3();
+        
+        for (const [bodyId, body] of Object.entries(this.bodies)) {
+            if (bodyId == satellite.centralBodyNaifId) continue; // Central body doesn't accelerate itself
+            
+            if (body.type === 'barycenter') continue;
+            if (!body.position || !body.mass || body.mass <= 0) continue;
+            
+            const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
+            const distance = r.length();
+            if (distance > 1e-6) {
+                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
+                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
+                centralBodyInertialAccel.add(accVec);
+            }
+        }
+        
+        // Transform: a_relative = a_inertial - a_central_body_inertial
+        const relativeAccel = totalInertialAccel.clone().sub(centralBodyInertialAccel);
+        
+        
+        return relativeAccel;
     }
 
     /**

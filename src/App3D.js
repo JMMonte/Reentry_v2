@@ -77,6 +77,7 @@ import { SimulationLoop } from './simulation/SimulationLoop.js';
 // New physics system
 import { PhysicsManager } from './physics/PhysicsManager.js';
 import { LineOfSightManager } from './managers/LineOfSightManager.js';
+import { SatelliteCommsManager } from './managers/SatelliteCommsManager.js';
 
 // Controls
 import { CameraControls } from './controls/CameraControls.js';
@@ -146,6 +147,9 @@ class App3D extends EventTarget {
         this.physicsIntegration = new PhysicsManager(this);
         // Only use SatelliteManager, no provider
         this._satellites = new SatelliteManager(this);
+        
+        // Initialize satellite communications manager
+        this.satelliteCommsManager = new SatelliteCommsManager();
 
         this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
@@ -241,6 +245,9 @@ class App3D extends EventTarget {
                 this.satelliteOrbitManager = new SatelliteOrbitManager(this);
                 this.satelliteOrbitManager.initialize();
                 console.log('[App3D] Satellite orbit manager initialized');
+                
+                // Set up satellite communication system integration
+                this._setupSatelliteCommsIntegration();
             } catch (physicsError) {
                 console.warn('[App3D] Physics integration failed to initialize:', physicsError);
                 // Continue without physics integration - fallback to existing systems
@@ -584,6 +591,9 @@ class App3D extends EventTarget {
 
         // Update orbit lines resolution
         this.sceneManager.orbitManager?.onResize();
+        
+        // Update line of sight rendering resolution for Line2 materials
+        this.lineOfSightManager?.updateResolution?.(window.innerWidth, window.innerHeight);
 
         this._resizePOIs();
     }
@@ -800,6 +810,39 @@ class App3D extends EventTarget {
             this.stats?.end();
             // Don't re-throw to prevent animation loop from stopping
         }
+    }
+    
+    /**
+     * Set up integration between PhysicsEngine satellite events and SatelliteCommsManager
+     */
+    _setupSatelliteCommsIntegration() {
+        if (!this.physicsIntegration?.physicsEngine || !this.satelliteCommsManager) {
+            console.warn('[App3D] Cannot set up comms integration - missing physics or comms manager');
+            return;
+        }
+        
+        // Listen for satellite added events from PhysicsEngine
+        window.addEventListener('satelliteAdded', (event) => {
+            const satellite = event.detail;
+            console.log(`[App3D] Setting up communications for satellite ${satellite.id}`);
+            
+            // Get communication config from satellite if available
+            const commsConfig = satellite.commsConfig || { preset: 'cubesat' };
+            
+            // Create communication system in SatelliteCommsManager
+            this.satelliteCommsManager.createCommsSystem(satellite.id, commsConfig);
+        });
+        
+        // Listen for satellite removed events
+        window.addEventListener('satelliteRemoved', (event) => {
+            const satelliteId = event.detail.id;
+            console.log(`[App3D] Removing communications for satellite ${satelliteId}`);
+            
+            // Remove communication system from SatelliteCommsManager
+            this.satelliteCommsManager.removeCommsSystem(satelliteId);
+        });
+        
+        console.log('[App3D] Satellite communications integration set up successfully');
     }
 }
 

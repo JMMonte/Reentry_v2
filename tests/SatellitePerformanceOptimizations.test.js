@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
 import { integrateRK4 } from '../src/physics/integrators/OrbitalIntegrators.js';
-import { SatelliteCoordinates } from '../src/physics/utils/SatelliteCoordinates.js';
+import { CoordinateTransforms } from '../src/physics/utils/CoordinateTransforms.js';
 
 describe('Satellite Performance Optimizations', () => {
     let physicsEngine;
@@ -267,7 +267,7 @@ describe('Satellite Performance Optimizations', () => {
             };
             
             // Test coordinate creation from lat/lon
-            const result = SatelliteCoordinates.createFromLatLon(testParams, earth);
+            const result = CoordinateTransforms.createFromLatLon(testParams, earth);
             
             expect(result.position).toHaveLength(3);
             expect(result.velocity).toHaveLength(3);
@@ -309,7 +309,7 @@ describe('Satellite Performance Optimizations', () => {
             const velocity = [0, 7.5, 0];
             
             transformations.forEach(({ from, to }) => {
-                const result = SatelliteCoordinates.transformCoordinates(
+                const result = CoordinateTransforms.transformCoordinates(
                     position, velocity, from, to, earth
                 );
                 

@@ -1,41 +1,55 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
 
 describe('Atmospheric Drag Debug', () => {
   it('should compute non-zero atmospheric drag for low Earth orbit satellite', () => {
     const physicsEngine = new PhysicsEngine();
     
+    // Set up Earth body with atmospheric model
+    physicsEngine.bodies[399] = {
+      name: 'Earth',
+      type: 'planet',
+      radius: 6371,
+      position: [0, 0, 0],
+      velocity: [0, 0, 0],
+      naifId: 399,
+      atmosphericModel: {
+        maxAltitude: 1000,
+        getDensity: function(altitude) {
+          if (altitude > 1000 || altitude < 0) return 0;
+          return 2.789e-10 * Math.exp(-(altitude - 200) / 50); // Simple model
+        }
+      },
+      rotationPeriod: 86400 // Earth day in seconds
+    };
+    
     // Test parameters
     const satellite = {
-      position: [6571, 0, 0], // 200 km altitude (Earth radius ~6371 km)
-      velocity: [0, 7.8, 0],   // Orbital velocity in km/s
+      id: 'test-sat',
+      centralBodyNaifId: 399,
+      position: new THREE.Vector3(6571, 0, 0), // 200 km altitude
+      velocity: new THREE.Vector3(0, 7.8, 0),   // Orbital velocity in km/s
       mass: 1000,              // kg
       crossSectionalArea: 10,  // m²
       dragCoefficient: 2.2
     };
     
-    // Earth's position (assuming at origin for simplicity)
-    const earthPosition = [0, 0, 0];
-    
     // Call the private method directly for testing
-    const drag = physicsEngine._computeAtmosphericDrag(
-      satellite,
-      earthPosition
-    );
+    const drag = physicsEngine._computeAtmosphericDrag(satellite);
     
     console.log('Test parameters:');
     console.log('Satellite position:', satellite.position);
     console.log('Satellite velocity:', satellite.velocity);
-    console.log('Earth position:', earthPosition);
     console.log('Altitude from Earth center:', 6571, 'km');
     console.log('Altitude above surface:', 6571 - 6371, 'km');
     console.log('');
     console.log('Computed drag acceleration:', drag);
-    console.log('Drag magnitude:', Math.sqrt(drag[0]**2 + drag[1]**2 + drag[2]**2));
+    console.log('Drag magnitude:', drag.length());
     
     // The drag should oppose velocity, so Y component should be negative
-    expect(drag[1]).toBeLessThan(0);
-    expect(Math.abs(drag[1])).toBeGreaterThan(0);
+    expect(drag.y).toBeLessThan(0);
+    expect(Math.abs(drag.y)).toBeGreaterThan(0);
   });
   
   it('should show intermediate calculations in atmospheric drag', () => {

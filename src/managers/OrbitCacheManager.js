@@ -92,7 +92,12 @@ export class OrbitCacheManager {
             calculationTime: params.calculationTime || (physicsEngine.simulationTime?.getTime() || Date.now()),
             centralBodyNaifId: params.satellite.centralBodyNaifId,
             lastManeuverTime: satellite?.lastManeuverTime,
-            partial: false // Mark as complete
+            partial: false, // Mark as complete
+            // Add propagation metadata for debug window
+            duration: params.duration,
+            pointsPerPeriod: params.pointsPerPeriod,
+            requestedPeriods: params.requestedPeriods,
+            pointCount: points.length
         };
     }
 
@@ -108,7 +113,12 @@ export class OrbitCacheManager {
             initialPosition: params.satellite.position,
             initialVelocity: params.satellite.velocity,
             calculationTime: physicsEngine.simulationTime?.getTime() || Date.now(),
-            partial: true
+            partial: true,
+            // Add propagation metadata for debug window
+            duration: params.duration,
+            pointsPerPeriod: params.pointsPerPeriod,
+            requestedPeriods: params.requestedPeriods,
+            pointCount: points.length
         };
     }
 
