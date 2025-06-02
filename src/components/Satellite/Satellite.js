@@ -64,9 +64,11 @@ export class Satellite {
 
     _initVisuals() {
         this.visualizer = new SatelliteVisualizer(this.color, undefined, this.app3d);
-        if (this.planetConfig && this.planetConfig.orbitGroup) {
+        // Get orbit group using Planet class getter method
+        const orbitGroup = this.planetConfig?.getOrbitGroup?.() || this.planetConfig?.orbitGroup;
+        if (orbitGroup) {
             // Add to orbitGroup so satellite moves in inertial space relative to planet
-            this.planetConfig.orbitGroup.add(this.visualizer.mesh);
+            orbitGroup.add(this.visualizer.mesh);
         } else {
             this.visualizer.addToScene(this.scene);
             console.warn(`[Satellite] Added mesh for satellite ${this.id} directly to scene (no valid planetConfig)`, this.visualizer.mesh);
@@ -75,7 +77,8 @@ export class Satellite {
         // this.orbitPath = new OrbitPath(this.color);
         // this.scene.add(this.orbitPath.orbitLine);
         // this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
-        this.apsisVisualizer = new ApsisVisualizer(this.scene, this.color);
+        // Add apsis visualizer to the orbit group (same as satellite mesh)
+        this.apsisVisualizer = new ApsisVisualizer(orbitGroup, this.color);
         this.apsisVisualizer.setVisible(
             this.app3d.getDisplaySetting('showOrbits') && 
             this.app3d.getDisplaySetting('showApsis')

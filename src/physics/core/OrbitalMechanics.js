@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PhysicsConstants } from './PhysicsConstants.js';
 import { GravityCalculator } from './GravityCalculator.js';
-import { stateToKeplerian, solveKeplerEquation } from '../../utils/KeplerianUtils.js';
+import { stateToKeplerian, solveKeplerEquation } from '../utils/KeplerianUtils.js';
 
 /**
  * Centralized orbital mechanics calculations for any celestial body

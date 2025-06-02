@@ -1,8 +1,7 @@
 // Worker for calculating satellite ground tracks
+// Physics-only layer - generates ECI positions, UI handles coordinate conversion
 
-import { propagateOrbit } from '../integrators/OrbitalIntegrators.js';
-// Note: Workers can't import full PhysicsAPI, but can use core constants
-// This will be passed from the main thread instead
+import { UnifiedSatellitePropagator } from '../core/UnifiedSatellitePropagator.js';
 import { solarSystemDataManager } from '../PlanetaryDataManager.js';
 
 // map of satellite id -> full groundtrack arrays (cache)
@@ -16,51 +15,68 @@ let lastProgressTime = 0;
 
 self.onmessage = async function (e) {
     if (e.data.type === 'UPDATE_GROUNDTRACK') {
-        const { id, startTime, position, velocity, bodies, period, numPoints, seq } = e.data;
+        const { id, startTime, position, velocity, bodies, period, numPoints, seq, centralBodyNaifId } = e.data;
         if (id === undefined || id === null) return;
+
 
         const initPos = [position.x, position.y, position.z]; // ECI kilometers
         const initVel = [velocity.x, velocity.y, velocity.z]; // ECI km/s
         const startTimestamp = startTime; // Assuming startTime is already a timestamp (ms)
 
-        // Get propagated ECI positions (kilometers) and time offsets (seconds)
-        const propagatedPoints = await propagateOrbit(
-            initPos,
-            initVel,
+        // Use UnifiedSatellitePropagator for consistent physics
+        const satellite = {
+            position: initPos,
+            velocity: initVel,
+            centralBodyNaifId: centralBodyNaifId || 399,
+            mass: 1000, // Default values for groundtrack
+            crossSectionalArea: 10,
+            dragCoefficient: 2.2
+        };
+
+        const propagatedPoints = UnifiedSatellitePropagator.propagateOrbit({
+            satellite,
             bodies,
-            period,
-            numPoints,
-            {
-                perturbationScale: data.perturbationScale || 1,
-                onProgress: (progress) => {
-                    const now = Date.now();
-                    if (now - lastProgressTime >= PROGRESS_THROTTLE_MS || progress === 1) {
-                        lastProgressTime = now;
-                        self.postMessage({ type: 'GROUNDTRACK_PROGRESS', id, progress, seq });
-                    }
-                },
-                allowFullEllipse: true,
-                bodyMap: solarSystemDataManager.naifToBody
+            duration: period || 5400,
+            timeStep: period / numPoints || 60,
+            includeJ2: true,
+            includeDrag: false, // Usually disabled for groundtrack
+            includeThirdBody: false
+        });
+
+        // Convert to old format for compatibility
+        const compatiblePoints = propagatedPoints.map((point, index) => ({
+            position: point.position,
+            timeOffset: point.time
+        }));
+
+        // Send progress updates
+        for (let i = 0; i < compatiblePoints.length; i++) {
+            const progress = i / compatiblePoints.length;
+            const now = Date.now();
+            if (now - lastProgressTime >= PROGRESS_THROTTLE_MS || progress === 1) {
+                lastProgressTime = now;
+                self.postMessage({ type: 'GROUNDTRACK_PROGRESS', id, progress, seq });
             }
-        );
+        }
 
         const groundPoints = [];
         const batchSize = Math.max(1, Math.floor(propagatedPoints.length / 20)); // Yield approx 20 times
 
-        // Collect raw ECI positions + times and stream in chunks
-        for (let i = 0; i < propagatedPoints.length; i++) {
-            const { position: eciPosArray, timeOffset } = propagatedPoints[i];
-            // raw ECI kilometers
+        // Collect raw ECI positions + times (no coordinate conversion in worker)
+        for (let i = 0; i < compatiblePoints.length; i++) {
+            const { position: eciPosArray, timeOffset } = compatiblePoints[i];
+            // Keep raw ECI coordinates in kilometers - UI will handle coordinate conversion
             const pos = { x: eciPosArray[0], y: eciPosArray[1], z: eciPosArray[2] };
             const pointTime = startTimestamp + timeOffset * 1000;
             groundPoints.push({ time: pointTime, position: pos });
-            // stream a chunk every CHUNK_SIZE
+            
+            // Stream chunks to UI for progressive loading
             if ((i + 1) % CHUNK_SIZE === 0) {
                 self.postMessage({ type: 'GROUNDTRACK_CHUNK', id, points: groundPoints.slice(-CHUNK_SIZE), seq });
             }
 
-            // Yield control periodically during conversion
-            if ((i + 1) % batchSize === 0 && i < propagatedPoints.length - 1) {
+            // Yield control periodically to prevent blocking
+            if ((i + 1) % batchSize === 0 && i < compatiblePoints.length - 1) {
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
         }
@@ -72,11 +88,11 @@ self.onmessage = async function (e) {
             self.postMessage({ type: 'GROUNDTRACK_CHUNK', id, points: groundPoints.slice(-rem), seq });
         }
 
-        // Post the final array of lat/lon points
+        // Post the final array of ECI points (UI handles coordinate conversion)
         self.postMessage({
             type: 'GROUNDTRACK_UPDATE',
             id,
-            points: groundPoints, // now geodetic lat/lon + time
+            points: groundPoints, // Raw ECI positions + time
             seq
         });
 

@@ -1,34 +1,33 @@
-import { CoordinateTransforms } from '../physics/utils/CoordinateTransforms.js';
+import { groundTrackService } from '../services/GroundTrackService.js';
 
 /**
- * Project a world-space position to planet surface coordinates using generic transformations.
+ * Project a world-space position to planet surface coordinates using physics service.
  * Works for any celestial body, not just Earth.
- * @param {THREE.Vector3} worldPos - Position in world/scene coordinates relative to planet center
- * @param {Object} planet - Planet object with quaternion and physical properties
- * @param {Date} time - Time for transformation
- * @returns {{latitude: number, longitude: number, altitude: number}} Geodetic coords (deg, deg, km)
+ * @param {Array|Object} worldPos - Position [x,y,z] or {x,y,z} in km relative to planet center
+ * @param {number} planetNaifId - Planet NAIF ID
+ * @param {Date|number} time - Time for transformation
+ * @returns {Promise<{latitude: number, longitude: number, altitude: number}>} Geodetic coords (deg, deg, km)
  */
-export function projectToGeodetic(worldPos, planet, time = new Date()) {
-    if (!planet || !worldPos) {
+export async function projectToGeodetic(worldPos, planetNaifId, time = new Date()) {
+    if (!worldPos || planetNaifId === undefined) {
         return { latitude: 0, longitude: 0, altitude: 0 };
     }
 
-    // Convert from world position to planet-centric coordinates
-    const position = [worldPos.x, worldPos.y, worldPos.z];
-    const velocity = [0, 0, 0]; // Not needed for position-only transform
+    // Normalize position to array format
+    const position = Array.isArray(worldPos) 
+        ? worldPos 
+        : [worldPos.x, worldPos.y, worldPos.z];
     
-    // Transform from planet-centered inertial to planet-fixed frame
-    const result = CoordinateTransforms.transformCoordinates(
-        position, velocity, 'PCI', 'PF', planet, time
+    const timeMs = time instanceof Date ? time.getTime() : time;
+    
+    const result = await groundTrackService.transformECIToSurface(
+        position, planetNaifId, timeMs
     );
     
-    // Convert planet-fixed cartesian to geographic coordinates
-    const geo = CoordinateTransforms.planetFixedToLatLonAlt(result.position, planet);
-    
     return {
-        latitude: geo[0],
-        longitude: geo[1],
-        altitude: geo[2]
+        latitude: result.lat,
+        longitude: result.lon,
+        altitude: result.alt
     };
 }
 
@@ -51,42 +50,35 @@ export function latLonToCanvas(lat, lon, width, height) {
 /**
  * Project a 3D world-space position to canvas pixel coordinates.
  * Generic for any celestial body.
- * @param {THREE.Vector3} worldPos - Position in world coordinates relative to planet center
- * @param {Object} planet - Planet object with quaternion and physical properties
+ * @param {Array|Object} worldPos - Position [x,y,z] or {x,y,z} in km relative to planet center
+ * @param {number} planetNaifId - Planet NAIF ID
  * @param {number} width - Canvas width in pixels
  * @param {number} height - Canvas height in pixels
- * @param {Date} time - Time for projection
- * @returns {{x: number, y: number, latitude: number, longitude: number, altitude: number}}
+ * @param {Date|number} time - Time for projection
+ * @returns {Promise<{x: number, y: number, latitude: number, longitude: number, altitude: number}>}
  */
-export function projectWorldPosToCanvas(worldPos, planet, width, height, time = new Date()) {
-    const geo = projectToGeodetic(worldPos, planet, time);
+export async function projectWorldPosToCanvas(worldPos, planetNaifId, width, height, time = new Date()) {
+    const geo = await projectToGeodetic(worldPos, planetNaifId, time);
     const { x, y } = latLonToCanvas(geo.latitude, geo.longitude, width, height);
     return { x, y, ...geo };
 }
 
 /**
  * Project a satellite's position to planet-fixed lat/lon.
- * This is now a wrapper around SatelliteCoordinates for consistency.
- * @param {THREE.Vector3} satPos - Satellite position in planet-centric inertial (km)
- * @param {Object} planet - Planet object with quaternion and physical properties
- * @param {Date} time - Time for transformation
- * @returns {{lat: number, lon: number, alt: number}}
+ * Uses physics service for consistent coordinate transformations.
+ * @param {Array|Object} satPos - Satellite position [x,y,z] or {x,y,z} in planet-centric inertial (km)
+ * @param {number} planetNaifId - Planet NAIF ID
+ * @param {Date|number} time - Time for transformation
+ * @returns {Promise<{lat: number, lon: number, alt: number}>}
  */
-export function projectToPlanetLatLon(satPos, planet, time = new Date()) {
-    const position = [satPos.x, satPos.y, satPos.z];
-    const velocity = [0, 0, 0];
+export async function projectToPlanetLatLon(satPos, planetNaifId, time = new Date()) {
+    const position = Array.isArray(satPos) 
+        ? satPos 
+        : [satPos.x, satPos.y, satPos.z];
     
-    // Transform from planet-centered inertial to planet-fixed
-    const result = CoordinateTransforms.transformCoordinates(
-        position, velocity, 'PCI', 'PF', planet, time
+    const timeMs = time instanceof Date ? time.getTime() : time;
+    
+    return await groundTrackService.transformECIToSurface(
+        position, planetNaifId, timeMs
     );
-    
-    // Convert to lat/lon/alt
-    const geo = CoordinateTransforms.planetFixedToLatLonAlt(result.position, planet);
-    
-    return {
-        lat: geo[0],
-        lon: geo[1],
-        alt: geo[2]
-    };
 }

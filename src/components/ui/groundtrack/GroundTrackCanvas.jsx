@@ -1,14 +1,14 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import PropTypes from 'prop-types';
-import { drawGrid, drawPOI, rasteriseCoverage } from './utils';
-import { projectWorldPosToCanvas, latLonToCanvas } from '../../../utils/MapProjection';
-import * as THREE from 'three';
+import { drawGrid, drawPOI, rasteriseCoverage } from './GroundTrackRendering';
+import { latLonToCanvas } from '../../../utils/MapProjection';
+import { groundTrackService } from '../../../services/GroundTrackService';
 
 const SAT_DOT_RADIUS = 4;
 
 export default function GroundTrackCanvas({
     map,
-    planet,
+    planetNaifId,
     width,
     height,
     satellites,
@@ -17,11 +17,14 @@ export default function GroundTrackCanvas({
     showCoverage,
     poiData,
     groundtracks = [],
+    currentTime,
 }) {
     const canvasRef = useRef(null);
     const tracksRef = useRef(tracks);
-    useEffect(() => { tracksRef.current = tracks; }, [tracks]);
     const satsRef = useRef(satellites);
+    const [processedTracks, setProcessedTracks] = useState({});
+    
+    useEffect(() => { tracksRef.current = tracks; }, [tracks]);
     useEffect(() => { satsRef.current = satellites; }, [satellites]);
 
     const drawFrame = useCallback(() => {
@@ -32,8 +35,9 @@ export default function GroundTrackCanvas({
         const h = height;
 
         ctx.clearRect(0, 0, w, h);
-        // draw equirectangular texture: prefer planet surface image, else offscreen map
-        const imgSource = planet?.getSurfaceTexture?.() || map;
+        
+        // draw equirectangular texture from map source
+        const imgSource = map;
         if (
             (imgSource instanceof HTMLImageElement && imgSource.complete && imgSource.naturalWidth > 0) ||
             imgSource instanceof HTMLCanvasElement
@@ -47,20 +51,23 @@ export default function GroundTrackCanvas({
             if (layers.grid) drawGrid(ctx, w, h);
         }
 
-        if (showCoverage) {
-            Object.values(satsRef.current).forEach(sat => {
-                if (!planet || !sat.position) return;
+        if (showCoverage && groundtracks.length && planetNaifId) {
+            // Render coverage asynchronously to avoid blocking
+            groundtracks.forEach(async ({ id, lat, lon, alt }) => {
+                const sat = satsRef.current[id];
+                if (!sat) return;
                 const color = sat.color ?? 0xffffff;
-                rasteriseCoverage(
+                await rasteriseCoverage(
                     ctx,
                     w,
                     h,
-                    { lat: sat.position.latitude, lon: sat.position.longitude, altitude: sat.position.altitude },
+                    { lat, lon, altitude: alt },
                     [
                         (color >> 16) & 0xff,
                         (color >> 8) & 0xff,
                         color & 0xff,
                     ],
+                    planetNaifId
                 );
             });
         }
@@ -75,50 +82,25 @@ export default function GroundTrackCanvas({
             ctx.fill();
         });
 
-        // Draw ground-track polylines by projecting each ECI position to canvas
-        Object.entries(tracksRef.current).forEach(([id, pts]) => {
-            if (!pts?.length || !planet) return;
+        // Draw ground-track polylines using processed coordinates
+        Object.entries(processedTracks).forEach(([id, processedPts]) => {
+            if (!processedPts?.length) return;
             const satColor = satsRef.current[id]?.color ?? 0xffffff;
             ctx.strokeStyle = `#${satColor.toString(16).padStart(6, '0')}`;
             ctx.lineWidth = 1;
             ctx.beginPath();
-            let prevLon;
-            pts.forEach((pt, idx) => {
-                if (!pt.position || pt.time === undefined) return; // Skip points without position or time
-
-                // Parse time
-                const { position, time } = pt;
-                const epochMillis = typeof time === 'string' ? parseFloat(time) : time;
-                if (isNaN(epochMillis) || !position) return;
-
-                // Project position to canvas at point time (data from local physics engine, ECI in kilometers)
-                const { x: xpt, y: ypt, longitude: lon } = projectWorldPosToCanvas(
-                    new THREE.Vector3(
-                        position.x,
-                        position.y,
-                        position.z
-                    ),
-                    planet,
-                    w,
-                    h,
-                    epochMillis
-                );
-
+            
+            processedPts.forEach((pt, idx) => {
                 if (idx === 0) {
-                    ctx.moveTo(xpt, ypt);
+                    ctx.moveTo(pt.x, pt.y);
                 } else {
-                    // Handle longitude wrap-around (-180 to 180)
-                    const lonDiff = lon - prevLon;
-                    if (Math.abs(lonDiff) > 180) {
-                        // Determine wrap direction (e.g., 170 to -170 is > 180 positive difference)
-                        // If crossing dateline eastwards (lon decreases drastically), move without line
-                        // If crossing dateline westwards (lon increases drastically), move without line
-                        ctx.moveTo(xpt, ypt);
+                    // Handle dateline crossing
+                    if (pt.isDatelineCrossing) {
+                        ctx.moveTo(pt.x, pt.y);
                     } else {
-                        ctx.lineTo(xpt, ypt);
+                        ctx.lineTo(pt.x, pt.y);
                     }
                 }
-                prevLon = lon;
             });
             ctx.stroke();
         });
@@ -141,7 +123,7 @@ export default function GroundTrackCanvas({
             });
         }
 
-        // Borders
+        // Borders - now handled by parent component through map data
         const drawBorders = (data, style) => {
             ctx.save();
             ctx.strokeStyle = style;
@@ -181,9 +163,35 @@ export default function GroundTrackCanvas({
             });
             ctx.restore();
         };
-        if (layers.countryBorders && planet?.surface?.countryGeo) drawBorders(planet.surface.countryGeo, 'rgba(255,255,255,0.3)');
-        if (layers.states && planet?.surface?.stateGeo) drawBorders(planet.surface.stateGeo, 'rgba(255,255,255,0.5)');
-    }, [map, width, height, layers, showCoverage, planet, poiData, groundtracks, satellites]);
+        
+        // Border rendering - placeholder for future implementation
+        // if (layers.countryBorders && countryGeoData) drawBorders(countryGeoData, 'rgba(255,255,255,0.3)');
+        // if (layers.states && stateGeoData) drawBorders(stateGeoData, 'rgba(255,255,255,0.5)');
+    }, [map, width, height, layers, showCoverage, poiData, groundtracks, satellites, processedTracks, planetNaifId]);
+
+    // Process raw ECI tracks into canvas coordinates
+    useEffect(() => {
+        if (!planetNaifId || !Object.keys(tracksRef.current).length) {
+            setProcessedTracks({});
+            return;
+        }
+
+        const processAllTracks = async () => {
+            const processed = {};
+            
+            for (const [id, rawPoints] of Object.entries(tracksRef.current)) {
+                if (rawPoints?.length) {
+                    processed[id] = await groundTrackService.processGroundTrack(
+                        rawPoints, planetNaifId, width, height
+                    );
+                }
+            }
+            
+            setProcessedTracks(processed);
+        };
+
+        processAllTracks();
+    }, [tracks, planetNaifId, width, height]);
 
     useEffect(() => {
         let raf;
@@ -207,7 +215,7 @@ export default function GroundTrackCanvas({
 
 GroundTrackCanvas.propTypes = {
     map: PropTypes.object,
-    planet: PropTypes.object,
+    planetNaifId: PropTypes.number.isRequired,
     width: PropTypes.number.isRequired,
     height: PropTypes.number.isRequired,
     satellites: PropTypes.objectOf(
@@ -217,8 +225,11 @@ GroundTrackCanvas.propTypes = {
         PropTypes.arrayOf(
             PropTypes.shape({
                 time: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-                lat: PropTypes.number,
-                lon: PropTypes.number,
+                position: PropTypes.shape({
+                    x: PropTypes.number,
+                    y: PropTypes.number,
+                    z: PropTypes.number,
+                }),
             }),
         ),
     ).isRequired,
@@ -241,11 +252,13 @@ GroundTrackCanvas.propTypes = {
             id: PropTypes.string.isRequired,
             lat: PropTypes.number.isRequired,
             lon: PropTypes.number.isRequired,
+            alt: PropTypes.number,
         })
     ),
+    currentTime: PropTypes.number,
 };
 
 // Helper to normalize longitude to [-180, 180]
 function normalizeLon(lon) {
     return ((lon + 180) % 360 + 360) % 360 - 180;
-} 
+}

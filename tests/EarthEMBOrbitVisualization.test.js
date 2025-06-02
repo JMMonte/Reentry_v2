@@ -15,7 +15,7 @@ global.window = {
 import { CelestialOrbitManager } from '../src/components/orbit/CelestialOrbitManager.js';
 import { StateVectorCalculator } from '../src/physics/StateVectorCalculator.js';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
-import { planetaryDataManager } from '../src/physics/PlanetaryDataManager.js';
+import { solarSystemDataManager } from '../src/physics/PlanetaryDataManager.js';
 
 // Mock Three.js scene
 const createMockScene = () => ({
@@ -183,8 +183,8 @@ describe('Earth EMB Orbit Visualization', () => {
     let mockPhysicsEngine;
 
     beforeEach(async () => {
-        // Initialize planetary data manager
-        await planetaryDataManager.initialize();
+        // Initialize solar system data manager
+        await solarSystemDataManager.initialize();
         
         // Setup mocks
         mockStateVectorCalculator = createMockStateVectorCalculator();

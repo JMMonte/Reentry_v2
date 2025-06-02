@@ -6,8 +6,8 @@ export class ApsisVisualizer {
     /** Shared materials */
     static _periMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, depthWrite: false });
     static _apoMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, transparent: true, opacity: 0.8, depthWrite: false });
-    constructor(scene, color) {
-        this.scene = scene;
+    constructor(parent, color) {
+        this.parent = parent; // Should always be an orbit group
         this.color = color;
         this.initializeApsides();
     }
@@ -31,8 +31,8 @@ export class ApsisVisualizer {
             this.apoapsisMesh.scale.set(scale, scale, scale);
         };
 
-        // Add periapsis to scene
-        this.scene.add(this.periapsisMesh);
+        // Add periapsis to parent (scene or group)
+        this.parent.add(this.periapsisMesh);
         
         // Don't set initial visibility - let it be controlled by display options
     }
@@ -51,14 +51,20 @@ export class ApsisVisualizer {
 
         // Update periapsis mesh position (position comes as [x, y, z] array)
         if (apsisData.periapsis.position) {
-            this.periapsisMesh.position.fromArray(apsisData.periapsis.position);
+            // Transform from world coordinates to orbit group local coordinates
+            const worldPos = new THREE.Vector3().fromArray(apsisData.periapsis.position);
+            const localPos = this.parent.worldToLocal(worldPos);
+            this.periapsisMesh.position.copy(localPos);
             this.periapsisMesh.visible = true;
         }
 
         // Update apoapsis mesh position (only for elliptical orbits)
         if (apsisData.apoapsis && apsisData.apoapsis.position) {
-            this.apoapsisMesh.position.fromArray(apsisData.apoapsis.position);
-            if (!this.apoapsisMesh.parent) this.scene.add(this.apoapsisMesh);
+            // Transform from world coordinates to orbit group local coordinates
+            const worldPos = new THREE.Vector3().fromArray(apsisData.apoapsis.position);
+            const localPos = this.parent.worldToLocal(worldPos);
+            this.apoapsisMesh.position.copy(localPos);
+            if (!this.apoapsisMesh.parent) this.parent.add(this.apoapsisMesh);
             this.apoapsisMesh.visible = true;
         } else {
             // Hide apoapsis for hyperbolic/parabolic orbits
@@ -108,14 +114,18 @@ export class ApsisVisualizer {
 
         // Update mesh positions
         if (periapsisPoint) {
-            this.periapsisMesh.position.fromArray(periapsisPoint);
+            const worldPos = new THREE.Vector3().fromArray(periapsisPoint);
+            const localPos = this.parent.worldToLocal(worldPos);
+            this.periapsisMesh.position.copy(localPos);
             this.periapsisMesh.visible = true;
         }
 
         if (apoapsisPoint && Math.abs(maxDistance - minDistance) > centralBody.radius * 0.01) {
             // Only show apoapsis if it's significantly different from periapsis
-            this.apoapsisMesh.position.fromArray(apoapsisPoint);
-            if (!this.apoapsisMesh.parent) this.scene.add(this.apoapsisMesh);
+            const worldPos = new THREE.Vector3().fromArray(apoapsisPoint);
+            const localPos = this.parent.worldToLocal(worldPos);
+            this.apoapsisMesh.position.copy(localPos);
+            if (!this.apoapsisMesh.parent) this.parent.add(this.apoapsisMesh);
             this.apoapsisMesh.visible = true;
         } else {
             this.apoapsisMesh.visible = false;
@@ -150,9 +160,9 @@ export class ApsisVisualizer {
     }
 
     dispose() {
-        this.scene.remove(this.periapsisMesh);
+        this.parent.remove(this.periapsisMesh);
         if (this.apoapsisMesh.parent) {
-            this.scene.remove(this.apoapsisMesh);
+            this.parent.remove(this.apoapsisMesh);
         }
         this.periapsisMesh.material.dispose();
         this.apoapsisMesh.material.dispose();

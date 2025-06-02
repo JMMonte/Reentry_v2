@@ -192,6 +192,23 @@ export class SatelliteManager {
     /* ───── internals ───── */
 
     _collectThirdBodyPositions() {
+        // Use physics engine bodies instead of visual bodies for proper orbit propagation
+        if (this.app3d.physicsIntegration?.physicsEngine) {
+            const physicsState = this.app3d.physicsIntegration.physicsEngine.getSimulationState();
+            return Object.values(physicsState.bodies || {})
+                .filter(body => body.mass > 0 || body.GM > 0) // Only bodies with gravitational influence
+                .map(body => ({
+                    name: body.name,
+                    position: Array.isArray(body.position) ? body.position : 
+                             (body.position.toArray ? body.position.toArray() : [0, 0, 0]),
+                    mass: body.mass || 0,
+                    GM: body.GM || 0,
+                    naifId: body.naif || body.naifId,
+                    type: body.type
+                }));
+        }
+        
+        // Fallback to visual bodies if physics engine not available
         return (this.app3d.celestialBodies ?? [])
             .filter(Boolean)
             .map(body => {
@@ -262,7 +279,7 @@ export class SatelliteManager {
                 const posKm = sat.position.clone();
 
                 // Orbit path updates now handled by SatelliteOrbitManager
-                sat.groundTrackPath?.update(epochMs, posKm, sat.velocity, sat.id, thirds, periodS, pts);
+                sat.groundTrackPath?.update(epochMs, posKm, sat.velocity, sat.id, thirds, periodS, pts, sat.centralBodyNaifId);
 
                 updated = true;
             } catch (err) {

@@ -134,8 +134,8 @@ export class WorkerPoolManager {
                 mass: params.satellite.mass,
                 crossSectionalArea: params.satellite.crossSectionalArea,
                 dragCoefficient: params.satellite.dragCoefficient,
-                // Disable solar system propagation for orbit visualization
-                propagateSolarSystem: false
+                // Enable solar system propagation for hyperbolic/parabolic orbits that may leave planetary SOI
+                propagateSolarSystem: params.orbitType === 'hyperbolic' || params.orbitType === 'parabolic'
             }
         });
 

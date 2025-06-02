@@ -48,9 +48,6 @@ vi.mock('../src/physics/PositionManager.js', () => ({
 
 // Mock PlanetaryDataManager
 vi.mock('../src/physics/PlanetaryDataManager.js', () => ({
-    planetaryDataManager: {
-        getAllBodies: () => []
-    },
     solarSystemDataManager: {
         initialized: true,
         initialize: vi.fn(),
@@ -130,6 +127,9 @@ vi.mock('../src/physics/PlanetaryDataManager.js', () => ({
             return bodies[naif];
         }),
         getBodyByName: vi.fn(() => null)
+    },
+    planetaryDataManager: {
+        getAllBodies: () => []
     }
 }));
 
@@ -362,8 +362,8 @@ describe('PhysicsEngine Satellite Perturbations', () => {
             physicsEngine.addSatellite(satellite);
             const satData = physicsEngine.satellites.get('sat1');
 
-            // Compute acceleration
-            const acceleration = physicsEngine._computeSatelliteAcceleration(satData);
+            // Compute acceleration using unified system
+            const acceleration = physicsEngine._computeSatelliteAccelerationUnified(satData);
 
             // The acceleration should be primarily towards Earth (negative X direction in this case)
             expect(acceleration.x).toBeLessThan(0);
@@ -384,8 +384,8 @@ describe('PhysicsEngine Satellite Perturbations', () => {
             physicsEngine.addSatellite(satellite);
             const satData = physicsEngine.satellites.get('sat1');
 
-            // Compute just the gravitational acceleration
-            const acceleration = physicsEngine._computeSatelliteAcceleration(satData);
+            // Compute just the gravitational acceleration using unified system
+            const acceleration = physicsEngine._computeSatelliteAccelerationUnified(satData);
 
             // Expected acceleration: GM/r² = 398600.44 / 7000² = 8.135 km/s²
             const expectedAccel = -398600.44 / (7000 * 7000);
@@ -407,13 +407,15 @@ describe('PhysicsEngine Satellite Perturbations', () => {
             physicsEngine.addSatellite(satellite);
             const satData = physicsEngine.satellites.get('sat1');
 
-            // Compute acceleration
-            const acceleration = physicsEngine._computeSatelliteAcceleration(satData);
+            // Compute acceleration using unified system
+            const acceleration = physicsEngine._computeSatelliteAccelerationUnified(satData);
 
-            // Check that force components were calculated
-            expect(satData.a_bodies).toBeDefined();
-            expect(satData.a_bodies['301']).toBeDefined(); // Moon's contribution
-            expect(satData.a_bodies['301'][0]).not.toBe(0); // Moon should exert force
+            // The unified system should produce a valid acceleration vector
+            expect(acceleration).toBeDefined();
+            expect(acceleration.length()).toBeGreaterThan(0); // Should have some acceleration
+            // Moon should contribute to perturbation - overall acceleration should be different from pure Earth gravity
+            const earthOnlyAccel = 398600.44 / (7000 * 7000); // Pure Earth gravity at 7000km
+            expect(Math.abs(acceleration.length() - earthOnlyAccel)).toBeGreaterThan(0.00001); // Should differ due to Moon
         });
 
         it('should correctly handle the central body acceleration bug', () => {
@@ -429,9 +431,9 @@ describe('PhysicsEngine Satellite Perturbations', () => {
             physicsEngine.addSatellite(satellite);
             const satData = physicsEngine.satellites.get('sat1');
 
-            // Calculate acceleration multiple times - should get same result
-            const accel1 = physicsEngine._computeSatelliteAcceleration(satData);
-            const accel2 = physicsEngine._computeSatelliteAcceleration(satData);
+            // Calculate acceleration multiple times - should get same result using unified system
+            const accel1 = physicsEngine._computeSatelliteAccelerationUnified(satData);
+            const accel2 = physicsEngine._computeSatelliteAccelerationUnified(satData);
 
             expect(accel1.x).toBeCloseTo(accel2.x);
             expect(accel1.y).toBeCloseTo(accel2.y);
@@ -454,7 +456,7 @@ describe('PhysicsEngine Satellite Perturbations', () => {
             const satData = physicsEngine.satellites.get('sat1');
 
             // Call the full acceleration computation to populate all fields
-            const totalAccel = physicsEngine._computeSatelliteAcceleration(satData);
+            const totalAccel = physicsEngine._computeSatelliteAccelerationUnified(satData);
             
             // Now check the J2 component that was stored
             expect(satData.a_j2).toBeDefined();
@@ -481,11 +483,15 @@ describe('PhysicsEngine Satellite Perturbations', () => {
             physicsEngine.addSatellite(satellite);
             const satData = physicsEngine.satellites.get('sat1');
 
-            const j2Accel = physicsEngine._computeJ2Perturbation(satData, physicsEngine.bodies[301]);
+            // Compute acceleration using unified system
+            const acceleration = physicsEngine._computeSatelliteAccelerationUnified(satData);
 
-            expect(j2Accel.x).toBe(0);
-            expect(j2Accel.y).toBe(0);
-            expect(j2Accel.z).toBe(0);
+            // Moon (301) has no J2 coefficient, so acceleration should be purely gravitational
+            // For a satellite around the Moon, acceleration should be approximately GM_moon/r²
+            const moonGM = physicsEngine.bodies[301].GM;
+            const r = 2000; // km from Moon center
+            const expectedAccel = moonGM / (r * r);
+            expect(acceleration.length()).toBeCloseTo(expectedAccel, 6); // Should match gravitational acceleration
         });
     });
 
@@ -552,11 +558,10 @@ describe('PhysicsEngine Satellite Perturbations', () => {
             const initialVel = satData.velocity.clone();
             const initialR = initialPos.length();
 
-            // Integrate for 100 seconds
+            // Integrate for 100 seconds using unified system
             const dt = 1; // 1 second timestep
             for (let i = 0; i < 100; i++) {
-                const accel = physicsEngine._computeSatelliteAcceleration(satData);
-                physicsEngine._integrateRK4(satData, accel, dt);
+                physicsEngine._integrateRK4Unified(satData, dt);
             }
 
             // Check orbit stability

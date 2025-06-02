@@ -269,10 +269,10 @@ export class CoordinateTransforms {
      * Transform from Planet-Fixed (rotating) to Planet-Centered Inertial frame
      * This is the core transformation that accounts for planet rotation
      */
-    static _transformPlanetFixedToPlanetInertial(positionPF, velocityPF, planet) {
+    static _transformPlanetFixedToPlanetInertial(positionPF, velocityPF, planet, time = new Date()) {
         // Get planet's current orientation from physics engine quaternion
         // For velocity transformation, we need to exclude the equatorial rotation that converts Y-up to Z-up
-        const planetQuaternion = CoordinateTransforms._getPlanetQuaternionForVelocity(planet);
+        const planetQuaternion = CoordinateTransforms._getPlanetQuaternionForVelocity(planet, time);
 
         // Get planet's rotation rate (rad/s)
         const rotationRate = planet.rotationRate || CoordinateTransforms._calculateRotationRate(planet);
@@ -311,7 +311,7 @@ export class CoordinateTransforms {
     /**
      * Get planet's quaternion for velocity transformation (excludes Y-up to Z-up conversion)
      */
-    static _getPlanetQuaternionForVelocity(planet) {
+    static _getPlanetQuaternionForVelocity(planet, time = new Date()) {
         // For velocity calculations, we want orientation and rotation but NOT the equatorial Y->Z conversion
         if (planet.orientationGroup && planet.rotationGroup) {
             // Only compose orientation and rotation, skip equatorial
@@ -325,51 +325,49 @@ export class CoordinateTransforms {
         }
 
         // Fall back to full quaternion if groups not available
-        return CoordinateTransforms._getPlanetQuaternion(planet);
+        return CoordinateTransforms._getPlanetQuaternion(planet, time);
     }
 
     /**
-     * Get planet's current quaternion from physics engine or calculate from Astronomy Engine
+     * Get planet's current quaternion calculated from rotation data
      */
-    static _getPlanetQuaternion(planet) {
-        // Get the complete transformation from planet surface to inertial space
-        // This requires composing: orientationGroup * equatorialGroup * rotationGroup
+    static _getPlanetQuaternion(planet, time = new Date()) {
+        // For pure physics calculations, compute quaternion from rotation data
+        if (planet.rotationPeriod && planet.tilt !== undefined) {
+            // Calculate current rotation angle
+            const rotationPeriod = planet.rotationPeriod; // seconds
+            const currentTime = time.getTime() / 1000; // seconds since epoch
+            const rotationAngle = (2 * Math.PI * currentTime / rotationPeriod) % (2 * Math.PI);
+            
+            // Create quaternion from axial tilt and rotation
+            const tiltRad = THREE.MathUtils.degToRad(planet.tilt || 0);
+            const tiltQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), tiltRad);
+            const rotationQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rotationAngle);
+            
+            // Combine tilt and rotation
+            return new THREE.Quaternion().multiplyQuaternions(tiltQ, rotationQ);
+        }
 
+        // Fallback: Try to get from Three.js scene objects (for UI integration)
         if (planet.orientationGroup && planet.equatorialGroup && planet.rotationGroup) {
             // Compose the complete transformation
             const orientationQ = planet.orientationGroup.quaternion.clone();
             const equatorialQ = planet.equatorialGroup.quaternion.clone();
             const rotationQ = planet.rotationGroup.quaternion.clone();
 
-            // Apply transformations in order: rotation * equatorial * orientation
-            const composedQ = new THREE.Quaternion()
+            return new THREE.Quaternion()
                 .multiplyQuaternions(orientationQ, equatorialQ)
                 .multiply(rotationQ);
-
-            return composedQ;
         }
 
-        // Fallback: Try to get from planet's rotation group (current daily rotation position)
-        if (planet.getRotationGroup?.()?.quaternion) {
-            return planet.getRotationGroup().quaternion.clone();
-        }
-
-        // Fallback: Try to get from planet's rotation group directly
-        if (planet.rotationGroup?.quaternion) {
-            return planet.rotationGroup.quaternion.clone();
-        }
-
-        // Fallback: Try to get quaternion from physics engine (may not include current rotation)
+        // Fallback: Try to get quaternion from physics engine
         if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
-            // Convert [x, y, z, w] to THREE.Quaternion
             const [x, y, z, w] = planet.quaternion;
             return new THREE.Quaternion(x, y, z, w);
         }
 
         // Ultimate fallback: identity quaternion (no rotation)
-        console.warn(`[CoordinateTransforms] No quaternion available for planet ${planet.name || 'unknown'}, using identity`);
-        // For the Sun and other bodies without proper quaternion setup, this is acceptable
-        // as they don't have significant rotation effects for most satellite calculations
+        console.warn(`[CoordinateTransforms] No rotation data available for planet ${planet.name || 'unknown'}, using identity`);
         return new THREE.Quaternion(); // Identity quaternion
     }
 

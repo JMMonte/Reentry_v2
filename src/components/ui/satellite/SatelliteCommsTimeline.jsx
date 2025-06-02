@@ -34,8 +34,27 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
     // Initialize timeline tracking
     useEffect(() => {
         const startTracking = () => {
-            // Get current simulation time
-            const simTime = app?.simulationTime || Date.now() / 1000;
+            // Get current simulation time from various sources
+            let simTime = Date.now() / 1000; // fallback to real time
+            
+            if (app?.timeUtils?.getSimulatedTime) {
+                const simDateTime = app.timeUtils.getSimulatedTime();
+                if (simDateTime && simDateTime instanceof Date) {
+                    simTime = simDateTime.getTime() / 1000;
+                }
+            } else if (app?.physicsIntegration?.physicsEngine?.simulationTime) {
+                const physicsTime = app.physicsIntegration.physicsEngine.simulationTime;
+                if (physicsTime && physicsTime instanceof Date) {
+                    simTime = physicsTime.getTime() / 1000;
+                }
+            } else if (app?.simulationTime) {
+                if (app.simulationTime instanceof Date) {
+                    simTime = app.simulationTime.getTime() / 1000;
+                } else {
+                    simTime = app.simulationTime;
+                }
+            }
+            
             setCurrentTime(simTime);
 
             if (!isRecording) return;
@@ -64,6 +83,12 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
             }
 
             if (commsStatus) {
+                console.log(`[SatelliteCommsTimeline] Got comms status for ${satelliteId}:`, {
+                    status: commsStatus.state?.status,
+                    connectionCount: activeConnections.length,
+                    connections: activeConnections
+                });
+                
                 // Record current status in timeline
                 const timelineEntry = {
                     timestamp: simTime,
@@ -81,22 +106,25 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                     return newData.filter(entry => entry.timestamp >= cutoffTime);
                 });
 
-                // Track connection events
+                // Track connection events - handle different connection object formats
                 activeConnections.forEach(conn => {
+                    const targetId = conn.targetSatelliteId || conn.targetId || conn.id;
+                    if (!targetId) return;
+                    
                     const existingConnection = connectionHistory.find(
-                        h => h.targetId === conn.targetSatelliteId && h.endTime === null
+                        h => h.targetId === targetId && h.endTime === null
                     );
 
                     if (!existingConnection) {
                         // New connection started
                         const connectionEvent = {
-                            id: `${satelliteId}-${conn.targetSatelliteId}-${simTime}`,
-                            targetId: conn.targetSatelliteId,
+                            id: `${satelliteId}-${targetId}-${simTime}`,
+                            targetId: targetId,
                             startTime: simTime,
                             endTime: null,
-                            quality: conn.quality,
-                            dataRate: conn.dataRate,
-                            type: conn.type || 'satellite'
+                            quality: conn.quality || conn.linkQuality || 50,
+                            dataRate: conn.dataRate || 0,
+                            type: conn.type || conn.targetType || 'satellite'
                         };
 
                         setConnectionHistory(prev => [...prev, connectionEvent]);
@@ -108,7 +136,10 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                     prev.map(conn => {
                         if (conn.endTime === null) {
                             const stillActive = activeConnections.find(
-                                ac => ac.targetSatelliteId === conn.targetId
+                                ac => {
+                                    const targetId = ac.targetSatelliteId || ac.targetId || ac.id;
+                                    return targetId === conn.targetId;
+                                }
                             );
                             if (!stillActive) {
                                 return { ...conn, endTime: simTime };

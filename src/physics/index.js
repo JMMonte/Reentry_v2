@@ -21,12 +21,10 @@ export { default as PhysicsAPI } from './PhysicsAPI.js';
 // Core physics calculations
 export { CelestialBody } from './core/CelestialBody.js';
 export { PhysicsConstants } from './core/PhysicsConstants.js';
-export { OrbitPropagator } from './core/OrbitPropagator.js';
+export { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 export { OrbitalMechanics } from './core/OrbitalMechanics.js';
-export { ApsisCalculations } from './core/ApsisCalculations.js';
 export { GravityCalculator } from './core/GravityCalculator.js';
 export { AtmosphericModels } from './core/AtmosphericModels.js';
-export { SatelliteAccelerationCalculator } from './core/SatelliteAccelerationCalculator.js';
 
 // Physics utilities
 export { PhysicsUtils } from './utils/PhysicsUtils.js';
@@ -57,5 +55,5 @@ export { SolarSystemHierarchy } from './SolarSystemHierarchy.js';
  * 
  * // Advanced: Direct access to core components
  * import { Advanced } from './physics';
- * const propagator = new Advanced.OrbitPropagator();
+ * const propagator = Advanced.UnifiedSatellitePropagator;
  */

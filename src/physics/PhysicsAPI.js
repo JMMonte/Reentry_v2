@@ -24,12 +24,10 @@
 import * as THREE from 'three';
 
 // Core physics modules
-import { OrbitPropagator } from './core/OrbitPropagator.js';
+import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
-import { ApsisCalculations } from './core/ApsisCalculations.js';
 import { GravityCalculator } from './core/GravityCalculator.js';
 import { AtmosphericModels } from './core/AtmosphericModels.js';
-import { SatelliteAccelerationCalculator } from './core/SatelliteAccelerationCalculator.js';
 
 // Physics utilities
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
@@ -65,12 +63,30 @@ export const Orbital = {
     },
 
     /**
-     * Propagate orbit forward in time
+     * Propagate orbit forward in time using UnifiedSatellitePropagator
      */
     propagateOrbit: (initialState, timeStep, duration, centralBody) => {
-        const propagator = new OrbitPropagator();
-        const gravity = new GravityCalculator();
-        return propagator.propagate(initialState, timeStep, duration, gravity, centralBody);
+        // Convert to UnifiedSatellitePropagator format
+        const satellite = {
+            position: Array.isArray(initialState.position) ? initialState.position : initialState.position.toArray(),
+            velocity: Array.isArray(initialState.velocity) ? initialState.velocity : initialState.velocity.toArray(),
+            centralBodyNaifId: centralBody.naifId || centralBody.naif_id || 399,
+            mass: initialState.mass || 1000,
+            crossSectionalArea: initialState.crossSectionalArea || 10,
+            dragCoefficient: initialState.dragCoefficient || 2.2
+        };
+
+        const bodies = { [satellite.centralBodyNaifId]: centralBody };
+
+        return UnifiedSatellitePropagator.propagateOrbit({
+            satellite,
+            bodies,
+            duration,
+            timeStep,
+            includeJ2: true,
+            includeDrag: true,
+            includeThirdBody: false // Single body propagation for API compatibility
+        });
     },
 
     /**
@@ -119,14 +135,6 @@ export const Orbital = {
         };
     },
 
-    /**
-     * Calculate apsis information (periapsis/apoapsis)
-     */
-    calculateApsis: (elements, centralBody) => {
-        const mu = centralBody.GM || centralBody.mu;
-        const period = OrbitalMechanics.calculatePeriod(elements.semiMajorAxis, mu);
-        return ApsisCalculations.getApsisInformation(elements, mu, elements.trueAnomaly, period);
-    },
 
     /**
      * Get next periapsis time
@@ -216,9 +224,14 @@ export const Bodies = {
     /**
      * Get planetary data for a body
      */
-    getData: (bodyName) => {
+    getData: (bodyIdentifier) => {
         const manager = solarSystemDataManager;
-        return manager.getBodyData(bodyName);
+        // Try to get by NAIF ID first (if it's a number), then by name
+        if (typeof bodyIdentifier === 'number') {
+            return manager.getBodyByNaif(bodyIdentifier);
+        } else {
+            return manager.getBodyByName(bodyIdentifier);
+        }
     },
 
     /**
@@ -274,11 +287,36 @@ export const Forces = {
     },
 
     /**
-     * Calculate satellite acceleration (all forces)
+     * Calculate satellite acceleration (all forces) using UnifiedSatellitePropagator
      */
     satelliteAcceleration: (satellite, centralBody, atmosphericData) => {
-        const calculator = new SatelliteAccelerationCalculator();
-        return calculator.calculate(satellite, centralBody, atmosphericData);
+        // Convert to UnifiedSatellitePropagator format
+        const satState = {
+            position: Array.isArray(satellite.position) ? satellite.position : satellite.position.toArray(),
+            velocity: Array.isArray(satellite.velocity) ? satellite.velocity : satellite.velocity.toArray(),
+            centralBodyNaifId: centralBody.naifId || centralBody.naif_id || 399,
+            mass: satellite.mass || 1000,
+            crossSectionalArea: satellite.crossSectionalArea || 10,
+            dragCoefficient: satellite.dragCoefficient || 2.2
+        };
+
+        // Convert central body to array format
+        const bodies = {
+            [satState.centralBodyNaifId]: {
+                ...centralBody,
+                position: Array.isArray(centralBody.position) ? centralBody.position : centralBody.position?.toArray() || [0, 0, 0],
+                velocity: Array.isArray(centralBody.velocity) ? centralBody.velocity : centralBody.velocity?.toArray() || [0, 0, 0]
+            }
+        };
+
+        const accelArray = UnifiedSatellitePropagator.computeAcceleration(satState, bodies, {
+            includeJ2: true,
+            includeDrag: true,
+            includeThirdBody: false
+        });
+
+        // Return in original format (Three.js Vector3 for compatibility)
+        return new THREE.Vector3().fromArray(accelArray);
     }
 };
 
@@ -421,12 +459,10 @@ export const Advanced = {
     /**
      * Direct access to core components
      */
-    OrbitPropagator,
+    UnifiedSatellitePropagator,
     OrbitalMechanics,
-    ApsisCalculations,
     GravityCalculator,
     AtmosphericModels,
-    SatelliteAccelerationCalculator,
     StateVectorCalculator,
     PositionManager,
     SolarSystemHierarchy,

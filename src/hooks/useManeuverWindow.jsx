@@ -123,8 +123,6 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     const [multMin, setMultMin] = useState('1');
     const [multSVal, setMultSVal] = useState('1');
 
-    // Apsis data and calculations
-    const apsisData = useManeuverApsisData(satellite, simulationTime, nodes, selectedIndex, isAdding);
     const [multMsVal, setMultMsVal] = useState('1');
     const [multP, setMultP] = useState('1');
     const [multA, setMultA] = useState('1');
@@ -134,6 +132,9 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     const nodes = useMemo(() => manager.buildNodeModels(currentSimTime), [manager, currentSimTime]);
     const [selectedIndex, setSelectedIndex] = useState(null);
     const [isAdding, setIsAdding] = useState(false);
+
+    // Apsis data and calculations
+    const apsisData = useManeuverApsisData(satellite, simulationTime, nodes, selectedIndex, isAdding);
 
     // Computed magnitude of delta-V using PhysicsAPI
     // Convert from m/s (UI) to km/s (backend) for calculation, then back to m/s for display

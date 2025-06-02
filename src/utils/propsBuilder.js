@@ -203,7 +203,7 @@ export function buildModalProps({
       isOpen: modalState.isGroundtrackOpen,
       onClose: () => modalState.setIsGroundtrackOpen(false),
       satellites: satellitesPhysics,
-      planets: window.app3d?.planets || []
+      planets: window.app3d?.celestialBodies || []
     },
     
     simulationWindow: {

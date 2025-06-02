@@ -217,8 +217,8 @@ export class GravityCalculator {
         };
         
         if (eccentricity >= 0 && eccentricity < 1) {
-            const ra = semiMajorAxis * (1 + eccentricity); // Apoapsis
-            const rp = semiMajorAxis * (1 - eccentricity); // Periapsis
+            const ra = semiMajorAxis * (1 + eccentricity); // Apoapsis radius
+            const rp = semiMajorAxis * (1 - eccentricity); // Periapsis radius
             
             // Vis-viva equation: v = sqrt(mu * (2/r - 1/a))
             result.apoapsis = Math.sqrt(mu * (2 / ra - 1 / semiMajorAxis));

@@ -51,7 +51,7 @@ vi.mock('../src/physics/PositionManager.js', () => ({
 }));
 
 vi.mock('../src/physics/PlanetaryDataManager.js', () => ({
-    planetaryDataManager: {
+    solarSystemDataManager: {
         initialize: vi.fn().mockResolvedValue(undefined),
         getBodyByNaif: vi.fn((naifId) => {
             const bodies = {
@@ -76,6 +76,9 @@ vi.mock('../src/physics/PlanetaryDataManager.js', () => ({
             };
             return bodies[naifId];
         }),
+        getAllBodies: vi.fn(() => [])
+    },
+    planetaryDataManager: {
         getAllBodies: vi.fn(() => [])
     }
 }));

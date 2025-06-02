@@ -94,7 +94,7 @@ describe('Earth Orbit Propagation Issues', () => {
             let maxSpeedDeviation = 0;
             
             for (let i = 0; i < steps; i++) {
-                const accel = physicsEngine._computeSatelliteAcceleration(satellite);
+                const accel = physicsEngine._computeSatelliteAccelerationUnified(satellite);
                 
                 // Log acceleration components if they seem extreme
                 if (accel.length() > 0.1) {
@@ -113,21 +113,21 @@ describe('Earth Orbit Propagation Issues', () => {
                 const r2 = satellite.position.clone().add(k1r.clone().multiplyScalar(dt/2));
                 satellite.position.copy(r2);
                 satellite.velocity.copy(v2);
-                const k2v = physicsEngine._computeSatelliteAcceleration(satellite);
+                const k2v = physicsEngine._computeSatelliteAccelerationUnified(satellite);
                 const k2r = v2;
                 
                 const v3 = satellite.velocity.clone().add(k2v.clone().multiplyScalar(dt/2));
                 const r3 = satellite.position.clone().add(k2r.clone().multiplyScalar(dt/2));
                 satellite.position.copy(r3);
                 satellite.velocity.copy(v3);
-                const k3v = physicsEngine._computeSatelliteAcceleration(satellite);
+                const k3v = physicsEngine._computeSatelliteAccelerationUnified(satellite);
                 const k3r = v3;
                 
                 const v4 = satellite.velocity.clone().add(k3v.clone().multiplyScalar(dt));
                 const r4 = satellite.position.clone().add(k3r.clone().multiplyScalar(dt));
                 satellite.position.copy(r4);
                 satellite.velocity.copy(v4);
-                const k4v = physicsEngine._computeSatelliteAcceleration(satellite);
+                const k4v = physicsEngine._computeSatelliteAccelerationUnified(satellite);
                 const k4r = v4;
                 
                 // Restore original position for proper update
@@ -199,7 +199,7 @@ describe('Earth Orbit Propagation Issues', () => {
             let maxSpeedDeviation = 0;
             
             for (let i = 0; i < steps; i++) {
-                const accel = physicsEngine._computeSatelliteAcceleration(satellite);
+                const accel = physicsEngine._computeSatelliteAccelerationUnified(satellite);
                 
                 // Simple Euler integration for comparison
                 satellite.velocity.add(accel.clone().multiplyScalar(dt));
@@ -243,7 +243,7 @@ describe('Earth Orbit Propagation Issues', () => {
                 physicsEngine.satellites = { [`earth-${alt}`]: satellite };
                 
                 // Compute acceleration
-                const accel = physicsEngine._computeSatelliteAcceleration(satellite);
+                const accel = physicsEngine._computeSatelliteAccelerationUnified(satellite);
                 
                 // Extract components
                 results[alt] = {

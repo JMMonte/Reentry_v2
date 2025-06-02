@@ -12,6 +12,7 @@ import { OrbitVisualizationManager } from './OrbitVisualizationManager.js';
 import { ManeuverOrbitHandler } from './ManeuverOrbitHandler.js';
 import { GhostPlanetManager } from './GhostPlanetManager.js';
 import { ApsisService } from '../services/ApsisService.js';
+import { ApsisDetection } from '../services/ApsisDetection.js';
 
 export class SatelliteOrbitManager {
     constructor(app) {
@@ -25,6 +26,11 @@ export class SatelliteOrbitManager {
         this.orbitVisualizationManager = new OrbitVisualizationManager(app);
         this.maneuverOrbitHandler = new ManeuverOrbitHandler(app, this.workerPoolManager, this.orbitCacheManager);
         this.ghostPlanetManager = new GhostPlanetManager(app);
+        this.apsisDetector = new ApsisDetection({
+            minSeparation: 300, // 5 minutes minimum between apsis points
+            tolerance: 0.001,   // 1 meter tolerance
+            debugLogging: false
+        });
         
         // Update throttling
         this.updateQueue = new Set();
@@ -223,6 +229,7 @@ export class SatelliteOrbitManager {
             },
             duration: maxDuration,
             timeStep,
+            orbitType: orbitParams.type, // Pass orbit type for hyperbolic trajectory handling
             hash: this.orbitCacheManager.computeStateHash(satellite),
             maxPeriods: orbitParams.type === 'elliptical' ? 
                 (needsExtension ? (cached?.maxPeriods || 0) + maxDuration / orbitParams.period : orbitPeriods) : null,
@@ -361,9 +368,17 @@ export class SatelliteOrbitManager {
                 return; // No apsis visualizer for this satellite
             }
 
+            // Check if we should show apsis markers
+            const showOrbits = this.displaySettings?.getSetting('showOrbits');
+            const showApsis = this.displaySettings?.getSetting('showApsis');
+            if (!showOrbits || !showApsis) {
+                satelliteUI.apsisVisualizer.setVisible(false);
+                return;
+            }
+
             // Get physics satellite data
             const physicsState = this.physicsEngine?.getSimulationState?.();
-            const physicsSatellite = physicsState?.satellites?.get?.(satelliteId);
+            const physicsSatellite = physicsState?.satellites?.[satelliteId];
             if (!physicsSatellite) {
                 return; // No physics data available
             }
@@ -376,46 +391,84 @@ export class SatelliteOrbitManager {
                 return;
             }
 
-            // Check if we should show apsis markers
-            const showOrbits = this.displaySettings?.getSetting('showOrbits');
-            const showApsis = this.displaySettings?.getSetting('showApsis');
-            if (!showOrbits || !showApsis) {
-                satelliteUI.apsisVisualizer.setVisible(false);
-                return;
-            }
-
-            // Try to use precise apsis calculation first
-            if (physicsSatellite.position && physicsSatellite.velocity) {
+            // Use the new ApsisDetection service on orbit points
+            if (points && points.length > 3) {
                 try {
-                    const apsisData = ApsisService.getApsisData(
-                        physicsSatellite, 
-                        centralBody, 
-                        new Date(), // Current time
-                        { includeVisualization: true }
-                    );
-                    
-                    if (apsisData && apsisData.visualization) {
-                        satelliteUI.apsisVisualizer.update(apsisData);
-                        satelliteUI.apsisVisualizer.setVisible(true);
-                        return;
-                    }
-                } catch (error) {
-                    console.warn('[SatelliteOrbitManager] Error calculating precise apsis data:', error);
-                }
-            }
+                    // Convert orbit points to format expected by ApsisDetection
+                    const orbitData = points.map(point => ({
+                        position: point.position,
+                        time: point.time || 0,
+                        centralBodyId: point.centralBodyId || centralBodyId
+                    }));
 
-            // Fallback to orbit points analysis
-            if (points.length > 2) {
-                const apsisPoints = ApsisService.getOrbitApsisPoints(points, centralBody);
-                if (apsisPoints.periapsis || apsisPoints.apoapsis) {
-                    satelliteUI.apsisVisualizer.updateFromOrbitPoints(points, centralBody);
-                    satelliteUI.apsisVisualizer.setVisible(true);
-                } else {
-                    satelliteUI.apsisVisualizer.setVisible(false);
+                    // Detect apsis points using the new system
+                    const apsisPoints = ApsisDetection.detectApsisPoints(orbitData);
+                    
+                    if (apsisPoints.length > 0) {
+                        // Find the next periapsis and apoapsis
+                        const periapsisPoints = apsisPoints.filter(p => p.type === 'periapsis');
+                        const apoapsisPoints = apsisPoints.filter(p => p.type === 'apoapsis');
+                        
+                        const nextPeriapsis = periapsisPoints[0]; // First one is the next
+                        const nextApoapsis = apoapsisPoints[0];   // First one is the next
+                        
+                        // Create apsis data for visualization
+                        const apsisData = {
+                            periapsis: nextPeriapsis ? {
+                                position: nextPeriapsis.position,
+                                altitude: nextPeriapsis.distance - centralBody.radius,
+                                radius: nextPeriapsis.distance,
+                                time: nextPeriapsis.time
+                            } : null,
+                            apoapsis: nextApoapsis ? {
+                                position: nextApoapsis.position,
+                                altitude: nextApoapsis.distance - centralBody.radius,
+                                radius: nextApoapsis.distance,
+                                time: nextApoapsis.time
+                            } : null
+                        };
+                        
+                        // Update visualizer with detected apsis points
+                        if (apsisData.periapsis || apsisData.apoapsis) {
+                            satelliteUI.apsisVisualizer.update(apsisData);
+                            satelliteUI.apsisVisualizer.setVisible(true);
+                            
+                            console.log(`[SatelliteOrbitManager] Updated apsis visualization for satellite ${satelliteId}: 
+                                Periapsis: ${apsisData.periapsis?.altitude?.toFixed(0) || 'N/A'} km, 
+                                Apoapsis: ${apsisData.apoapsis?.altitude?.toFixed(0) || 'N/A'} km`);
+                        } else {
+                            satelliteUI.apsisVisualizer.setVisible(false);
+                        }
+                    } else {
+                        satelliteUI.apsisVisualizer.setVisible(false);
+                    }
+                    
+                } catch (error) {
+                    console.warn('[SatelliteOrbitManager] Error with new apsis detection, falling back to old method:', error);
+                    // Fallback to simple orbit points analysis
+                    this._fallbackApsisVisualization(satelliteUI, points, centralBody);
                 }
+            } else {
+                satelliteUI.apsisVisualizer.setVisible(false);
             }
         } catch (error) {
             console.error('[SatelliteOrbitManager] Error updating apsis visualization:', error);
+        }
+    }
+
+    /**
+     * Fallback apsis visualization using simple min/max distance
+     * @private
+     */
+    _fallbackApsisVisualization(satelliteUI, points, centralBody) {
+        if (points.length > 2) {
+            const apsisPoints = ApsisService.getOrbitApsisPoints(points.map(p => p.position), centralBody);
+            if (apsisPoints.periapsis || apsisPoints.apoapsis) {
+                satelliteUI.apsisVisualizer.updateFromOrbitPoints(points.map(p => p.position), centralBody);
+                satelliteUI.apsisVisualizer.setVisible(true);
+            } else {
+                satelliteUI.apsisVisualizer.setVisible(false);
+            }
         }
     }
 

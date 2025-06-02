@@ -396,7 +396,275 @@ export function setupExternalApi(app3d) {
         },
 
         // ═══════════════════════════════════════════════════════════════════
-        // ORBITAL MECHANICS & GROUND TRACKS
+        // MISSION PLANNING & MANEUVERS
+        // ═══════════════════════════════════════════════════════════════════
+
+        /**
+         * Add a maneuver node to a satellite
+         * @param {string|number} satelliteId - Satellite ID
+         * @param {Object} params - {executionTime, deltaV: {x, y, z}}
+         */
+        addManeuverNode: (satelliteId, params) => {
+            try {
+                const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
+                const satellite = satellites.get(String(satelliteId));
+                if (!satellite) {
+                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                }
+
+                const { executionTime, deltaV } = params;
+                let execTime;
+                
+                if (executionTime instanceof Date) {
+                    execTime = executionTime;
+                } else if (typeof executionTime === 'string') {
+                    execTime = new Date(executionTime);
+                } else if (typeof executionTime === 'number') {
+                    execTime = new Date(executionTime);
+                } else {
+                    return { success: false, error: 'Invalid execution time format' };
+                }
+
+                if (!deltaV || typeof deltaV !== 'object') {
+                    return { success: false, error: 'Delta-V vector required: {x, y, z}' };
+                }
+
+                const dvVector = {
+                    x: parseFloat(deltaV.x) || 0,
+                    y: parseFloat(deltaV.y) || 0,
+                    z: parseFloat(deltaV.z) || 0
+                };
+
+                const node = satellite.addManeuverNode(execTime, dvVector);
+                return { success: true, nodeId: node.id, executionTime: execTime.toISOString() };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Get all maneuver nodes for a satellite
+         * @param {string|number} satelliteId - Satellite ID
+         */
+        getManeuverNodes: (satelliteId) => {
+            try {
+                const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
+                const satellite = satellites.get(String(satelliteId));
+                if (!satellite) {
+                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                }
+
+                const nodes = satellite.maneuverNodes.map(node => ({
+                    id: node.id,
+                    executionTime: node.executionTime.toISOString(),
+                    deltaV: {
+                        x: node.deltaV.prograde || 0,
+                        y: node.deltaV.normal || 0,
+                        z: node.deltaV.radial || 0
+                    },
+                    deltaMagnitude: node.deltaMagnitude,
+                    status: node.status
+                }));
+
+                return { success: true, nodes };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Delete a maneuver node
+         * @param {string|number} satelliteId - Satellite ID
+         * @param {string} nodeId - Node ID
+         */
+        deleteManeuverNode: (satelliteId, nodeId) => {
+            try {
+                const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
+                const satellite = satellites.get(String(satelliteId));
+                if (!satellite) {
+                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                }
+
+                const node = satellite.maneuverNodes.find(n => n.id === nodeId);
+                if (!node) {
+                    return { success: false, error: `Maneuver node ${nodeId} not found` };
+                }
+
+                satellite.removeManeuverNode(node);
+                return { success: true, message: `Maneuver node ${nodeId} deleted` };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Calculate Hohmann transfer parameters
+         * @param {Object} params - {currentSemiMajorAxis, targetSemiMajorAxis, centralBodyNaifId?}
+         */
+        calculateHohmannTransfer: async (params) => {
+            try {
+                const { currentSemiMajorAxis, targetSemiMajorAxis, centralBodyNaifId = 399 } = params;
+                
+                if (!currentSemiMajorAxis || !targetSemiMajorAxis) {
+                    return { success: false, error: 'Current and target semi-major axes required' };
+                }
+
+                const bodies = getAllAvailableBodies();
+                const centralBody = bodies.find(b => b.naifId === centralBodyNaifId);
+                
+                if (!centralBody || !centralBody.mu) {
+                    return { success: false, error: `Central body ${centralBodyNaifId} not found` };
+                }
+
+                // Use centralized Hohmann transfer calculation
+                const { OrbitalMechanics } = await import('../physics/core/OrbitalMechanics.js');
+                const result = OrbitalMechanics.calculateHohmannTransfer({
+                    centralBody,
+                    currentRadius: currentSemiMajorAxis,
+                    targetRadius: targetSemiMajorAxis
+                });
+                
+                const { deltaV1, deltaV2, totalDeltaV, transferTime, transferSemiMajorAxis: a_transfer } = result;
+
+                return {
+                    success: true,
+                    transfer: {
+                        deltaV1: deltaV1,
+                        deltaV2: deltaV2,
+                        totalDeltaV: totalDeltaV,
+                        transferTime: transferTime,
+                        transferSemiMajorAxis: a_transfer,
+                        centralBody: centralBody.name
+                    }
+                };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        // ═══════════════════════════════════════════════════════════════════
+        // COMMUNICATION SYSTEMS
+        // ═══════════════════════════════════════════════════════════════════
+
+        /**
+         * Get communication status for a satellite
+         * @param {string|number} satelliteId - Satellite ID
+         */
+        getSatelliteComms: (satelliteId) => {
+            try {
+                const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
+                const satellite = satellites.get(String(satelliteId));
+                if (!satellite) {
+                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                }
+
+                // Get communication subsystem data from physics engine
+                const physicsEngine = app3d?.physicsIntegration;
+                if (!physicsEngine?.subsystemManager) {
+                    return { success: false, error: 'Communication system not available' };
+                }
+
+                const commSubsystem = physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
+                if (!commSubsystem) {
+                    return { success: false, error: 'No communication subsystem found' };
+                }
+
+                const state = commSubsystem.getState();
+                const metrics = commSubsystem.getMetrics();
+                const activeConnections = commSubsystem.getActiveConnections();
+
+                return {
+                    success: true,
+                    comms: {
+                        status: state.status,
+                        powerConsumption: state.powerConsumption,
+                        isTransmitting: state.isTransmitting,
+                        currentDataRate: state.currentDataRate,
+                        connectionCount: state.connectionCount,
+                        bestLinkQuality: state.bestLinkQuality,
+                        averageLinkQuality: state.averageLinkQuality,
+                        totalDataTransmitted: state.totalDataTransmitted,
+                        totalDataReceived: state.totalDataReceived,
+                        activeConnections: activeConnections,
+                        metrics: metrics
+                    }
+                };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Get all active communication links
+         */
+        getCommunicationLinks: () => {
+            try {
+                const physicsEngine = app3d?.physicsIntegration;
+                if (!physicsEngine?.subsystemManager) {
+                    return { success: false, error: 'Communication system not available' };
+                }
+
+                const links = [];
+                const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
+                
+                satellites.forEach((satellite, satelliteId) => {
+                    const commSubsystem = physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
+                    if (commSubsystem) {
+                        const connections = commSubsystem.getActiveConnections();
+                        connections.forEach(conn => {
+                            links.push({
+                                source: satelliteId,
+                                target: conn.targetId,
+                                targetType: conn.targetType,
+                                linkQuality: conn.linkQuality,
+                                dataRate: conn.dataRate,
+                                distance: conn.distance,
+                                elevationAngle: conn.elevationAngle
+                            });
+                        });
+                    }
+                });
+
+                return { success: true, links };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Update communication configuration
+         * @param {string|number} satelliteId - Satellite ID
+         * @param {Object} config - New communication configuration
+         */
+        updateCommsConfig: (satelliteId, config) => {
+            try {
+                const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
+                const satellite = satellites.get(String(satelliteId));
+                if (!satellite) {
+                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                }
+
+                const physicsEngine = app3d?.physicsIntegration;
+                if (!physicsEngine?.subsystemManager) {
+                    return { success: false, error: 'Communication system not available' };
+                }
+
+                const commSubsystem = physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
+                if (!commSubsystem) {
+                    return { success: false, error: 'No communication subsystem found' };
+                }
+
+                // Update configuration
+                Object.assign(commSubsystem.config, config);
+                
+                return { success: true, config: commSubsystem.config };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        // ═══════════════════════════════════════════════════════════════════
+        // GROUND TRACKING
         // ═══════════════════════════════════════════════════════════════════
 
         /**

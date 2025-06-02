@@ -169,6 +169,8 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
         // Get list of potential communication targets from physics engine
         const targets = this.findCommunicationTargets(satellite);
         
+        console.log(`[CommunicationSubsystem] Found ${targets.length} potential targets for satellite ${this.satelliteId}`);
+        
         // Clear old connections
         this.activeConnections.clear();
         
@@ -202,16 +204,47 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
      * Find potential communication targets from physics engine
      */
     findCommunicationTargets(satellite) {
-        // This would integrate with the main physics engine
-        // For now, return empty array - would be populated by physics integration
-        return [];
+        const targets = [];
+        
+        // Get reference to physics engine from the subsystem manager
+        const physicsEngine = this.getPhysicsEngine();
+        if (!physicsEngine) {
+            return targets;
+        }
+        
+        // Find other satellites
+        if (physicsEngine.satellites) {
+            physicsEngine.satellites.forEach((targetSat, targetId) => {
+                // Don't communicate with self
+                if (targetId === this.satelliteId) return;
+                
+                // Check if target has communication capability
+                const targetComms = physicsEngine.subsystemManager?.getSubsystem(targetId, 'communication');
+                if (!targetComms) return;
+                
+                targets.push({
+                    id: targetId,
+                    type: 'satellite',
+                    position: targetSat.position.toArray ? targetSat.position.toArray() : targetSat.position,
+                    antennaGain: targetComms.config?.antennaGain || 0,
+                    centralBodyNaifId: targetSat.centralBodyNaifId
+                });
+            });
+        }
+        
+        // TODO: Add ground stations from configuration
+        // This could be integrated later with ground station data
+        
+        return targets;
     }
     
     /**
      * Calculate RF link budget between satellite and target
      */
     calculateLinkBudget(satellite, target, environment) {
-        const distance = this.calculateDistance(satellite.position, target.position);
+        const satPos = satellite.position.toArray ? satellite.position.toArray() : satellite.position;
+        const targetPos = target.position;
+        const distance = this.calculateDistance(satPos, targetPos);
         
         // Check basic constraints
         if (distance > this.config.maxRange) {
@@ -235,7 +268,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
         // Calculate elevation angle if target is ground station
         let elevationAngle = 90; // Default for satellites
         if (target.type === 'ground_station') {
-            elevationAngle = this.calculateElevationAngle(satellite.position, target.position);
+            elevationAngle = this.calculateElevationAngle(satPos, targetPos);
             if (elevationAngle < this.config.minElevationAngle) {
                 return { possible: false, reason: 'Below minimum elevation' };
             }

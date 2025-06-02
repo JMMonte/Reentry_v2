@@ -282,6 +282,27 @@ export class DisplaySettingsManager {
     }
 
     /**
+     * Update apsis marker visibility for all satellites
+     * @private
+     */
+    _updateApsisVisibility(app3d) {
+        const showOrbits = this.getSetting('showOrbits');
+        const showApsis = this.getSetting('showApsis');
+        const visible = showOrbits && showApsis;
+        
+        // Update satellite apsis visualizers
+        if (app3d.satellites?.satellites) {
+            app3d.satellites.satellites.forEach(satellite => {
+                if (satellite.apsisVisualizer) {
+                    satellite.apsisVisualizer.setVisible(visible);
+                }
+            });
+        }
+        
+        console.log(`[DisplaySettingsManager] Updated apsis visibility: showOrbits=${showOrbits}, showApsis=${showApsis}, visible=${visible}`);
+    }
+
+    /**
      * Clean up resources and remove event listeners
      */
     dispose() {

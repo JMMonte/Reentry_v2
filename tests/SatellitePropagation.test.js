@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { PhysicsEngine } from '../src/physics/PhysicsEngine.js';
 import { SolarSystemHierarchy } from '../src/physics/SolarSystemHierarchy.js';
-import { planetaryDataManager } from '../src/physics/PlanetaryDataManager.js';
+import { solarSystemDataManager } from '../src/physics/PlanetaryDataManager.js';
 import * as THREE from 'three';
 
 describe('Satellite Propagation with Realistic Perturbations', () => {
@@ -14,10 +14,9 @@ describe('Satellite Propagation with Realistic Perturbations', () => {
         testDate = new Date('2025-01-01T00:00:00.000Z');
         
         // Initialize the full solar system
-        await planetaryDataManager.initialize();
-        const bodiesConfigMap = planetaryDataManager.getBodiesConfigMap();
+        await solarSystemDataManager.initialize();
         
-        hierarchy = new SolarSystemHierarchy(bodiesConfigMap);
+        hierarchy = new SolarSystemHierarchy(solarSystemDataManager.naifToBody);
         physicsEngine = new PhysicsEngine(hierarchy, { startDate: testDate });
         await physicsEngine.initialize();
     }, 30000); // Allow 30 seconds for initialization

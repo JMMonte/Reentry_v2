@@ -61,9 +61,10 @@ export class GroundtrackPath {
      * @param {{position:THREE.Vector3, mass:number}[]} bodies
      * @param {number} period – seconds to propagate
      * @param {number} numPoints – target segment count
+     * @param {number} centralBodyNaifId – NAIF ID of central body for orbit propagation
      */
     update(startTime, position, velocity, id, bodies = [],
-        period, numPoints) {
+        period, numPoints, centralBodyNaifId = null) {
 
         this._currentId = id;
         GroundtrackPath._handlers.set(id, this);
@@ -71,8 +72,13 @@ export class GroundtrackPath {
         const seq = ++this._seq;
 
         const bodiesMsg = bodies.map(b => ({
-            position: { x: b.position.x, y: b.position.y, z: b.position.z },
-            mass: b.mass,
+            position: Array.isArray(b.position) 
+                ? { x: b.position[0], y: b.position[1], z: b.position[2] }
+                : { x: b.position.x, y: b.position.y, z: b.position.z },
+            mass: b.mass || 0,
+            GM: b.GM,
+            naifId: b.id || b.naifId,
+            type: b.type
         }));
 
         const epochMs = typeof startTime === 'number'
@@ -89,6 +95,7 @@ export class GroundtrackPath {
             bodies: bodiesMsg,
             period,
             numPoints,
+            centralBodyNaifId
         });
     }
 

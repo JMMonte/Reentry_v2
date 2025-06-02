@@ -19,6 +19,7 @@ export class SatelliteSubsystem {
         this.isEnabled = config.enabled !== false;
         this.lastUpdateTime = 0;
         this.updateInterval = config.updateInterval || 1000; // milliseconds
+        this.physicsEngine = null; // Will be set by SubsystemManager
         
         console.log(`[${subsystemType}] Initialized for satellite ${satelliteId}`);
     }
@@ -145,6 +146,20 @@ export class SatelliteSubsystem {
         this.state.status = 'offline';
         this.metrics.faultEvents++;
         console.warn(`[${this.subsystemType}] Failure in satellite ${this.satelliteId}: ${reason}`);
+    }
+    
+    /**
+     * Get physics engine reference
+     */
+    getPhysicsEngine() {
+        return this.physicsEngine;
+    }
+    
+    /**
+     * Set physics engine reference (called by SubsystemManager)
+     */
+    setPhysicsEngine(physicsEngine) {
+        this.physicsEngine = physicsEngine;
     }
     
     /**

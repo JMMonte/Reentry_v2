@@ -64,6 +64,10 @@ export class SubsystemManager {
         
         // Create new subsystem
         const subsystem = new SubsystemClass(satelliteId, config);
+        
+        // Set physics engine reference for subsystem
+        subsystem.setPhysicsEngine(this.physicsEngine);
+        
         satelliteSubsystems.set(subsystemType, subsystem);
         
         console.log(`[SubsystemManager] Added ${subsystemType} to satellite ${satelliteId}`);

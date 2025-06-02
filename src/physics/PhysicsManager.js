@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
-import { OrbitPropagator } from './core/OrbitPropagator.js';
+import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 import { solarSystemDataManager } from './PlanetaryDataManager.js';
 
@@ -12,7 +12,7 @@ export class PhysicsManager {
     constructor(app) {
         this.app = app; // Reference to main App3D instance
         this.physicsEngine = new PhysicsEngine();
-        this.orbitPropagator = new OrbitPropagator();
+        // UnifiedSatellitePropagator is static - no instantiation needed
 
         // Integration state
         this.isInitialized = false;
@@ -204,28 +204,26 @@ export class PhysicsManager {
             return [];
         }
 
-        // Initialize orbit propagator with current physics state
-        this.orbitPropagator.initialize(state);
-
-        const points = [];
-        const params = {
-            satelliteId,
-            position: satellite.position,
-            velocity: satellite.velocity,
-            centralBodyNaifId: satellite.centralBodyNaifId || 399,
+        // Use UnifiedSatellitePropagator for trajectory generation
+        const propagatedPoints = UnifiedSatellitePropagator.propagateOrbit({
+            satellite: {
+                position: satellite.position,
+                velocity: satellite.velocity,
+                centralBodyNaifId: satellite.centralBodyNaifId || 399,
+                mass: satellite.mass || 1000,
+                crossSectionalArea: satellite.crossSectionalArea || 10,
+                dragCoefficient: satellite.dragCoefficient || 2.2
+            },
+            bodies: state.bodies,
             duration,
             timeStep,
-            mass: satellite.mass || 1000,
-            crossSectionalArea: satellite.crossSectionalArea || 10,
-            dragCoefficient: satellite.dragCoefficient || 2.2
-        };
-
-        // Collect trajectory points
-        await this.orbitPropagator.propagateOrbit(params, (chunk) => {
-            points.push(...chunk.points.map(pt => new THREE.Vector3().fromArray(pt.position)));
+            includeJ2: true,
+            includeDrag: true,
+            includeThirdBody: false
         });
 
-        return points;
+        // Convert to Vector3 array
+        return propagatedPoints.map(pt => new THREE.Vector3().fromArray(pt.position));
     }
 
     /**
@@ -312,7 +310,7 @@ export class PhysicsManager {
             this.cleanupTimeSync = null;
         }
 
-        // OrbitPropagator doesn't have clearCache, just clear our caches
+        // Clear our caches
         this.bodyStatesCache.clear();
         this.orbitPathsCache.clear();
 

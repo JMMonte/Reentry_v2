@@ -1,6 +1,6 @@
 // src/utils/KeplerianUtils.js
 
-import { PhysicsConstants } from '../physics/core/PhysicsConstants.js';
+import { PhysicsConstants } from '../core/PhysicsConstants.js';
 import * as THREE from 'three';
 
 // Basic vector operations for {x, y, z} objects

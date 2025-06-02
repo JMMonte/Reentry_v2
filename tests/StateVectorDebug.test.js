@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StateVectorCalculator } from '../src/physics/StateVectorCalculator.js';
 import { SolarSystemHierarchy } from '../src/physics/SolarSystemHierarchy.js';
-import { planetaryDataManager } from '../src/physics/PlanetaryDataManager.js';
+import { solarSystemDataManager } from '../src/physics/PlanetaryDataManager.js';
 import * as Astronomy from 'astronomy-engine';
 
 describe('State Vector Debug', () => {
@@ -12,12 +12,12 @@ describe('State Vector Debug', () => {
     beforeEach(async () => {
         testDate = new Date('2025-01-01T00:00:00.000Z');
         
-        // Initialize planetary data
-        await planetaryDataManager.initialize();
+        // Initialize solar system data
+        await solarSystemDataManager.initialize();
         
         // Create hierarchy and state calculator
-        hierarchy = new SolarSystemHierarchy(planetaryDataManager.naifToBody);
-        stateCalculator = new StateVectorCalculator(hierarchy, planetaryDataManager.naifToBody);
+        hierarchy = new SolarSystemHierarchy(solarSystemDataManager.naifToBody);
+        stateCalculator = new StateVectorCalculator(hierarchy, solarSystemDataManager.naifToBody);
     });
 
     it('should calculate Earth state vector from Astronomy Engine', () => {

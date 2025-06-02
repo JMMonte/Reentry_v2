@@ -13,7 +13,7 @@ export const earthPolarRadius = 6356.752314245; // km
 export const earthMass = 5.972e24; // kg
 export const earthInclination = 23.5; // degrees
 export const earthGravitationalParameter = PhysicsConstants.PHYSICS.G * earthMass; // km^3/s^2
-export const atmosphereSeaLevelDensity = 1.225e-3; // kg/km^3
+export const atmosphereSeaLevelDensity = 1.225e-9; // kg/km^3
 export const atmosphereRadius = earthRadius + 100; // km
 export const ballisticCoefficient = 100; // kg/m^2
 export const earthSOI = 929000; // km
@@ -75,16 +75,16 @@ export default {
                 scaleHeight = 50; // Thermosphere upper
             }
             
-            // Reference densities at different altitudes (kg/m³)
+            // Reference densities at different altitudes (kg/km³)
             let rho0, h0;
             if (altitude < 100) {
-                rho0 = 1.225; // Sea level
+                rho0 = 1.225e-9; // Sea level (converted from 1.225 kg/m³)
                 h0 = 0;
             } else if (altitude < 200) {
-                rho0 = 5.1e-7; // 100km
+                rho0 = 5.1e-16; // 100km (converted from 5.1e-7 kg/m³)
                 h0 = 100;
             } else {
-                rho0 = 2.789e-10; // 200km
+                rho0 = 2.789e-19; // 200km (converted from 2.789e-10 kg/m³)
                 h0 = 200;
             }
             

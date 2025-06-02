@@ -5,9 +5,9 @@ import { StateVectorCalculator } from './StateVectorCalculator.js';
 import { PositionManager } from './PositionManager.js';
 import { solarSystemDataManager } from './PlanetaryDataManager.js';
 // Note: No longer importing Constants.js - using PhysicsConstants instead
-import { integrateRK4 } from './integrators/OrbitalIntegrators.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 import { PhysicsConstants } from './core/PhysicsConstants.js';
+import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import { SubsystemManager } from './subsystems/SubsystemManager.js';
 
 // Extract the functions we need from the Astronomy module
@@ -147,7 +147,8 @@ export class PhysicsEngine {
             time: this.simulationTime,
             bodies: this._getBodyStates(),
             satellites: this._getSatelliteStates(),
-            barycenters: this._getBarycenterStates()
+            barycenters: this._getBarycenterStates(),
+            hierarchy: this.hierarchy?.hierarchy || null
         };
     }
 
@@ -410,8 +411,8 @@ export class PhysicsEngine {
         }
 
         // Add all other barycenters from bodies (skip 0 and 3, already handled)
-        for (const [naifId, body] of Object.entries(this.bodies)) {
-            const numId = Number(naifId);
+        for (const [, body] of Object.entries(this.bodies)) {
+            const numId = Number(body.naif_id);
             if ((numId === 0 || numId === 3) || !body || body.type !== 'barycenter') continue;
             this.barycenters.set(numId, {
                 naif: numId,
@@ -734,10 +735,11 @@ export class PhysicsEngine {
             // Check for maneuvers before integration
             this._checkAndExecuteManeuvers(satellite, this.simulationTime);
             
-            const acceleration = this._computeSatelliteAcceleration(satellite);
+            // Use UnifiedSatellitePropagator for consistent physics across all systems
+            const acceleration = this._computeSatelliteAccelerationUnified(satellite);
             
             
-            this._integrateRK4(satellite, acceleration, deltaTime);
+            this._integrateRK4Unified(satellite, deltaTime);
             satellite.lastUpdate = new Date(this.simulationTime.getTime());
 
             // --- SOI transition logic ---
@@ -776,230 +778,56 @@ export class PhysicsEngine {
         }
     }
 
-    _computeSatelliteAcceleration(satellite) {
-        const totalAccel = new THREE.Vector3();
-        const a_bodies = {};
-        const centralBody = this.bodies[satellite.centralBodyNaifId];
-        if (!centralBody) {
-            console.warn(`[PhysicsEngine] Central body ${satellite.centralBodyNaifId} not found for satellite ${satellite.id}`);
-            return totalAccel;
-        }
-        // Convert satellite from planet-centric to solar system coordinates
-        const satGlobalPos = satellite.position.clone().add(centralBody.position);
-
-        // === GRAVITATIONAL ACCELERATION FROM SIGNIFICANT BODIES ONLY ===
-        // Apply sphere of influence filtering to avoid computational issues
-        const significantBodies = this._getSignificantBodies(satellite, centralBody);
-        
-        
-        // First pass: Calculate accelerations from ALL bodies for consistency
-        const allBodyAccels = {};
-        for (const [bodyId, body] of Object.entries(this.bodies)) {
-            // Skip barycenters and invalid bodies
-            if (body.type === 'barycenter') continue;
-            if (!body.position || !body.mass || body.mass <= 0) continue;
-            
-            const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
-            const distance = r.length();
-            
-            if (distance > 1e-6) { // Avoid near-zero distances
-                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
-                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
-                totalAccel.add(accVec);
-                allBodyAccels[bodyId] = accVec.clone();
-            }
-        }
-        
-        // Second pass: Store significant bodies for visualization
-        // For debugging, we can store ALL bodies to see their contributions
-        const storeAllBodies = true; // Set to false for production to save memory
-        
-        for (const [bodyId, body] of Object.entries(this.bodies)) {
-            const shouldStore = storeAllBodies || 
-                               bodyId == satellite.centralBodyNaifId || 
-                               significantBodies.has(Number(bodyId));
-            
-            if (shouldStore && allBodyAccels[bodyId]) {
-                a_bodies[bodyId] = [allBodyAccels[bodyId].x, allBodyAccels[bodyId].y, allBodyAccels[bodyId].z];
-                
-                // Check for extremely large accelerations
-                const accVec = allBodyAccels[bodyId];
-                if (accVec.length() > 100) {
-                    console.warn(`[PhysicsEngine] Extreme acceleration from ${body.name}: ${accVec.length().toExponential(3)} km/s²`);
-                }
-            }
-        }
-
-        // === COMPUTE CENTRAL BODY'S ACCELERATION (for reference frame correction) ===
-        // CRITICAL: Must include ALL bodies, not just significant ones, for consistency
-        const centralAccel = new THREE.Vector3();
-        for (const [bodyId, body] of Object.entries(this.bodies)) {
-            if (bodyId == satellite.centralBodyNaifId) continue; // skip self
-            
-            // Skip barycenters
-            if (body.type === 'barycenter') continue;
-            
-            // Skip invalid bodies
-            if (!body.position || !body.mass || body.mass <= 0) continue;
-            
-            const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
-            const distance = r.length();
-            if (distance > 1e-6) { // Avoid near-zero distances
-                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
-                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
-                centralAccel.add(accVec);
-            }
-        }
-
-        // === CRITICAL FIX: PROPER REFERENCE FRAME TRANSFORMATION ===
-        // The issue was here - we need to use the CORRECT physics for non-inertial frames
-        // For coordinate-invariant physics, use the corrected calculation
-        const coordinateInvariantAccel = this._computeCoordinateInvariantAcceleration(satellite);
-        if (coordinateInvariantAccel) {
-            totalAccel.copy(coordinateInvariantAccel);
-        } else {
-            // Fallback to original method (subtract central body's acceleration)
-            totalAccel.sub(centralAccel);
-        }
-        
-
-        // === J2 PERTURBATION (Earth oblateness) ===
-        const j2Accel = this._computeJ2Perturbation(satellite, centralBody);
-        totalAccel.add(j2Accel);
-
-        // === ATMOSPHERIC DRAG ===
-        const dragAccel = this._computeAtmosphericDrag(satellite);
-        totalAccel.add(dragAccel);
-        
-
-        // === STORE FORCE COMPONENTS FOR VISUALIZATION ===
-        satellite.a_bodies = a_bodies;
-        satellite.a_j2 = [j2Accel.x, j2Accel.y, j2Accel.z];
-        satellite.a_drag = [dragAccel.x, dragAccel.y, dragAccel.z];
-        satellite.a_total = [totalAccel.x, totalAccel.y, totalAccel.z];
-        
-        // Calculate total gravity for visualization (sum of all body contributions)
-        const gravityTotal = new THREE.Vector3();
-        for (const accel of Object.values(allBodyAccels)) {
-            gravityTotal.add(accel);
-        }
-        satellite.a_gravity_total = [gravityTotal.x, gravityTotal.y, gravityTotal.z];
-        
-        
-        return totalAccel;
-    }
-
     /**
-     * Compute coordinate-invariant acceleration for proper SOI transitions
-     * 
-     * PHYSICS PRINCIPLE: The total gravitational acceleration at a given point in space
-     * should be independent of which reference frame we use to describe it.
-     * 
-     * APPROACH: Always calculate in inertial (solar system barycenter) coordinates,
-     * then transform to the desired reference frame at the end.
+     * UNIFIED acceleration calculation using UnifiedSatellitePropagator
+     * Replaces all old inconsistent acceleration methods
      */
-    _computeCoordinateInvariantAcceleration(satellite) {
-        const centralBody = this.bodies[satellite.centralBodyNaifId];
-        if (!centralBody) return null;
-        
-        // Convert satellite to global inertial coordinates (SSB frame)
-        const satGlobalPos = satellite.position.clone().add(centralBody.position);
-        
-        // === STEP 1: CALCULATE TOTAL INERTIAL ACCELERATION ===
-        // This is the absolute acceleration in the inertial frame
-        const totalInertialAccel = new THREE.Vector3();
-        
-        for (const [bodyId, body] of Object.entries(this.bodies)) {
-            // Skip barycenters and invalid bodies
-            if (body.type === 'barycenter') continue;
-            if (!body.position || !body.mass || body.mass <= 0) continue;
-            
-            const r = new THREE.Vector3().subVectors(body.position, satGlobalPos);
-            const distance = r.length();
-            
-            if (distance > 1e-6) { // Avoid near-zero distances
-                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
-                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
-                totalInertialAccel.add(accVec);
-            }
+    _computeSatelliteAccelerationUnified(satellite) {
+        // Convert Three.js satellite to array format for UnifiedSatellitePropagator
+        const satState = {
+            position: satellite.position.toArray(),
+            velocity: satellite.velocity.toArray(),
+            centralBodyNaifId: satellite.centralBodyNaifId,
+            mass: satellite.mass,
+            crossSectionalArea: satellite.crossSectionalArea,
+            dragCoefficient: satellite.dragCoefficient,
+            ballisticCoefficient: satellite.ballisticCoefficient
+        };
+
+        // Convert Three.js bodies to array format
+        const bodiesArray = {};
+        for (const [naifId, body] of Object.entries(this.bodies)) {
+            bodiesArray[naifId] = {
+                ...body,
+                position: body.position.toArray(),
+                velocity: body.velocity.toArray()
+            };
         }
-        
-        // === STEP 2: TRANSFORM TO CURRENT REFERENCE FRAME ===
-        // To get acceleration relative to central body, subtract the central body's acceleration
-        const centralBodyInertialAccel = new THREE.Vector3();
-        
-        for (const [bodyId, body] of Object.entries(this.bodies)) {
-            if (bodyId == satellite.centralBodyNaifId) continue; // Central body doesn't accelerate itself
-            
-            if (body.type === 'barycenter') continue;
-            if (!body.position || !body.mass || body.mass <= 0) continue;
-            
-            const r = new THREE.Vector3().subVectors(body.position, centralBody.position);
-            const distance = r.length();
-            if (distance > 1e-6) {
-                const gravAccel = (PhysicsConstants.PHYSICS.G * body.mass) / (distance * distance);
-                const accVec = r.clone().normalize().multiplyScalar(gravAccel);
-                centralBodyInertialAccel.add(accVec);
+
+        // Use UnifiedSatellitePropagator for consistent physics
+        const accelArray = UnifiedSatellitePropagator.computeAcceleration(
+            satState, 
+            bodiesArray,
+            {
+                includeJ2: true,
+                includeDrag: true,
+                includeThirdBody: true,
+                debugLogging: false
             }
-        }
-        
-        // Transform: a_relative = a_inertial - a_central_body_inertial
-        const relativeAccel = totalInertialAccel.clone().sub(centralBodyInertialAccel);
-        
-        
-        return relativeAccel;
+        );
+
+        // Convert back to Three.js Vector3 for PhysicsEngine compatibility
+        const acceleration = new THREE.Vector3().fromArray(accelArray);
+
+        // Store force components for visualization (simplified)
+        satellite.a_total = accelArray;
+        satellite.acceleration = acceleration;
+
+        return acceleration;
     }
 
-    /**
-     * Compute J2 perturbation acceleration (body's oblateness effect)
-     * Generic for any celestial body with J2 coefficient
-     */
-    _computeJ2Perturbation(satellite, centralBody) {
-        // Check if body has J2 coefficient
-        if (!centralBody.J2 || centralBody.J2 === 0) {
-            return new THREE.Vector3(0, 0, 0);
-        }
-
-        // Use body's J2 coefficient and radius
-        const J2 = centralBody.J2;
-        const Re = centralBody.radius || centralBody.equatorialRadius;
-        const mu = centralBody.GM || (PhysicsConstants.PHYSICS.G * centralBody.mass); // Gravitational parameter
-
-        // Satellite position relative to central body (planet-centric)
-        const r = satellite.position.clone();
-        const rMag = r.length();
-        
-        if (rMag < Re * 1.1) {
-            // Too close to surface, skip J2 calculation
-            return new THREE.Vector3(0, 0, 0);
-        }
-
-        // Get central body's orientation quaternion to determine pole direction
-        const centralBodyState = this.bodies[satellite.centralBodyNaifId];
-        let poleDirection = new THREE.Vector3(0, 0, 1); // Default to Z-axis
-        
-        if (centralBodyState?.quaternion) {
-            // Transform Z-axis by body's quaternion to get actual pole direction
-            const q = centralBodyState.quaternion;
-            poleDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(
-                new THREE.Quaternion(q.x, q.y, q.z, q.w)
-            );
-        }
-
-        // Project satellite position onto pole direction to get z-component
-        const z = r.dot(poleDirection);
-        
-        // J2 acceleration components
-        const factor = -1.5 * J2 * mu * (Re * Re) / (rMag ** 5);
-        
-        // Radial component
-        const radialComp = r.clone().multiplyScalar(factor * (1 - 5 * (z * z) / (rMag * rMag)));
-        
-        // Polar component  
-        const polarComp = poleDirection.clone().multiplyScalar(factor * z * (3 - 5 * (z * z) / (rMag * rMag)));
-        
-        return radialComp.add(polarComp);
-    }
+    // NOTE: _computeCoordinateInvariantAcceleration and _computeJ2Perturbation 
+    // have been replaced by UnifiedSatellitePropagator methods
 
     /**
      * Compute atmospheric drag acceleration
@@ -1046,20 +874,27 @@ export class PhysicsEngine {
         
         // Velocity relative to rotating atmosphere
         const relativeVel = satellite.velocity.clone().sub(atmosphereVel);
-        const velMag = relativeVel.length() * 1000; // Convert km/s to m/s
+        const velMag = relativeVel.length(); // Keep in km/s for unit consistency
         
         if (velMag === 0) {
             return new THREE.Vector3(0, 0, 0);
         }
 
-        // Drag force magnitude: F = -0.5 * rho * v² * Cd * A
-        const dragMag = 0.5 * density * velMag * velMag * Cd * area / mass;
+        // Calculate ballistic coefficient for consistent calculation
+        const ballisticCoeff = mass / (Cd * area); // kg/m²
+        
+        // Convert ballistic coefficient from kg/m² to kg/km² for unit consistency
+        const ballisticCoeffKm = ballisticCoeff * 1e6; // kg/km²
+        
+        // Drag acceleration magnitude: a = 0.5 * ρ * v² / (m/CdA)
+        // With consistent units: density in kg/km³, velocity in km/s, ballistic coeff in kg/km²
+        const dragMag = 0.5 * density * velMag * velMag / ballisticCoeffKm;
         
         // Drag direction is opposite to relative velocity
         const dragDirection = relativeVel.clone().normalize().multiplyScalar(-1);
         
-        // Convert back to km/s²
-        return dragDirection.multiplyScalar(dragMag / 1000);
+        // Result is already in km/s²
+        return dragDirection.multiplyScalar(dragMag);
     }
 
     /**
@@ -1194,8 +1029,8 @@ export class PhysicsEngine {
         const centralGravAccel = (PhysicsConstants.PHYSICS.G * centralBody.mass) / (satAltitude * satAltitude);
         const minGravAccel = centralGravAccel * 0.0001; // 0.01% threshold
         
-        for (const [bodyId, body] of Object.entries(this.bodies)) {
-            const bId = Number(bodyId);
+        for (const [, body] of Object.entries(this.bodies)) {
+            const bId = Number(body.naif_id);
             if (bId === satellite.centralBodyNaifId || significantBodies.has(bId)) continue;
             
             // Use temp vector for distance calculation
@@ -1217,9 +1052,11 @@ export class PhysicsEngine {
         return significantBodies;
     }
 
-    _integrateRK4(satellite, acceleration, dt) {
-        // All integration is done in planet-centric frame
-        // But force calculations use global positions
+    /**
+     * UNIFIED RK4 integration using UnifiedSatellitePropagator
+     * Replaces old inconsistent integration methods
+     */
+    _integrateRK4Unified(satellite, dt) {
         const centralBody = this.bodies[satellite.centralBodyNaifId];
         if (!centralBody) return;
 
@@ -1227,32 +1064,63 @@ export class PhysicsEngine {
         this._validateSatelliteState(satellite, "before RK4");
 
         const vel0 = satellite.velocity.clone();
-        
 
-        // Create acceleration function for the integrator
-        const accelerationFunc = (position, velocity) => {
-            return this._computeSatelliteAcceleration({ ...satellite, position, velocity });
+        // Convert to array format for UnifiedSatellitePropagator
+        const satState = {
+            position: satellite.position.toArray(),
+            velocity: satellite.velocity.toArray(),
+            centralBodyNaifId: satellite.centralBodyNaifId,
+            mass: satellite.mass,
+            crossSectionalArea: satellite.crossSectionalArea,
+            dragCoefficient: satellite.dragCoefficient,
+            ballisticCoefficient: satellite.ballisticCoefficient
         };
 
-        // Use centralized RK4 integration
-        const { position: newPosition, velocity: newVelocity } = integrateRK4(
-            satellite.position,
-            satellite.velocity,
+        const bodiesArray = {};
+        for (const [naifId, body] of Object.entries(this.bodies)) {
+            bodiesArray[naifId] = {
+                ...body,
+                position: body.position.toArray(),
+                velocity: body.velocity.toArray()
+            };
+        }
+
+        // Create acceleration function for UnifiedSatellitePropagator
+        const accelerationFunc = (pos, vel) => {
+            const tempSat = {
+                ...satState,
+                position: pos,
+                velocity: vel
+            };
+            return UnifiedSatellitePropagator.computeAcceleration(tempSat, bodiesArray, {
+                includeJ2: true,
+                includeDrag: true,
+                includeThirdBody: true
+            });
+        };
+
+        // Use UnifiedSatellitePropagator RK4 integration
+        const result = UnifiedSatellitePropagator.integrateRK4(
+            satState.position,
+            satState.velocity,
             accelerationFunc,
             dt
         );
 
         // Update satellite state
-        satellite.position.copy(newPosition);
-        satellite.velocity.copy(newVelocity);
-        satellite.acceleration.copy(acceleration);
+        satellite.position.fromArray(result.position);
+        satellite.velocity.fromArray(result.velocity);
+        
+        // Calculate final acceleration for storage
+        const finalAccel = this._computeSatelliteAccelerationUnified(satellite);
+        satellite.acceleration.copy(finalAccel);
         
         // Track velocity changes
         const oldVelMag = vel0.length();
         const newVelMag = satellite.velocity.length();
         const velChange = satellite.velocity.clone().sub(vel0).length();
         
-        const accMag = acceleration.length();
+        const accMag = finalAccel.length();
         // Add to velocity history if significant change
         if (!satellite.velocityHistory) {
             satellite.velocityHistory = [];
@@ -1265,7 +1133,7 @@ export class PhysicsEngine {
                 velocityChange: velChange,
                 acceleration: accMag,
                 dt: dt,
-                context: 'RK4 integration'
+                context: 'Unified RK4 integration'
             });
             
             // Keep only last 10 entries
@@ -1399,6 +1267,28 @@ export class PhysicsEngine {
     }
 
     /**
+     * Get body data for orbital calculations (includes mass/GM)
+     * Returns: [{ id, name, position: [x, y, z], mass, GM, naifId }]
+     */
+    getBodiesForOrbitPropagation() {
+        const bodies = [];
+        for (const [naifId, body] of Object.entries(this.bodies)) {
+            if (!body || typeof body.position?.toArray !== 'function') continue;
+            bodies.push({
+                id: Number(naifId),
+                naifId: Number(naifId),
+                name: body.name,
+                position: body.position.toArray(),
+                mass: body.mass || 0,
+                GM: body.GM || 0,
+                radius: body.radius || 0,
+                type: body.type
+            });
+        }
+        return bodies;
+    }
+
+    /**
      * Get all satellites as plain JS objects for line-of-sight calculations
      * Returns: [{ id, position: [x, y, z] }] where position is absolute in solar system coordinates
      */
@@ -1455,6 +1345,7 @@ export class PhysicsEngine {
         }
     }
     
+
     /**
      * Get performance statistics
      */

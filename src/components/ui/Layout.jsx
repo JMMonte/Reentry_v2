@@ -341,7 +341,7 @@ export function Layout({
                 {groundTrackWindowProps &&
                     <GroundTrackWindow
                         {...groundTrackWindowProps}
-                        planets={window.app3d?.planets || []}
+                        planets={window.app3d?.celestialBodies || []}
                     />
                 }
                 {maneuverSat && (

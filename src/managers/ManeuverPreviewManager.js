@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
+import { UnifiedSatellitePropagator } from '../physics/core/UnifiedSatellitePropagator.js';
 import { createManeuverNodeDTO } from '../types/DataTransferObjects.js';
 
 /**
@@ -39,21 +40,31 @@ export class ManeuverPreviewManager {
         // Calculate time to maneuver
         const dtToManeuver = (executionTime.getTime() - initialState.time.getTime()) / 1000; // seconds
 
-        // Request orbit propagation up to maneuver time
-        const propagationResult = await this.orbitManager.requestPropagation({
-            satelliteId: satellite.id,
-            initialState: {
-                position: [initialState.position.x, initialState.position.y, initialState.position.z],
-                velocity: [initialState.velocity.x, initialState.velocity.y, initialState.velocity.z]
-            },
-            timeSpan: dtToManeuver,
-            includeIntermediateStates: true,
-            centralBodyId: satellite.centralBodyNaifId,
-            physicsState: satellite.app3d.physicsEngine.getFullState()
+        // Use UnifiedSatellitePropagator for consistent physics
+        const physicsState = satellite.app3d.physicsEngine.getSimulationState();
+        const satelliteConfig = {
+            position: [initialState.position.x, initialState.position.y, initialState.position.z],
+            velocity: [initialState.velocity.x, initialState.velocity.y, initialState.velocity.z],
+            centralBodyNaifId: satellite.centralBodyNaifId,
+            mass: satellite.mass || 1000,
+            crossSectionalArea: satellite.crossSectionalArea || 10,
+            dragCoefficient: satellite.dragCoefficient || 2.2
+        };
+
+        const propagationPoints = UnifiedSatellitePropagator.propagateOrbit({
+            satellite: satelliteConfig,
+            bodies: physicsState.bodies,
+            duration: Math.abs(dtToManeuver),
+            timeStep: Math.min(60, Math.abs(dtToManeuver) / 10), // Adaptive time step
+            includeJ2: true,
+            includeDrag: true,
+            includeThirdBody: true
         });
 
-        // Get state at maneuver time
-        const stateAtManeuver = propagationResult.finalState || propagationResult.states[propagationResult.states.length - 1];
+        // Get state at maneuver time (last point if propagating forward, first if backward)
+        const stateAtManeuver = dtToManeuver >= 0 ? 
+            propagationPoints[propagationPoints.length - 1] : 
+            propagationPoints[0];
         const posAtManeuver = new THREE.Vector3(...stateAtManeuver.position);
         const velAtManeuver = new THREE.Vector3(...stateAtManeuver.velocity);
 
@@ -63,18 +74,38 @@ export class ManeuverPreviewManager {
         // Apply delta-V
         const velAfterManeuver = velAtManeuver.clone().add(worldDeltaV);
 
-        // Request post-maneuver orbit propagation
-        const postManeuverResult = await this.orbitManager.requestPropagation({
-            satelliteId: `${satellite.id}_preview_${Date.now()}`,
-            initialState: {
-                position: [posAtManeuver.x, posAtManeuver.y, posAtManeuver.z],
-                velocity: [velAfterManeuver.x, velAfterManeuver.y, velAfterManeuver.z]
-            },
-            timeSpan: satellite.app3d.getDisplaySetting('orbitPredictionInterval') * 86400, // days to seconds
-            includeOrbitalElements: true,
-            centralBodyId: satellite.centralBodyNaifId,
-            physicsState: satellite.app3d.physicsEngine.getFullState()
+        // Request post-maneuver orbit propagation using UnifiedSatellitePropagator
+        const postManeuverConfig = {
+            position: [posAtManeuver.x, posAtManeuver.y, posAtManeuver.z],
+            velocity: [velAfterManeuver.x, velAfterManeuver.y, velAfterManeuver.z],
+            centralBodyNaifId: satellite.centralBodyNaifId,
+            mass: satellite.mass || 1000,
+            crossSectionalArea: satellite.crossSectionalArea || 10,
+            dragCoefficient: satellite.dragCoefficient || 2.2
+        };
+
+        const predictionDuration = satellite.app3d.getDisplaySetting?.('orbitPredictionInterval') * 86400 || 86400; // Default 1 day
+        const postManeuverPoints = UnifiedSatellitePropagator.propagateOrbit({
+            satellite: postManeuverConfig,
+            bodies: physicsState.bodies,
+            duration: predictionDuration,
+            timeStep: 60, // 1 minute steps
+            includeJ2: true,
+            includeDrag: true,
+            includeThirdBody: true
         });
+
+        // Calculate orbital elements for the post-maneuver orbit
+        const orbitalElements = Orbital.calculateElements(
+            posAtManeuver,
+            velAfterManeuver,
+            physicsState.bodies[satellite.centralBodyNaifId]
+        );
+
+        const postManeuverResult = {
+            points: postManeuverPoints,
+            orbitalElements: orbitalElements
+        };
 
         // Create preview data with pre-calculated values for visualization
         const dvMagnitude = worldDeltaV.length();
@@ -219,18 +250,47 @@ export class ManeuverPreviewManager {
     async getStateAtTime(preview, targetTime, centralBodyId) {
         const dt = (targetTime.getTime() - preview.executionTime.getTime()) / 1000;
         
-        const result = await this.orbitManager.requestPropagation({
-            satelliteId: preview.id,
-            initialState: {
-                position: [preview.positionAtManeuver.x, preview.positionAtManeuver.y, preview.positionAtManeuver.z],
-                velocity: [preview.velocityAfterManeuver.x, preview.velocityAfterManeuver.y, preview.velocityAfterManeuver.z]
-            },
-            timeSpan: dt,
-            centralBodyId,
-            physicsState: preview.baseState
+        // Use UnifiedSatellitePropagator for consistent physics
+        const satelliteConfig = {
+            position: [preview.positionAtManeuver.x, preview.positionAtManeuver.y, preview.positionAtManeuver.z],
+            velocity: [preview.velocityAfterManeuver.x, preview.velocityAfterManeuver.y, preview.velocityAfterManeuver.z],
+            centralBodyNaifId: centralBodyId,
+            mass: 1000,
+            crossSectionalArea: 10,
+            dragCoefficient: 2.2
+        };
+
+        // Get current physics state - fallback to basic Earth if baseState not available
+        const physicsState = preview.baseState?.physicsState || {
+            bodies: {
+                399: {
+                    name: 'Earth',
+                    GM: 398600.4415,
+                    radius: 6371,
+                    position: [0, 0, 0],
+                    velocity: [0, 0, 0],
+                    naifId: 399
+                }
+            }
+        };
+
+        const points = UnifiedSatellitePropagator.propagateOrbit({
+            satellite: satelliteConfig,
+            bodies: physicsState.bodies,
+            duration: Math.abs(dt),
+            timeStep: Math.min(60, Math.abs(dt) / 5),
+            includeJ2: true,
+            includeDrag: true,
+            includeThirdBody: true
         });
 
-        return result.finalState || result.states[result.states.length - 1];
+        // Return the final state
+        const finalPoint = dt >= 0 ? points[points.length - 1] : points[0];
+        return {
+            position: finalPoint.position,
+            velocity: finalPoint.velocity,
+            time: finalPoint.time
+        };
     }
 
     /**

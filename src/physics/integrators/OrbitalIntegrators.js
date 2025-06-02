@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { AtmosphericModels } from '../core/AtmosphericModels.js';
 import { GravityCalculator } from '../core/GravityCalculator.js';
-import { stateToKeplerian } from '../../utils/KeplerianUtils.js';
+import { UnifiedSatellitePropagator } from '../core/UnifiedSatellitePropagator.js';
+import { stateToKeplerian } from '../utils/KeplerianUtils.js';
 import { PhysicsConstants } from '../core/PhysicsConstants.js';
 
 /**
@@ -498,7 +499,8 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
         onProgress = null,
         allowFullEllipse = false,
         ballisticCoefficient = AtmosphericModels.DEFAULT_BALLISTIC_COEFFICIENT,
-        bodyMap = null
+        bodyMap = null,
+        centralBodyNaifId = null
     } = options;
 
     const dt = period / numPoints;
@@ -508,24 +510,68 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
     let pos = pos0.slice();
     let vel = vel0.slice();
 
-    // Check if orbit is hyperbolic
-    // Find the dominant gravitational body at the initial position
-    const position = new THREE.Vector3(...pos0);
-    let dominantBody = bodies[0]; // Default to first body
-    let maxInfluence = 0;
+    // Find the central body for orbital calculations
+    let dominantBody = null;
     
-    for (const body of bodies) {
-        if (!body.mass || !body.position) continue;
-        const bodyPos = new THREE.Vector3(...(body.position.toArray ? body.position.toArray() : body.position));
-        const distance = position.distanceTo(bodyPos);
-        const influence = body.mass / (distance * distance);
-        if (influence > maxInfluence) {
-            maxInfluence = influence;
-            dominantBody = body;
+    // If centralBodyNaifId is specified, use that body
+    if (centralBodyNaifId !== null) {
+        dominantBody = bodies.find(body => 
+            body.naif === centralBodyNaifId || 
+            body.naifId === centralBodyNaifId ||
+            parseInt(body.naif) === parseInt(centralBodyNaifId) ||
+            parseInt(body.naifId) === parseInt(centralBodyNaifId)
+        );
+        
+        if (dominantBody) {
+            console.log(`[OrbitalIntegrators] Using specified central body: ${dominantBody.name} (${centralBodyNaifId})`);
+        } else {
+            console.warn(`[OrbitalIntegrators] Specified central body ${centralBodyNaifId} not found, falling back to auto-detection`);
         }
     }
     
-    // Use the dominant body's gravitational parameter
+    // Fallback: Find the dominant gravitational body at the initial position
+    if (!dominantBody) {
+        const position = new THREE.Vector3(...pos0);
+        let maxInfluence = 0;
+        
+        for (const body of bodies) {
+            if (!body.mass || !body.position) continue;
+            const bodyPos = new THREE.Vector3(...(body.position.toArray ? body.position.toArray() : body.position));
+            const distance = position.distanceTo(bodyPos);
+            const influence = body.mass / (distance * distance);
+            if (influence > maxInfluence) {
+                maxInfluence = influence;
+                dominantBody = body;
+            }
+        }
+        
+        // Final fallback if no dominant body found
+        if (!dominantBody && bodies.length > 0) {
+            // Try to find any body with valid GM or mass
+            dominantBody = bodies.find(body => body.GM || (body.mass && body.mass > 0));
+            if (!dominantBody) {
+                dominantBody = bodies[0];
+            }
+        }
+    }
+    
+    // Use the dominant body's gravitational parameter, with safety check
+    if (!dominantBody || (!dominantBody.GM && !dominantBody.mass)) {
+        console.warn('[OrbitalIntegrators] No valid dominant body found for orbit propagation');
+        console.warn('[OrbitalIntegrators] Available bodies:', bodies.map(b => ({
+            name: b.name || 'unnamed',
+            naif: b.naif || b.naifId,
+            mass: b.mass,
+            GM: b.GM,
+            hasPosition: !!b.position
+        })));
+        console.warn('[OrbitalIntegrators] Selected dominantBody:', dominantBody ? {
+            name: dominantBody.name,
+            mass: dominantBody.mass,
+            GM: dominantBody.GM
+        } : 'null');
+        return [];
+    }
     const mu = dominantBody.GM || (PhysicsConstants.PHYSICS.G * dominantBody.mass);
     const oe = stateToKeplerian(
         new THREE.Vector3(...pos0),
@@ -535,15 +581,38 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
     const hyperbolic = oe && oe.eccentricity >= 1;
 
     for (let i = 0; i < numPoints; i++) {
-        // Integrate one step
+        // Integrate one step using centralized physics (same as main engine)
         const accelerationFunc = (p, v) => {
-            const grav = GravityCalculator.computeAcceleration(p, bodies);
-            const planet = AtmosphericModels.findHostPlanet(p, bodyMap || bodies);
-            if (planet) {
-                const drag = AtmosphericModels.computeDragAcceleration(p, v, planet, ballisticCoefficient);
-                return grav.add(new THREE.Vector3(...drag));
+            // Convert Three.js Vector3 to pure physics format
+            const satPhysics = {
+                position: p.toArray ? p.toArray() : [p.x, p.y, p.z],
+                velocity: v.toArray ? v.toArray() : [v.x, v.y, v.z],
+                centralBodyNaifId: centralBodyNaifId,
+                ballisticCoefficient: ballisticCoefficient
+            };
+            
+            // Convert bodies to pure physics format
+            const bodiesPhysics = {};
+            for (const body of bodies) {
+                const naifId = body.naif || body.naifId || body.id;
+                bodiesPhysics[naifId] = {
+                    ...body,
+                    position: Array.isArray(body.position) ? body.position : 
+                             (body.position.toArray ? body.position.toArray() : [0, 0, 0]),
+                    velocity: body.velocity || [0, 0, 0],
+                    naifId: naifId
+                };
             }
-            return grav;
+            
+            // Use UnifiedSatellitePropagator for consistent physics
+            const accelArray = UnifiedSatellitePropagator.computeAcceleration(satPhysics, bodiesPhysics, {
+                includeJ2: true,
+                includeDrag: true,
+                includeThirdBody: false
+            });
+            
+            // Convert back to Three.js Vector3 for integration
+            return new THREE.Vector3().fromArray(accelArray);
         };
 
         const state = integrateRK45(

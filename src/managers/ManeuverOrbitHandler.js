@@ -233,7 +233,7 @@ export class ManeuverOrbitHandler {
             const physicsEngine = this.app.physicsIntegration?.physicsEngine;
             const sat = physicsEngine?.satellites.get(satelliteId);
             const planet = this.app.celestialBodies?.find(b => b.naifId === parseInt(sat?.centralBodyNaifId));
-            const parentGroup = planet?.orbitGroup || this.app.sceneManager?.scene;
+            const parentGroup = planet?.getOrbitGroup?.() || this.app.sceneManager?.scene;
             if (parentGroup) {
                 parentGroup.add(orbitLine);
             } else {

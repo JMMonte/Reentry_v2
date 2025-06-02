@@ -25,7 +25,7 @@ export class AtmosphericModels {
         const {
             thickness = 100, // km
             densityScaleHeight = 8.5, // km
-            density = 1.225e-3, // kg/km³ at sea level (converted from kg/m³)
+            density = 1.225e-9, // kg/km³ at sea level (converted from 1.225 kg/m³)
             rho0 = density // Alternative name for sea level density
         } = atmosphere;
 
@@ -46,7 +46,7 @@ export class AtmosphericModels {
      * @returns {Array} - Drag acceleration [ax, ay, az] (km/s²)
      */
     static computeDragAcceleration(position, velocity, planet, ballisticCoefficient = null) {
-        if (!planet || !planet.atmosphere || !planet.radius) {
+        if (!planet || (!planet.atmosphere && !planet.atmosphericModel) || !planet.radius) {
             return [0, 0, 0];
         }
 
@@ -58,14 +58,28 @@ export class AtmosphericModels {
         const r = Math.sqrt(x * x + y * y + z * z);
         const altitude = r - planet.radius;
 
-        // Check if above atmosphere
-        const thickness = planet.atmosphere.thickness || 100;
+        // Check if above atmosphere - try both atmosphere and atmosphericModel
+        const atmosphereConfig = planet.atmosphere || planet.atmosphericModel;
+        const thickness = atmosphereConfig.thickness || atmosphereConfig.maxAltitude || 100;
         if (altitude <= 0 || altitude > thickness) {
             return [0, 0, 0];
         }
 
         // Calculate atmospheric density
-        const rho = this.calculateDensity(altitude, planet.atmosphere);
+        let rho;
+        if (planet.atmosphericModel && planet.atmosphericModel.getDensity) {
+            rho = planet.atmosphericModel.getDensity(altitude);
+        } else {
+            // Fallback calculation using simplified exponential model
+            // The referenceDensity is at referenceAltitude, need to extrapolate to current altitude
+            const referenceAlt = atmosphereConfig.referenceAltitude || 0;
+            const referenceDensity = atmosphereConfig.referenceDensity || 1.225; // kg/m³
+            const scaleHeight = atmosphereConfig.scaleHeight || 50;
+            
+            // Calculate density directly using exponential model at current altitude
+            // Convert from kg/m³ to kg/km³ and apply exponential decay
+            rho = (referenceDensity * 1e9) * Math.exp(-(altitude - referenceAlt) / scaleHeight);
+        }
         if (rho === 0) return [0, 0, 0];
 
         // Atmospheric velocity due to planet rotation
@@ -73,8 +87,24 @@ export class AtmosphericModels {
             ? (2 * Math.PI / planet.rotationPeriod) 
             : 0; // No rotation if period not specified
         
-        // Atmosphere co-rotates with planet (simplified model)
-        const vAtm = [-omega * y, omega * x, 0];
+        // Proper 3D atmospheric co-rotation with planetary tilt
+        // Earth's rotation axis is tilted 23.5° from the ecliptic normal
+        const tilt = planet.tilt ? (planet.tilt * Math.PI / 180) : 0; // Convert to radians
+        
+        // Rotation vector in planetary frame (accounting for tilt)
+        // For Earth: rotation axis points toward celestial north pole, tilted from Z-axis
+        const rotationAxis = [
+            Math.sin(tilt), // X-component of rotation axis
+            0,              // Y-component (assuming rotation in XZ plane)
+            Math.cos(tilt)  // Z-component of rotation axis
+        ];
+        
+        // Atmospheric velocity = ω × r (cross product of rotation vector with position)
+        const vAtm = [
+            omega * (rotationAxis[1] * z - rotationAxis[2] * y),
+            omega * (rotationAxis[2] * x - rotationAxis[0] * z),
+            omega * (rotationAxis[0] * y - rotationAxis[1] * x)
+        ];
         
         // Relative velocity
         const vr = [
@@ -188,12 +218,14 @@ export class AtmosphericModels {
      * @returns {boolean} - True if in atmosphere
      */
     static isInAtmosphere(position, planet) {
-        if (!planet || !planet.atmosphere || !planet.radius) return false;
+        if (!planet || (!planet.atmosphere && !planet.atmosphericModel) || !planet.radius) return false;
         
         const p = position instanceof THREE.Vector3 ? position : new THREE.Vector3().fromArray(position);
         const r = p.length();
         const altitude = r - planet.radius;
-        const thickness = planet.atmosphere.thickness || 100;
+        
+        const atmosphereConfig = planet.atmosphere || planet.atmosphericModel;
+        const thickness = atmosphereConfig.thickness || atmosphereConfig.maxAltitude || 100;
         
         return altitude > 0 && altitude <= thickness;
     }

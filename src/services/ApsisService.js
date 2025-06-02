@@ -10,9 +10,8 @@
  * This is the central interface for all apsis-related operations in the application.
  */
 
-import { ApsisCalculations } from '../physics/core/ApsisCalculations.js';
-import { OrbitalMechanics } from '../physics/core/OrbitalMechanics.js';
-import { stateToKeplerian } from '../utils/KeplerianUtils.js';
+import { Orbital } from '../physics/PhysicsAPI.js';
+import { stateToKeplerian } from '../physics/utils/KeplerianUtils.js';
 
 export class ApsisService {
     /**
@@ -32,23 +31,22 @@ export class ApsisService {
                 centralBody.GM || centralBody.mu
             );
 
-            // Validate elements
-            const validation = ApsisCalculations.validateElements(elements);
-            if (!validation.isValid) {
-                console.warn('[ApsisService] Invalid orbital elements:', validation.errors);
+            // Validate elements - basic validation
+            if (!elements || !Number.isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
+                console.warn('[ApsisService] Invalid orbital elements');
                 return new Date(currentTime.getTime() + 86400000); // Return +1 day as fallback
             }
 
-            // Calculate orbital period
-            const period = OrbitalMechanics.calculatePeriod(elements.semiMajorAxis, centralBody.GM || centralBody.mu);
+            // Calculate orbital period using existing API
+            const period = Orbital.calculatePeriodFromSMA(elements.semiMajorAxis, centralBody.GM || centralBody.mu);
             
-            // Get time offset to next apsis
-            const timeOffset = ApsisCalculations.calculateApsisTimeOffset(
-                elements.trueAnomaly,
-                apsisType,
-                period,
-                elements.eccentricity
-            );
+            // Get time offset to next apsis - simplified calculation
+            const targetTrueAnomaly = apsisType === 'periapsis' ? 0 : Math.PI;
+            let deltaAnomaly = targetTrueAnomaly - elements.trueAnomaly;
+            while (deltaAnomaly <= 0) {
+                deltaAnomaly += 2 * Math.PI;
+            }
+            const timeOffset = (deltaAnomaly / (2 * Math.PI)) * period;
 
             // Return absolute time
             return new Date(currentTime.getTime() + (timeOffset * 1000));
@@ -78,24 +76,57 @@ export class ApsisService {
             // Add central body radius for altitude calculations
             elements.centralBodyRadius = centralBody.radius || 0;
 
-            // Validate elements
-            const validation = ApsisCalculations.validateElements(elements);
-            if (!validation.isValid) {
-                console.warn('[ApsisService] Invalid orbital elements:', validation.errors);
+            // Validate elements - basic validation
+            if (!elements || !Number.isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
+                console.warn('[ApsisService] Invalid orbital elements');
                 return this._getEmptyApsisData();
             }
 
-            // Calculate orbital period
+            // Calculate orbital period using existing API
             const mu = centralBody.GM || centralBody.mu;
-            const period = OrbitalMechanics.calculatePeriod(elements.semiMajorAxis, mu);
+            const period = Orbital.calculatePeriodFromSMA(elements.semiMajorAxis, mu);
 
-            // Get pure physics apsis information
-            const apsisInfo = ApsisCalculations.getApsisInformation(
-                elements,
-                mu,
-                elements.trueAnomaly,
-                period
-            );
+            // Calculate apsis radii
+            const periapsisRadius = elements.semiMajorAxis * (1 - elements.eccentricity);
+            const apoapsisRadius = elements.eccentricity < 1.0 
+                ? elements.semiMajorAxis * (1 + elements.eccentricity)
+                : null;
+
+            // Calculate time offsets to next apsis points
+            const currentTrueAnomaly = elements.trueAnomaly;
+            
+            // Periapsis time offset
+            let deltaToPeri = 0 - currentTrueAnomaly;
+            while (deltaToPeri <= 0) {
+                deltaToPeri += 2 * Math.PI;
+            }
+            const periapsisTimeOffset = (deltaToPeri / (2 * Math.PI)) * period;
+            
+            // Apoapsis time offset (for elliptical orbits)
+            let deltaToApo = Math.PI - currentTrueAnomaly;
+            while (deltaToApo <= 0) {
+                deltaToApo += 2 * Math.PI;
+            }
+            const apoapsisTimeOffset = (deltaToApo / (2 * Math.PI)) * period;
+
+            // Create apsis info structure
+            const apsisInfo = {
+                periapsis: {
+                    radius: periapsisRadius,
+                    altitude: periapsisRadius - (centralBody.radius || 0),
+                    position: [periapsisRadius, 0, 0], // Simplified position at periapsis
+                    timeOffset: periapsisTimeOffset
+                }
+            };
+
+            if (apoapsisRadius) {
+                apsisInfo.apoapsis = {
+                    radius: apoapsisRadius,
+                    altitude: apoapsisRadius - (centralBody.radius || 0),
+                    position: [-apoapsisRadius, 0, 0], // Simplified position at apoapsis
+                    timeOffset: apoapsisTimeOffset
+                };
+            }
 
             // Add timing information
             const currentTimeMs = currentTime.getTime();
@@ -165,13 +196,14 @@ export class ApsisService {
                 centralBody.GM || centralBody.mu
             );
 
-            const radii = ApsisCalculations.calculateApsisRadii(elements);
+            const periapsisRadius = elements.semiMajorAxis * (1 - elements.eccentricity);
+            const apoapsisRadius = elements.eccentricity < 1.0 
+                ? elements.semiMajorAxis * (1 + elements.eccentricity)
+                : null;
             
             return {
-                periapsisAltitude: radii.periapsisRadius - centralBody.radius,
-                apoapsisAltitude: elements.eccentricity < 1.0 
-                    ? radii.apoapsisRadius - centralBody.radius 
-                    : Infinity
+                periapsisAltitude: periapsisRadius - centralBody.radius,
+                apoapsisAltitude: apoapsisRadius ? apoapsisRadius - centralBody.radius : Infinity
             };
         } catch (error) {
             console.error('[ApsisService] Error calculating apsis altitudes:', error);

@@ -1,5 +1,7 @@
-// Earth radius fallback - should be retrieved from PhysicsAPI in the future
-const R_EARTH = 6371; // km - Earth mean radius
+import { Bodies } from '../../../physics/PhysicsAPI.js';
+
+// Cache for planet radius lookups
+const radiusCache = new Map();
 const GRID_MAJOR = 10;
 const GRID_MINOR = 5;
 
@@ -60,13 +62,38 @@ export function drawPOI(ctx, data, w, h, color, r) {
     }
 }
 
+/** 
+ * Get planet radius from cache or Physics API
+ * @param {number} planetNaifId - Planet NAIF ID
+ * @returns {Promise<number>} Planet radius in km
+ */
+async function getPlanetRadius(planetNaifId) {
+    if (radiusCache.has(planetNaifId)) {
+        return radiusCache.get(planetNaifId);
+    }
+    
+    try {
+        const planetData = await Bodies.getData(planetNaifId);
+        const radius = planetData?.radius || 6371; // Earth fallback
+        radiusCache.set(planetNaifId, radius);
+        return radius;
+    } catch (error) {
+        console.warn('Failed to get planet radius, using Earth fallback:', error);
+        return 6371; // Earth radius fallback
+    }
+}
+
 /** Produce semi-transparent coverage bitmap for one satellite */
-export function rasteriseCoverage(ctx, w, h, { lat, lon, altitude }, colorRGB) {
+export async function rasteriseCoverage(ctx, w, h, { lat, lon, altitude }, colorRGB, planetNaifId = 399) {
     const cov = ctx.createImageData(w, h);
     const [sr, sg, sb] = colorRGB;
     const altM = altitude;
+    
+    // Get planet radius from Physics API
+    const planetRadius = await getPlanetRadius(planetNaifId);
+    
     const cosThresh = Math.cos(
-        Math.acos(R_EARTH / (R_EARTH + altM))
+        Math.acos(planetRadius / (planetRadius + altM))
     );
     const lat1 = deg2rad(lat);
     const lon1 = deg2rad(lon);
