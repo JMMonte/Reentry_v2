@@ -46,7 +46,11 @@ export class Satellite {
         
         this._initVisuals();
         this.maneuverNodes = [];
-        this.maneuverNodeVisualizer = new ManeuverVisualizationManager(scene, this);
+        
+        // Use the same parent for maneuver nodes as we do for apsis visualizer
+        const orbitGroup = this.planetConfig?.getOrbitGroup?.() || this.planetConfig?.orbitGroup;
+        const maneuverParent = orbitGroup || scene;
+        this.maneuverNodeVisualizer = new ManeuverVisualizationManager(maneuverParent, this);
         
         // Listen for maneuver events from physics engine
         this._setupManeuverEventListeners();

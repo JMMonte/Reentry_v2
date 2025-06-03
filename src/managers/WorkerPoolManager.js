@@ -168,7 +168,8 @@ export class WorkerPoolManager {
         const job = this.activeJobs.get(satelliteId);
         if (!job) {
             // For 'complete' messages, this is normal since the job may have been cleaned up by 'chunk' with isComplete
-            if (type !== 'complete') {
+            // Also ignore warnings for maneuver preview jobs which are temporary
+            if (type !== 'complete' && !satelliteId?.includes('maneuver_preview')) {
                 console.warn(`[WorkerPoolManager] No active job found for satellite ${satelliteId}`);
             }
             return;

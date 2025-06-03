@@ -471,7 +471,6 @@ class App3D extends EventTarget {
     }
 
     _syncConnectionsWorker() {
-        console.log('[App3D] _syncConnectionsWorker called');
         if (!this.physicsIntegration?.physicsEngine) {
             console.log('[App3D] No physics engine available');
             return;

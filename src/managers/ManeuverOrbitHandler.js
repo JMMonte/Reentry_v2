@@ -75,10 +75,20 @@ export class ManeuverOrbitHandler {
         
         const worldDeltaV = Utils.vector.localToWorldDeltaV(localDeltaV, position, velocity);
         
+        // Convert position from absolute SSB coordinates to planet-relative coordinates
+        // (same transformation we use for apsis visualization)
+        const centralBodyId = nodePoint.centralBodyId || satellite.centralBodyNaifId;
+        const centralBodyPosition = physicsEngine?.getBodyPosition?.(centralBodyId) || [0, 0, 0];
+        const planetRelativePosition = [
+            nodePoint.position[0] - centralBodyPosition[0],
+            nodePoint.position[1] - centralBodyPosition[1],
+            nodePoint.position[2] - centralBodyPosition[2]
+        ];
+        
         // Create visualization data
         const visualData = {
             nodeId: maneuverNode.id,
-            position: nodePoint.position,
+            position: planetRelativePosition,
             deltaVDirection: worldDeltaV.clone().normalize().toArray(),
             deltaVMagnitude: maneuverNode.deltaMagnitude,
             color: satellite.color || 0xffffff,

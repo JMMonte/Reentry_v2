@@ -187,6 +187,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
         // Get list of potential communication targets from physics engine
         const targets = this.findCommunicationTargets(satellite);
 
+        console.log(`[CommunicationSubsystem] Satellite ${this.satelliteId} found ${targets.length} potential targets`);
 
         // Clear old connections
         this.activeConnections.clear();
@@ -206,8 +207,10 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
                 });
 
                 this.metrics.successfulConnections++;
+                console.log(`[CommunicationSubsystem] Satellite ${this.satelliteId} established link with ${target.id}, quality: ${linkInfo.quality.toFixed(1)}%`);
             } else {
                 this.metrics.failedConnections++;
+                console.log(`[CommunicationSubsystem] Satellite ${this.satelliteId} failed to link with ${target.id}: ${linkInfo.reason}`);
             }
 
             this.metrics.connectionAttempts++;

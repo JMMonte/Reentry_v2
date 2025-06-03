@@ -39,8 +39,10 @@ export function SatelliteCommsSection({ satelliteId, app }) {
             let activeConnections = [];
 
             // Try to get data from physics engine subsystem first (most accurate)
-            if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
-                const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
+            // Try accessing the physics engine directly or through physicsIntegration
+            let physicsEngine = app?.physicsIntegration?.physicsEngine || app?.physicsEngine;
+            if (physicsEngine?.subsystemManager) {
+                const subsystemManager = physicsEngine.subsystemManager;
                 const commsSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
                 
                 if (commsSubsystem) {
@@ -90,8 +92,9 @@ export function SatelliteCommsSection({ satelliteId, app }) {
 
     const applyConfig = () => {
         // Try to update physics subsystem first
-        if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
-            const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
+        let physicsEngine = app?.physicsIntegration?.physicsEngine || app?.physicsEngine;
+        if (physicsEngine?.subsystemManager) {
+            const subsystemManager = physicsEngine.subsystemManager;
             const success = subsystemManager.updateSubsystemConfig(satelliteId, 'communication', tempConfig);
             if (success) {
                 setTempConfig({});

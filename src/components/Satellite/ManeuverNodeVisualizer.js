@@ -8,8 +8,8 @@ import * as THREE from 'three';
  * and handles their lifecycle. It does not handle any physics calculations.
  */
 export class ManeuverVisualizationManager {
-    constructor(scene, satellite) {
-        this.scene = scene;
+    constructor(parent, satellite) {
+        this.parent = parent; // Can be orbit group or scene
         this.satellite = satellite;
         this.nodeVisuals = new Map(); // Map<nodeId, visualElements>
         this._cameraRef = null;
@@ -47,9 +47,9 @@ export class ManeuverVisualizationManager {
         const visual = this.nodeVisuals.get(nodeId);
         if (!visual) return;
 
-        // Remove from scene
+        // Remove from parent
         if (visual.group) {
-            this.scene.remove(visual.group);
+            this.parent.remove(visual.group);
             visual.group.traverse(child => {
                 if (child.geometry) child.geometry.dispose();
                 if (child.material) {
@@ -63,7 +63,7 @@ export class ManeuverVisualizationManager {
         }
 
         if (visual.orbitLine) {
-            this.scene.remove(visual.orbitLine);
+            this.parent.remove(visual.orbitLine);
             visual.orbitLine.geometry.dispose();
             visual.orbitLine.material.dispose();
         }
@@ -143,10 +143,24 @@ export class ManeuverVisualizationManager {
             orbitLine = new THREE.Line(geometry, material);
             orbitLine.computeLineDistances();
             orbitLine.frustumCulled = false;
-            this.scene.add(orbitLine);
+            this.parent.add(orbitLine);
         }
 
-        this.scene.add(group);
+        this.parent.add(group);
+
+        // Ensure maneuver nodes are visible by default
+        group.visible = true;
+        if (orbitLine) {
+            orbitLine.visible = true;
+        }
+
+        // Debug logging
+        console.log('[ManeuverVisualizationManager] Created maneuver node visual:', {
+            nodeId: visualData.nodeId,
+            position: visualData.position,
+            parent: this.parent.type,
+            visible: group.visible
+        });
 
         return {
             group,
@@ -165,6 +179,13 @@ export class ManeuverVisualizationManager {
     _updateNodeVisual(visual, visualData) {
         // Update position
         visual.group.position.set(...visualData.position);
+        
+        // Debug logging
+        console.log('[ManeuverVisualizationManager] Updated maneuver node position:', {
+            nodeId: visualData.nodeId,
+            position: visualData.position,
+            worldPosition: visual.group.getWorldPosition(new THREE.Vector3()).toArray()
+        });
 
         // Update arrow direction and length
         const arrowLength = Math.min(visualData.deltaVMagnitude * 50, 100);

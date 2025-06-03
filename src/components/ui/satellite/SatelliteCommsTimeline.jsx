@@ -64,8 +64,10 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
             let activeConnections = [];
 
             // Get communication data from various sources
-            if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
-                const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
+            // Try accessing the physics engine directly or through physicsIntegration
+            let physicsEngine = app?.physicsIntegration?.physicsEngine || app?.physicsEngine;
+            if (physicsEngine?.subsystemManager) {
+                const subsystemManager = physicsEngine.subsystemManager;
                 const commsSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
                 
                 if (commsSubsystem) {
@@ -84,6 +86,7 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
             }
 
             if (commsStatus) {
+                console.log(`[SatelliteCommsTimeline] Satellite ${satelliteId} has ${activeConnections.length} active connections:`, activeConnections);
                 
                 // Record current status in timeline
                 const timelineEntry = {
