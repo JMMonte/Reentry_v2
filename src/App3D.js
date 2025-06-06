@@ -643,30 +643,12 @@ class App3D extends EventTarget {
     /**
      * Centralized per-frame update for animation loop.
      * @param {number} delta - Time since last frame in seconds
+     * @param {number} interpolationFactor - Physics interpolation factor (0-1)
      */
-    tick(delta) {
+    tick(delta, interpolationFactor = 0) {
         try {
-            // Get current physics state (physics is stepped by PhysicsManager.updateLoop)
-            const latestPhysicsState = this.physicsIntegration?.physicsEngine?.getSimulationState?.();
-            
-            if (latestPhysicsState) {
-                this.satellites.updateAllFromPhysicsState(latestPhysicsState);
-                // Dispatch physics state update event for React components
-                // Convert satellite states Map to object if needed
-                let satelliteStates = latestPhysicsState.satellites || {};
-                if (satelliteStates instanceof Map) {
-                    const satObj = {};
-                    for (const [id, sat] of satelliteStates) {
-                        satObj[id] = sat;
-                    }
-                    satelliteStates = satObj;
-                }
-                window.dispatchEvent(new CustomEvent('physicsStateUpdate', {
-                    detail: {
-                        satellites: satelliteStates
-                    }
-                }));
-            }
+            // Physics state is now updated by SimulationLoop, so we just need to handle visuals
+            // The physics state update events are already dispatched by PhysicsManager
             
             
             this.stats?.begin();

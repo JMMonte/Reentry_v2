@@ -34,13 +34,18 @@ export class SimulationLoop {
         this._performanceMetrics = {
             frameTime: 0,
             renderTime: 0,
-            updateTime: 0
+            updateTime: 0,
+            physicsTime: 0
         };
         
         // Tab visibility handling for performance
         this._isVisible = !document.hidden;
         this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
         document.addEventListener('visibilitychange', this._handleVisibilityChange);
+        
+        // Physics integration tracking
+        this._lastPhysicsStep = performance.now();
+        this._physicsInterpolationFactor = 0;
     }
 
     /** Start the animation/simulation loop. */
@@ -73,7 +78,7 @@ export class SimulationLoop {
     }
 
     /** The main animation frame callback. */
-    _animate() {
+    async _animate() {
         if (!this._running) return;
         
         const frameStart = performance.now();
@@ -94,14 +99,30 @@ export class SimulationLoop {
             const maxDelta = 1.0; // Maximum 1 second per frame
             const safeDelta = Math.min(delta, maxDelta);
             
-            // Delta validation without logging
-            
             // Coordinate updates more efficiently
             this._frameCount++;
             const updateStart = performance.now();
             
-            // App tick for essential updates every frame
-            this.app.tick?.(safeDelta);
+            // Step physics before visual updates
+            const physicsStart = performance.now();
+            if (this.app.physicsIntegration?.stepPhysicsExternal) {
+                const timeWarp = this.timeUtils?.getTimeWarp?.() || 1;
+                
+                // Step physics with real delta time
+                const physicsResult = await this.app.physicsIntegration.stepPhysicsExternal(safeDelta, timeWarp);
+                
+                // Store interpolation factor for visual smoothing
+                this._physicsInterpolationFactor = physicsResult.interpolationFactor;
+                
+                // Pass interpolation factor to satellites for smooth rendering
+                if (this.satellites) {
+                    this.satellites._interpolationFactor = this._physicsInterpolationFactor;
+                }
+            }
+            this._performanceMetrics.physicsTime = performance.now() - physicsStart;
+            
+            // App tick for essential updates every frame (with interpolation factor)
+            this.app.tick?.(safeDelta, this._physicsInterpolationFactor);
             
             // Throttled UI updates (20Hz instead of 60Hz)
             if (this._frameCount % this._uiUpdateFrequency === 0) {
@@ -120,7 +141,7 @@ export class SimulationLoop {
             this._performanceMetrics.renderTime = performance.now() - renderStart;
             
         } catch (error) {
-            // Silent error handling to keep the animation loop running
+            console.error('[SimulationLoop] Animation error:', error);
         }
         
         // Track frame performance
@@ -227,7 +248,8 @@ export class SimulationLoop {
                 ...this._performanceMetrics,
                 fps: Math.round(1000 / this._performanceMetrics.frameTime),
                 frameCount: this._frameCount,
-                isVisible: this._isVisible
+                isVisible: this._isVisible,
+                interpolationFactor: this._physicsInterpolationFactor
             }
         }));
     }

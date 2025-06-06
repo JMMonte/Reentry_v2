@@ -264,6 +264,116 @@ export class PhysicsManager {
     }
 
     /**
+     * External physics step method for SimulationLoop integration
+     * @param {number} realDeltaTime - Real time elapsed in seconds
+     * @param {number} timeWarp - Current time warp factor
+     * @returns {Object} { stepsProcessed, interpolationFactor, physicsState }
+     */
+    async stepPhysicsExternal(realDeltaTime, timeWarp) {
+        if (!this.isInitialized || !this.app.timeUtils) {
+            return { stepsProcessed: 0, interpolationFactor: 0, physicsState: null };
+        }
+
+        // If paused, don't advance time
+        if (timeWarp === 0) {
+            // Still update orbit visualizations even when paused
+            this._updateOrbitVisualizations();
+            return { stepsProcessed: 0, interpolationFactor: 0, physicsState: this.physicsEngine.getSimulationState() };
+        }
+
+        // Convert to simulation time delta
+        const simulatedDeltaSeconds = realDeltaTime * timeWarp;
+
+        // KSP-style adaptive timestep based on time warp
+        this._updateAdaptiveTimestep(timeWarp);
+
+        // Add to accumulator for adaptive timestep integration
+        this._accumulator += simulatedDeltaSeconds;
+        
+        // Adaptive step limits based on time warp
+        const { maxSteps, maxAccumulator } = this._getTimeWarpLimits(timeWarp);
+        
+        // Clamp accumulator to prevent spiral of death
+        if (this._accumulator > maxAccumulator) {
+            this._accumulator = maxAccumulator;
+        }
+        
+        // Get current time once
+        let currentTime = this.app.timeUtils.getSimulatedTime();
+        let physicsState = null;
+        
+        // Process accumulated time in adaptive timestep chunks
+        let stepsProcessed = 0;
+        let totalDeltaTime = 0;
+        
+        while (this._accumulator >= this._currentTimeStep && stepsProcessed < maxSteps) {
+            // Accumulate total time to advance
+            totalDeltaTime += this._currentTimeStep;
+            this._accumulator -= this._currentTimeStep;
+            stepsProcessed++;
+        }
+        
+        // If we have time to advance, do a single combined update
+        if (totalDeltaTime > 0) {
+            // Calculate new time
+            const newTime = new Date(currentTime.getTime() + totalDeltaTime * 1000);
+            
+            // Update physics engine time once (this updates all body positions)
+            await this.physicsEngine.setTime(newTime);
+            
+            // Step physics simulation with total delta
+            physicsState = await this.physicsEngine.step(totalDeltaTime);
+            
+            // Sync visuals immediately
+            this._syncWithCelestialBodies(physicsState);
+            this._syncSatelliteStates(physicsState);
+            
+            // Update TimeUtils with new time (this will dispatch UI events)
+            this.app.timeUtils.updateFromPhysics(newTime);
+            
+            // Dispatch physics update for components
+            this._dispatchPhysicsUpdate(physicsState);
+        } else {
+            // No physics steps, but get current state
+            physicsState = this.physicsEngine.getSimulationState();
+        }
+        
+        // Calculate interpolation factor for smooth visuals
+        const interpolationFactor = this._currentTimeStep > 0 ? this._accumulator / this._currentTimeStep : 0;
+        
+        // Performance feedback for high time warps
+        if (this._accumulator > this._currentTimeStep && stepsProcessed >= maxSteps) {
+            if (this._accumulator > maxAccumulator * 0.5) {
+                document.dispatchEvent(new CustomEvent('timeWarpLagging', {
+                    detail: { 
+                        timeWarp, 
+                        lag: this._accumulator,
+                        timestep: this._currentTimeStep 
+                    }
+                }));
+            }
+        }
+        
+        // Always update orbit visualizations for smooth rendering
+        this._updateOrbitVisualizations();
+
+        return {
+            stepsProcessed,
+            interpolationFactor,
+            physicsState,
+            currentTimeStep: this._currentTimeStep
+        };
+    }
+
+    /**
+     * Get current adaptive timestep for external use
+     */
+    getAdaptiveTimestep(timeWarp) {
+        this._updateAdaptiveTimestep(timeWarp);
+        return this._currentTimeStep;
+    }
+
+    /**
      * Sync existing satellites from the app to physics engine
      * @private
      */
@@ -319,16 +429,17 @@ export class PhysicsManager {
 
     /**
      * Private: Start the physics update loop
+     * DISABLED: Physics is now driven by SimulationLoop for better synchronization
      */
     _startUpdateLoop() {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-        }
-
+        // Disabled - physics updates are now driven by SimulationLoop
+        console.log('[PhysicsManager] Internal update loop disabled - physics driven by SimulationLoop');
+        
         // Initialize real time tracking
         this._lastRealTime = performance.now();
-
-        this.updateInterval = setInterval(this.boundUpdateLoop, 1000 / this.physicsUpdateRate);
+        
+        // Don't start the interval anymore
+        // this.updateInterval = setInterval(this.boundUpdateLoop, 1000 / this.physicsUpdateRate);
     }
 
     /**
@@ -874,31 +985,10 @@ export class PhysicsManager {
 
     /**
      * Private: Set up synchronization with app's time system
+     * DISABLED: Time is now driven by SimulationLoop through stepPhysicsExternal
      */
     _setupTimeSync() {
-        if (!this.app.timeUtils) {
-            return;
-        }
-
-        // Listen for time update events from the time system
-        const handleTimeUpdate = async (event) => {
-            if (!this.isInitialized) return;
-
-            const { simulatedTime } = event.detail;
-            const newTime = new Date(simulatedTime);
-
-            // Update physics engine time (this now automatically updates all body positions)
-            await this.physicsEngine.setTime(newTime);
-
-            // Force a physics update to sync positions with new time
-            this.setSimulationTime(newTime);
-        };
-
-        document.addEventListener('timeUpdate', handleTimeUpdate);
-
-        // Store cleanup function
-        this.cleanupTimeSync = () => {
-            document.removeEventListener('timeUpdate', handleTimeUpdate);
-        };
+        // Disabled - time sync is now handled by SimulationLoop calling stepPhysicsExternal
+        console.log('[PhysicsManager] Time sync disabled - time driven by SimulationLoop');
     }
 } 

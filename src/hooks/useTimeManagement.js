@@ -9,13 +9,13 @@ export function useTimeManagement(app3d, controller, setSimTime) {
   const handleSimulatedTimeChange = useCallback((newTime) => {
     setSimTime(new Date(newTime));
     
-    
     if (app3d?.timeUtils) {
       app3d.timeUtils.setSimulatedTime(newTime);
       
-      if (app3d.physicsIntegration) {
-        app3d.physicsIntegration.setSimulationTime(new Date(newTime));
-      }
+      // Physics time is now driven by SimulationLoop, no need to update here
+      // if (app3d.physicsIntegration) {
+      //   app3d.physicsIntegration.setSimulationTime(new Date(newTime));
+      // }
     } else {
       console.warn('[TimeManagement] handleSimulatedTimeChange - No timeUtils found, cannot update simulation time');
     }
