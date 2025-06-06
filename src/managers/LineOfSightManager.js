@@ -231,42 +231,81 @@ export class LineOfSightManager {
         testLine.renderOrder = 9999;
         testLine.frustumCulled = false;
         this._satelliteLinks.add(testLine);
+        
+        // Initialize line pool if needed
+        if (!this._linePool) {
+            this._linePool = [];
+            this._activeLines = new Map();
+        }
+        
+        // Mark all current lines as unused
+        const usedLines = new Set();
+        
         connections.forEach((connection) => {
             if (!connection.points || connection.points.length !== 2) {
                 return;
             }
-            // Create Line2 geometry
-            const geometry = new LineGeometry();
+            
+            const lineKey = `${connection.from}_${connection.to}`;
+            let line = this._activeLines.get(lineKey);
+            
+            if (!line) {
+                // Try to get from pool first
+                line = this._linePool.pop();
+                
+                if (!line) {
+                    // Create new line only if pool is empty
+                    const geometry = new LineGeometry();
+                    const material = new LineMaterial({
+                        transparent: false,
+                        opacity: 1.0,
+                        depthTest: true,
+                        depthWrite: false,
+                        linewidth: 5,
+                        resolution: this._resolution
+                    });
+                    line = new Line2(geometry, material);
+                    line.renderOrder = 9999;
+                    line.frustumCulled = false;
+                }
+                
+                this._activeLines.set(lineKey, line);
+                this._satelliteLinks.add(line);
+            }
+            
+            // Update line position and color
             const positions = [
                 connection.points[0][0], connection.points[0][1], connection.points[0][2],
                 connection.points[1][0], connection.points[1][1], connection.points[1][2]
             ];
-            geometry.setPositions(positions);
-            // Create Line2 material with appropriate color
+            line.geometry.setPositions(positions);
+            
+            // Update color only if changed
             const color = this._getConnectionColor(connection);
-            const material = new LineMaterial({
-                color: color,
-                transparent: false,
-                opacity: 1.0,
-                depthTest: true,
-                depthWrite: false,
-                linewidth: 5, // Line2 supports actual linewidth
-                resolution: this._resolution
-            });
-            // Create Line2 mesh
-            const line = new Line2(geometry, material);
+            if (line.material.color.getHex() !== color) {
+                line.material.color.setHex(color);
+            }
+            
+            // Update metadata
             line.name = `Connection_${connection.from}_${connection.to}`;
-            line.renderOrder = 9999;
-            line.frustumCulled = false;
-            // Store connection metadata
             line.userData = {
                 connectionData: connection,
                 type: connection.type,
                 from: connection.from,
                 to: connection.to
             };
-            this._satelliteLinks.add(line);
+            
+            usedLines.add(lineKey);
         });
+        
+        // Return unused lines to pool
+        for (const [key, line] of this._activeLines) {
+            if (!usedLines.has(key)) {
+                this._satelliteLinks.remove(line);
+                this._activeLines.delete(key);
+                this._linePool.push(line);
+            }
+        }
     }
 
     /**
@@ -356,6 +395,11 @@ export class LineOfSightManager {
         // Dispose communication manager
         if (this.commsManager) {
             this.commsManager.dispose();
+        }
+        // Terminate worker to prevent memory leak
+        if (this._lineOfSightWorker) {
+            this._lineOfSightWorker.terminate();
+            this._lineOfSightWorker = null;
         }
         // Reset state
         this._enabled = false;

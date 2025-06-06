@@ -23,12 +23,21 @@ export class PhysicsManager {
         this._currentTimeStep = this._baseTimeStep; // Current adaptive timestep
         this._accumulator = 0.0; // Time accumulator for adaptive timestep
 
-        // Cached data for performance
+        // Cached data for performance with size limits
         this.bodyStatesCache = new Map();
         this.orbitPathsCache = new Map();
+        this.maxCacheSize = 50; // Maximum entries per cache
+        this.cacheCleanupThreshold = 100; // Clean up when size exceeds this
 
         // Event bindings
         this.boundUpdateLoop = this.updateLoop.bind(this);
+        
+        // Track last orientations to detect flips
+        this._lastOrientations = new Map(); // naifId -> last quaternion
+        
+        // Timewarp configuration
+        this._timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 1000000, 10000000];
+        this._currentTimeWarpIndex = 2; // Default to 1x (index 2)
     }
 
     /**
@@ -270,6 +279,61 @@ export class PhysicsManager {
     }
 
     /**
+     * Get available timewarp options
+     * @returns {number[]} Array of available timewarp multipliers
+     */
+    getTimeWarpOptions() {
+        return [...this._timeWarpOptions];
+    }
+
+    /**
+     * Get current timewarp value
+     * @returns {number} Current timewarp multiplier
+     */
+    getCurrentTimeWarp() {
+        return this._timeWarpOptions[this._currentTimeWarpIndex];
+    }
+
+    /**
+     * Set timewarp by index
+     * @param {number} index - Index in the timewarp options array
+     */
+    setTimeWarpIndex(index) {
+        if (index >= 0 && index < this._timeWarpOptions.length) {
+            this._currentTimeWarpIndex = index;
+        }
+    }
+
+    /**
+     * Set timewarp by value (finds closest match)
+     * @param {number} value - Desired timewarp value
+     */
+    setTimeWarpValue(value) {
+        const index = this._timeWarpOptions.findIndex(v => v === value);
+        if (index !== -1) {
+            this._currentTimeWarpIndex = index;
+        }
+    }
+
+    /**
+     * Increase timewarp to next level
+     */
+    increaseTimeWarp() {
+        if (this._currentTimeWarpIndex < this._timeWarpOptions.length - 1) {
+            this._currentTimeWarpIndex++;
+        }
+    }
+
+    /**
+     * Decrease timewarp to previous level
+     */
+    decreaseTimeWarp() {
+        if (this._currentTimeWarpIndex > 0) {
+            this._currentTimeWarpIndex--;
+        }
+    }
+
+    /**
      * External physics step method for SimulationLoop integration
      * @param {number} realDeltaTime - Real time elapsed in seconds
      * @param {number} timeWarp - Current time warp factor
@@ -310,32 +374,54 @@ export class PhysicsManager {
         
         // Process accumulated time in adaptive timestep chunks
         let stepsProcessed = 0;
-        let totalDeltaTime = 0;
+        let totalTimeToAdvance = 0;
         
+        // First, calculate total time we need to advance
         while (this._accumulator >= this._currentTimeStep && stepsProcessed < maxSteps) {
-            // Accumulate total time to advance
-            totalDeltaTime += this._currentTimeStep;
+            totalTimeToAdvance += this._currentTimeStep;
             this._accumulator -= this._currentTimeStep;
             stepsProcessed++;
         }
         
-        // If we have time to advance, do a single combined update
-        if (totalDeltaTime > 0) {
-            // Calculate new time
-            const newTime = new Date(currentTime.getTime() + totalDeltaTime * 1000);
+        // If we have time to advance, process it efficiently
+        if (totalTimeToAdvance > 0) {
+            // For very high timewarps, we can skip intermediate steps
+            // and just update positions directly using analytical methods
+            if (timeWarp >= 100000) {
+                // Single large update for celestial bodies (they use analytical ephemeris)
+                const finalTime = new Date(currentTime.getTime() + totalTimeToAdvance * 1000);
+                await this.physicsEngine.setTime(finalTime);
+                
+                // For satellites, use multiple smaller steps
+                const maxSatelliteStep = 5.0; // 5 seconds for satellite propagation
+                const numSatelliteSteps = Math.ceil(totalTimeToAdvance / maxSatelliteStep);
+                const satelliteStepSize = totalTimeToAdvance / numSatelliteSteps;
+                
+                for (let i = 0; i < numSatelliteSteps; i++) {
+                    physicsState = await this.physicsEngine.step(satelliteStepSize);
+                }
+            } else {
+                // For lower timewarps, use adaptive stepping
+                const maxPhysicsTimestep = 5.0; // 5 seconds max per physics step
+                const numSteps = Math.ceil(totalTimeToAdvance / maxPhysicsTimestep);
+                const stepSize = totalTimeToAdvance / numSteps;
+                
+                let timeAdvanced = 0;
+                for (let i = 0; i < numSteps; i++) {
+                    timeAdvanced += stepSize;
+                    const intermediateTime = new Date(currentTime.getTime() + timeAdvanced * 1000);
+                    await this.physicsEngine.setTime(intermediateTime);
+                    physicsState = await this.physicsEngine.step(stepSize);
+                }
+            }
             
-            // Update physics engine time once (this updates all body positions)
-            await this.physicsEngine.setTime(newTime);
-            
-            // Step physics simulation with total delta
-            physicsState = await this.physicsEngine.step(totalDeltaTime);
-            
-            // Sync visuals immediately
+            // Sync visuals with final state
             this._syncWithCelestialBodies(physicsState);
             this._syncSatelliteStates(physicsState);
             
-            // Update TimeUtils with new time (this will dispatch UI events)
-            this.app.timeUtils.updateFromPhysics(newTime);
+            // Update TimeUtils with final time
+            const finalTime = new Date(currentTime.getTime() + totalTimeToAdvance * 1000);
+            this.app.timeUtils.updateFromPhysics(finalTime);
             
             // Dispatch physics update for components
             this._dispatchPhysicsUpdate(physicsState);
@@ -362,6 +448,11 @@ export class PhysicsManager {
         
         // Always update orbit visualizations for smooth rendering
         this._updateOrbitVisualizations();
+        
+        // Manage cache sizes periodically
+        if (stepsProcessed > 0) {
+            this._manageCaches();
+        }
 
         return {
             stepsProcessed,
@@ -434,6 +525,35 @@ export class PhysicsManager {
     }
 
     /**
+     * Clean up cache when it gets too large (LRU eviction)
+     * @private
+     */
+    _cleanupCache(cache, maxSize) {
+        if (cache.size <= maxSize) return;
+        
+        // Convert to array, sort by access time (if available), remove oldest
+        const entries = Array.from(cache.entries());
+        const entriesToRemove = entries.slice(0, cache.size - maxSize);
+        
+        for (const [key] of entriesToRemove) {
+            cache.delete(key);
+        }
+    }
+
+    /**
+     * Manage cache sizes and cleanup when needed
+     * @private
+     */
+    _manageCaches() {
+        if (this.bodyStatesCache.size > this.cacheCleanupThreshold) {
+            this._cleanupCache(this.bodyStatesCache, this.maxCacheSize);
+        }
+        if (this.orbitPathsCache.size > this.cacheCleanupThreshold) {
+            this._cleanupCache(this.orbitPathsCache, this.maxCacheSize);
+        }
+    }
+
+    /**
      * Private: Start the physics update loop
      * DISABLED: Physics is now driven by SimulationLoop for better synchronization
      */
@@ -465,32 +585,34 @@ export class PhysicsManager {
      * @param {number} timeWarp - Current time warp factor
      */
     _updateAdaptiveTimestep(timeWarp) {
-        // KSP-style timestep scaling with more aggressive steps at high warps
-        if (timeWarp >= 1000000) {
-            // Ludicrous time warp: 100 second steps (for interplanetary transfers)
-            this._currentTimeStep = 100.0;
-        } else if (timeWarp >= 100000) {
-            // Extreme time warp: 20 second steps
-            this._currentTimeStep = 20.0;
-        } else if (timeWarp >= 10000) {
-            // Very high time warp: 5 second steps
-            this._currentTimeStep = 5.0;
-        } else if (timeWarp >= 1000) {
-            // High time warp: 1 second steps
-            this._currentTimeStep = 1.0;
-        } else if (timeWarp >= 100) {
-            // Medium time warp: 0.2 second steps
-            this._currentTimeStep = 0.2;
-        } else if (timeWarp >= 10) {
-            // Low time warp: 0.1 second steps
-            this._currentTimeStep = 0.1;
-        } else if (timeWarp >= 3) {
-            // Very low time warp: 0.05 second steps
-            this._currentTimeStep = 0.05;
-        } else {
-            // Normal/low time warp: use base timestep for maximum precision
+        // Smoother timestep scaling with logarithmic progression
+        // This prevents sudden jumps in timestep that can cause numerical instabilities
+        
+        if (timeWarp <= 1) {
+            // Real-time or slower: use base timestep
             this._currentTimeStep = this._baseTimeStep;
+        } else if (timeWarp <= 10) {
+            // Low warp: smooth interpolation from 0.02 to 0.1
+            const t = (timeWarp - 1) / 9;
+            this._currentTimeStep = this._baseTimeStep + t * (0.1 - this._baseTimeStep);
+        } else if (timeWarp <= 100) {
+            // Medium warp: smooth interpolation from 0.1 to 0.5
+            const t = Math.log10(timeWarp / 10) / Math.log10(10);
+            this._currentTimeStep = 0.1 + t * 0.4;
+        } else if (timeWarp <= 10000) {
+            // High warp: smooth interpolation from 0.5 to 5.0
+            const t = Math.log10(timeWarp / 100) / Math.log10(100);
+            this._currentTimeStep = 0.5 + t * 4.5;
+        } else {
+            // Very high warp: cap at 10 seconds for stability
+            // Logarithmic scaling from 5.0 to 10.0
+            const t = Math.min(Math.log10(timeWarp / 10000) / Math.log10(1000), 1);
+            this._currentTimeStep = 5.0 + t * 5.0;
         }
+        
+        // Apply additional safety cap based on timewarp to prevent extreme steps
+        const maxSafeStep = Math.min(10.0, Math.sqrt(timeWarp) * 0.01);
+        this._currentTimeStep = Math.min(this._currentTimeStep, maxSafeStep);
     }
 
     /**
@@ -499,33 +621,33 @@ export class PhysicsManager {
      * @returns {Object} { maxSteps, maxAccumulator }
      */
     _getTimeWarpLimits(timeWarp) {
-        let maxSteps;
-        let maxAccumulatorMultiplier = 1;
+        // Smoother step limits based on time warp
+        // Higher warps need fewer steps per frame to maintain performance
         
-        if (timeWarp >= 100000) {
-            // Extreme time warp: fewer steps but allow more accumulation
-            maxSteps = 8;
-            maxAccumulatorMultiplier = 3; // Allow 3x the normal accumulation
-        } else if (timeWarp >= 10000) {
-            // Very high time warp: moderate steps with higher accumulation
-            maxSteps = 12;
-            maxAccumulatorMultiplier = 2.5;
-        } else if (timeWarp >= 1000) {
-            // High time warp: more steps with higher accumulation
-            maxSteps = 20;
-            maxAccumulatorMultiplier = 2;
-        } else if (timeWarp >= 100) {
-            // Medium time warp: more steps allowed
-            maxSteps = 40;
-            maxAccumulatorMultiplier = 1.5;
-        } else if (timeWarp >= 10) {
-            // Low time warp: many steps for smooth simulation
+        let maxSteps;
+        let maxAccumulatorMultiplier;
+        
+        if (timeWarp <= 10) {
+            // Low warp: many steps for accuracy
             maxSteps = 60;
+            maxAccumulatorMultiplier = 1.0;
+        } else if (timeWarp <= 1000) {
+            // Medium warp: scale down steps smoothly
+            const t = Math.log10(timeWarp / 10) / Math.log10(100);
+            maxSteps = Math.floor(60 - t * 40); // 60 to 20 steps
+            maxAccumulatorMultiplier = 1.0 + t * 0.5; // 1.0 to 1.5x
+        } else if (timeWarp <= 100000) {
+            // High warp: fewer steps but allow more accumulation
+            const t = Math.log10(timeWarp / 1000) / Math.log10(100);
+            maxSteps = Math.floor(20 - t * 10); // 20 to 10 steps
+            maxAccumulatorMultiplier = 1.5 + t * 1.0; // 1.5 to 2.5x
         } else {
-            // Normal time warp: maximum precision
-            maxSteps = 60;
+            // Extreme warp: minimum steps for performance
+            maxSteps = 5;
+            maxAccumulatorMultiplier = 3.0;
         }
         
+        // Calculate max accumulator based on current timestep
         const maxAccumulator = maxSteps * this._currentTimeStep * maxAccumulatorMultiplier;
         
         return { maxSteps, maxAccumulator };
@@ -550,7 +672,6 @@ export class PhysicsManager {
         if (!this.app.celestialBodies || !Array.isArray(this.app.celestialBodies)) {
             return;
         }
-
 
         for (const celestialBody of this.app.celestialBodies) {
             // Get the NAIF ID from the celestial body
@@ -625,12 +746,37 @@ export class PhysicsManager {
                 if (celestialBody.targetOrientation && bodyState.quaternion) {
                     // Convert quaternion array back to Three.js Quaternion
                     // bodyState.quaternion format: [x, y, z, w]
-                    celestialBody.targetOrientation.set(
+                    const newQuat = new THREE.Quaternion(
                         bodyState.quaternion[0], // x
                         bodyState.quaternion[1], // y  
                         bodyState.quaternion[2], // z
                         bodyState.quaternion[3]  // w
                     );
+                    
+                    // Check for flips - especially for Earth
+                    const lastQuat = this._lastOrientations.get(naifId);
+                    if (lastQuat) {
+                        const dot = lastQuat.dot(newQuat);
+                        
+                        // If quaternions are pointing in opposite directions, negate to take shorter path
+                        if (dot < 0) {
+                            newQuat.x *= -1;
+                            newQuat.y *= -1;
+                            newQuat.z *= -1;
+                            newQuat.w *= -1;
+                        }
+                        
+                        // No special handling for Earth - treat all bodies the same
+                    }
+                    
+                    // Update the orientation
+                    celestialBody.targetOrientation.copy(newQuat);
+                    
+                    // Store for next comparison
+                    if (!this._lastOrientations.has(naifId)) {
+                        this._lastOrientations.set(naifId, new THREE.Quaternion());
+                    }
+                    this._lastOrientations.get(naifId).copy(newQuat);
                 }
 
                 // Also update the direct orientation if it exists
@@ -723,12 +869,33 @@ export class PhysicsManager {
 
                     // Update orientation
                     if (body.targetOrientation && bodyState.quaternion) {
-                        body.targetOrientation.set(
+                        const newQuat = new THREE.Quaternion(
                             bodyState.quaternion[0],
                             bodyState.quaternion[1],
                             bodyState.quaternion[2],
                             bodyState.quaternion[3]
                         );
+                        
+                        // Check for flips
+                        const lastQuat = this._lastOrientations.get(parseInt(naifId));
+                        if (lastQuat) {
+                            const dot = lastQuat.dot(newQuat);
+                            if (dot < 0) {
+                                newQuat.x *= -1;
+                                newQuat.y *= -1;
+                                newQuat.z *= -1;
+                                newQuat.w *= -1;
+                            }
+                        }
+                        
+                        body.targetOrientation.copy(newQuat);
+                        
+                        // Store for next comparison
+                        const naifIdNum = parseInt(naifId);
+                        if (!this._lastOrientations.has(naifIdNum)) {
+                            this._lastOrientations.set(naifIdNum, new THREE.Quaternion());
+                        }
+                        this._lastOrientations.get(naifIdNum).copy(newQuat);
                     }
 
                     // Store additional orientation data

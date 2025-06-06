@@ -10,7 +10,8 @@
       "Bash(npm test:*)",
       "Bash(rg:*)",
       "Bash(sed:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(open test-rotation-fix.html)"
     ]
   },
   "enableAllProjectMcpServers": false

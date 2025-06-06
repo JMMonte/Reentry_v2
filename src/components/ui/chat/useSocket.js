@@ -11,6 +11,32 @@ export function useSocket(socket) {
     const [isConnected, setIsConnected] = useState(false);
     const [copiedStates, setCopiedStates] = useState({});
     const [tableData] = useState(new Map());
+    
+    // Configuration for message limits
+    const MAX_MESSAGES = 500; // Maximum messages to keep in memory
+    const CLEANUP_THRESHOLD = 600; // Clean up when exceeding this
+    
+    // Enhanced setMessages that manages memory by keeping only recent messages
+    const setMessagesWithCleanup = (newMessages) => {
+        if (typeof newMessages === 'function') {
+            setMessages(prevMessages => {
+                const updated = newMessages(prevMessages);
+                if (updated.length > CLEANUP_THRESHOLD) {
+                    // Keep only the most recent MAX_MESSAGES messages
+                    return updated.slice(-MAX_MESSAGES);
+                }
+                return updated;
+            });
+        } else {
+            // Direct array assignment
+            if (newMessages.length > CLEANUP_THRESHOLD) {
+                setMessages(newMessages.slice(-MAX_MESSAGES));
+            } else {
+                setMessages(newMessages);
+            }
+        }
+    };
+    
     // Track the latest previous_response_id for multi-turn context
     const previousResponseId = useRef(null);
     const [turnInProgress, setTurnInProgress] = useState(false);
@@ -24,7 +50,7 @@ export function useSocket(socket) {
 
     // --- Event Handlers (bound with state/refs) dynamically ---
     const deps = {
-        setMessages,
+        setMessages: setMessagesWithCleanup,
         setTurnInProgress,
         setIsLoading,
         setIsConnected,
@@ -104,7 +130,7 @@ export function useSocket(socket) {
             setUserMessage('');
         } catch {
             setIsLoading(false);
-            setMessages(prev => [...prev, {
+            setMessagesWithCleanup(prev => [...prev, {
                 id: Date.now(),
                 role: 'error',
                 content: 'Failed to send message. Please try again.',

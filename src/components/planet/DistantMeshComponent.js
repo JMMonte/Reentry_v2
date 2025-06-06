@@ -12,14 +12,23 @@ export class DistantMeshComponent {
     }
 
     update() {
-        if (!Planet.camera) return;
+        if (!Planet.camera || !this.planet.planetMesh) return;
+        
         const planetPos = new THREE.Vector3();
         this.planet.planetMesh.getWorldPosition(planetPos);
         const camPos = Planet.camera.position;
         const dist = planetPos.distanceTo(camPos);
         const fovY = THREE.MathUtils.degToRad(Planet.camera.fov);
         const scrH = window.innerHeight;
-        const pix = (2 * Math.atan(this.planet.radius / dist) / fovY) * scrH;
+        
+        // For irregular bodies (with dimensions), use the maximum dimension
+        // This ensures the dot doesn't appear until the body is truly small
+        let effectiveRadius = this.planet.radius;
+        if (this.planet.dimensions && Array.isArray(this.planet.dimensions)) {
+            effectiveRadius = Math.max(...this.planet.dimensions) / 2; // Use max dimension / 2
+        }
+        
+        const pix = (2 * Math.atan(effectiveRadius / dist) / fovY) * scrH;
 
         if (pix < this.planet.dotPixelSizeThreshold) {
             this.mesh.visible = true;

@@ -222,15 +222,24 @@ export class SimulationLoop {
      * Throttled UI updates - called every 3rd frame (~20Hz)
      */
     _updateUI() {
-        // Emit time update event for React components
+        // Emit time update event for React components only if time changed
         if (this.timeUtils?.getSimulatedTime) {
             const currentTime = this.timeUtils.getSimulatedTime();
-            document.dispatchEvent(new CustomEvent('timeUpdate', {
-                detail: { 
-                    simulatedTime: currentTime,
-                    timeWarp: this.timeUtils.getTimeWarp?.()
-                }
-            }));
+            const currentTimeMs = currentTime?.getTime?.() || 0;
+            const currentWarp = this.timeUtils.getTimeWarp?.() || 1;
+            
+            // Only dispatch if time or warp actually changed
+            if (currentTimeMs !== this._lastDispatchedTime || currentWarp !== this._lastDispatchedWarp) {
+                this._lastDispatchedTime = currentTimeMs;
+                this._lastDispatchedWarp = currentWarp;
+                
+                document.dispatchEvent(new CustomEvent('timeUpdate', {
+                    detail: { 
+                        simulatedTime: currentTime,
+                        timeWarp: currentWarp
+                    }
+                }));
+            }
         }
         
         // Update satellite list periodically

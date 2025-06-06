@@ -278,8 +278,8 @@ export class PlanetVectors {
             return;
         }
         const distToCenter = camera.position.distanceTo(center);
-        const fadeStart = this.radius * 10;
-        const fadeEnd = this.radius * 20;
+        const fadeStart = this.radius * 25;  // Match grid systems
+        const fadeEnd = this.radius * 100;   // Match grid systems
         let opacity = 1;
         if (distToCenter > fadeStart) {
             opacity = distToCenter >= fadeEnd

@@ -124,5 +124,14 @@ export default {
     // Venus's position relative to its barycenter is calculated via astronomy-engine
 
     // Surface temperature (extreme greenhouse effect)
-    surfaceTemperature: 735 // K (462 °C)
+    surfaceTemperature: 735, // K (462 °C)
+
+    // Orientation (IAU 2023/2025) 
+    poleRA: 272.76,    // deg at J2000.0
+    poleDec: 67.16,    // deg at J2000.0
+    poleRARate: 0.0,   // deg per century (no precession)
+    poleDecRate: 0.0,  // deg per century (no precession)
+    spin: 160.20,      // deg at J2000.0
+    spinRate: -1.4813688, // deg/day (retrograde rotation)
+    orientationEpoch: 2451545.0 // JD (J2000.0)
 }; 

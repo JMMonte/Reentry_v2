@@ -11,13 +11,14 @@ export class App3DController {
         const simTime = initialState?.simulatedTime || new Date().toISOString();
         this.app3d = new App3D({ simulatedTime: simTime, satellitePhysicsSource: 'local' });
         // Ensure we clean up workers and resources on page refresh/unload
-        window.addEventListener('beforeunload', () => {
+        this._beforeUnloadHandler = () => {
             try {
                 this.dispose();
             } catch (err) {
                 console.error('Error disposing App3DController on unload', err);
             }
-        });
+        };
+        window.addEventListener('beforeunload', this._beforeUnloadHandler);
         setupExternalApi(this.app3d);
         this.ready = false;
         this._readyCallbacks = [];
@@ -76,6 +77,11 @@ export class App3DController {
      * Dispose of the App3D instance.
      */
     dispose() {
+        // Remove event listener to prevent memory leak
+        if (this._beforeUnloadHandler) {
+            window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+            this._beforeUnloadHandler = null;
+        }
         if (this.app3d) this.app3d.dispose();
     }
 } 

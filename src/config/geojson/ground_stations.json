@@ -1,0 +1,309 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Santa Maria Ground Station",
+                "location": "Azores, Portugal",
+                "gps_code": "SMGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Santa_Maria_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -25.0865,
+                    36.9733
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Carregado Ground Station",
+                "location": "Carregado, Portugal",
+                "gps_code": "CGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Carregado_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -8.9764,
+                    39.0123
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Ponta Delgada Ground Station",
+                "location": "São Miguel Island, Azores, Portugal",
+                "gps_code": "PDGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Ponta_Delgada_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -25.6693,
+                    37.7438
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "European Space Operations Centre (ESOC)",
+                "location": "Darmstadt, Germany",
+                "gps_code": "ESOC",
+                "wikipedia": "http://en.wikipedia.org/wiki/European_Space_Operations_Centre",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    8.6585,
+                    49.8705
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Kiruna Ground Station",
+                "location": "Kiruna, Sweden",
+                "gps_code": "KGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Kiruna_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    20.3369,
+                    67.8557
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Svalbard Satellite Station (SvalSat)",
+                "location": "Svalbard, Norway",
+                "gps_code": "SVS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Svalbard_Satellite_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    15.4064,
+                    78.2298
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Redu Station",
+                "location": "Redu, Belgium",
+                "gps_code": "RS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Redu_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    5.1498,
+                    50.0117
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Troll Satellite Station",
+                "location": "Queen Maud Land, Antarctica",
+                "gps_code": "TSS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Troll_Satellite_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    2.5350,
+                    -72.0125
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Maspalomas Station",
+                "location": "Canary Islands, Spain",
+                "gps_code": "MS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Maspalomas_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -15.6346,
+                    27.7616
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Oberpfaffenhofen Ground Station",
+                "location": "Oberpfaffenhofen, Germany",
+                "gps_code": "OGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Oberpfaffenhofen_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    11.2766,
+                    48.0822
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Kourou Ground Station",
+                "location": "Kourou, French Guiana",
+                "gps_code": "KGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Kourou_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -52.7686,
+                    5.2360
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Weilheim Ground Station",
+                "location": "Weilheim, Germany",
+                "gps_code": "WGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Weilheim_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    11.1522,
+                    47.8420
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Malargüe Station",
+                "location": "Malargüe, Argentina",
+                "gps_code": "MS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Malargüe_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -69.7383,
+                    -35.7750
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Neustrelitz Ground Station",
+                "location": "Neustrelitz, Germany",
+                "gps_code": "NGS",
+                "wikipedia": "http://en.wikipedia.org/wiki/Neustrelitz_Ground_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    13.0736,
+                    53.3616
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Fucino Space Centre",
+                "location": "Fucino, Italy",
+                "gps_code": "FSC",
+                "wikipedia": "http://en.wikipedia.org/wiki/Fucino_Space_Centre",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    13.5426,
+                    41.9785
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "scalerank": 1,
+                "featurecla": "Ground Station",
+                "name": "Goonhilly Earth Station",
+                "location": "Cornwall, United Kingdom",
+                "gps_code": "GES",
+                "wikipedia": "http://en.wikipedia.org/wiki/Goonhilly_Earth_Station",
+                "natlscale": 10
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -5.1830,
+                    50.0495
+                ]
+            }
+        }
+    ]
+}

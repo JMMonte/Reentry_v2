@@ -161,7 +161,7 @@ export class UnifiedSatellitePropagator {
             duration,
             timeStep = 60,
             startTime = 0,
-            maxPoints = 10000,
+            maxPoints = Infinity, // No default limit - calculate based on duration/timeStep
             includeJ2 = true,
             includeDrag = true,
             includeThirdBody = true

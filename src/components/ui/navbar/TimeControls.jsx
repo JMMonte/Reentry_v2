@@ -25,27 +25,27 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
     // Get precision indicator based on time warp
     const getPrecisionIndicator = (warp) => {
         if (warp >= 100000) return { 
-            tooltip: 'Very Low Precision - 20-100s timesteps', 
+            tooltip: 'Very Low Precision - Large timesteps', 
             color: 'bg-red-500',
             borderColor: 'border-red-600'
         };
         if (warp >= 10000) return { 
-            tooltip: 'Low Precision - 5s timesteps', 
+            tooltip: 'Low Precision - Medium timesteps', 
             color: 'bg-orange-500',
             borderColor: 'border-orange-600'
         };
         if (warp >= 1000) return { 
-            tooltip: 'Medium Precision - 1s timesteps', 
+            tooltip: 'Medium Precision', 
             color: 'bg-yellow-500',
             borderColor: 'border-yellow-600'
         };
         if (warp >= 100) return { 
-            tooltip: 'High Precision - 0.2s timesteps', 
+            tooltip: 'High Precision', 
             color: 'bg-green-500',
             borderColor: 'border-green-600'
         };
         return { 
-            tooltip: 'Maximum Precision - 60Hz physics', 
+            tooltip: 'Maximum Precision', 
             color: 'bg-blue-500',
             borderColor: 'border-blue-600'
         };

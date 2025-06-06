@@ -26,7 +26,7 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
 
   // Handle restarting the chat
   const handleRestartChat = () => {
-    setMessages([]);
+    setMessages([]);  // This now uses setMessagesWithCleanup from useSocket
     setUserMessage('');
     // Optionally, reset previousResponseId if exposed
     if (typeof window !== 'undefined' && window.previousResponseId) {

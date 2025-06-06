@@ -11,7 +11,7 @@ import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js
 import { SubsystemManager } from './subsystems/SubsystemManager.js';
 
 // Extract the functions we need from the Astronomy module
-const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector } = Astronomy;
+const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector, GeoVector, VectorObserver } = Astronomy;
 
 /**
  * Physics Engine
@@ -48,11 +48,13 @@ export class PhysicsEngine {
         // Subsystem manager for physics-based satellite subsystems
         this.subsystemManager = null;
         
-        // Performance optimization caches
+        // Performance optimization caches with size limits
         this._satelliteInfluenceCache = new Map(); // Cache significant bodies per satellite
         this._bodyDistanceCache = new Map(); // Cache body distances
         this._lastCacheUpdate = 0;
         this._cacheValidityPeriod = 5000; // 5 seconds
+        this._maxCacheSize = 100; // Maximum entries per cache
+        this._cacheCleanupThreshold = 150; // Clean up when size exceeds this
         
         // Pre-allocated vectors for calculations to avoid GC pressure
         this._tempVectors = {
@@ -216,7 +218,7 @@ export class PhysicsEngine {
             // Try Astronomy Engine first
             try {
                 const axisInfo = RotationAxis(actualBodyNameForAE, astroTime);
-                return this._createOrientationFromAxisInfo(axisInfo, astroTime);
+                return this._createOrientationFromAxisInfo(axisInfo, astroTime, actualBodyNameForAE);
             } catch {
                 // Fall back to manual calculation using config data
                 return this._calculateOrientationFromConfig(bodyConfig, time);
@@ -236,11 +238,24 @@ export class PhysicsEngine {
     /**
      * Create orientation from Astronomy Engine axis info
      */
-    _createOrientationFromAxisInfo(axisInfo, astroTime) {
+    _createOrientationFromAxisInfo(axisInfo, astroTime, bodyIdentifier) {
         // Convert RA from hours to radians (15° per hour)
         const raRad = axisInfo.ra * (Math.PI / 12);
         const decRad = axisInfo.dec * (Math.PI / 180);
-        const spinRad = axisInfo.spin * (Math.PI / 180);
+        // Normalize spin to [0, 360) degrees, then convert to [0, 2π) radians
+        let normalizedSpin = ((axisInfo.spin % 360) + 360) % 360;
+        
+        // Earth requires special handling due to Astronomy Engine's reference frame
+        // Astronomy Engine's Earth spin is ~90° behind GMST (Greenwich Mean Sidereal Time)
+        // At spin=0°, prime meridian faces 90° west of vernal equinox
+        // We need to add 90° to align with the standard expectation:
+        // - GMST=0h should mean prime meridian faces vernal equinox
+        // - This ensures our equirectangular texture (PM at center) displays correctly
+        if (bodyIdentifier === 'Earth' || bodyIdentifier === 'earth') {
+            normalizedSpin = ((normalizedSpin + 90) % 360 + 360) % 360;
+        }
+        
+        const spinRad = normalizedSpin * (Math.PI / 180);
 
         // Create the pole direction vector in J2000 equatorial coordinates
         const poleX_eqj = Math.cos(decRad) * Math.cos(raRad);
@@ -288,11 +303,15 @@ export class PhysicsEngine {
         // Convert time to Julian centuries since J2000.0
         const J2000 = new Date('2000-01-01T12:00:00.000Z');
         const centuriesSinceJ2000 = (time.getTime() - J2000.getTime()) / (365.25 * 24 * 3600 * 1000 * 100);
+        const daysSinceJ2000 = (time.getTime() - J2000.getTime()) / (24 * 3600 * 1000);
 
-        // Apply time-dependent corrections (simplified)
+        // Apply time-dependent corrections
+        // Pole orientation changes slowly (rates are in degrees per century)
         const poleRA = bodyConfig.poleRA + (bodyConfig.poleRARate || 0) * centuriesSinceJ2000;
         const poleDec = bodyConfig.poleDec + (bodyConfig.poleDecRate || 0) * centuriesSinceJ2000;
-        const spin = bodyConfig.spin + (bodyConfig.spinRate || 0) * centuriesSinceJ2000;
+        
+        // Spin changes rapidly (rate is in degrees per day)
+        const spin = bodyConfig.spin + (bodyConfig.spinRate || 0) * daysSinceJ2000;
 
         // Convert to radians
         const raRad = poleRA * (Math.PI / 180);
@@ -342,10 +361,6 @@ export class PhysicsEngine {
         // Apply the spin rotation to get the actual prime meridian direction
         const spinQuaternion = new THREE.Quaternion().setFromAxisAngle(poleVector, spinRad);
         const primeMeridianDirection = primeReference.clone().applyQuaternion(spinQuaternion);
-
-        // Apply 90° correction around the pole to fix surface orientation
-        const correctionQuaternion = new THREE.Quaternion().setFromAxisAngle(poleVector, Math.PI / 2);
-        primeMeridianDirection.applyQuaternion(correctionQuaternion);
 
         // Construct the planet's coordinate system
         const planetZ = poleVector.clone().normalize();
@@ -1323,6 +1338,32 @@ export class PhysicsEngine {
     }
     
     /**
+     * Manage cache sizes and cleanup when needed (LRU eviction)
+     * @private
+     */
+    _manageCacheSizes() {
+        // Clean up satellite influence cache if too large
+        if (this._satelliteInfluenceCache.size > this._cacheCleanupThreshold) {
+            const entries = Array.from(this._satelliteInfluenceCache.entries());
+            const entriesToRemove = entries.slice(0, this._satelliteInfluenceCache.size - this._maxCacheSize);
+            
+            for (const [key] of entriesToRemove) {
+                this._satelliteInfluenceCache.delete(key);
+            }
+        }
+        
+        // Clean up body distance cache if too large  
+        if (this._bodyDistanceCache.size > this._cacheCleanupThreshold) {
+            const entries = Array.from(this._bodyDistanceCache.entries());
+            const entriesToRemove = entries.slice(0, this._bodyDistanceCache.size - this._maxCacheSize);
+            
+            for (const [key] of entriesToRemove) {
+                this._bodyDistanceCache.delete(key);
+            }
+        }
+    }
+
+    /**
      * Clear cached data periodically for memory management
      */
     _clearCacheIfNeeded() {
@@ -1331,6 +1372,9 @@ export class PhysicsEngine {
             this._satelliteInfluenceCache.clear();
             this._bodyDistanceCache.clear();
             this._lastCacheUpdate = now;
+        } else {
+            // Manage cache sizes during normal operation
+            this._manageCacheSizes();
         }
     }
     

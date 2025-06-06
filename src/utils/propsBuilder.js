@@ -47,6 +47,7 @@ export function buildNavbarProps({
     getDisplayValue,
     timeWarp: app3d?.simulationController?.getTimeWarp() ?? app3d?.timeUtils?.getTimeWarp() ?? 1,
     timeWarpLoading,
+    timeWarpOptions: app3d?.physicsIntegration?.getTimeWarpOptions() ?? [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 1000000, 10000000],
     onTimeWarpChange: (newWarp) => {
       if (app3d?.simulationController) {
         app3d.simulationController.setTimeWarp(newWarp);

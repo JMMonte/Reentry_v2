@@ -130,9 +130,9 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                     }
                 });
 
-                // Check for ended connections
-                setConnectionHistory(prev => 
-                    prev.map(conn => {
+                // Check for ended connections and cleanup old ones
+                setConnectionHistory(prev => {
+                    const updated = prev.map(conn => {
                         if (conn.endTime === null) {
                             const stillActive = activeConnections.find(
                                 ac => {
@@ -145,8 +145,15 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                             }
                         }
                         return conn;
-                    })
-                );
+                    });
+                    
+                    // Keep only connections within time window (based on endTime or startTime for active ones)
+                    const cutoffTime = simTime - timeWindow;
+                    return updated.filter(conn => 
+                        (conn.endTime === null && conn.startTime >= cutoffTime) ||
+                        (conn.endTime !== null && conn.endTime >= cutoffTime)
+                    );
+                });
 
                 // Record data transfer events
                 if (commsStatus.state?.totalDataTransmitted > 0) {

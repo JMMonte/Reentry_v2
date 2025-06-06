@@ -52,10 +52,15 @@ export default {
     addLight: true,
     lightOptions: { color: 0xcccccc, intensity: 2439.7, helper: false },
     type: 'planet',
-    rotationalElements: {
-        poleRA: [281.0103, -0.0328, 0.0],
-        poleDec: [61.4155, -0.0049, 0.0],
-        primeMeridian: [329.5988, 6.1385108, 0.0]
-    },
+    
+    // Orientation (IAU 2023/2025)
+    poleRA: 281.0103,     // deg at J2000.0
+    poleDec: 61.4155,     // deg at J2000.0  
+    poleRARate: -0.0328,  // deg per century
+    poleDecRate: -0.0049, // deg per century
+    spin: 329.5988,       // deg at J2000.0
+    spinRate: 6.1385108,  // deg/day
+    orientationEpoch: 2451545.0, // JD (J2000.0)
+    
     // canonicalOrbit can be added if needed from orbitalBodiesData.js
 }; 

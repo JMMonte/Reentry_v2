@@ -6,21 +6,51 @@
 
 export class OrbitCacheManager {
     constructor() {
-        // Orbit data cache
+        // Orbit data cache with size limits
         this.orbitCache = new Map(); // satelliteId -> { points, timestamp, hash }
+        
+        // Cache configuration
+        this.maxCacheSize = 100; // Maximum number of satellites to cache
+        this.maxCacheAge = 5 * 60 * 1000; // 5 minutes in milliseconds
     }
 
     /**
      * Get cached orbit data for satellite
      */
     getCachedOrbit(satelliteId) {
-        return this.orbitCache.get(satelliteId);
+        const cached = this.orbitCache.get(satelliteId);
+        
+        // Check if cache is expired
+        if (cached && (Date.now() - cached.timestamp > this.maxCacheAge)) {
+            this.orbitCache.delete(satelliteId);
+            return null;
+        }
+        
+        return cached;
     }
 
     /**
      * Cache orbit data for satellite
      */
     setCachedOrbit(satelliteId, orbitData) {
+        // Enforce cache size limit using LRU eviction
+        if (this.orbitCache.size >= this.maxCacheSize) {
+            // Find and remove oldest entry
+            let oldestId = null;
+            let oldestTime = Infinity;
+            
+            for (const [id, data] of this.orbitCache) {
+                if (data.timestamp < oldestTime) {
+                    oldestTime = data.timestamp;
+                    oldestId = id;
+                }
+            }
+            
+            if (oldestId) {
+                this.orbitCache.delete(oldestId);
+            }
+        }
+        
         this.orbitCache.set(satelliteId, orbitData);
     }
 
@@ -127,6 +157,26 @@ export class OrbitCacheManager {
      */
     clearAll() {
         this.orbitCache.clear();
+    }
+    
+    /**
+     * Clean up expired cache entries
+     */
+    cleanupExpired() {
+        const now = Date.now();
+        const expiredIds = [];
+        
+        for (const [id, data] of this.orbitCache) {
+            if (now - data.timestamp > this.maxCacheAge) {
+                expiredIds.push(id);
+            }
+        }
+        
+        for (const id of expiredIds) {
+            this.orbitCache.delete(id);
+        }
+        
+        return expiredIds.length;
     }
 
     /**

@@ -47,4 +47,15 @@ export function getSocket() {
         }
     }
     return socket;
+}
+
+/**
+ * Close the socket connection and cleanup
+ */
+export function closeSocket() {
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+        console.log('Socket connection closed');
+    }
 } 

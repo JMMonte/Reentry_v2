@@ -84,12 +84,16 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
 
   // Listen for orbit update events to show propagation status
   useEffect(() => {
+    let timeoutId1 = null;
+    let timeoutId2 = null;
+    
     const handleOrbitUpdate = (e) => {
       if (e.detail?.satelliteId === satellite?.id) {
         setPropagationStatus('Calculating orbit...');
         
         // Clear status after a delay
-        setTimeout(() => {
+        if (timeoutId1) clearTimeout(timeoutId1);
+        timeoutId1 = setTimeout(() => {
           setPropagationStatus(null);
         }, 2000);
       }
@@ -100,7 +104,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         setPropagationStatus('✓ Orbit updated');
         
         // Clear status after a delay
-        setTimeout(() => {
+        if (timeoutId2) clearTimeout(timeoutId2);
+        timeoutId2 = setTimeout(() => {
           setPropagationStatus(null);
         }, 1500);
       }
@@ -110,6 +115,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     document.addEventListener('orbitUpdated', handleOrbitComplete);
     
     return () => {
+      if (timeoutId1) clearTimeout(timeoutId1);
+      if (timeoutId2) clearTimeout(timeoutId2);
       document.removeEventListener('orbitCalculationStarted', handleOrbitUpdate);
       document.removeEventListener('orbitUpdated', handleOrbitComplete);
     };

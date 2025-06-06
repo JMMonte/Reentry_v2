@@ -8,19 +8,7 @@ import { saveAs } from 'file-saver';
 import LZString from 'lz-string';
 import ActionButtons from './ActionButtons';
 import UserMenu from './UserMenu';
-import { timeWarpOptions } from '../../../utils/timeWarpOptions';
-
-// Function to get next time warp value
-const getNextTimeWarp = (currentTimeWarp, increase) => {
-  const currentIndex = timeWarpOptions.indexOf(currentTimeWarp);
-  if (currentIndex === -1) {
-    return increase ? timeWarpOptions[1] : timeWarpOptions[0];
-  }
-  const nextIndex = increase ?
-    Math.min(currentIndex + 1, timeWarpOptions.length - 1) :
-    Math.max(currentIndex - 1, 0);
-  return timeWarpOptions[nextIndex];
-};
+// timeWarpOptions will be passed as a prop from the physics engine
 
 // Helper to generate a color from a string
 function stringToColor(str) {
@@ -55,9 +43,25 @@ export function Navbar({
   groupedPlanetOptions,
   satelliteOptions,
   getDisplayValue,
-  timeWarpLoading
+  timeWarpLoading,
+  timeWarpOptions
 }) {
   const [user, setUser] = useState(null);
+
+  // Function to get next time warp value
+  const getNextTimeWarp = (currentTimeWarp, increase) => {
+    if (!timeWarpOptions || timeWarpOptions.length === 0) {
+      return currentTimeWarp;
+    }
+    const currentIndex = timeWarpOptions.indexOf(currentTimeWarp);
+    if (currentIndex === -1) {
+      return increase ? timeWarpOptions[1] : timeWarpOptions[0];
+    }
+    const nextIndex = increase ?
+      Math.min(currentIndex + 1, timeWarpOptions.length - 1) :
+      Math.max(currentIndex - 1, 0);
+    return timeWarpOptions[nextIndex];
+  };
 
   // Fetch user on mount and listen for auth state changes
   useEffect(() => {

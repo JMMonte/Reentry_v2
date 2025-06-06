@@ -206,7 +206,8 @@ export class WorkerPoolManager {
                 if (job.messageHandler) {
                     job.messageHandler('error', satelliteId, null, job.params, false, null, event.data.error);
                 }
-                this.workerPool.push(job.worker);
+                // Don't reuse worker after error - replace it instead
+                this._replaceCorruptedWorker(job.worker);
                 this.activeJobs.delete(satelliteId);
                 break;
         }
@@ -217,6 +218,74 @@ export class WorkerPoolManager {
      */
     _handleWorkerError(error) {
         console.error('Orbit propagation worker error:', error);
+        
+        // Find the corrupted worker and replace it
+        const corruptedWorker = error.target || error.currentTarget;
+        if (corruptedWorker) {
+            this._replaceCorruptedWorker(corruptedWorker);
+        }
+    }
+    
+    /**
+     * Replace a corrupted worker with a new one
+     */
+    _replaceCorruptedWorker(corruptedWorker) {
+        // Find and remove corrupted worker from workers array
+        const workerIndex = this.workers.findIndex(w => w === corruptedWorker);
+        if (workerIndex !== -1) {
+            this.workers.splice(workerIndex, 1);
+        }
+        
+        // Remove from pool if present
+        const poolIndex = this.workerPool.findIndex(w => w === corruptedWorker);
+        if (poolIndex !== -1) {
+            this.workerPool.splice(poolIndex, 1);
+        }
+        
+        // Clean up any active jobs using this worker
+        for (const [satelliteId, job] of this.activeJobs.entries()) {
+            if (job.worker === corruptedWorker) {
+                // Notify handler of failure
+                if (job.messageHandler) {
+                    job.messageHandler('error', satelliteId, null, job.params, false, null, 'Worker terminated due to error');
+                }
+                this.activeJobs.delete(satelliteId);
+            }
+        }
+        
+        // Terminate the corrupted worker
+        try {
+            corruptedWorker.terminate();
+        } catch (e) {
+            console.warn('Failed to terminate corrupted worker:', e);
+        }
+        
+        // Create replacement worker if we're under the max count
+        if (this.workers.length < this.maxWorkers) {
+            this._createReplacementWorker();
+        }
+    }
+    
+    /**
+     * Create a replacement worker
+     */
+    _createReplacementWorker() {
+        try {
+            const worker = new Worker(
+                new URL('../physics/workers/orbitPropagationWorker.js', import.meta.url),
+                { type: 'module' }
+            );
+            
+            worker.onmessage = this._handleWorkerMessage.bind(this);
+            worker.onerror = this._handleWorkerError.bind(this);
+            
+            this.workers.push(worker);
+            this.workerPool.push(worker);
+            
+            console.log(`[WorkerPoolManager] Created replacement worker. Pool size: ${this.workers.length}/${this.maxWorkers}`);
+        } catch (error) {
+            console.error('[WorkerPoolManager] Failed to create replacement worker:', error);
+        }
     }
 
     /**

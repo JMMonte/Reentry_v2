@@ -188,16 +188,4 @@ export class TimeUtils {
         return (elapsedCycle % millisecondsInCycle) / millisecondsInCycle;
     }
 
-    getBodyReferencePosition(body, bodyName = 'earth') {
-        const bodyData = Bodies.getData(bodyName);
-        const distance = bodyData?.radius || 6371; // Default to Earth radius
-        let position = new THREE.Vector3(distance, 0, 0);
-        const tilt = bodyData?.tilt || 23.5; // Default to Earth's tilt
-        const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(tilt));
-        const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), body.rotationGroup.rotation.y.toFixed(4));
-        const combinedQuaternion = new THREE.Quaternion().multiplyQuaternions(tiltQuaternion, rotationQuaternion);
-        position.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 1.5));
-        position.applyQuaternion(combinedQuaternion);
-        return position;
-    }
 }

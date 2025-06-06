@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { LabelFader } from '../../utils/LabelFader.js';
 
 export class RadialGrid {
     /**
@@ -10,12 +9,13 @@ export class RadialGrid {
     constructor(planet, config) {
         this.planet = planet;
         this.config = config;
-        // this.scene = planet.scene; // Store scene reference // REMOVED
-        // this.parentRef = this.scene; // Reference parent for removal in dispose // MODIFIED BELOW
 
         this.group = new THREE.Group();
         this.group.name = `${planet.name}_radialGrid`;
-        this.worldPosition = new THREE.Vector3(); // Added for updateFading
+        this.worldPosition = new THREE.Vector3();
+        
+        // Single grid mesh instead of LOD
+        this.gridMesh = null;
 
         const planetOrbitGroup = planet.getOrbitGroup();
 
@@ -47,6 +47,16 @@ export class RadialGrid {
         // Add to the planet's parent group (should be rebaseGroup)
         // this.scene.add(this.group); // scene is rebaseGroup for planets // REMOVED (handled above)
         this.labelsSprites = [];
+        
+        // Animation state for the entire grid
+        this.fadeAnimation = {
+            targetOpacity: 1,
+            currentOpacity: 1,
+            startOpacity: 1,
+            startTime: 0,
+            animating: false
+        };
+        this.animationDuration = 300; // 300ms fade duration
 
         if (!config) {
             console.warn(`RadialGrid: No config provided for planet ${planet.name}. Grid will not be created.`);
@@ -56,26 +66,6 @@ export class RadialGrid {
         const scaledPlanetRadius = planet.radius;
 
         this.createGrid();
-
-        // Determine fade start and end for label and grid fading
-        let fadeStart, fadeEnd;
-        if (config.fadeStart != null && config.fadeEnd != null) {
-            fadeStart = config.fadeStart;
-            fadeEnd = config.fadeEnd;
-        } else if (typeof planet.soiRadius === 'number' && !isNaN(planet.soiRadius) && planet.soiRadius > 0) {
-            fadeStart = planet.soiRadius;
-            fadeEnd = planet.soiRadius * 3;
-        } else if (config.maxDisplayRadius && config.fadeFactors) {
-            const maxAltitude = config.maxDisplayRadius;
-            const maxRadius = scaledPlanetRadius + maxAltitude;
-            fadeStart = maxRadius * config.fadeFactors.start;
-            fadeEnd = maxRadius * config.fadeFactors.end;
-        }
-        if (fadeStart != null && fadeEnd != null) {
-            this.labelFader = new LabelFader(this.labelsSprites, fadeStart, fadeEnd);
-        } else {
-            this.labelFader = null;
-        }
         // Initial position will be set by the first Planet.update() call
     }
 
@@ -89,102 +79,115 @@ export class RadialGrid {
         const markerCount = Math.floor(soi / markerStep);
         const radialLineCount = 8;
 
-        // --- Materials ---
-        const majorOpacity = 0.35;
-        const minorOpacity = 0.20;
-        const markerOpacity = 0.12;
-        const radialOpacity = 0.15;
-        const solidMajorMaterial = new THREE.LineBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: majorOpacity });
-        const solidMinorMaterial = new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: minorOpacity });
-        const markerMaterial = new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: markerOpacity, depthWrite: false });
-        const radialLineMaterial = new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: radialOpacity, depthWrite: false });
-
-        // --- Add main SOI circle (major) ---
-        const soiCircle = this.createCircle(scaledPlanetRadius + soi, solidMajorMaterial.clone(), false);
-        if (soiCircle) {
-            soiCircle.userData.baseOpacity = majorOpacity;
-            this.group.add(soiCircle);
-            this.createLabel('SOI', scaledPlanetRadius + soi);
+        // --- Materials with transparency for better appearance ---
+        const majorOpacity = 0.25;  // Reduced from 0.35 for less shine
+        const minorOpacity = 0.15;  // Reduced from 0.20
+        const markerOpacity = 0.06;  // Reduced from 0.08
+        const radialOpacity = 0.08;  // Reduced from 0.10
+        
+        // Colors for alternating pattern - neutral gray-blue tones
+        const color1 = new THREE.Color(0x4d5d6d); // Dark gray-blue
+        const color2 = new THREE.Color(0x667788); // Medium gray-blue
+        const majorColor = new THREE.Color(0x7788aa); // Light gray-blue for major features
+        
+        // We'll use vertex colors for better visual variety
+        const vertices = [];
+        const colors = [];
+        
+        // --- Add radial lines first (alternating colors) ---
+        for (let i = 0; i < radialLineCount; i++) {
+            const angle = (i / radialLineCount) * Math.PI * 2;
+            const color = (i & 1) ? color1 : color2;
+            
+            vertices.push(0, 0, 0);
+            vertices.push(
+                Math.cos(angle) * maxRadiusScaled,
+                Math.sin(angle) * maxRadiusScaled,
+                0
+            );
+            
+            colors.push(color.r, color.g, color.b);
+            colors.push(color.r, color.g, color.b);
         }
+
+        // --- Add main SOI circle (major color) ---
+        this.addCircleToBuffers(scaledPlanetRadius + soi, 128, majorColor, vertices, colors);
+        this.createLabel('SOI', scaledPlanetRadius + soi);
 
         // --- Add config circles (if any) ---
         const circles = (this.config && Array.isArray(this.config.circles)) ? this.config.circles : [];
-        circles.forEach(circleConfig => {
+        circles.forEach((circleConfig, index) => {
             if (typeof circleConfig.radius !== 'number' || !isFinite(circleConfig.radius)) return;
             const r = scaledPlanetRadius + circleConfig.radius;
             if (!isFinite(r) || r > scaledPlanetRadius + soi) return;
-            let material = solidMinorMaterial.clone();
-            let baseOpacityValue = minorOpacity;
-            if (circleConfig.style?.toLowerCase() === 'major') {
-                material = solidMajorMaterial.clone();
-                baseOpacityValue = majorOpacity;
-            }
-            const circleLine = this.createCircle(r, material, false);
-            if (circleLine) {
-                circleLine.userData.baseOpacity = baseOpacityValue;
-                this.group.add(circleLine);
-                if (circleConfig.label) this.createLabel(circleConfig.label, r);
-            }
+            
+            // Major circles get major color, others alternate
+            const isMajor = circleConfig.style?.toLowerCase() === 'major';
+            const color = isMajor ? majorColor : (index & 1) ? color2 : color1;
+            this.addCircleToBuffers(r, 128, color, vertices, colors);
+            if (circleConfig.label) this.createLabel(circleConfig.label, r);
         });
 
-        // --- Add standard markers and labels ---
+        // --- Add standard distance markers (alternating subtle colors) ---
         for (let i = 1; i < markerCount; i++) {
             const r = scaledPlanetRadius + i * markerStep;
             if (!isFinite(r) || r > scaledPlanetRadius + soi) continue;
-            const markerLine = this.createCircle(r, markerMaterial.clone(), false);
-            if (markerLine) {
-                markerLine.userData.baseOpacity = markerOpacity;
-                this.group.add(markerLine);
-                // Label at every marker
+            
+            // Every 5th ring is brighter
+            const color = (i % 5 === 0) ? color2 : color1;
+            this.addCircleToBuffers(r, 64, color, vertices, colors);
+            
+            // Labels only at certain intervals
+            if (i % 2 === 0) {
                 const labelText = `${Math.round(i * markerStep)} km`;
                 this.createLabel(labelText, r);
             }
         }
-
-        // --- Add radial lines (fixed count) ---
-        for (let i = 0; i < radialLineCount; i++) {
-            const angle = (i / radialLineCount) * Math.PI * 2;
-            const geometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(
-                    Math.cos(angle) * maxRadiusScaled,
-                    Math.sin(angle) * maxRadiusScaled,
-                    0
-                )
-            ]);
-            const radialLine = new THREE.Line(geometry, radialLineMaterial.clone());
-            radialLine.userData.baseOpacity = radialOpacity;
-            this.group.add(radialLine);
-        }
+        
+        // Create geometry with vertex colors
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        
+        // Material that uses vertex colors
+        const gridMaterial = new THREE.LineBasicMaterial({ 
+            vertexColors: true, 
+            transparent: true, 
+            opacity: majorOpacity,
+            depthWrite: false
+        });
+        
+        this.gridMesh = new THREE.LineSegments(geometry, gridMaterial);
+        this.gridMesh.userData.baseOpacity = majorOpacity;
+        this.group.add(this.gridMesh);
     }
 
-    // createCircle returns the line object, doesn't add to group or set userData
-    createCircle(scaledRadius, material, isDashed = false) {
+    // Add circle vertices and colors to buffers
+    addCircleToBuffers(scaledRadius, segments, color, vertices, colors) {
         if (isNaN(scaledRadius)) {
-            console.error(`RadialGrid [${this.planet.name}] createCircle: Attempted to create circle with NaN radius! Skipping.`);
-            return null; // Return null if invalid
+            console.error(`RadialGrid [${this.planet.name}] addCircleToBuffers: Attempted to create circle with NaN radius! Skipping.`);
+            return;
         }
 
-        const segments = 128;
-        const circleGeometry = new THREE.BufferGeometry();
-        const positions = new Float32Array((segments + 1) * 3);
-
-        for (let i = 0; i <= segments; i++) {
-            const angle = (i / segments) * Math.PI * 2;
-            positions[i * 3] = Math.cos(angle) * scaledRadius;
-            positions[i * 3 + 1] = Math.sin(angle) * scaledRadius;
-            positions[i * 3 + 2] = 0;
+        for (let i = 0; i < segments; i++) {
+            // First vertex
+            let angle = (i / segments) * Math.PI * 2;
+            vertices.push(
+                Math.cos(angle) * scaledRadius,
+                Math.sin(angle) * scaledRadius,
+                0
+            );
+            colors.push(color.r, color.g, color.b);
+            
+            // Second vertex
+            angle = ((i + 1) / segments) * Math.PI * 2;
+            vertices.push(
+                Math.cos(angle) * scaledRadius,
+                Math.sin(angle) * scaledRadius,
+                0
+            );
+            colors.push(color.r, color.g, color.b);
         }
-        circleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-        // Create the line using the provided (already cloned) material
-        const circle = new THREE.Line(circleGeometry, material);
-
-        if (isDashed) {
-            circle.computeLineDistances();
-        }
-        // DO NOT add to group here - let createGrid handle it
-        return circle; // Return the created line object
     }
 
     createTextSprite(text) {
@@ -226,15 +229,75 @@ export class RadialGrid {
     }
 
     /**
-     * Update label fading based on camera distance.
+     * Update opacity based on camera distance.
      * @param {THREE.Camera} camera - The scene camera.
      */
     updateFading(camera) {
-        if (this.labelFader && this.group && this.planet) {
-            // Pass the grid's world position, the grid group, and the planet itself
-            this.group.getWorldPosition(this.worldPosition);
-            this.labelFader.update(camera, this.worldPosition, this.group, this.planet);
+        if (!this.gridMesh || !camera) return;
+        
+        // Early exit if grid is not visible
+        if (!this.group.visible) return;
+        
+        this.group.getWorldPosition(this.worldPosition);
+        const distance = camera.position.distanceTo(this.worldPosition);
+        
+        // Determine target opacity based on distance thresholds
+        const soi = this.planet.soiRadius || 1000;
+        const gridRadius = this.planet.radius + soi;  // Total grid size
+        const fadeThreshold = gridRadius * 3;   // Fade when grid would be small on screen
+        let targetOpacity = distance < fadeThreshold ? 1 : 0;
+        
+        // Check if we need to start a new animation
+        const currentTime = Date.now();
+        if (targetOpacity !== this.fadeAnimation.targetOpacity) {
+            this.fadeAnimation.targetOpacity = targetOpacity;
+            this.fadeAnimation.startOpacity = this.fadeAnimation.currentOpacity;
+            this.fadeAnimation.startTime = currentTime;
+            this.fadeAnimation.animating = true;
         }
+        
+        // Update animation if active
+        if (this.fadeAnimation.animating) {
+            const elapsed = currentTime - this.fadeAnimation.startTime;
+            const progress = Math.min(elapsed / this.animationDuration, 1);
+            
+            // Use easing function for smooth animation
+            const eased = this.easeInOutCubic(progress);
+            this.fadeAnimation.currentOpacity = this.fadeAnimation.startOpacity + 
+                (this.fadeAnimation.targetOpacity - this.fadeAnimation.startOpacity) * eased;
+            
+            if (progress >= 1) {
+                this.fadeAnimation.animating = false;
+                this.fadeAnimation.currentOpacity = this.fadeAnimation.targetOpacity;
+            }
+        }
+        
+        // Apply opacity to entire group
+        const opacity = this.fadeAnimation.currentOpacity;
+        
+        // Always keep group visible so it can fade back in
+        // Instead control visibility of individual elements
+        this.group.visible = true;
+        
+        // Update grid mesh opacity and visibility
+        if (this.gridMesh) {
+            if (this.gridMesh.material) {
+                this.gridMesh.material.opacity = this.gridMesh.userData.baseOpacity * opacity;
+            }
+            this.gridMesh.visible = opacity > 0.01;
+        }
+        
+        // Update all label sprites opacity and visibility
+        this.labelsSprites.forEach(sprite => {
+            if (sprite.material) {
+                sprite.material.opacity = opacity;
+            }
+            sprite.visible = opacity > 0.01;
+        });
+    }
+    
+    easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
 
     setVisible(visible) {
@@ -244,15 +307,9 @@ export class RadialGrid {
     dispose() {
         // Dispose geometries and materials
         this.group.traverse((object) => {
-            if (object instanceof THREE.Line) {
+            if (object instanceof THREE.Line || object instanceof THREE.LineSegments) {
                 if (object.geometry) object.geometry.dispose();
-                if (object.material) {
-                    if (Array.isArray(object.material)) {
-                        object.material.forEach(material => material.dispose());
-                    } else {
-                        object.material.dispose();
-                    }
-                }
+                if (object.material) object.material.dispose();
             } else if (object instanceof THREE.Sprite) {
                 if (object.material.map) object.material.map.dispose();
                 if (object.material) object.material.dispose();
@@ -260,13 +317,12 @@ export class RadialGrid {
         });
 
         this.labelsSprites = [];
+        this.fadeAnimation = null;
 
         // Remove the group from its parent (the planet's orbit group)
         if (this.parentRef) {
             this.parentRef.remove(this.group);
         }
-        // Optional: Clean up LabelFader if it holds references
-        // this.labelFader?.dispose();
     }
 
     /** Update the grid's world position to match the planet's orbital position */

@@ -169,7 +169,7 @@ class App3D extends EventTarget {
         this._eventHandlers = {};
 
         // Global listeners (bodySelected, displaySettings, …)
-        setupGlobalListeners(this);
+        this._cleanupGlobalListeners = setupGlobalListeners(this);
 
         // Attach core modules for SceneManager access
         this.Planet = Planet;
@@ -186,6 +186,14 @@ class App3D extends EventTarget {
         // Pre-allocated vectors for tick() to avoid GC pressure
         this._tempWorldPos = new THREE.Vector3();
         this._tempSunPos = new THREE.Vector3();
+        
+        // Caching for performance
+        this._lastFrustumUpdateFrame = -1;
+        this._visibleBodies = new Set();
+        this._bodyWorldPositions = new Map(); // Cache world positions
+        this._lastUpdateFrame = new Map(); // Track when each body was last updated
+        this._updateThreshold = 0.1; // Min distance change to trigger update (km)
+        this._maxCacheEntries = 100; // Safety limit for position cache
     }
 
     // ───── Properties (read-only public) ──────────────────────────────────────
@@ -347,6 +355,9 @@ class App3D extends EventTarget {
         // Satellite orbit manager
         this.satelliteOrbitManager?.dispose?.();
         
+        // Satellite communications manager
+        this.satelliteCommsManager?.dispose?.();
+        
         // Simulation controller
         this.simulationController?.dispose?.();
         
@@ -365,7 +376,23 @@ class App3D extends EventTarget {
         // Scene graph
         this.sceneManager?.dispose?.();
         
-        // Socket cleanup handled by individual components
+        // Socket cleanup
+        import('./socket.js').then(module => {
+            if (module.closeSocket) {
+                module.closeSocket();
+            }
+        }).catch(() => {
+            // Socket module might not be loaded, that's ok
+        });
+        
+        // Cleanup shared GroundtrackPath worker
+        import('./components/Satellite/GroundtrackPath.js').then(module => {
+            if (module.GroundtrackPath && module.GroundtrackPath.forceCleanup) {
+                module.GroundtrackPath.forceCleanup();
+            }
+        }).catch(() => {
+            // Module might not be loaded, that's ok
+        });
         
         // Simulation state manager
         this.simulationStateManager?.dispose?.();
@@ -378,6 +405,12 @@ class App3D extends EventTarget {
         // Listeners
         this._removeWindowResizeListener();
         
+        // Clean up global event listeners
+        if (this._cleanupGlobalListeners) {
+            this._cleanupGlobalListeners();
+            this._cleanupGlobalListeners = null;
+        }
+        
         // Clear all references to help GC
         this.celestialBodies = null;
         this.bodiesByNaifId = null;
@@ -387,6 +420,11 @@ class App3D extends EventTarget {
         this._renderer = null;
         this._controls = null;
         this.cameraControls = null;
+        
+        // Clear performance caches
+        this._bodyWorldPositions.clear();
+        this._lastUpdateFrame.clear();
+        this._visibleBodies.clear();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -656,7 +694,7 @@ class App3D extends EventTarget {
         this.sceneManager.updateFrame?.(delta);
 
         if (Array.isArray(this.celestialBodies)) {
-            this.celestialBodies.forEach(planet => planet.update?.(delta));
+            this.celestialBodies.forEach(planet => planet.update?.(delta, interpolationFactor));
         }
 
         if (this.previewNode) this.previewNode.update?.(delta);
@@ -667,26 +705,27 @@ class App3D extends EventTarget {
         this.cameraControls?.updateCameraPosition?.(delta);
 
         // --- Optimized per-frame updates ---
-        // Track camera and sun movement
-        const cameraMoved = this.camera && !this._lastCameraPos.equals(this.camera.position);
+        // Track camera and sun movement with threshold
+        const cameraMoved = this.camera && 
+            this._lastCameraPos.distanceTo(this.camera.position) > this._updateThreshold;
         if (cameraMoved) {
             this._lastCameraPos.copy(this.camera.position);
         }
+        
         let sunMoved = false;
         if (this.sun && typeof this.sun.getWorldPosition === 'function') {
-            try {
-                this.sun.getWorldPosition(this._tempSunPos);
-                sunMoved = !this._lastSunPos.equals(this._tempSunPos);
+            this.sun.getWorldPosition(this._tempSunPos);
+            sunMoved = this._lastSunPos.distanceTo(this._tempSunPos) > this._updateThreshold;
+            if (sunMoved) {
                 this._lastSunPos.copy(this._tempSunPos);
-            } catch (e) {
-                console.warn('[App3D] Failed to get sun position:', e);
             }
         }
 
-        // Update frustum
-        if (this.camera && this.camera.projectionMatrix && this.camera.matrixWorldInverse) {
+        // Update frustum only when camera moves (not every frame)
+        if (cameraMoved && this.camera && this.camera.projectionMatrix && this.camera.matrixWorldInverse) {
             this._projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
             this._frustum.setFromProjectionMatrix(this._projScreenMatrix);
+            this._lastFrustumUpdateFrame = this._frameCount;
         }
 
         // Helper to check if a mesh is visible in the frustum
@@ -697,8 +736,7 @@ class App3D extends EventTarget {
             if (mesh.isMesh && mesh.geometry) {
                 const pos = mesh.geometry.attributes.position;
                 if (!pos || !pos.count || isNaN(pos.array[0])) {
-                    // Defensive: skip meshes with invalid geometry
-                    console.warn('Skipping mesh with invalid geometry for frustum check:', mesh, mesh.geometry);
+                    // Skip invalid geometry silently in production
                     return false;
                 }
                 if (!mesh.geometry.boundingSphere) {
@@ -706,7 +744,7 @@ class App3D extends EventTarget {
                 }
                 return this._frustum.intersectsObject(mesh);
             }
-            // For Groups or objects without geometry, assume visible (or skip)
+            // For Groups or objects without geometry, assume visible
             return true;
         };
 
@@ -714,39 +752,63 @@ class App3D extends EventTarget {
         this._frameCount = (this._frameCount + 1) % 3;
         const shouldUpdateUI = this._frameCount === 0;
 
-        // Only update if camera, sun, or planet moved, and if visible
+        // Only update visible bodies when camera, sun, or planet moved
         if (Array.isArray(this.celestialBodies)) {
-            this.celestialBodies.forEach(body => {
-                // Track if planet moved (compare world position)
-                if (!body.getMesh) return;
+            // Pre-filter visible bodies to avoid checking every frame
+            if (cameraMoved || this._visibleBodies.size === 0) {
+                this._visibleBodies.clear();
+                this.celestialBodies.forEach(body => {
+                    if (body.getMesh) {
+                        const mesh = body.getMesh();
+                        if (mesh && isVisible(mesh)) {
+                            this._visibleBodies.add(body);
+                        }
+                    }
+                });
+            }
+            
+            // Only process visible bodies
+            for (const body of this._visibleBodies) {
                 const mesh = body.getMesh();
-                if (!mesh) return;
-                if (!isVisible(mesh)) return;
-                // Track last world position on the mesh
-                if (!mesh._lastWorldPos) mesh._lastWorldPos = new THREE.Vector3();
+                if (!mesh) continue;
+                
+                // Cache world position with smart update
+                const bodyId = body.name || body.id;
+                let cachedPos = this._bodyWorldPositions.get(bodyId);
+                if (!cachedPos) {
+                    // Check cache size limit before adding new entries
+                    if (this._bodyWorldPositions.size >= this._maxCacheEntries) {
+                        // Remove oldest entry (first one in Map)
+                        const firstKey = this._bodyWorldPositions.keys().next().value;
+                        this._bodyWorldPositions.delete(firstKey);
+                    }
+                    cachedPos = new THREE.Vector3();
+                    this._bodyWorldPositions.set(bodyId, cachedPos);
+                }
+                
                 mesh.getWorldPosition(this._tempWorldPos);
-                const planetMoved = !mesh._lastWorldPos.equals(this._tempWorldPos);
-                mesh._lastWorldPos.copy(this._tempWorldPos);
+                const planetMoved = cachedPos.distanceTo(this._tempWorldPos) > this._updateThreshold;
+                if (planetMoved) {
+                    cachedPos.copy(this._tempWorldPos);
+                }
 
-                // Atmosphere uniforms
+                // Only update uniforms if something changed
                 if (typeof body.updateAtmosphereUniforms === 'function') {
                     if (cameraMoved || sunMoved || planetMoved) {
                         body.updateAtmosphereUniforms(this.camera, this.sun);
                     }
                 }
-                // Radial grid fading
-                if (shouldUpdateUI && typeof body.updateRadialGridFading === 'function') {
-                    if (cameraMoved || planetMoved) {
+                
+                // UI updates remain throttled
+                if (shouldUpdateUI) {
+                    if (typeof body.updateRadialGridFading === 'function' && (cameraMoved || planetMoved)) {
                         body.updateRadialGridFading(this.camera);
                     }
-                }
-                // Surface fading
-                if (shouldUpdateUI && typeof body.updateSurfaceFading === 'function') {
-                    if (cameraMoved || planetMoved) {
+                    if (typeof body.updateSurfaceFading === 'function' && (cameraMoved || planetMoved)) {
                         body.updateSurfaceFading(this.camera);
                     }
                 }
-            });
+            }
         }
         // Preview node(s)
         const previewNodes = [this.previewNode, ...(Array.isArray(this.previewNodes) ? this.previewNodes : [])].filter(Boolean);

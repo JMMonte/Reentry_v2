@@ -16,10 +16,11 @@ const DEFAULT_MASS = 100;         // kg
 const DEFAULT_CD = 2.2;         // dimensionless
 
 /** Bright high-contrast colours for quick visual pick-out */
+// Note: Avoiding dark blues (0x0066cc range) to prevent confusion with grid lines
 export const brightColors = [
     0xFF0000, 0xFF4D00, 0xFF9900, 0xFFCC00, 0xFFFF00,
     0x00FF00, 0x00FF99, 0x00FFFF, 0x00CCFF, 0x0099FF,
-    0x0000FF, 0x4D00FF, 0x9900FF, 0xFF00FF, 0xFF0099,
+    0x00DDFF, 0x4D00FF, 0x9900FF, 0xFF00FF, 0xFF0099,
     0xFF1493, 0x00FF7F, 0xFF69B4, 0x7FFF00, 0x40E0D0,
     0xFF99CC, 0x99FF99, 0x99FFFF, 0x9999FF, 0xFF99FF
 ];

@@ -8,18 +8,29 @@ export function setupEventListeners(app) {
         document.body.appendChild(app.stats.dom);
     }
 
-    // 2. Display-settings bridge
-    document.addEventListener('updateDisplaySetting', ({ detail }) => {
-        const { key, value } = detail ?? {};
-        app.updateDisplaySetting?.(key, value);
-    });
+    // Define all event handlers with proper references for cleanup
+    const handlers = {
+        updateDisplaySetting: ({ detail }) => {
+            const { key, value } = detail ?? {};
+            app.updateDisplaySetting?.(key, value);
+        },
 
-    document.addEventListener('getDisplaySettings', () => {
-        const current = app.displaySettingsManager?.getSettings?.() ?? {};
-        document.dispatchEvent(
-            new CustomEvent('displaySettingsResponse', { detail: current })
-        );
-    });
+        getDisplaySettings: () => {
+            const current = app.displaySettingsManager?.getSettings?.() ?? {};
+            document.dispatchEvent(
+                new CustomEvent('displaySettingsResponse', { detail: current })
+            );
+        },
+
+        updateTimeWarp: ({ detail }) => {
+            app.updateTimeWarp?.(detail?.value);
+        },
+
+        bodySelected: ({ detail }) => {
+            const value = detail?.body;
+            app.updateSelectedBody?.(value, !app.isInitialized);
+        }
+    };
 
     // 3. Satellite-creation helpers
     const satEvents = {
@@ -27,22 +38,25 @@ export function setupEventListeners(app) {
         createSatelliteFromOrbitalElements: 'createSatelliteFromOrbitalElements',
         createSatelliteFromLatLonCircular: 'createSatelliteFromLatLonCircular'
     };
+    
+    // Add satellite event handlers
     Object.entries(satEvents).forEach(([evtName, fnName]) => {
-        document.addEventListener(evtName, ({ detail }) => {
+        handlers[evtName] = ({ detail }) => {
             app[fnName]?.(detail);
+        };
+    });
+
+    // Add all event listeners
+    Object.entries(handlers).forEach(([eventName, handler]) => {
+        document.addEventListener(eventName, handler);
+    });
+
+    // Return cleanup function to remove all event listeners
+    return () => {
+        Object.entries(handlers).forEach(([eventName, handler]) => {
+            document.removeEventListener(eventName, handler);
         });
-    });
-
-    // 4. Time warp & body selection
-    document.addEventListener('updateTimeWarp', ({ detail }) => {
-        app.updateTimeWarp?.(detail?.value);
-    });
-
-    // Listen for bodySelected events from UI and delegate to camera
-    document.addEventListener('bodySelected', ({ detail }) => {
-        const value = detail?.body;
-        app.updateSelectedBody?.(value, !app.isInitialized);
-    });
+    };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

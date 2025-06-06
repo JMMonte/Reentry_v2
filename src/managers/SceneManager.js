@@ -130,14 +130,20 @@ export class SceneManager {
         const { displaySettingsManager, planetVectors, satelliteVectors, camera } = this.app;
         const showPlanetVectors = displaySettingsManager.getSetting('showPlanetVectors');
 
-        if (planetVectors) {
+        // Early exit if planet vectors are hidden
+        if (planetVectors && showPlanetVectors) {
             planetVectors.forEach(v => {
                 if (v.setPlanetVectorsVisible) {
-                    v.setPlanetVectorsVisible(showPlanetVectors);
+                    v.setPlanetVectorsVisible(true);
                 }
-                if (showPlanetVectors) {
-                    v.updateVectors?.();
-                    v.updateFading?.(camera);
+                v.updateVectors?.();
+                v.updateFading?.(camera);
+            });
+        } else if (planetVectors && !showPlanetVectors) {
+            // Just hide them, no updates needed
+            planetVectors.forEach(v => {
+                if (v.setPlanetVectorsVisible) {
+                    v.setPlanetVectorsVisible(false);
                 }
             });
         }
@@ -151,20 +157,38 @@ export class SceneManager {
     _resizePOIs() {
         if (!this.app.pickablePoints?.length) return;
         const { camera } = this.app;
-        const pixelSize = 8;
-        const vFOV = this.app.THREE.MathUtils.degToRad(camera.fov);
-        const halfH = window.innerHeight;
-        const tmp = new this.app.THREE.Vector3();
-        const scaleFor = dist => (2 * Math.tan(vFOV / 2) * dist) * (pixelSize / halfH);
+        
+        // Cache FOV calculations - only recalculate when FOV or window size changes
+        if (!this._cachedPOIScale || 
+            this._lastFOV !== camera.fov || 
+            this._lastWindowHeight !== window.innerHeight) {
+            
+            const pixelSize = 8;
+            const vFOV = this.app.THREE.MathUtils.degToRad(camera.fov);
+            const halfH = window.innerHeight;
+            this._cachedPOIScale = (2 * Math.tan(vFOV / 2)) * (pixelSize / halfH);
+            this._lastFOV = camera.fov;
+            this._lastWindowHeight = window.innerHeight;
+            
+            if (!this._poiTempVec) {
+                this._poiTempVec = new this.app.THREE.Vector3();
+            }
+        }
+        
+        const tmp = this._poiTempVec;
+        const baseScale = this._cachedPOIScale;
+        
+        // Only update visible POIs
         this.app.pickablePoints.forEach(mesh => {
             if (!mesh.visible) return;
             mesh.getWorldPosition(tmp);
-            const s = scaleFor(tmp.distanceTo(camera.position));
+            const s = baseScale * tmp.distanceTo(camera.position);
             mesh.scale.set(s, s, 1);
         });
-        if (this.app._poiIndicator) {
+        
+        if (this.app._poiIndicator && this.app._poiIndicator.visible) {
             this.app._poiIndicator.getWorldPosition(tmp);
-            const s = scaleFor(tmp.distanceTo(camera.position)) * 1.2;
+            const s = baseScale * tmp.distanceTo(camera.position) * 1.2;
             this.app._poiIndicator.scale.set(s, s, 1);
         }
     }

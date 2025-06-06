@@ -124,6 +124,15 @@ export default [
             craterDensity: 'high', // relative crater density
         },
 
+        // Orientation (IAU 2023/2025)
+        poleRA: 269.9949,     // deg at J2000.0
+        poleDec: 66.5392,     // deg at J2000.0
+        poleRARate: 0.0031,   // deg per century  
+        poleDecRate: 0.0130,  // deg per century
+        spin: 38.3213,        // deg at J2000.0
+        spinRate: 13.17635815, // deg/day (synchronous rotation)
+        orientationEpoch: 2451545.0, // JD (J2000.0)
+
         // Add missionsData at the top level for POI instancing
         missionsData: geojsonDataMissions,
 

@@ -20,14 +20,14 @@ export const earthSOI = 929000; // km
 export const earthHillSphere = 1500000; // km
 
 // Import geospatial data
-import geojsonDataSovereignty from '../../../config/ne_50m_admin_0_sovereignty.json';
-import geojsonDataStates from '../../../config/ne_110m_admin_1_states_provinces.json';
 import {
     geojsonDataCities,
     geojsonDataAirports,
     geojsonDataSpaceports,
     geojsonDataGroundStations,
-    geojsonDataObservatories
+    geojsonDataObservatories,
+    geojsonDataSovereignty,
+    geojsonDataStates
 } from '../../../config/geojsonData.js';
 
 export default {
@@ -221,5 +221,14 @@ export default {
         tropical: { latRange: [-23.5, 23.5], avgTemp: 298 }, // K
         temperate: { latRange: [-66.5, -23.5, 23.5, 66.5], avgTemp: 283 }, // K
         polar: { latRange: [-90, -66.5, 66.5, 90], avgTemp: 253 } // K
-    }
+    },
+
+    // Orientation (IAU 2023/2025)
+    poleRA: 0.00,      // deg at J2000.0, -0.641*T per century  
+    poleDec: 90.00,    // deg at J2000.0, -0.557*T per century
+    poleRARate: -0.641, // deg per century
+    poleDecRate: -0.557, // deg per century
+    spin: 190.147,     // deg at J2000.0 (restored to IAU standard, matches Astronomy Engine)
+    spinRate: 360.9856235, // deg/day (sidereal rotation)
+    orientationEpoch: 2451545.0 // JD (J2000.0)
 }; 

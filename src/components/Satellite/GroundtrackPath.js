@@ -37,6 +37,28 @@ export class GroundtrackPath {
         };
     }
 
+    /**
+     * Terminate the shared worker when no more handlers exist
+     * Called automatically when the last handler is removed
+     */
+    static _cleanupSharedWorker() {
+        if (GroundtrackPath._handlers.size === 0 && GroundtrackPath._worker) {
+            GroundtrackPath._worker.terminate();
+            GroundtrackPath._worker = null;
+        }
+    }
+    
+    /**
+     * Force cleanup of the shared worker - call this on app shutdown
+     */
+    static forceCleanup() {
+        if (GroundtrackPath._worker) {
+            GroundtrackPath._worker.terminate();
+            GroundtrackPath._worker = null;
+        }
+        GroundtrackPath._handlers.clear();
+    }
+
     /* ───────────── constructor / fields ─────────── */
     constructor() {
         if (!GroundtrackPath._worker) GroundtrackPath._initSharedWorker();
@@ -107,8 +129,12 @@ export class GroundtrackPath {
         if (this._currentId != null) {
             this.worker.postMessage({ type: 'RESET', id: this._currentId });
             GroundtrackPath._handlers.delete(this._currentId);
+            this._currentId = null;
         }
         this.points.length = 0;
+        
+        // Check if we should terminate the shared worker
+        GroundtrackPath._cleanupSharedWorker();
     }
 
     /* ───────────── instance handler ───────────── */

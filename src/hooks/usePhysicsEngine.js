@@ -48,12 +48,17 @@ export function usePhysicsEngine(app) {
 
     // Initialize modern physics worker if available
     useEffect(() => {
+        let isUnmounted = false;
+        
         const initWorker = async () => {
             try {
                 const worker = new Worker('/src/workers/modernPhysicsWorker.js', { type: 'module' });
                 workerRef.current = worker;
 
                 worker.onmessage = (event) => {
+                    // Prevent setState calls after component unmount
+                    if (isUnmounted) return;
+                    
                     const { type, data } = event.data;
 
                     switch (type) {
@@ -104,6 +109,7 @@ export function usePhysicsEngine(app) {
         }
 
         return () => {
+            isUnmounted = true;
             if (workerRef.current) {
                 workerRef.current.terminate();
                 workerRef.current = null;

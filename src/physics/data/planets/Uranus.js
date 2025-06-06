@@ -116,8 +116,8 @@ export default {
     // Uranus's position relative to its barycenter is calculated via astronomy-engine
 
     // Orientation (IAU 2023/2025)
-    poleRA: 257.311, // deg at J2000.0, +0.000 * T per century
-    poleDec: -15.175, // deg at J2000.0, +0.000 * T per century
+    poleRA: 77.311, // deg at J2000.0, +0.000 * T per century (corrected from 257.311)
+    poleDec: 15.175, // deg at J2000.0, +0.000 * T per century (corrected from -15.175)
     spin: 203.81, // deg at J2000.0
     spinRate: -501.1600928, // deg/day (retrograde)
     orientationEpoch: 2451545.0, // JD (J2000.0)

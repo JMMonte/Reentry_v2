@@ -136,6 +136,8 @@ export class Planet {
         this.nameLower = (config.name || '').toLowerCase();
         this.symbol = config.symbol || config.name.charAt(0);
         this.radius = config.radius;
+        this.dimensions = config.dimensions; // For irregular bodies like Phobos/Deimos
+        this.isDwarf = config.isDwarf || false; // Flag for small irregular bodies
         this.orbitRadius = config.orbitRadius || 0;
         this.oblateness = config.oblateness || 0;
         this.mass = config.mass || 0;
@@ -155,7 +157,8 @@ export class Planet {
         } else {
             this.lodLevels = config.lodLevels || [];
         }
-        this.dotPixelSizeThreshold = 2;
+        // For irregular bodies, use a slightly higher threshold to account for their elongated shape
+        this.dotPixelSizeThreshold = (config.dimensions && config.isDwarf) ? 3 : 2;
         this.dotColor = config.dotColor || 0xffffff;
         this.soiRadius = config.soiRadius || 0;
         this.components = [];
@@ -179,10 +182,9 @@ export class Planet {
         }
 
         // --- Distant Mesh Component ---
-        if (!this.modelUrl) { // Only for procedural planets, not models
-            this.distantComponent = new DistantMeshComponent(this);
-            this.components.push(this.distantComponent);
-        }
+        // Create for all planets, including models
+        this.distantComponent = new DistantMeshComponent(this);
+        this.components.push(this.distantComponent);
 
         if (config.addLight && config.lightOptions) {
             this.planetLight = new THREE.PointLight(
@@ -287,15 +289,17 @@ export class Planet {
 
     /**
      * Update the planet's position, orientation, and all components. Called per-frame.
+     * @param {number} delta - Time since last frame in seconds
+     * @param {number} interpolationFactor - Interpolation factor for smooth motion (0-1)
      */
-    update() {
+    update(delta, interpolationFactor = 1.0) {
         if (this.type === 'barycenter') {
             // Only interpolate orientation for barycenters
             if (this.orbitGroup) {
                 this.orbitGroup.position.copy(this.targetPosition);
             }
-            if (this.orientationGroup) {
-                this.orientationGroup.quaternion.slerp(this.targetOrientation, 1.0);
+            if (this.orientationGroup && this.targetOrientation) {
+                this.orientationGroup.quaternion.copy(this.targetOrientation);
             }
             // Do NOT set equatorialGroup quaternion for barycenters
             return;
@@ -308,9 +312,9 @@ export class Planet {
             this.orbitGroup.position.copy(this.targetPosition);
         }
 
-        // Orientation interpolation (unchanged)
-        if (this.orientationGroup) {
-            this.orientationGroup.quaternion.slerp(this.targetOrientation, 1.0);
+        // Orientation update - direct copy to avoid interpolation issues
+        if (this.orientationGroup && this.targetOrientation) {
+            this.orientationGroup.quaternion.copy(this.targetOrientation);
         }
         // Do NOT set equatorialGroup quaternion here
 
@@ -542,6 +546,9 @@ export class Planet {
         
         // Dispose distant component separately if it exists
         this.distantComponent?.dispose();
+        
+        // Dispose surface features
+        this.surface?.dispose();
 
         const i = Planet.instances.indexOf(this);
         if (i !== -1) Planet.instances.splice(i, 1);
@@ -745,6 +752,8 @@ export class Planet {
             for (const [flag, data, matKey, layer] of layers) {
                 if (flag && data) this.surface.addInstancedPoints(data, this.surface.materials[matKey], layer);
             }
+            // Initialize LOD after all content is added
+            this.surface.initializeLOD();
         }
         if (this.atmosphereMesh) {
             this.equatorialGroup.add(this.atmosphereMesh);

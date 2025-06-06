@@ -11,8 +11,8 @@ export class CelestialOrbitRenderer {
         // Color schemes for different orbital systems
         this.colorSchemes = {
             // Heliocentric orbits (planets around Sun)
-            0: 0xFFFFFF,   // SSB (white)
-            10: 0xFFFFFF,  // Sun (white)
+            0: 0x8899bb,   // SSB (neutral gray-blue)
+            10: 0x8899bb,  // Sun (neutral gray-blue)
             
             // Barycenter systems
             3: 0x00FF00,   // Earth-Moon system (green)

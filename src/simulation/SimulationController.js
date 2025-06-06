@@ -281,6 +281,11 @@ export class SimulationController {
     _updateSystems(property, value) {
         for (const { name, system } of this.systems) {
             try {
+                // Skip physics manager time updates - physics time is now managed by SimulationLoop
+                if (name === 'physicsManager' && property === 'simulationTime') {
+                    continue;
+                }
+                
                 if (property === 'timeWarp') {
                     if (system.setTimeWarp) {
                         system.setTimeWarp(value);

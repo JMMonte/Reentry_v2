@@ -31,6 +31,7 @@ export class Satellite {
      */
     constructor({
         scene, id, color, app3d, name, planetConfig, centralBodyNaifId,
+        position, velocity, ...otherProps
     }) {
         this.app3d = app3d;
         this.scene = scene;
@@ -40,11 +41,21 @@ export class Satellite {
         this.planetConfig = planetConfig;
         this.centralBodyNaifId = centralBodyNaifId;
         
+        // Store initial position and velocity if provided
+        this.position = position ? new THREE.Vector3().copy(position) : new THREE.Vector3();
+        this.velocity = velocity ? new THREE.Vector3().copy(velocity) : new THREE.Vector3();
+        
         // Pre-allocate vectors for updateVisualsFromState to avoid GC pressure
         this._oldPosition = new THREE.Vector3();
         this._oldVelocity = new THREE.Vector3();
         
         this._initVisuals();
+        
+        // If we have an initial position, set it on the mesh
+        if (position) {
+            this.visualizer.mesh.position.copy(this.position);
+        }
+        
         this.maneuverNodes = [];
         
         // Use the same parent for maneuver nodes as we do for apsis visualizer

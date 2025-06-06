@@ -56,7 +56,7 @@ async function propagateOrbitUsingUnifiedPropagator(params) {
         duration: params.duration || 5400, // 90 minutes default
         timeStep: params.timeStep || 60,    // 1 minute default
         startTime: params.startTime || 0,
-        maxPoints: params.maxPoints || 10000,
+        maxPoints: params.maxPoints, // No default limit - let UI control this
         includeJ2: params.includeJ2 !== false,
         includeDrag: params.includeDrag !== false,
         includeThirdBody: params.includeThirdBody !== false
