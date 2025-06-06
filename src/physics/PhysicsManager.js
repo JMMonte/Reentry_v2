@@ -80,10 +80,16 @@ export class PhysicsManager {
 
     /**
      * Update simulation time and propagate physics
+     * @deprecated Use stepPhysicsExternal() from SimulationLoop instead
+     * This method can cause redundant physics updates and should not be called directly
      */
     async setSimulationTime(newTime) {
+        console.warn('[PhysicsManager] setSimulationTime() is deprecated - physics time should be managed by SimulationLoop');
+        
         if (!this.isInitialized) return;
 
+        // Only update time if absolutely necessary (e.g., for initialization)
+        // Regular time updates should go through stepPhysicsExternal()
         await this.physicsEngine.setTime(newTime);
 
         // Get current state without stepping (planets are already at correct positions from setTime)
@@ -443,82 +449,14 @@ export class PhysicsManager {
     }
 
     /**
-     * Private: Main update loop - now the primary time driver
+     * Private: Main update loop - DEPRECATED
+     * This method is no longer used. Physics updates are now driven by SimulationLoop
+     * via the stepPhysicsExternal() method for better synchronization.
+     * @deprecated
      */
     async updateLoop() {
-        if (!this.isInitialized || !this.app.timeUtils) return;
-
-        const timeWarp = this.app.timeUtils.getTimeWarp();
-
-        // If paused, don't advance time
-        if (timeWarp === 0) {
-            // Still update orbit visualizations even when paused for real-time updates
-            this._updateOrbitVisualizations();
-            return;
-        }
-        
-
-        // Calculate real time elapsed since last update
-        const now = performance.now();
-        const realDeltaMs = now - (this._lastRealTime || now);
-        this._lastRealTime = now;
-
-        // Convert to simulation time delta
-        const simulatedDeltaMs = realDeltaMs * timeWarp;
-        const simulatedDeltaSeconds = simulatedDeltaMs / 1000;
-
-        // KSP-style adaptive timestep based on time warp
-        this._updateAdaptiveTimestep(timeWarp);
-
-        // Add to accumulator for adaptive timestep integration
-        this._accumulator += simulatedDeltaSeconds;
-        
-        // Adaptive step limits based on time warp (KSP-style performance scaling)
-        const { maxSteps, maxAccumulator } = this._getTimeWarpLimits(timeWarp);
-        
-        // Clamp accumulator to prevent spiral of death
-        if (this._accumulator > maxAccumulator) {
-            this._accumulator = maxAccumulator;
-        }
-        
-        // Process accumulated time in adaptive timestep chunks
-        let stepsProcessed = 0;
-        while (this._accumulator >= this._currentTimeStep && stepsProcessed < maxSteps) {
-            // Get current time and advance by current timestep
-            const currentTime = this.app.timeUtils.getSimulatedTime();
-            const newTime = new Date(currentTime.getTime() + this._currentTimeStep * 1000);
-
-            // Update physics engine time (this updates all body positions)
-            await this.physicsEngine.setTime(newTime);
-
-            // Step physics simulation with current adaptive timestep
-            await this.stepSimulation(this._currentTimeStep);
-
-            // Update TimeUtils with new time (this will dispatch UI events)
-            this.app.timeUtils.updateFromPhysics(newTime);
-            
-            // Remove processed time from accumulator
-            this._accumulator -= this._currentTimeStep;
-            stepsProcessed++;
-        }
-        
-        // Performance feedback for high time warps
-        if (this._accumulator > this._currentTimeStep && stepsProcessed >= maxSteps) {
-            // Only emit event if significantly behind
-            if (this._accumulator > maxAccumulator * 0.5) {
-                // Emit event for UI to show warning
-                document.dispatchEvent(new CustomEvent('timeWarpLagging', {
-                    detail: { 
-                        timeWarp, 
-                        lag: this._accumulator,
-                        timestep: this._currentTimeStep 
-                    }
-                }));
-            }
-        }
-        
-        // Always update orbit visualizations for smooth rendering
-        this._updateOrbitVisualizations();
+        console.warn('[PhysicsManager] updateLoop() called but is deprecated - use stepPhysicsExternal() instead');
+        // Method body removed - all physics updates should go through stepPhysicsExternal()
     }
 
     /**
