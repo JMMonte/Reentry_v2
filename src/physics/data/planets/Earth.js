@@ -95,6 +95,11 @@ export default {
     // Rotation properties
     rotationPeriod: PhysicsConstants.TIME.SIDEREAL_DAY, // seconds (sidereal day)
     tilt: earthInclination, // degrees - obliquity of ecliptic
+    
+    // Surface coordinate system alignment
+    // Offset to align Astronomy Engine's celestial reference frame with surface coordinates
+    // For Earth: +90° aligns prime meridian with equirectangular texture expectations
+    surfaceCoordinateOffset: 90, // degrees
 
     // Orbital properties
     soiRadius: earthSOI, // km

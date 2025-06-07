@@ -522,9 +522,7 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
             parseInt(body.naifId) === parseInt(centralBodyNaifId)
         );
         
-        if (dominantBody) {
-            console.log(`[OrbitalIntegrators] Using specified central body: ${dominantBody.name} (${centralBodyNaifId})`);
-        } else {
+        if (!dominantBody) {
             console.warn(`[OrbitalIntegrators] Specified central body ${centralBodyNaifId} not found, falling back to auto-detection`);
         }
     }

@@ -154,14 +154,6 @@ export class ManeuverVisualizationManager {
             orbitLine.visible = true;
         }
 
-        // Debug logging
-        console.log('[ManeuverVisualizationManager] Created maneuver node visual:', {
-            nodeId: visualData.nodeId,
-            position: visualData.position,
-            parent: this.parent.type,
-            visible: group.visible
-        });
-
         return {
             group,
             sphere,

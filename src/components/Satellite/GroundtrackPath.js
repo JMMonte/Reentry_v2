@@ -84,11 +84,15 @@ export class GroundtrackPath {
      * @param {number} period – seconds to propagate
      * @param {number} numPoints – target segment count
      * @param {number} centralBodyNaifId – NAIF ID of central body for orbit propagation
+     * @param {Function} onUpdate – Optional callback for updates
+     * @param {Function} onChunk – Optional callback for chunk updates
      */
     update(startTime, position, velocity, id, bodies = [],
-        period, numPoints, centralBodyNaifId = null) {
+        period, numPoints, centralBodyNaifId = null, onUpdate = null, onChunk = null, canvasWidth = null, canvasHeight = null) {
 
         this._currentId = id;
+        this._onUpdateCallback = onUpdate;
+        this._onChunkCallback = onChunk;
         GroundtrackPath._handlers.set(id, this);
 
         const seq = ++this._seq;
@@ -117,7 +121,9 @@ export class GroundtrackPath {
             bodies: bodiesMsg,
             period,
             numPoints,
-            centralBodyNaifId
+            centralBodyNaifId,
+            canvasWidth,
+            canvasHeight
         });
     }
 
@@ -140,25 +146,55 @@ export class GroundtrackPath {
     /* ───────────── instance handler ───────────── */
 
     /** called by static dispatcher */
-    _onWorkerUpdate({ seq, points }) {
+    _onWorkerUpdate({ seq, points, isProcessed }) {
         if (seq <= this._lastSeq) return;   // stale frame
         this._lastSeq = seq;
 
+        // Points are now pre-processed with lat/lon/alt from worker
         this.points = points;
+        this.isProcessed = isProcessed || false;
 
-        document.dispatchEvent(new CustomEvent('groundTrackUpdated', {
-            detail: { id: this._currentId, points: this.points },
-        }));
+        // Use callback if provided, otherwise fallback to DOM event
+        if (this._onUpdateCallback) {
+            this._onUpdateCallback({
+                id: this._currentId,
+                points: this.points,
+                isProcessed: this.isProcessed
+            });
+        } else {
+            document.dispatchEvent(new CustomEvent('groundTrackUpdated', {
+                detail: { 
+                    id: this._currentId, 
+                    points: this.points,
+                    isProcessed: this.isProcessed 
+                },
+            }));
+        }
     }
 
     /** called on partial chunk updates */
-    _onWorkerChunk({ seq, points }) {
+    _onWorkerChunk({ seq, points, isProcessed }) {
         // only accept chunks for current sequence
         if (seq !== this._seq) return;
-        // append new points
+        // append new points (now with lat/lon/alt pre-calculated)
         this.points.push(...points);
-        document.dispatchEvent(new CustomEvent('groundTrackChunk', {
-            detail: { id: this._currentId, points }
-        }));
+        this.isProcessed = isProcessed || false;
+        
+        // Use callback if provided, otherwise fallback to DOM event
+        if (this._onChunkCallback) {
+            this._onChunkCallback({
+                id: this._currentId,
+                points,
+                isProcessed: this.isProcessed
+            });
+        } else {
+            document.dispatchEvent(new CustomEvent('groundTrackChunk', {
+                detail: { 
+                    id: this._currentId, 
+                    points,
+                    isProcessed: this.isProcessed
+                }
+            }));
+        }
     }
 }

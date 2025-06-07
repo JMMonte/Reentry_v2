@@ -89,7 +89,8 @@ export function buildModalProps({
   authMode,
   setAuthMode,
   showToast,
-  satellitesPhysics
+  satellitesPhysics,
+  simTime
 }) {
   return {
     chatModal: {
@@ -97,7 +98,7 @@ export function buildModalProps({
       onClose: () => modalState.setIsChatVisible(false),
       socket: getSocket()
     },
-    
+
     displayOptions: {
       settings: displaySettings,
       onSettingChange: (key, value) => {
@@ -111,7 +112,7 @@ export function buildModalProps({
       app3DRef: { current: app3d },
       physicsProviderType: 'local'
     },
-    
+
     satelliteListWindow: {
       satellites,
       isOpen: modalState.isSatelliteListVisible,
@@ -120,50 +121,65 @@ export function buildModalProps({
       debugWindows,
       app3d
     },
-    
+
     satelliteCreatorModal: (() => {
       // Find matching body in availableBodies based on current selection using data-driven approach
       let preselectedBody = null;
-      
-      if (selectedBody && selectedBody !== 'none' && !selectedBody.startsWith('satellite-')) {
-        // Strategy 1: Direct name match (case-insensitive)
-        preselectedBody = availableBodies.find(body => 
-          body.name.toLowerCase() === selectedBody.toLowerCase()
-        );
-        
-        // Strategy 2: Use planetary data manager if available and initialized
-        if (!preselectedBody && solarSystemDataManager?.initialized) {
-          const bodyConfig = solarSystemDataManager.getBodyByName(selectedBody.toLowerCase());
-          
-          if (bodyConfig) {
-            // Try to find by NAIF ID (most reliable identifier)
-            preselectedBody = availableBodies.find(body => 
-              body.naifId === bodyConfig.naif_id
+
+      if (selectedBody && selectedBody !== 'none') {
+        // Check if a satellite is selected
+        if (selectedBody.startsWith('satellite-')) {
+          // Extract satellite ID and find its central body
+          const satelliteId = selectedBody.replace('satellite-', '');
+          // Use satellitesPhysics which has the physics state with centralBodyNaifId
+          const satellite = satellitesPhysics ? satellitesPhysics[satelliteId] : null;
+
+          if (satellite && satellite.centralBodyNaifId) {
+            // Find the central body of the selected satellite
+            preselectedBody = availableBodies.find(body =>
+              body.naifId === satellite.centralBodyNaifId
             );
-            
-            // Try by astronomy engine name if NAIF ID didn't work
-            if (!preselectedBody && bodyConfig.astronomyEngineName) {
-              preselectedBody = availableBodies.find(body => 
-                body.name.toLowerCase() === bodyConfig.astronomyEngineName.toLowerCase()
+          }
+        } else {
+          // Strategy 1: Direct name match (case-insensitive)
+          preselectedBody = availableBodies.find(body =>
+            body.name.toLowerCase() === selectedBody.toLowerCase()
+          );
+
+          // Strategy 2: Use planetary data manager if available and initialized
+          if (!preselectedBody && solarSystemDataManager?.initialized) {
+            const bodyConfig = solarSystemDataManager.getBodyByName(selectedBody.toLowerCase());
+
+            if (bodyConfig) {
+              // Try to find by NAIF ID (most reliable identifier)
+              preselectedBody = availableBodies.find(body =>
+                body.naifId === bodyConfig.naif_id
               );
+
+              // Try by astronomy engine name if NAIF ID didn't work
+              if (!preselectedBody && bodyConfig.astronomyEngineName) {
+                preselectedBody = availableBodies.find(body =>
+                  body.name.toLowerCase() === bodyConfig.astronomyEngineName.toLowerCase()
+                );
+              }
             }
           }
-        }
-        
-        // Strategy 3: Fallback - search through all available bodies for any reasonable match
-        // This handles cases where the data manager isn't ready yet
-        if (!preselectedBody) {
-          const searchTerm = selectedBody.toLowerCase();
-          preselectedBody = availableBodies.find(body => {
-            const bodyName = body.name.toLowerCase();
-            // Exact match, contains match, or common variations
-            return bodyName === searchTerm || 
-                   bodyName.includes(searchTerm) || 
-                   searchTerm.includes(bodyName);
-          });
+
+          // Strategy 3: Fallback - search through all available bodies for any reasonable match
+          // This handles cases where the data manager isn't ready yet
+          if (!preselectedBody) {
+            const searchTerm = selectedBody.toLowerCase();
+            preselectedBody = availableBodies.find(body => {
+              const bodyName = body.name.toLowerCase();
+              // Exact match, contains match, or common variations
+              return bodyName === searchTerm ||
+                bodyName.includes(searchTerm) ||
+                searchTerm.includes(bodyName);
+            });
+          }
         }
       }
-      
+
       return {
         isOpen: modalState.isSatelliteModalOpen,
         onClose: () => modalState.setIsSatelliteModalOpen(false),
@@ -172,7 +188,7 @@ export function buildModalProps({
         selectedBody: preselectedBody
       };
     })(),
-    
+
     shareModal: {
       isOpen: modalState.shareModalOpen,
       onClose: () => modalState.setShareModalOpen(false),
@@ -181,7 +197,7 @@ export function buildModalProps({
       onCopy: handleCopyShareUrl,
       onShareEmail: handleShareViaEmail
     },
-    
+
     authModal: {
       isOpen: modalState.isAuthOpen,
       onClose: () => modalState.setIsAuthOpen(false),
@@ -189,7 +205,7 @@ export function buildModalProps({
       setMode: setAuthMode,
       onSignupSuccess: showToast
     },
-    
+
     earthPointModal: {
       openModals: modalState.openPointModals,
       onToggle: (feature, category) => {
@@ -199,14 +215,15 @@ export function buildModalProps({
         });
       }
     },
-    
+
     groundTrackWindow: {
       isOpen: modalState.isGroundtrackOpen,
       onClose: () => modalState.setIsGroundtrackOpen(false),
       satellites: satellitesPhysics,
-      planets: window.app3d?.celestialBodies || []
+      planets: window.app3d?.celestialBodies || [],
+      simulationTime: simTime
     },
-    
+
     simulationWindow: {
       isOpen: modalState.isSimulationOpen,
       onClose: () => modalState.setIsSimulationOpen(false),

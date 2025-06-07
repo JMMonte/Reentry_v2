@@ -85,6 +85,22 @@ export default [
         // LOD levels for rendering optimization
         lodLevelsKey: 'default',
 
+        // Surface options to enable POIs (missions)
+        surfaceOptions: {
+            addLatitudeLines: true,
+            addLongitudeLines: true,
+            addCountryBorders: false, // Moon doesn't have countries
+            addStates: false,         // Moon doesn't have states
+            addCities: false,         // Moon doesn't have cities
+            addAirports: false,       // Moon doesn't have airports
+            addSpaceports: false,     // Moon doesn't have spaceports
+            addGroundStations: false, // Moon doesn't have ground stations
+            addObservatories: false,  // Moon doesn't have observatories
+            addMissions: true,        // Moon has mission landing sites!
+            latitudeStep: 15,
+            longitudeStep: 15
+        },
+
         // Radial grid configuration for orbital visualization
         radialGridConfig: {
             circles: [

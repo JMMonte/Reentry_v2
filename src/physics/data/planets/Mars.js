@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {PhysicsConstants} from '../../core/PhysicsConstants.js';
+import { geojsonDataMarsMissions } from '../../../config/geojsonData.js';
 
 const marsMass = 6.417e23; // kg
 const marsRadius = 3389.5; // km
@@ -28,6 +29,11 @@ export default {
     // Rotation properties
     rotationPeriod: 88642.66, // seconds (24h 37m 22s - a Martian sol)
     tilt: 25.19, // degrees - axial tilt similar to Earth's
+    
+    // Surface coordinate system alignment
+    // Offset to align Astronomy Engine's celestial reference frame with surface coordinates
+    // For Mars: 0° since Mars surface maps typically align with Astronomy Engine
+    surfaceCoordinateOffset: 0, // degrees
 
     // Orbital properties
     soiRadius: 577000, // km - Sphere of Influence radius
@@ -93,6 +99,25 @@ export default {
 
     // LOD levels
     lodLevelsKey: 'default',
+
+    // Surface options to enable POIs
+    surfaceOptions: {
+        addLatitudeLines: true,
+        addLongitudeLines: true,
+        addCountryBorders: false,  // Mars doesn't have countries
+        addStates: false,          // Mars doesn't have states
+        addCities: false,          // Mars doesn't have cities
+        addAirports: false,        // Mars doesn't have airports
+        addSpaceports: false,      // Mars doesn't have spaceports
+        addGroundStations: false,  // Mars doesn't have ground stations
+        addObservatories: false,   // Mars doesn't have observatories
+        addMissions: true,         // Mars has mission landing sites!
+        latitudeStep: 15,
+        longitudeStep: 15
+    },
+
+    // Add missionsData for POI instancing
+    missionsData: geojsonDataMarsMissions,
 
     // Radial grid configuration
     radialGridConfig: {

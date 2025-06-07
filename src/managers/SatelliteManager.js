@@ -39,67 +39,55 @@ export class SatelliteManager {
         this._needsListFlush = false;   // micro-task flag
         this._lastOrbitUpdate = 0;      // perf.now timestamp
         this._nextId = 0; // Unique satellite ID counter
-        
-        // Listen to physics events
-        this._setupEventListeners();
-    }
-
-    _setupEventListeners() {
-        // Bind event handlers
-        this._boundOnSatelliteAdded = (e) => this._onSatelliteAdded(e.detail);
-        this._boundOnSatelliteRemoved = (e) => this._onSatelliteRemoved(e.detail);
-        this._boundOnSatellitePropertyUpdated = (e) => this._onSatellitePropertyUpdated(e.detail);
-        
-        // Listen for satellite events from physics engine
-        window.addEventListener('satelliteAdded', this._boundOnSatelliteAdded);
-        window.addEventListener('satelliteRemoved', this._boundOnSatelliteRemoved);
-        window.addEventListener('satellitePropertyUpdated', this._boundOnSatellitePropertyUpdated);
-    }
-
-    _onSatelliteAdded(satData) {
-        // Create UI object for physics satellite
-        const id = String(satData.id);
-        if (!this._satellites.has(id)) {
-            const sat = new Satellite({
-                ...satData,
-                id,
-                scene: this.app3d.scene,
-                app3d: this.app3d,
-                planetConfig: this.app3d.bodiesByNaifId?.[satData.centralBodyNaifId],
-                centralBodyNaifId: satData.centralBodyNaifId
-            });
-            this._satellites.set(id, sat);
-            this._flushListSoon();
-        }
-    }
-
-    _onSatelliteRemoved(data) {
-        const id = String(data.id);
-        const sat = this._satellites.get(id);
-        if (sat) {
-            sat.dispose();
-            this._satellites.delete(id);
-            this._flushListSoon();
-        }
-    }
-
-    _onSatellitePropertyUpdated(data) {
-        const sat = this._satellites.get(String(data.id));
-        if (sat && data.property === 'color') {
-            sat.setColor(data.value);
-        } else if (sat && data.property === 'name') {
-            sat.name = data.value;
-        }
     }
 
     /* ───── Satellite CRUD ───── */
 
     /**
-     * @param {Object} params – forwarded to physics engine
-     * @returns {Promise<Satellite>} satellite object after creation
+     * Create UI satellite directly from physics satellite ID
+     * Simple, direct approach - no events, no duplication
+     */
+    async createUISatellite(physicsId, uiParams = {}) {
+        const id = String(physicsId);
+        
+        // Don't create if already exists
+        if (this._satellites.has(id)) {
+            return this._satellites.get(id);
+        }
+        
+        // Get physics data
+        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
+        if (!physicsEngine) {
+            throw new Error('Physics engine not available');
+        }
+        
+        const physicsSat = physicsEngine.satellites.get(id);
+        if (!physicsSat) {
+            throw new Error(`Physics satellite ${id} not found`);
+        }
+        
+        // Create UI satellite
+        const sat = new Satellite({
+            id,
+            scene: this.app3d.scene,
+            app3d: this.app3d,
+            planetConfig: uiParams.planetConfig || this.app3d.bodiesByNaifId?.[physicsSat.centralBodyNaifId],
+            centralBodyNaifId: physicsSat.centralBodyNaifId,
+            color: uiParams.color || 0xffff00,
+            name: uiParams.name || physicsSat.name || `Satellite ${id}`
+        });
+        
+        this._satellites.set(id, sat);
+        this._flushListSoon();
+        
+        return sat;
+    }
+
+    /**
+     * Legacy method for backwards compatibility
+     * Delegates to physics engine then creates UI
      */
     async addSatellite(params) {
-        // Prepare data for physics engine
         const centralBodyNaifId =
             params.centralBodyNaifId ??
             params.planetNaifId ??
@@ -112,26 +100,21 @@ export class SatelliteManager {
             centralBodyNaifId
         };
         
-        // Delegate to physics engine (single source of truth)
-        if (this.app3d?.physicsIntegration?.addSatellite) {
-            const satId = this.app3d.physicsIntegration.addSatellite(satData);
-            
-            // Wait for the satellite to be created via event
-            return new Promise((resolve) => {
-                const checkSatellite = () => {
-                    const sat = this._satellites.get(String(satId));
-                    if (sat) {
-                        resolve(sat);
-                    } else {
-                        setTimeout(checkSatellite, 10);
-                    }
-                };
-                checkSatellite();
-            });
+        // Create physics satellite
+        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
+        if (!physicsEngine) {
+            console.warn('[SatelliteManager] Physics engine not available');
+            return null;
         }
         
-        console.warn('[SatelliteManager] PhysicsManager not available');
-        return null;
+        const physicsId = physicsEngine.addSatellite(satData);
+        
+        // Create UI satellite
+        return this.createUISatellite(physicsId, {
+            planetConfig: params.planetConfig,
+            color: params.color,
+            name: params.name
+        });
     }
 
     /** Integrate backend-provided state (pos [m], vel [m s-1]). */
@@ -142,27 +125,48 @@ export class SatelliteManager {
         }
     }
 
-    /** Cleanup all satellites and event listeners */
+    /** Remove satellite from both UI and physics */
+    removeSatellite(id) {
+        const strId = String(id);
+        
+        // Remove from UI
+        const sat = this._satellites.get(strId);
+        if (sat) {
+            sat.dispose();
+            this._satellites.delete(strId);
+            this._flushListSoon();
+        }
+        
+        // Remove from physics
+        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
+        if (physicsEngine) {
+            physicsEngine.removeSatellite(strId);
+        }
+    }
+
+    /** Update satellite color in both UI and physics */
+    updateSatelliteColor(id, color) {
+        const strId = String(id);
+        
+        // Update UI
+        const sat = this._satellites.get(strId);
+        if (sat) {
+            sat.setColor(color, true); // fromPhysicsUpdate=true to prevent loop
+        }
+        
+        // Update physics
+        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
+        if (physicsEngine) {
+            physicsEngine.updateSatelliteProperty(strId, 'color', color);
+        }
+    }
+
+    /** Cleanup all satellites */
     dispose() {
-        // Remove all satellites
         for (const sat of this._satellites.values()) {
             sat.dispose();
         }
         this._satellites.clear();
-        
-        // Remove event listeners
-        if (this._boundOnSatelliteAdded) {
-            window.removeEventListener('satelliteAdded', this._boundOnSatelliteAdded);
-            window.removeEventListener('satelliteRemoved', this._boundOnSatelliteRemoved);
-            window.removeEventListener('satellitePropertyUpdated', this._boundOnSatellitePropertyUpdated);
-        }
-    }
-
-    removeSatellite(id) {
-        // Delegate to physics engine - it will dispatch event that we listen to
-        if (this.app3d?.physicsIntegration?.removeSatellite) {
-            this.app3d.physicsIntegration.removeSatellite(id);
-        }
     }
 
     /* shorthand getters */
@@ -204,7 +208,17 @@ export class SatelliteManager {
                     mass: body.mass || 0,
                     GM: body.GM || 0,
                     naifId: body.naif || body.naifId,
-                    type: body.type
+                    type: body.type,
+                    // Include rotation data needed for coordinate transformations
+                    quaternion: body.quaternion,
+                    poleRA: body.poleRA,
+                    poleDec: body.poleDec,
+                    spin: body.spin,
+                    spinRate: body.spinRate,
+                    rotationPeriod: body.rotationPeriod,
+                    radius: body.radius,
+                    equatorialRadius: body.equatorialRadius || body.radius,
+                    polarRadius: body.polarRadius || body.radius
                 }));
         }
         
@@ -279,7 +293,7 @@ export class SatelliteManager {
                 const posKm = sat.position.clone();
 
                 // Orbit path updates now handled by SatelliteOrbitManager
-                sat.groundTrackPath?.update(epochMs, posKm, sat.velocity, sat.id, thirds, periodS, pts, sat.centralBodyNaifId);
+                sat.groundTrackPath?.update(epochMs, posKm, sat.velocity, sat.id, thirds, periodS, pts, sat.centralBodyNaifId, null, null, 1024, 512);
 
                 updated = true;
             } catch (err) {

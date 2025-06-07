@@ -190,7 +190,7 @@ export class Satellite {
         this.apsisVisualizer.setVisible(showApsis);
     }
 
-    setColor(c) {
+    setColor(c, fromPhysicsUpdate = false) {
         this.color = c;
         this.visualizer.setColor(c);
         
@@ -199,9 +199,9 @@ export class Satellite {
             this.app3d.satelliteOrbitManager.updateSatelliteColor(this.id, c);
         }
         
-        // Update physics engine (single source of truth)
-        if (this.app3d?.physicsIntegration?.updateSatelliteProperty) {
-            this.app3d.physicsIntegration.updateSatelliteProperty(this.id, 'color', c);
+        // Use SatelliteManager to coordinate updates (prevents recursion)
+        if (!fromPhysicsUpdate && this.app3d?.satellites?.updateSatelliteColor) {
+            this.app3d.satellites.updateSatelliteColor(this.id, c);
         }
     }
 

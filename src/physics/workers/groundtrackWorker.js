@@ -1,21 +1,47 @@
 // Worker for calculating satellite ground tracks
-// Physics-only layer - generates ECI positions, UI handles coordinate conversion
+// Performs full groundtrack calculation including coordinate transformations
 
 import { UnifiedSatellitePropagator } from '../core/UnifiedSatellitePropagator.js';
-import { solarSystemDataManager } from '../PlanetaryDataManager.js';
+import { GroundTrackService } from '../../services/GroundTrackService.js';
 
-// map of satellite id -> full groundtrack arrays (cache)
+// map of satellite id -> { points: array, timestamp: number } (cache with TTL)
 let groundtrackMap = {};
 // how many points per chunk sent to the UI
 const CHUNK_SIZE = 50;
+// Cache for planet data to avoid repeated lookups
+const planetDataCache = new Map();
+// TTL for groundtrack cache entries (5 minutes)
+const CACHE_TTL_MS = 5 * 60 * 1000;
+// Cleanup interval (1 minute)
+const CLEANUP_INTERVAL_MS = 60 * 1000;
+
+// Set up periodic cache cleanup
+let cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    const idsToDelete = [];
+    
+    for (const [id, entry] of Object.entries(groundtrackMap)) {
+        if (entry.timestamp && (now - entry.timestamp) > CACHE_TTL_MS) {
+            idsToDelete.push(id);
+        }
+    }
+    
+    idsToDelete.forEach(id => {
+        delete groundtrackMap[id];
+    });
+
+}, CLEANUP_INTERVAL_MS);
 
 // Throttle variables for progress updates
 const PROGRESS_THROTTLE_MS = 200; // Longer throttle for groundtrack as conversion is expensive
 let lastProgressTime = 0;
 
+// Create GroundTrackService instance for worker
+const groundTrackService = new GroundTrackService();
+
 self.onmessage = async function (e) {
     if (e.data.type === 'UPDATE_GROUNDTRACK') {
-        const { id, startTime, position, velocity, bodies, period, numPoints, seq, centralBodyNaifId } = e.data;
+        const { id, startTime, position, velocity, bodies, period, numPoints, seq, centralBodyNaifId, canvasWidth, canvasHeight } = e.data;
         if (id === undefined || id === null) return;
 
 
@@ -44,7 +70,7 @@ self.onmessage = async function (e) {
         });
 
         // Convert to old format for compatibility
-        const compatiblePoints = propagatedPoints.map((point, index) => ({
+        const compatiblePoints = propagatedPoints.map((point) => ({
             position: point.position,
             timeOffset: point.time
         }));
@@ -59,20 +85,85 @@ self.onmessage = async function (e) {
             }
         }
 
-        const groundPoints = [];
-        const batchSize = Math.max(1, Math.floor(propagatedPoints.length / 20)); // Yield approx 20 times
+        // Get planet data for coordinate transformations
+        let planetData = planetDataCache.get(centralBodyNaifId);
+        if (!planetData) {
+            // For workers, we need to use the appropriate planet data from our local system
+            const bodyInfo = bodies.find(b => b.naifId === centralBodyNaifId);
+            if (bodyInfo) {
+                planetData = bodyInfo;
+                planetDataCache.set(centralBodyNaifId, planetData);
+            }
+        }
 
-        // Collect raw ECI positions + times (no coordinate conversion in worker)
+        const groundPoints = [];
+        const processedPoints = [];
+        const batchSize = Math.max(1, Math.floor(propagatedPoints.length / 20)); // Yield approx 20 times
+        let prevLon = undefined;
+
+        // Process points with coordinate transformation in worker
         for (let i = 0; i < compatiblePoints.length; i++) {
             const { position: eciPosArray, timeOffset } = compatiblePoints[i];
-            // Keep raw ECI coordinates in kilometers - UI will handle coordinate conversion
-            const pos = { x: eciPosArray[0], y: eciPosArray[1], z: eciPosArray[2] };
             const pointTime = startTimestamp + timeOffset * 1000;
-            groundPoints.push({ time: pointTime, position: pos });
+            
+            let lat = 0, lon = 0, alt = 0;
+            let isDatelineCrossing = false;
+            
+            if (planetData) {
+                try {
+                    // Use existing GroundTrackService for consistent coordinate transformations
+                    const surface = await groundTrackService.transformECIToSurface(
+                        eciPosArray,
+                        centralBodyNaifId || 399,
+                        pointTime,
+                        planetData
+                    );
+                    
+                    lat = surface.lat;
+                    lon = surface.lon;
+                    alt = surface.alt;
+                    
+                    // Check for dateline crossing using existing service method
+                    isDatelineCrossing = groundTrackService.isDatelineCrossing(prevLon, lon);
+                    prevLon = lon;
+                } catch (error) {
+                    console.warn('Coordinate transformation failed in worker:', error);
+                }
+            }
+            
+            // Calculate canvas coordinates using existing service if dimensions provided
+            let canvasX = 0, canvasY = 0;
+            if (canvasWidth && canvasHeight && lat !== 0 && lon !== 0) {
+                const canvas = groundTrackService.projectToCanvas(lat, lon, canvasWidth, canvasHeight);
+                canvasX = canvas.x;
+                canvasY = canvas.y;
+            }
+            
+            const processedPoint = {
+                time: pointTime,
+                lat,
+                lon,
+                alt,
+                isDatelineCrossing,
+                // Pre-computed canvas coordinates using existing service
+                x: canvasX,
+                y: canvasY,
+                // Include raw ECI for fallback/debugging
+                eci: { x: eciPosArray[0], y: eciPosArray[1], z: eciPosArray[2] }
+            };
+            
+            groundPoints.push(processedPoint);
+            processedPoints.push(processedPoint);
             
             // Stream chunks to UI for progressive loading
             if ((i + 1) % CHUNK_SIZE === 0) {
-                self.postMessage({ type: 'GROUNDTRACK_CHUNK', id, points: groundPoints.slice(-CHUNK_SIZE), seq });
+                self.postMessage({ 
+                    type: 'GROUNDTRACK_CHUNK', 
+                    id, 
+                    points: processedPoints.slice(-CHUNK_SIZE), 
+                    seq,
+                    isProcessed: true // Flag to indicate coordinates are already transformed
+                });
             }
 
             // Yield control periodically to prevent blocking
@@ -81,19 +172,29 @@ self.onmessage = async function (e) {
             }
         }
 
-        groundtrackMap[id] = groundPoints;
+        groundtrackMap[id] = {
+            points: groundPoints,
+            timestamp: Date.now()
+        };
         // flush any remaining points
-        const rem = groundPoints.length % CHUNK_SIZE;
+        const rem = processedPoints.length % CHUNK_SIZE;
         if (rem) {
-            self.postMessage({ type: 'GROUNDTRACK_CHUNK', id, points: groundPoints.slice(-rem), seq });
+            self.postMessage({ 
+                type: 'GROUNDTRACK_CHUNK', 
+                id, 
+                points: processedPoints.slice(-rem), 
+                seq,
+                isProcessed: true
+            });
         }
 
-        // Post the final array of ECI points (UI handles coordinate conversion)
+        // Post the final array with transformed coordinates
         self.postMessage({
             type: 'GROUNDTRACK_UPDATE',
             id,
-            points: groundPoints, // Raw ECI positions + time
-            seq
+            points: processedPoints,
+            seq,
+            isProcessed: true
         });
 
     } else if (e.data.type === 'RESET') {
@@ -102,5 +203,29 @@ self.onmessage = async function (e) {
         } else {
             groundtrackMap = {};
         }
+    } else if (e.data.type === 'CLEANUP') {
+        // Force cleanup of stale entries
+        const now = Date.now();
+        const idsToDelete = [];
+        
+        for (const [id, entry] of Object.entries(groundtrackMap)) {
+            if (entry.timestamp && (now - entry.timestamp) > CACHE_TTL_MS) {
+                idsToDelete.push(id);
+            }
+        }
+        
+        idsToDelete.forEach(id => {
+            delete groundtrackMap[id];
+        });
+        
+        self.postMessage({ 
+            type: 'CLEANUP_COMPLETE', 
+            cleaned: idsToDelete.length 
+        });
+    } else if (e.data.type === 'TERMINATE') {
+        // Clean shutdown
+        clearInterval(cleanupInterval);
+        groundtrackMap = {};
+        planetDataCache.clear();
     }
 }; 

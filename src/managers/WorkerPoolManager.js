@@ -11,9 +11,8 @@ export class WorkerPoolManager {
         this.workerPool = [];
         // Use hardware concurrency but cap at 8 to avoid overwhelming the system
         this.maxWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
-        console.log(`[WorkerPoolManager] Using ${this.maxWorkers} workers (hardware concurrency: ${navigator.hardwareConcurrency})`);
         this.activeJobs = new Map();
-        
+
         this._initializeWorkers();
     }
 
@@ -26,10 +25,10 @@ export class WorkerPoolManager {
                 new URL('../physics/workers/orbitPropagationWorker.js', import.meta.url),
                 { type: 'module' }
             );
-            
+
             worker.onmessage = this._handleWorkerMessage.bind(this);
             worker.onerror = this._handleWorkerError.bind(this);
-            
+
             this.workers.push(worker);
             this.workerPool.push(worker);
         }
@@ -49,9 +48,9 @@ export class WorkerPoolManager {
             console.warn('[WorkerPoolManager] Cannot update workers - no simulation state');
             return;
         }
-        
+
         const simplifiedBodies = {};
-        
+
         // Extract complete body data for solar system propagation
         for (const [id, body] of Object.entries(state.bodies)) {
             // Handle atmospheric model - can't send functions to workers
@@ -66,7 +65,7 @@ export class WorkerPoolManager {
                     // Exclude getDensity function - worker will use its own implementation
                 };
             }
-            
+
             simplifiedBodies[id] = {
                 naif: parseInt(id),
                 position: body.position.toArray ? body.position.toArray() : body.position,
@@ -118,7 +117,7 @@ export class WorkerPoolManager {
             startTime: Date.now(),
             messageHandler
         });
-        
+
         // Send propagation request with satellite properties for drag calculation
         worker.postMessage({
             type: 'propagate',
@@ -152,7 +151,7 @@ export class WorkerPoolManager {
             if (preservePartialResults && job.points && job.points.length > 0 && job.messageHandler) {
                 job.messageHandler('partial', satelliteId, job.points, job.params);
             }
-            
+
             job.worker.postMessage({ type: 'cancel' });
             this.workerPool.push(job.worker);
             this.activeJobs.delete(satelliteId);
@@ -184,12 +183,12 @@ export class WorkerPoolManager {
                 if (soiTransitions && soiTransitions.length > 0) {
                     job.soiTransitions.push(...soiTransitions);
                 }
-                
+
                 // Notify message handler
                 if (job.messageHandler) {
                     job.messageHandler('chunk', satelliteId, job.points, job.params, isComplete, job.soiTransitions);
                 }
-                
+
                 if (isComplete) {
                     // Return worker to pool
                     this.workerPool.push(job.worker);
@@ -218,14 +217,14 @@ export class WorkerPoolManager {
      */
     _handleWorkerError(error) {
         console.error('Orbit propagation worker error:', error);
-        
+
         // Find the corrupted worker and replace it
         const corruptedWorker = error.target || error.currentTarget;
         if (corruptedWorker) {
             this._replaceCorruptedWorker(corruptedWorker);
         }
     }
-    
+
     /**
      * Replace a corrupted worker with a new one
      */
@@ -235,13 +234,13 @@ export class WorkerPoolManager {
         if (workerIndex !== -1) {
             this.workers.splice(workerIndex, 1);
         }
-        
+
         // Remove from pool if present
         const poolIndex = this.workerPool.findIndex(w => w === corruptedWorker);
         if (poolIndex !== -1) {
             this.workerPool.splice(poolIndex, 1);
         }
-        
+
         // Clean up any active jobs using this worker
         for (const [satelliteId, job] of this.activeJobs.entries()) {
             if (job.worker === corruptedWorker) {
@@ -252,20 +251,20 @@ export class WorkerPoolManager {
                 this.activeJobs.delete(satelliteId);
             }
         }
-        
+
         // Terminate the corrupted worker
         try {
             corruptedWorker.terminate();
         } catch (e) {
             console.warn('Failed to terminate corrupted worker:', e);
         }
-        
+
         // Create replacement worker if we're under the max count
         if (this.workers.length < this.maxWorkers) {
             this._createReplacementWorker();
         }
     }
-    
+
     /**
      * Create a replacement worker
      */
@@ -275,14 +274,13 @@ export class WorkerPoolManager {
                 new URL('../physics/workers/orbitPropagationWorker.js', import.meta.url),
                 { type: 'module' }
             );
-            
+
             worker.onmessage = this._handleWorkerMessage.bind(this);
             worker.onerror = this._handleWorkerError.bind(this);
-            
+
             this.workers.push(worker);
             this.workerPool.push(worker);
-            
-            console.log(`[WorkerPoolManager] Created replacement worker. Pool size: ${this.workers.length}/${this.maxWorkers}`);
+
         } catch (error) {
             console.error('[WorkerPoolManager] Failed to create replacement worker:', error);
         }
@@ -310,7 +308,7 @@ export class WorkerPoolManager {
         for (const satelliteId of this.activeJobs.keys()) {
             this.cancelJob(satelliteId);
         }
-        
+
         // Terminate workers
         this.workers.forEach(worker => worker.terminate());
         this.workers = [];

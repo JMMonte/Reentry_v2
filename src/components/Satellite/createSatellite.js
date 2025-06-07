@@ -89,29 +89,65 @@ export async function createSatellite(app, params = {}) {
 }
 
 /**
+ * Centralized satellite creation that handles both geodetic and orbital element inputs
+ */
+export async function createSatelliteUnified(app, params = {}) {
+    const naifId = params.planetNaifId || params.central_body || params.naifId || 399;
+    const planet = getPlanet(app, naifId);
+    if (!planet) { 
+        throw new Error(`No Planet instance found for naifId ${naifId}`); 
+    }
+
+    const physicsEngine = app.physicsIntegration?.physicsEngine;
+    if (!physicsEngine) {
+        throw new Error('Physics engine not available - cannot create satellite with consistent coordinates');
+    }
+
+    // Step 1: Create the physics satellite
+    let physicsResult;
+    if (params.latitude !== undefined && params.longitude !== undefined) {
+        // Geodetic coordinates provided
+        physicsResult = physicsEngine.createSatelliteFromGeographic(params, naifId);
+    } else if (params.semiMajorAxis !== undefined) {
+        // Orbital elements provided  
+        physicsResult = physicsEngine.createSatelliteFromOrbitalElements(params, naifId);
+    } else {
+        // Direct position/velocity provided
+        const satelliteId = physicsEngine.addSatellite({
+            ...params,
+            centralBodyNaifId: naifId,
+            crossSectionalArea: crossSectionalArea(params.size ?? DEFAULT_SIZE, params.crossSectionalArea),
+            dragCoefficient: params.dragCoefficient ?? DEFAULT_CD
+        });
+        physicsResult = { 
+            id: satelliteId,
+            position: params.position,
+            velocity: params.velocity
+        };
+    }
+    
+    // Step 2: Create UI satellite directly (no events, no duplication)
+    const sat = await app.satellites.createUISatellite(physicsResult.id, {
+        planetConfig: planet,
+        color: pickBrightColor(params.color),
+        name: params.name
+    });
+
+    return { 
+        satellite: sat, 
+        position: physicsResult.position, 
+        velocity: physicsResult.velocity,
+        physicsId: physicsResult.id,
+        planetData: physicsResult.planetData // For debugging/verification
+    };
+}
+
+/**
  * High-level convenience wrapper for launching from geodetic coordinates.
  * All lengths in km, speeds in km s⁻¹, angles in degrees unless noted.
  */
 export async function createSatelliteFromLatLon(app, params = {}) {
-    const naifId = params.planetNaifId || params.central_body || params.naifId || 399;
-    const planet = getPlanet(app, naifId);
-    if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
-
-    // Use improved coordinate calculation with planet quaternion
-    const currentTime = app.timeUtils?.getSimulatedTime() || new Date();
-    const { position, velocity } = CoordinateTransforms.createFromLatLon(params, planet, currentTime);
-
-    const sat = await createSatellite(app, {
-        ...params,
-        position,
-        velocity,
-        planetConfig: planet,
-        crossSectionalArea: crossSectionalArea(params.size ?? DEFAULT_SIZE, params.crossSectionalArea),
-        dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
-        color: pickBrightColor(params.color)
-    });
-
-    return { satellite: sat, position, velocity };
+    return createSatelliteUnified(app, params);
 }
 
 /** Legacy alias kept for backwards compatibility. */
@@ -123,24 +159,6 @@ export const createSatelliteFromLatLonCircular = (...args) =>
  * Build a satellite directly from classical orbital elements.
  */
 export async function createSatelliteFromOrbitalElements(app, params = {}) {
-    const naifId = params.planetNaifId || params.central_body || params.naifId
-        || params.planet?.naifId || 399;
-    const planet = getPlanet(app, naifId);
-    if (!planet) { throw new Error(`No Planet instance found for naifId ${naifId}`); }
-
-    // Use improved coordinate calculation with planet quaternion
-    const { position, velocity } = CoordinateTransforms.createFromOrbitalElements(params, planet);
-
-    const sat = await createSatellite(app, {
-        ...params,
-        position,
-        velocity,
-        planetConfig: planet,
-        crossSectionalArea: crossSectionalArea(params.size ?? DEFAULT_SIZE, params.crossSectionalArea),
-        dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
-        color: pickBrightColor(params.color)
-    });
-
-    return { satellite: sat, position, velocity };
+    return createSatelliteUnified(app, params);
 }
 

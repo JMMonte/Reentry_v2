@@ -16,9 +16,6 @@ export class PhysicsManager {
 
         // Integration state
         this.isInitialized = false;
-        this.updateInterval = null;
-        this.physicsUpdateRate = 60; // Hz - now the primary time driver
-        this._lastRealTime = null; // Track real time for physics-driven stepping
         this._baseTimeStep = 1.0 / 60.0; // Base 60Hz physics timestep (16.67ms)
         this._currentTimeStep = this._baseTimeStep; // Current adaptive timestep
         this._accumulator = 0.0; // Time accumulator for adaptive timestep
@@ -28,9 +25,6 @@ export class PhysicsManager {
         this.orbitPathsCache = new Map();
         this.maxCacheSize = 50; // Maximum entries per cache
         this.cacheCleanupThreshold = 100; // Clean up when size exceeds this
-
-        // Event bindings
-        this.boundUpdateLoop = this.updateLoop.bind(this);
         
         // Track last orientations to detect flips
         this._lastOrientations = new Map(); // naifId -> last quaternion
@@ -38,6 +32,9 @@ export class PhysicsManager {
         // Timewarp configuration
         this._timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 1000000, 10000000];
         this._currentTimeWarpIndex = 2; // Default to 1x (index 2)
+        
+        // Frame counter for reduced frequency updates
+        this._frameCount = 0;
     }
 
     /**
@@ -75,8 +72,8 @@ export class PhysicsManager {
             // Set up time sync with app's TimeUtils
             this._setupTimeSync();
 
-            // Set up update loop
-            this._startUpdateLoop();
+            // Physics updates are now driven by SimulationLoop via stepPhysicsExternal()
+            console.log('[PhysicsManager] Initialized - physics driven by SimulationLoop');
 
             this.isInitialized = true;
 
@@ -344,11 +341,15 @@ export class PhysicsManager {
             return { stepsProcessed: 0, interpolationFactor: 0, physicsState: null };
         }
 
-        // If paused, don't advance time
+        // Fast path for paused state
         if (timeWarp === 0) {
-            // Still update orbit visualizations even when paused
             this._updateOrbitVisualizations();
             return { stepsProcessed: 0, interpolationFactor: 0, physicsState: this.physicsEngine.getSimulationState() };
+        }
+        
+        // Optimized path for very high timewarps
+        if (timeWarp >= 100000) {
+            return this._stepPhysicsHighWarp(realDeltaTime, timeWarp);
         }
 
         // Convert to simulation time delta
@@ -385,32 +386,51 @@ export class PhysicsManager {
         
         // If we have time to advance, process it efficiently
         if (totalTimeToAdvance > 0) {
-            // For very high timewarps, we can skip intermediate steps
-            // and just update positions directly using analytical methods
-            if (timeWarp >= 100000) {
-                // Single large update for celestial bodies (they use analytical ephemeris)
-                const finalTime = new Date(currentTime.getTime() + totalTimeToAdvance * 1000);
-                await this.physicsEngine.setTime(finalTime);
-                
-                // For satellites, use multiple smaller steps
-                const maxSatelliteStep = 5.0; // 5 seconds for satellite propagation
-                const numSatelliteSteps = Math.ceil(totalTimeToAdvance / maxSatelliteStep);
-                const satelliteStepSize = totalTimeToAdvance / numSatelliteSteps;
-                
-                for (let i = 0; i < numSatelliteSteps; i++) {
-                    physicsState = await this.physicsEngine.step(satelliteStepSize);
-                }
+            // Dynamic timestep calculation based on timewarp
+            let maxStepSize;
+            
+            if (timeWarp >= 10000000) {
+                // Ultra-high warp: up to 1 hour steps
+                maxStepSize = 3600.0;
+            } else if (timeWarp >= 1000000) {
+                // Very high warp: up to 10 minute steps
+                maxStepSize = 600.0;
+            } else if (timeWarp >= 100000) {
+                // High warp: up to 1 minute steps
+                maxStepSize = 60.0;
+            } else if (timeWarp >= 10000) {
+                // Medium-high warp: up to 30 second steps
+                maxStepSize = 30.0;
+            } else if (timeWarp >= 1000) {
+                // Medium warp: up to 10 second steps
+                maxStepSize = 10.0;
             } else {
-                // For lower timewarps, use adaptive stepping
-                const maxPhysicsTimestep = 5.0; // 5 seconds max per physics step
-                const numSteps = Math.ceil(totalTimeToAdvance / maxPhysicsTimestep);
-                const stepSize = totalTimeToAdvance / numSteps;
-                
-                let timeAdvanced = 0;
+                // Low warp: up to 5 second steps
+                maxStepSize = 5.0;
+            }
+            
+            // For extreme timewarps, allow even larger steps if the total time is very large
+            if (timeWarp >= 1000000 && totalTimeToAdvance > 3600) {
+                // Allow up to 1% of total time as step size, but cap at 1 day
+                maxStepSize = Math.min(totalTimeToAdvance * 0.01, 86400.0);
+            }
+            
+            // Calculate number of steps needed
+            const numSteps = Math.max(1, Math.ceil(totalTimeToAdvance / maxStepSize));
+            const stepSize = totalTimeToAdvance / numSteps;
+            
+            // Update time first for celestial bodies (they use analytical ephemeris)
+            const finalTime = new Date(currentTime.getTime() + totalTimeToAdvance * 1000);
+            await this.physicsEngine.setTime(finalTime);
+            
+            // Then propagate satellites with the calculated step size
+            // For very large steps, we can do it in one go since orbits are stable
+            if (stepSize > 60.0) {
+                // Single large step for stable orbits
+                physicsState = await this.physicsEngine.step(totalTimeToAdvance);
+            } else {
+                // Multiple smaller steps for accuracy
                 for (let i = 0; i < numSteps; i++) {
-                    timeAdvanced += stepSize;
-                    const intermediateTime = new Date(currentTime.getTime() + timeAdvanced * 1000);
-                    await this.physicsEngine.setTime(intermediateTime);
                     physicsState = await this.physicsEngine.step(stepSize);
                 }
             }
@@ -419,8 +439,7 @@ export class PhysicsManager {
             this._syncWithCelestialBodies(physicsState);
             this._syncSatelliteStates(physicsState);
             
-            // Update TimeUtils with final time
-            const finalTime = new Date(currentTime.getTime() + totalTimeToAdvance * 1000);
+            // Update TimeUtils with final time (already declared above)
             this.app.timeUtils.updateFromPhysics(finalTime);
             
             // Dispatch physics update for components
@@ -471,6 +490,44 @@ export class PhysicsManager {
     }
 
     /**
+     * Optimized physics step for very high timewarps (>=100k)
+     * @private
+     */
+    async _stepPhysicsHighWarp(realDeltaTime, timeWarp) {
+        // Direct calculation for high timewarps - no complex conditionals
+        const timeToAdvance = realDeltaTime * timeWarp;
+        
+        // Direct time advancement
+        const currentTime = this.app.timeUtils.getSimulatedTime();
+        const finalTime = new Date(currentTime.getTime() + timeToAdvance * 1000);
+        
+        // Single physics update
+        await this.physicsEngine.setTime(finalTime);
+        const physicsState = await this.physicsEngine.step(timeToAdvance);
+        
+        // Full syncing for satellites
+        this._syncWithCelestialBodies(physicsState);
+        this._syncSatelliteStates(physicsState);
+        this.app.timeUtils.updateFromPhysics(finalTime);
+        
+        // Always dispatch physics updates for satellites
+        this._dispatchPhysicsUpdate(physicsState);
+        
+        // Reduced frequency for orbit visualizations only
+        this._frameCount++;
+        if (this._frameCount % 10 === 0) {
+            this._updateOrbitVisualizations();
+        }
+        
+        return {
+            stepsProcessed: 1,
+            interpolationFactor: 0,
+            physicsState,
+            totalDeltaTime: timeToAdvance
+        };
+    }
+
+    /**
      * Sync existing satellites from the app to physics engine
      * @private
      */
@@ -506,11 +563,6 @@ export class PhysicsManager {
      * Cleanup and stop the physics integration
      */
     cleanup() {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
-        }
-
         // Cleanup time sync
         if (this.cleanupTimeSync) {
             this.cleanupTimeSync();
@@ -553,31 +605,6 @@ export class PhysicsManager {
         }
     }
 
-    /**
-     * Private: Start the physics update loop
-     * DISABLED: Physics is now driven by SimulationLoop for better synchronization
-     */
-    _startUpdateLoop() {
-        // Disabled - physics updates are now driven by SimulationLoop
-        console.log('[PhysicsManager] Internal update loop disabled - physics driven by SimulationLoop');
-        
-        // Initialize real time tracking
-        this._lastRealTime = performance.now();
-        
-        // Don't start the interval anymore
-        // this.updateInterval = setInterval(this.boundUpdateLoop, 1000 / this.physicsUpdateRate);
-    }
-
-    /**
-     * Private: Main update loop - DEPRECATED
-     * This method is no longer used. Physics updates are now driven by SimulationLoop
-     * via the stepPhysicsExternal() method for better synchronization.
-     * @deprecated
-     */
-    async updateLoop() {
-        console.warn('[PhysicsManager] updateLoop() called but is deprecated - use stepPhysicsExternal() instead');
-        // Method body removed - all physics updates should go through stepPhysicsExternal()
-    }
 
     /**
      * Update adaptive timestep based on time warp (KSP-style)
@@ -585,34 +612,43 @@ export class PhysicsManager {
      * @param {number} timeWarp - Current time warp factor
      */
     _updateAdaptiveTimestep(timeWarp) {
-        // Smoother timestep scaling with logarithmic progression
-        // This prevents sudden jumps in timestep that can cause numerical instabilities
+        // Aggressive timestep scaling for high timewarps
+        // We want to actually advance time quickly at high warps
         
         if (timeWarp <= 1) {
             // Real-time or slower: use base timestep
             this._currentTimeStep = this._baseTimeStep;
         } else if (timeWarp <= 10) {
-            // Low warp: smooth interpolation from 0.02 to 0.1
+            // Low warp: 0.02 to 0.1 seconds
             const t = (timeWarp - 1) / 9;
             this._currentTimeStep = this._baseTimeStep + t * (0.1 - this._baseTimeStep);
         } else if (timeWarp <= 100) {
-            // Medium warp: smooth interpolation from 0.1 to 0.5
-            const t = Math.log10(timeWarp / 10) / Math.log10(10);
-            this._currentTimeStep = 0.1 + t * 0.4;
+            // Medium warp: 0.1 to 1 second
+            const t = Math.log10(timeWarp / 10);
+            this._currentTimeStep = 0.1 + t * 0.9;
+        } else if (timeWarp <= 1000) {
+            // High warp: 1 to 10 seconds
+            const t = Math.log10(timeWarp / 100);
+            this._currentTimeStep = 1.0 + t * 9.0;
         } else if (timeWarp <= 10000) {
-            // High warp: smooth interpolation from 0.5 to 5.0
-            const t = Math.log10(timeWarp / 100) / Math.log10(100);
-            this._currentTimeStep = 0.5 + t * 4.5;
+            // Very high warp: 10 to 60 seconds
+            const t = Math.log10(timeWarp / 1000);
+            this._currentTimeStep = 10.0 + t * 50.0;
+        } else if (timeWarp <= 100000) {
+            // Extreme warp: 60 to 600 seconds (1-10 minutes)
+            const t = Math.log10(timeWarp / 10000);
+            this._currentTimeStep = 60.0 + t * 540.0;
+        } else if (timeWarp <= 1000000) {
+            // Ultra warp: 600 to 3600 seconds (10-60 minutes)
+            const t = Math.log10(timeWarp / 100000);
+            this._currentTimeStep = 600.0 + t * 3000.0;
         } else {
-            // Very high warp: cap at 10 seconds for stability
-            // Logarithmic scaling from 5.0 to 10.0
-            const t = Math.min(Math.log10(timeWarp / 10000) / Math.log10(1000), 1);
-            this._currentTimeStep = 5.0 + t * 5.0;
+            // Maximum warp: 3600 to 86400 seconds (1-24 hours)
+            const t = Math.log10(timeWarp / 1000000);
+            this._currentTimeStep = 3600.0 + t * 82800.0;
         }
         
-        // Apply additional safety cap based on timewarp to prevent extreme steps
-        const maxSafeStep = Math.min(10.0, Math.sqrt(timeWarp) * 0.01);
-        this._currentTimeStep = Math.min(this._currentTimeStep, maxSafeStep);
+        // No artificial safety caps - we want full speed at high warps
     }
 
     /**
@@ -621,30 +657,28 @@ export class PhysicsManager {
      * @returns {Object} { maxSteps, maxAccumulator }
      */
     _getTimeWarpLimits(timeWarp) {
-        // Smoother step limits based on time warp
-        // Higher warps need fewer steps per frame to maintain performance
+        // Aggressive limits for high timewarps
+        // We want fewer frame subdivisions at high warps
         
         let maxSteps;
         let maxAccumulatorMultiplier;
         
-        if (timeWarp <= 10) {
-            // Low warp: many steps for accuracy
-            maxSteps = 60;
-            maxAccumulatorMultiplier = 1.0;
-        } else if (timeWarp <= 1000) {
-            // Medium warp: scale down steps smoothly
-            const t = Math.log10(timeWarp / 10) / Math.log10(100);
-            maxSteps = Math.floor(60 - t * 40); // 60 to 20 steps
-            maxAccumulatorMultiplier = 1.0 + t * 0.5; // 1.0 to 1.5x
-        } else if (timeWarp <= 100000) {
-            // High warp: fewer steps but allow more accumulation
-            const t = Math.log10(timeWarp / 1000) / Math.log10(100);
-            maxSteps = Math.floor(20 - t * 10); // 20 to 10 steps
-            maxAccumulatorMultiplier = 1.5 + t * 1.0; // 1.5 to 2.5x
-        } else {
-            // Extreme warp: minimum steps for performance
+        if (timeWarp <= 100) {
+            // Low-medium warp: many steps for accuracy
+            maxSteps = 20;
+            maxAccumulatorMultiplier = 2.0;
+        } else if (timeWarp <= 10000) {
+            // High warp: fewer steps
             maxSteps = 5;
-            maxAccumulatorMultiplier = 3.0;
+            maxAccumulatorMultiplier = 5.0;
+        } else if (timeWarp <= 1000000) {
+            // Very high warp: minimal steps
+            maxSteps = 2;
+            maxAccumulatorMultiplier = 10.0;
+        } else {
+            // Maximum warp: single step per frame
+            maxSteps = 1;
+            maxAccumulatorMultiplier = 20.0;
         }
         
         // Calculate max accumulator based on current timestep
@@ -948,12 +982,14 @@ export class PhysicsManager {
      * Private: Sync satellite states with existing managers
      */
     _syncSatelliteStates(state) {
-        if (!this.app.satelliteManager?.satellites) return;
+        if (!this.app.satellites || !state.satellites) return;
 
+        const satellitesMap = this.app.satellites.getSatellitesMap?.();
+        if (!satellitesMap) return;
 
         for (const [id, satelliteState] of Object.entries(state.satellites)) {
             const satId = String(id);
-            let satellite = this.app.satelliteManager.satellites.get(satId);
+            const satellite = satellitesMap.get(satId);
             if (satellite) {
                 satellite.updateVisualsFromState(satelliteState);
             }

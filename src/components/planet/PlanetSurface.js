@@ -28,11 +28,11 @@ export class PlanetSurface {
     ) {
         // Attach primitives directly to the planet mesh so its scale (oblateness) is applied
         this.root = parentMesh;
-        
+
         // Create LOD group
         this.lod = new THREE.LOD();
         this.root.add(this.lod);
-        
+
         // Destructure options with defaults
         const {
             heightOffset = 2,
@@ -41,9 +41,11 @@ export class PlanetSurface {
             markerSize = 1,
             fadeStartPixelSize = 50,
             fadeEndPixelSize = 15,
-            polarScale = 1.0
+            polarScale = 1.0,
+            poiRenderOrder = 3
         } = opts;
         this.polarScale = polarScale;
+        this.poiRenderOrder = poiRenderOrder;
         // Assign properties
         this.planetRadius = planetRadius;
         this.heightOffset = heightOffset;
@@ -94,12 +96,12 @@ export class PlanetSurface {
             cities: [], airports: [], spaceports: [],
             groundStations: [], observatories: [], missions: []
         };
-        
+
         // LOD detail groups
         this.detailHigh = new THREE.Group();
         this.detailMedium = new THREE.Group();
         this.detailLow = new THREE.Group();
-        
+
         // Geometry collections for merging - separate for each type
         this.graticuleGeometries = {
             high: [],
@@ -127,6 +129,16 @@ export class PlanetSurface {
             cities: true, airports: true, spaceports: true,
             groundStations: true, observatories: true, missions: true
         };
+
+        // Animation state for the entire surface
+        this.fadeAnimation = {
+            targetOpacity: 1,
+            currentOpacity: 1,
+            startOpacity: 1,
+            startTime: 0,
+            animating: false
+        };
+        this.animationDuration = 300; // 300ms fade duration
     }
 
     /* ===== graticule lines ===== */
@@ -135,27 +147,23 @@ export class PlanetSurface {
     addLongitudeLines(step = 10) { this.#addGraticule(step, false); }
 
     #addGraticule(step, isLat) {
-        const majorStep = step * 3;
-        const rangeStart = isLat ? -90 : -180;
-        const rangeEnd = isLat ? 90 : 180;
-        
+
         // Different sampling for different LOD levels
         this.#addGraticuleLOD(step, isLat, 2, this.detailHigh);    // High detail: 2° sampling
         this.#addGraticuleLOD(step * 2, isLat, 5, this.detailMedium); // Medium: fewer lines, 5° sampling
         this.#addGraticuleLOD(step * 3, isLat, 10, this.detailLow);   // Low: major lines only, 10° sampling
     }
-    
+
     #addGraticuleLOD(step, isLat, innerStep, targetGroup) {
-        const majorStep = step * 3;
         const rangeStart = isLat ? -90 : -180;
         const rangeEnd = isLat ? 90 : 180;
-        
+
         // Determine which geometry collection to use
         let targetCollection;
         if (targetGroup === this.detailHigh) targetCollection = this.graticuleGeometries.high;
         else if (targetGroup === this.detailMedium) targetCollection = this.graticuleGeometries.medium;
         else if (targetGroup === this.detailLow) targetCollection = this.graticuleGeometries.low;
-        
+
         for (let d = rangeStart; d <= rangeEnd; d += step) {
             const pts = [];
             if (isLat) {
@@ -168,13 +176,13 @@ export class PlanetSurface {
                 }
             }
             pts.push(pts[0]); // close loop
-            
+
             // Convert to line segments
             const segmentPoints = [];
             for (let i = 0; i < pts.length - 1; i++) {
                 segmentPoints.push(pts[i], pts[i + 1]);
             }
-            
+
             if (segmentPoints.length >= 2) {
                 const geom = new THREE.BufferGeometry().setFromPoints(segmentPoints);
                 targetCollection.push(geom);
@@ -193,19 +201,18 @@ export class PlanetSurface {
         this.#addBordersLOD(geojson, material, store, this.detailMedium, 3);  // Skip every 3rd point
         // No borders in low detail
     }
-    
+
     #addBordersLOD(geojson, material, store, targetGroup, simplify) {
         // Determine which geometry collection to use based on material/store type
         let targetCollection;
         const isCountry = material === this.materials.countryLine;
-        const isState = material === this.materials.stateLine;
-        
+
         if (targetGroup === this.detailHigh) {
             targetCollection = isCountry ? this.countryGeometries.high : this.stateGeometries.high;
         } else if (targetGroup === this.detailMedium) {
             targetCollection = isCountry ? this.countryGeometries.medium : this.stateGeometries.medium;
         }
-        
+
         geojson?.features.forEach(f => {
             const polys = f.geometry.type === 'Polygon'
                 ? [f.geometry.coordinates]
@@ -217,15 +224,15 @@ export class PlanetSurface {
                     pts.push(this.#spherical(ring[i][0], ring[i][1]));
                 }
                 if (pts.length < 2) return;
-                
+
                 pts.push(pts[0]); // close loop
-                
+
                 // Convert to line segments
                 const segmentPoints = [];
                 for (let i = 0; i < pts.length - 1; i++) {
                     segmentPoints.push(pts[i], pts[i + 1]);
                 }
-                
+
                 if (segmentPoints.length >= 2) {
                     const geom = new THREE.BufferGeometry().setFromPoints(segmentPoints);
                     targetCollection.push(geom);
@@ -245,19 +252,23 @@ export class PlanetSurface {
     addInstancedPoints(geojson, material, category) {
         const circleGeom = this.circleGeom;
         const poiRenderOrder = this.poiRenderOrder ?? 3;
+
+
+        let addedCount = 0;
         geojson?.features.forEach(feat => {
             const [lon, lat] = feat.geometry.coordinates;
             // Compute position on oblate spheroid via mesh scale + offset
             const pos = this.#spherical(lon, lat);
             // Defensive check: skip invalid POIs
             if (!pos.isVector3 || !isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z)) {
-                console.warn('Skipping invalid POI position in PlanetSurface:', pos, feat);
+                // Skip invalid POI positions
                 return;
             }
             const circleMaterial = new THREE.MeshBasicMaterial({
-                map: material.map,
+                map: this.circleTexture,
                 color: material.color.getHex(),
-                alphaTest: material.alphaTest,
+                transparent: true,
+                side: THREE.DoubleSide,
                 depthWrite: false
             });
             const mesh = new THREE.Mesh(circleGeom, circleMaterial);
@@ -272,7 +283,9 @@ export class PlanetSurface {
             mesh.visible = true;
             this.root.add(mesh);
             this.points[category].push(mesh);
+            addedCount++;
         });
+
     }
 
     /* ===== visibility helpers ===== */
@@ -319,10 +332,14 @@ export class PlanetSurface {
     #createCircleTexture(size) {
         const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
+
+        // Debug: Draw a visible circle
+        ctx.clearRect(0, 0, size, size);
+        ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
         ctx.fill();
+
         return new THREE.CanvasTexture(canvas);
     }
 
@@ -352,7 +369,7 @@ export class PlanetSurface {
             this.detailLow.add(line);
             this.surfaceLines.push(line);
         }
-        
+
         // Merge country border geometries
         if (this.countryGeometries.high.length > 0) {
             const merged = mergeGeometries(this.countryGeometries.high);
@@ -368,7 +385,7 @@ export class PlanetSurface {
             this.detailMedium.add(line);
             this.countryBorders.push(line);
         }
-        
+
         // Merge state border geometries
         if (this.stateGeometries.high.length > 0) {
             const merged = mergeGeometries(this.stateGeometries.high);
@@ -384,56 +401,68 @@ export class PlanetSurface {
             this.detailMedium.add(line);
             this.states.push(line);
         }
-        
+
         // Set up LOD distances based on planet radius to match RadialGrid system
         const baseDistance = this.planetRadius * 25;  // Match RadialGrid base distance
-        
+
         this.lod.addLevel(this.detailHigh, 0);
         this.lod.addLevel(this.detailMedium, baseDistance);  // Switch to medium at 25x radius
         this.lod.addLevel(new THREE.Group(), baseDistance * 4);  // Fade out at 100x radius to match RadialGrid exactly
     }
-    
+
     /**
-     * Update feature opacity based on camera distance and planet's apparent size.
+     * Update feature opacity based on camera distance.
      * @param {THREE.Camera} camera
      */
     updateFade(camera) {
         if (!camera || !this.root?.visible) return;
-        
+
         // Check if ANY lines are visible - if not, skip calculations
-        const anyLinesVisible = this.lineVisibility.surfaceLines || 
-                               this.lineVisibility.countryBorders || 
-                               this.lineVisibility.states;
-        
+        const anyLinesVisible = this.lineVisibility.surfaceLines ||
+            this.lineVisibility.countryBorders ||
+            this.lineVisibility.states;
+
         if (!anyLinesVisible && !Object.values(this.pointVisibility).some(v => v)) {
             this.lod.visible = false;
             return; // Skip all calculations if nothing is visible
         }
 
-        const vFOV = THREE.MathUtils.degToRad(camera.fov);
-        const halfH = window.innerHeight / 2;
-
         const planetWorldPos = new THREE.Vector3();
         this.root.getWorldPosition(planetWorldPos);
-        const distToPlanet = camera.position.distanceTo(planetWorldPos);
-        const planetApparentRadius = (this.planetRadius / distToPlanet) * halfH / Math.tan(vFOV / 2);
+        const distance = camera.position.distanceTo(planetWorldPos);
 
-        let masterOpacity;
-        if (planetApparentRadius < this.fadeEndPixelSize) {
-            masterOpacity = 0;
-        } else if (planetApparentRadius < this.fadeStartPixelSize) {
-            masterOpacity = (planetApparentRadius - this.fadeEndPixelSize) /
-                (this.fadeStartPixelSize - this.fadeEndPixelSize);
-        } else {
-            masterOpacity = 1;
+        // Determine target opacity based on distance threshold
+        // Surface features should appear when close enough to see details
+        const fadeThreshold = this.planetRadius * 10;   // Much closer threshold for surface details
+        let targetOpacity = distance < fadeThreshold ? 1 : 0;
+
+        // Check if we need to start a new animation
+        const currentTime = Date.now();
+        if (targetOpacity !== this.fadeAnimation.targetOpacity) {
+            this.fadeAnimation.targetOpacity = targetOpacity;
+            this.fadeAnimation.startOpacity = this.fadeAnimation.currentOpacity;
+            this.fadeAnimation.startTime = currentTime;
+            this.fadeAnimation.animating = true;
         }
-        masterOpacity = THREE.MathUtils.clamp(masterOpacity, 0, 1);
-        
-        // Skip further processing if fully transparent
-        if (masterOpacity === 0) {
-            this.lod.visible = false;
-            return;
+
+        // Update animation if active
+        if (this.fadeAnimation.animating) {
+            const elapsed = currentTime - this.fadeAnimation.startTime;
+            const progress = Math.min(elapsed / this.animationDuration, 1);
+
+            // Use easing function for smooth animation
+            const eased = this.easeInOutCubic(progress);
+            this.fadeAnimation.currentOpacity = this.fadeAnimation.startOpacity +
+                (this.fadeAnimation.targetOpacity - this.fadeAnimation.startOpacity) * eased;
+
+            if (progress >= 1) {
+                this.fadeAnimation.animating = false;
+                this.fadeAnimation.currentOpacity = this.fadeAnimation.targetOpacity;
+            }
         }
+
+        // Apply opacity to entire surface
+        const opacity = this.fadeAnimation.currentOpacity;
 
         // Apply opacity and visibility to lines based on their type
         [this.detailHigh, this.detailMedium, this.detailLow].forEach(detail => {
@@ -442,47 +471,54 @@ export class PlanetSurface {
                     if ((obj instanceof THREE.Line || obj instanceof THREE.LineSegments) && obj.material) {
                         const lineType = obj.userData.lineType;
                         let shouldBeVisible = false;
-                        
+
                         if (lineType === 'graticule') shouldBeVisible = this.lineVisibility.surfaceLines;
                         else if (lineType === 'country') shouldBeVisible = this.lineVisibility.countryBorders;
                         else if (lineType === 'state') shouldBeVisible = this.lineVisibility.states;
-                        
-                        obj.material.opacity = masterOpacity;
-                        obj.visible = shouldBeVisible && masterOpacity > 0;
+
+                        obj.material.opacity = opacity;
+                        obj.visible = shouldBeVisible && opacity > 0.01;
                     }
                 });
             }
         });
-        
+
         // LOD group is visible if any lines should be shown
-        this.lod.visible = anyLinesVisible && masterOpacity > 0;
+        this.lod.visible = anyLinesVisible && opacity > 0.01;
 
         // Apply to POIs (points) based on their individual visibility flags
         Object.keys(this.points).forEach(cat => {
             const categoryIsCurrentlyVisible = this.pointVisibility[cat];
             this.points[cat].forEach(mesh => {
                 if (mesh.material) {
-                    mesh.material.opacity = masterOpacity;
+                    mesh.material.opacity = opacity;
                 }
-                mesh.visible = categoryIsCurrentlyVisible && masterOpacity > 0;
+                mesh.visible = categoryIsCurrentlyVisible && opacity > 0.01;
 
                 if (mesh.visible) {
                     const poiWorldPos = new THREE.Vector3();
-                    mesh.getWorldPosition(poiWorldPos); 
+                    mesh.getWorldPosition(poiWorldPos);
                     const distToPOI = camera.position.distanceTo(poiWorldPos);
-                    
-                    const pixelSizeTarget = 8; 
+
+                    // Calculate POI scale based on distance
+                    const vFOV = THREE.MathUtils.degToRad(camera.fov);
+                    const halfH = window.innerHeight / 2;
+                    const pixelSizeTarget = 8;
                     const poiScale = (distToPOI / (halfH / Math.tan(vFOV / 2))) * pixelSizeTarget;
                     const minScale = 0.1;
                     const maxScale = 100;
                     mesh.scale.set(
-                        THREE.MathUtils.clamp(poiScale, minScale, maxScale), 
-                        THREE.MathUtils.clamp(poiScale, minScale, maxScale), 
+                        THREE.MathUtils.clamp(poiScale, minScale, maxScale),
+                        THREE.MathUtils.clamp(poiScale, minScale, maxScale),
                         1
                     );
                 }
             });
         });
+    }
+
+    easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
 
     /**
@@ -493,23 +529,23 @@ export class PlanetSurface {
         if (this.circleTexture) {
             this.circleTexture.dispose();
         }
-        
+
         // Dispose of geometries
         if (this.circleGeom) {
             this.circleGeom.dispose();
         }
-        
+
         // Dispose of materials
         Object.values(this.materials).forEach(material => {
             if (material && typeof material.dispose === 'function') {
                 material.dispose();
             }
         });
-        
+
         // Dispose of all mesh geometries and remove from scene
         const disposeGroup = (group) => {
             if (!group) return;
-            
+
             group.traverse(obj => {
                 if (obj.geometry) obj.geometry.dispose();
                 if (obj.material) {
@@ -520,15 +556,15 @@ export class PlanetSurface {
                     }
                 }
             });
-            
+
             if (group.parent) group.parent.remove(group);
         };
-        
+
         // Dispose all detail groups
         disposeGroup(this.detailHigh);
         disposeGroup(this.detailMedium);
         disposeGroup(this.detailLow);
-        
+
         // Dispose LOD and remove from parent
         if (this.lod) {
             this.lod.traverse(obj => {
@@ -543,7 +579,7 @@ export class PlanetSurface {
             });
             if (this.lod.parent) this.lod.parent.remove(this.lod);
         }
-        
+
         // Clear all arrays
         this.surfaceLines = [];
         this.countryBorders = [];
@@ -551,9 +587,10 @@ export class PlanetSurface {
         Object.keys(this.points).forEach(key => {
             this.points[key] = [];
         });
-        
+
         // Clear references
         this.root = null;
         this.materials = null;
+        this.fadeAnimation = null;
     }
 }

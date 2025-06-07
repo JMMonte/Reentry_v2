@@ -1,7 +1,6 @@
 // GroundTrackWindow.jsx
 import React, {
     useEffect,
-    useRef,
     useState,
     useMemo,
 } from 'react';
@@ -23,6 +22,7 @@ export function GroundTrackWindow({
     onClose,
     satellites,
     planets,
+    simulationTime,
 }) {
     // Note: tracks state removed - now using trackPoints from GroundtrackPath system
     const [selectedPlanetNaifId, setSelectedPlanetNaifId] = useState(
@@ -80,6 +80,15 @@ export function GroundTrackWindow({
     const [currentPositions, setCurrentPositions] = React.useState([]);
     const [trackPoints, setTrackPoints] = React.useState({}); // Store computed groundtrack points
     
+    // Cleanup on component unmount
+    React.useEffect(() => {
+        return () => {
+            // Force cleanup of all paths when window closes
+            groundtrackPaths.forEach(path => path.dispose());
+            GroundtrackPath.forceCleanup();
+        };
+    }, []);
+    
     // Create and manage GroundtrackPath instances for each satellite
     React.useEffect(() => {
         if (!planet?.naifId || !Object.keys(filteredSatellites).length) {
@@ -106,14 +115,28 @@ export function GroundTrackWindow({
                 const period = 6000; // 100 minutes in seconds (typical LEO)
                 const numPoints = 200; // Number of points in the track
                 
+                // Use simulation time if available, otherwise current time
+                const startTime = simulationTime || Date.now();
+                
                 path.update(
-                    Date.now(),
+                    startTime,
                     new THREE.Vector3(sat.position[0], sat.position[1], sat.position[2]),
                     new THREE.Vector3(sat.velocity[0], sat.velocity[1], sat.velocity[2]),
                     sat.id,
                     bodies,
                     period,
-                    numPoints
+                    numPoints,
+                    planet.naifId,
+                    // Direct callback for updates - no DOM events
+                    (data) => {
+                        setTrackPoints(prev => ({
+                            ...prev,
+                            [data.id]: data.points
+                        }));
+                    },
+                    null, // onChunk callback
+                    1024, // canvasWidth - matches GroundTrackCanvas dimensions
+                    512   // canvasHeight - matches GroundTrackCanvas dimensions
                 );
             }
         });
@@ -124,6 +147,10 @@ export function GroundTrackWindow({
         
         // Update current positions from satellite data - convert to lat/lon for canvas
         const updatePositions = async () => {
+            // Get current planet state from physics engine
+            const bodies = window.app3d?.physicsIntegration?.physicsEngine?.getBodiesForOrbitPropagation() || [];
+            const currentPlanetState = bodies.find(b => b.naifId === planet.naifId);
+            
             const positions = await Promise.all(satellites.map(async sat => {
                 if (!sat.position) {
                     return { id: sat.id, lat: 0, lon: 0, color: sat.color || 0xffff00 };
@@ -131,7 +158,13 @@ export function GroundTrackWindow({
                 
                 try {
                     const eciPos = [sat.position[0], sat.position[1], sat.position[2]];
-                    const geoPos = await groundTrackService.transformECIToSurface(eciPos, planet.naifId, Date.now());
+                    const currentTime = simulationTime || Date.now();
+                    const geoPos = await groundTrackService.transformECIToSurface(
+                        eciPos, 
+                        planet.naifId, 
+                        currentTime,
+                        currentPlanetState // Pass current planet state with orientation
+                    );
                     return {
                         id: sat.id,
                         lat: geoPos.lat,
@@ -152,30 +185,11 @@ export function GroundTrackWindow({
         return () => {
             // Cleanup on unmount
             newPaths.forEach(path => path.dispose());
+            setTrackPoints({}); // Clear track points to free memory
         };
-    }, [filteredSatellites, planet]);
+    }, [filteredSatellites, planet, simulationTime]);
     
-    // Periodically update groundtrack points from the computed paths
-    React.useEffect(() => {
-        if (groundtrackPaths.size === 0) return;
-        
-        const updateTrackPoints = () => {
-            const newTrackPoints = {};
-            groundtrackPaths.forEach((path, satId) => {
-                const points = path.getPoints();
-                if (points && points.length > 0) {
-                    newTrackPoints[satId] = points;
-                }
-            });
-            setTrackPoints(newTrackPoints);
-        };
-        
-        // Update immediately and then periodically
-        updateTrackPoints();
-        const interval = setInterval(updateTrackPoints, 1000);
-        
-        return () => clearInterval(interval);
-    }, [groundtrackPaths]);
+    // Note: Periodic updates removed - now using direct callbacks in path.update()
 
     // Note: Old event-based groundtrack system removed - now using GroundtrackPath directly
 
@@ -294,7 +308,7 @@ export function GroundTrackWindow({
                 showCoverage={showCoverage}
                 poiData={poiData}
                 groundtracks={currentPositions}
-                currentTime={Date.now()}
+                currentTime={simulationTime || Date.now()}
             />
         </DraggableModal>
     );
@@ -305,4 +319,5 @@ GroundTrackWindow.propTypes = {
     onClose: PropTypes.func.isRequired,
     satellites: PropTypes.object.isRequired,
     planets: PropTypes.array,
+    simulationTime: PropTypes.number,
 };

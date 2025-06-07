@@ -185,26 +185,36 @@ export class CoordinateTransforms {
      * Get transformation from ecliptic coordinates to planet's equatorial coordinates
      */
     static _getEclipticToEquatorialTransform(planet) {
-        // For orbital calculations, we need the planet's axial tilt without the Y-up to Z-up conversion
-        // The orientationGroup contains the planet's true orientation (axial tilt)
+        // First priority: Use physics engine quaternion if available
+        if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
+            const [x, y, z, w] = planet.quaternion;
+            return new THREE.Quaternion(x, y, z, w);
+        }
+        
+        // Second priority: Use planet's orientation data if available
         if (planet.orientationGroup?.quaternion) {
             return planet.orientationGroup.quaternion.clone();
         }
 
-        // Fallback: for Earth, the equatorial plane is rotated ~23.5° from ecliptic
-        // This is the obliquity of the ecliptic
-        if (planet.name === 'Earth' || planet.naifId === 399) {
-            const obliquity = THREE.MathUtils.degToRad(23.44); // Earth's obliquity
-            const earthEquatorialTransform = new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(1, 0, 0), // Rotate around X-axis
-                obliquity
+        // Third priority: Calculate from tilt/obliquity if available
+        if (planet.obliquity !== undefined) {
+            const obliquityRad = THREE.MathUtils.degToRad(planet.obliquity);
+            return new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(1, 0, 0),
+                obliquityRad
             );
-            return earthEquatorialTransform;
+        }
+        
+        if (planet.tilt !== undefined) {
+            const tiltRad = THREE.MathUtils.degToRad(planet.tilt);
+            return new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(1, 0, 0),
+                tiltRad
+            );
         }
 
-        // For other planets, fallback to identity (no transformation)
-        console.warn(`[CoordinateTransforms] No equatorial transformation available for ${planet.name || 'unknown'}, using identity`);
-        return new THREE.Quaternion(); // Identity
+        // No transformation available - return identity
+        return new THREE.Quaternion();
     }
 
     /**
@@ -332,7 +342,50 @@ export class CoordinateTransforms {
      * Get planet's current quaternion calculated from rotation data
      */
     static _getPlanetQuaternion(planet, time = new Date()) {
-        // For pure physics calculations, compute quaternion from rotation data
+        // First priority: Calculate from pole and spin data if available
+        // This is most accurate for groundtrack calculations at arbitrary times
+        if (planet.poleRA !== undefined && planet.poleDec !== undefined && 
+            planet.spin !== undefined && planet.rotationPeriod) {
+            
+            // The planet.spin value represents the spin angle at a reference time
+            // If spinReferenceTime is provided, use it; otherwise assume current time
+            const referenceTime = planet.spinReferenceTime 
+                ? new Date(planet.spinReferenceTime) 
+                : new Date();
+            
+            // Calculate time difference from reference to requested time
+            const timeDeltaMs = time.getTime() - referenceTime.getTime();
+            const timeDeltaDays = timeDeltaMs / (24 * 3600 * 1000);
+            
+            // Spin rate in degrees per day
+            // Prefer explicit spinRate if available, otherwise calculate from rotation period
+            const spinRate = planet.spinRate || (planet.rotationPeriod ? 360.0 / (planet.rotationPeriod / 86400) : 0);
+            
+            // Calculate spin angle at requested time
+            const spinAtTime = planet.spin + spinRate * timeDeltaDays;
+            const spinRad = THREE.MathUtils.degToRad(spinAtTime);
+            
+            // Convert pole RA/Dec to radians
+            const raRad = THREE.MathUtils.degToRad(planet.poleRA * 15); // RA is in hours, convert to degrees then radians
+            const decRad = THREE.MathUtils.degToRad(planet.poleDec);
+            
+            // Create pole vector in J2000 equatorial coordinates
+            let poleVector = new THREE.Vector3(
+                Math.cos(decRad) * Math.cos(raRad),
+                Math.cos(decRad) * Math.sin(raRad),
+                Math.sin(decRad)
+            );
+            
+            // Convert from equatorial to ecliptic frame (J2000)
+            const obliquity = THREE.MathUtils.degToRad(23.43928);
+            const eqToEclQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -obliquity);
+            poleVector.applyQuaternion(eqToEclQ);
+            
+            // Calculate quaternion from pole and spin using the same method as physics engine
+            return CoordinateTransforms._calculateQuaternionFromPole(poleVector, spinRad);
+        }
+        
+        // Fallback: For pure physics calculations, compute quaternion from rotation data
         if (planet.rotationPeriod && planet.tilt !== undefined) {
             // Calculate current rotation angle
             const rotationPeriod = planet.rotationPeriod; // seconds
@@ -361,6 +414,7 @@ export class CoordinateTransforms {
         }
 
         // Fallback: Try to get quaternion from physics engine
+        // NOTE: This quaternion is only valid for the physics engine's current simulation time
         if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
             const [x, y, z, w] = planet.quaternion;
             return new THREE.Quaternion(x, y, z, w);
@@ -371,6 +425,49 @@ export class CoordinateTransforms {
         return new THREE.Quaternion(); // Identity quaternion
     }
 
+
+    /**
+     * Calculate quaternion from pole vector and spin angle
+     * This method mirrors the physics engine's orientation calculation
+     */
+    static _calculateQuaternionFromPole(poleVector, spinRad) {
+        // Start with the vernal equinox direction (ECLIPJ2000 X-axis)
+        const vernalEquinox = new THREE.Vector3(1, 0, 0);
+
+        // Project the vernal equinox onto the planet's equatorial plane
+        const poleComponent = vernalEquinox.clone().projectOnVector(poleVector);
+        const primeReference = vernalEquinox.clone().sub(poleComponent).normalize();
+
+        // If the result is too small (pole nearly parallel to vernal equinox), use Y-axis
+        if (primeReference.length() < 0.1) {
+            const yAxis = new THREE.Vector3(0, 1, 0);
+            const poleComponentY = yAxis.clone().projectOnVector(poleVector);
+            primeReference.copy(yAxis).sub(poleComponentY).normalize();
+        }
+
+        // Apply the spin rotation to get the actual prime meridian direction
+        const spinQuaternion = new THREE.Quaternion().setFromAxisAngle(poleVector, spinRad);
+        const primeMeridianDirection = primeReference.clone().applyQuaternion(spinQuaternion);
+
+        // Construct the planet's coordinate system
+        const planetZ = poleVector.clone().normalize();
+        const planetX = primeMeridianDirection.clone().normalize();
+        const planetY = new THREE.Vector3().crossVectors(planetX, planetZ).normalize();
+
+        // Ensure right-handed system
+        if (planetX.dot(new THREE.Vector3().crossVectors(planetY, planetZ)) < 0) {
+            planetY.negate();
+        }
+
+        // Create rotation matrix and convert to quaternion
+        const rotMatrix = new THREE.Matrix3().set(
+            planetX.x, planetY.x, planetZ.x,
+            planetX.y, planetY.y, planetZ.y,
+            planetX.z, planetY.z, planetZ.z
+        );
+
+        return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().setFromMatrix3(rotMatrix));
+    }
 
     /**
      * Calculate planet's rotation rate if not provided

@@ -16,19 +16,25 @@ export class GroundTrackService {
      * @param {Array} eciPosition - [x, y, z] in kilometers from planet center
      * @param {number} planetNaifId - Planet NAIF ID
      * @param {number} timeMs - Time in milliseconds since epoch
+     * @param {Object} planetState - Optional current planet state from physics engine
      * @returns {Object} {lat, lon, alt} in degrees, degrees, kilometers
      */
-    async transformECIToSurface(eciPosition, planetNaifId, timeMs) {
+    async transformECIToSurface(eciPosition, planetNaifId, timeMs, planetState = null) {
         if (!eciPosition || planetNaifId === undefined) {
             return { lat: 0, lon: 0, alt: 0 };
         }
 
         try {
-            // Get planet data from Physics API
-            const planetData = await Bodies.getData(planetNaifId);
+            // Try to use provided planet state first (has current orientation)
+            let planetData = planetState;
+            
+            // Fallback to static data if no state provided
             if (!planetData) {
-                console.warn(`Planet data not found for NAIF ID: ${planetNaifId}`);
-                return { lat: 0, lon: 0, alt: 0 };
+                planetData = await Bodies.getData(planetNaifId);
+                if (!planetData) {
+                    console.warn(`Planet data not found for NAIF ID: ${planetNaifId}`);
+                    return { lat: 0, lon: 0, alt: 0 };
+                }
             }
 
             const time = new Date(timeMs);

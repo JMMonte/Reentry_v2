@@ -28,13 +28,11 @@ export class UnifiedSatellitePropagator {
         const {
             includeJ2 = true,
             includeDrag = true,
-            includeThirdBody = true,
-            debugLogging = false
+            includeThirdBody = true
         } = options;
 
         const centralBody = bodies[satellite.centralBodyNaifId];
         if (!centralBody) {
-            if (debugLogging) console.warn(`[UnifiedSatellitePropagator] Central body ${satellite.centralBodyNaifId} not found`);
             return [0, 0, 0];
         }
 
@@ -85,12 +83,6 @@ export class UnifiedSatellitePropagator {
             totalAccel[0] += thirdBodyAccel[0];
             totalAccel[1] += thirdBodyAccel[1];
             totalAccel[2] += thirdBodyAccel[2];
-        }
-
-        if (debugLogging) {
-            const totalMag = Math.sqrt(totalAccel[0]**2 + totalAccel[1]**2 + totalAccel[2]**2);
-            const primaryMag = Math.sqrt(primaryAccel[0]**2 + primaryAccel[1]**2 + primaryAccel[2]**2);
-            console.log(`[UnifiedSatellitePropagator] Total: ${totalMag.toFixed(8)}, Primary: ${primaryMag.toFixed(8)}, Ratio: ${(totalMag/primaryMag).toFixed(6)}`);
         }
 
         return totalAccel;

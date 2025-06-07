@@ -118,8 +118,9 @@ function App3DMain() {
     authMode: appState.authMode,
     setAuthMode: appState.setAuthMode,
     showToast,
-    satellitesPhysics: satellitesPhysics
-  }), [appState, controller, app3d, satellites, bodySelection.selectedBody, onCreateSatellite, availableBodies, satellitesPhysics, bodySelection.handleBodyChange, sharingHooks, showToast]);
+    satellitesPhysics: satellitesPhysics,
+    simTime: timeManagement.simTime
+  }), [appState, controller, app3d, satellites, bodySelection.selectedBody, onCreateSatellite, availableBodies, satellitesPhysics, bodySelection.handleBodyChange, sharingHooks, showToast, timeManagement.simTime]);
 
   // Simplified useEffect hooks (most complex logic moved to custom hooks)
   

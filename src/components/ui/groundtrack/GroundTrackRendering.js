@@ -1,7 +1,4 @@
-import { Bodies } from '../../../physics/PhysicsAPI.js';
-
-// Cache for planet radius lookups
-const radiusCache = new Map();
+import { groundTrackService } from '../../../services/GroundTrackService.js';
 const GRID_MAJOR = 10;
 const GRID_MINOR = 5;
 
@@ -12,7 +9,8 @@ export const deg2rad = d => (d * Math.PI) / 180;
 export function drawGrid(ctx, w, h) {
     ctx.save();
     for (let lon = -180; lon <= 180; lon += GRID_MINOR) {
-        const x = ((lon + 180) / 360) * w;
+        // Use existing GroundTrackService for consistent coordinate projection
+        const { x } = groundTrackService.projectToCanvas(0, lon, w, h);
         ctx.strokeStyle =
             lon === 0
                 ? 'rgba(255,255,255,0.5)'
@@ -26,7 +24,8 @@ export function drawGrid(ctx, w, h) {
         ctx.stroke();
     }
     for (let lat = -90; lat <= 90; lat += GRID_MINOR) {
-        const y = ((90 - lat) / 180) * h;
+        // Use existing GroundTrackService for consistent coordinate projection
+        const { y } = groundTrackService.projectToCanvas(lat, 0, w, h);
         ctx.strokeStyle =
             lat === 0
                 ? 'rgba(255,255,255,0.5)'
@@ -46,8 +45,8 @@ export function drawGrid(ctx, w, h) {
 export function drawPOI(ctx, data, w, h, color, r) {
     ctx.fillStyle = color;
     const drawPoint = ([lon, lat]) => {
-        const x = ((lon + 180) / 360) * w;
-        const y = ((90 - lat) / 180) * h;
+        // Use existing GroundTrackService for consistent coordinate projection
+        const { x, y } = groundTrackService.projectToCanvas(lat, lon, w, h);
         ctx.beginPath();
         ctx.arc(x, y, r, 0, 2 * Math.PI);
         ctx.fill();
@@ -62,39 +61,20 @@ export function drawPOI(ctx, data, w, h, color, r) {
     }
 }
 
-/** 
- * Get planet radius from cache or Physics API
- * @param {number} planetNaifId - Planet NAIF ID
- * @returns {Promise<number>} Planet radius in km
- */
-async function getPlanetRadius(planetNaifId) {
-    if (radiusCache.has(planetNaifId)) {
-        return radiusCache.get(planetNaifId);
-    }
-    
-    try {
-        const planetData = await Bodies.getData(planetNaifId);
-        const radius = planetData?.radius || 6371; // Earth fallback
-        radiusCache.set(planetNaifId, radius);
-        return radius;
-    } catch (error) {
-        console.warn('Failed to get planet radius, using Earth fallback:', error);
-        return 6371; // Earth radius fallback
-    }
-}
 
 /** Produce semi-transparent coverage bitmap for one satellite */
 export async function rasteriseCoverage(ctx, w, h, { lat, lon, altitude }, colorRGB, planetNaifId = 399) {
     const cov = ctx.createImageData(w, h);
     const [sr, sg, sb] = colorRGB;
-    const altM = altitude;
     
-    // Get planet radius from Physics API
-    const planetRadius = await getPlanetRadius(planetNaifId);
-    
-    const cosThresh = Math.cos(
-        Math.acos(planetRadius / (planetRadius + altM))
+    // Use existing GroundTrackService for coverage radius calculation
+    const coverageRadiusDeg = await groundTrackService.calculateCoverageRadius(
+        { lat, lon, alt: altitude }, 
+        planetNaifId
     );
+    
+    // Convert coverage radius to threshold for great circle distance calculation
+    const cosThresh = Math.cos(deg2rad(coverageRadiusDeg));
     const lat1 = deg2rad(lat);
     const lon1 = deg2rad(lon);
     const sinLat1 = Math.sin(lat1);

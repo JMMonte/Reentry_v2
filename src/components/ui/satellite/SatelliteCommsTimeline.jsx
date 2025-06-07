@@ -86,7 +86,6 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
             }
 
             if (commsStatus) {
-                console.log(`[SatelliteCommsTimeline] Satellite ${satelliteId} has ${activeConnections.length} active connections:`, activeConnections);
                 
                 // Record current status in timeline
                 const timelineEntry = {

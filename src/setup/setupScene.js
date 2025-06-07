@@ -43,17 +43,17 @@ const addAmbientLight = (scene) => {
 const loadTextures = async (textureManager) => {
     // Emit progress for texture loading start
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('loadingProgress', { 
-            detail: { progress: 10, stage: 'Loading 4.5 Billion Years...' } 
+        window.dispatchEvent(new CustomEvent('loadingProgress', {
+            detail: { progress: 10, stage: 'Loading 4.5 Billion Years...' }
         }));
     }
-    
+
     await textureManager.loadAllTextures(textureDefinitions.map(({ key, src }) => ({ name: key, url: src })));
-    
+
     // Emit progress for texture loading complete
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('loadingProgress', { 
-            detail: { progress: 30, stage: 'Collapsing Primordial Gas Cloud...' } 
+        window.dispatchEvent(new CustomEvent('loadingProgress', {
+            detail: { progress: 30, stage: 'Collapsing Primordial Gas Cloud...' }
         }));
     }
 };
@@ -149,16 +149,16 @@ export async function createSceneObjects(app) {
 
     // 1. Initialize solar system data
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('loadingProgress', { 
-            detail: { progress: 55, stage: 'Accreting Stellar Disk...' } 
+        window.dispatchEvent(new CustomEvent('loadingProgress', {
+            detail: { progress: 55, stage: 'Accreting Stellar Disk...' }
         }));
     }
     await solarSystemDataManager.initialize();
 
     // 2. Build hierarchy from config data
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('loadingProgress', { 
-            detail: { progress: 65, stage: 'Spinning Up Magnetospheres...' } 
+        window.dispatchEvent(new CustomEvent('loadingProgress', {
+            detail: { progress: 65, stage: 'Spinning Up Magnetospheres...' }
         }));
     }
     const hierarchy = new SolarSystemHierarchy(solarSystemDataManager.naifToBody);
@@ -166,11 +166,11 @@ export async function createSceneObjects(app) {
 
     // 3. Create all celestial bodies from config
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('loadingProgress', { 
-            detail: { progress: 75, stage: 'Igniting Fusion Core...' } 
+        window.dispatchEvent(new CustomEvent('loadingProgress', {
+            detail: { progress: 75, stage: 'Igniting Fusion Core...' }
         }));
     }
-    
+
     for (const [, config] of solarSystemDataManager.naifToBody.entries()) {
         let bodyObj = null;
         if (config.type === 'star') {
@@ -214,23 +214,23 @@ export async function createSceneObjects(app) {
 
     // --- Initialize Physics Engine with high precision orbital mechanics ---
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('loadingProgress', { 
-            detail: { progress: 85, stage: 'Calibrating Orbital Resonances...' } 
+        window.dispatchEvent(new CustomEvent('loadingProgress', {
+            detail: { progress: 85, stage: 'Calibrating Orbital Resonances...' }
         }));
     }
-    
+
     // Create CelestialOrbitManager for all celestial body orbits
     // It uses the existing app.hierarchy and app.bodiesByNaifId
     app.orbitManager = new CelestialOrbitManager(scene, app);
-    
+
     // Generate all planetary and moon orbits after establishing hierarchy
     // Note: CelestialOrbitManager will automatically initialize when physics engine is ready
 
     app.orbitManager.renderAllOrbits();
-    
+
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('loadingProgress', { 
-            detail: { progress: 95, stage: 'Synchronizing Cosmic Clocks...' } 
+        window.dispatchEvent(new CustomEvent('loadingProgress', {
+            detail: { progress: 95, stage: 'Synchronizing Cosmic Clocks...' }
         }));
     }
 
@@ -274,18 +274,18 @@ export async function createSceneObjects(app) {
     // 6. Construct gravitySources correctly (planets/moons + stars)
     const gravitySources = [];
     app.celestialBodies.forEach(body => {
-            let mesh = null;
-            if (body instanceof Planet && typeof body.getMesh === 'function') {
-                mesh = body.getMesh();
+        let mesh = null;
+        if (body instanceof Planet && typeof body.getMesh === 'function') {
+            mesh = body.getMesh();
         } else if (body instanceof Sun && body.sun) {
-                mesh = body.sun;
-            }
-            gravitySources.push({
-                name: body.nameLower,
-                body,
-                mesh,
+            mesh = body.sun;
+        }
+        gravitySources.push({
+            name: body.nameLower,
+            body,
+            mesh,
             mass: body.mass ?? 0
-            });
+        });
     });
 
     // Ensure no null/undefined entries

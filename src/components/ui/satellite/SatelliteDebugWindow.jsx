@@ -8,7 +8,7 @@ import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
-import { Bodies, Orbital } from '../../../physics/PhysicsAPI.js';
+import { Bodies } from '../../../physics/PhysicsAPI.js';
 import { ApsisService } from '../../../services/ApsisService.js';
 import * as THREE from 'three';
 import { SatelliteCommsSection } from './SatelliteCommsSection.jsx';
@@ -26,7 +26,11 @@ const Section = ({ title, isOpen, onToggle, children }) => {
         }}
         className="w-full flex items-center justify-between py-2 px-1 hover:bg-accent/5 transition-colors cursor-pointer text-left"
       >
-        <span className="text-xs font-semibold text-foreground/90">{title}</span>
+        {typeof title === 'string' ? (
+          <span className="text-xs font-semibold text-foreground/90">{title}</span>
+        ) : (
+          <div className="text-xs font-semibold text-foreground/90 flex-1">{title}</div>
+        )}
         <span className="text-xs text-muted-foreground">{isOpen ? '−' : '+'}</span>
       </button>
       {isOpen && (
@@ -39,7 +43,7 @@ const Section = ({ title, isOpen, onToggle, children }) => {
 };
 
 Section.propTypes = {
-  title: PropTypes.string.isRequired,
+  title: PropTypes.oneOfType([PropTypes.string, PropTypes.node]).isRequired,
   isOpen: PropTypes.bool.isRequired,
   onToggle: PropTypes.func.isRequired,
   children: PropTypes.node
@@ -53,6 +57,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   const [lat, setLat] = useState(null);
   const [lon, setLon] = useState(null);
   const [orbitalElements, setOrbitalElements] = useState(null);
+  const [orbitalReferenceFrame, setOrbitalReferenceFrame] = useState('ecliptic');
   
   // Simulation properties state
   const [orbitPeriods, setOrbitPeriods] = useState(satellite?.orbitSimProperties?.periods || 1);
@@ -153,96 +158,108 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     return () => document.removeEventListener('simulationDataUpdate', handleSimData);
   }, [satellite.id]);
 
-  // Calculate orbital elements from physics data
+  // Use orbital elements from physics data if available
   useEffect(() => {
-    if (!physics || !physics.position || !physics.velocity || !physics.centralBodyNaifId) return;
+    if (!physics) return;
     
-    // Wait a small amount of time to ensure physics data is stabilized
-    const timer = setTimeout(() => {
-      calculateOrbitalElements();
-    }, 100);
-    
-    return () => clearTimeout(timer);
-  }, [physics, celestialBodies]);
-
-  const calculateOrbitalElements = () => {
-    if (!physics || !physics.position || !physics.velocity || !physics.centralBodyNaifId) return;
-    
-    try {
-      // Convert arrays to THREE.Vector3
-      const position = new THREE.Vector3(...physics.position);
-      const velocity = new THREE.Vector3(...physics.velocity);
+    // Check if physics already has orbital elements calculated
+    if (physics.semiMajorAxis !== undefined && physics.eccentricity !== undefined) {
       
-      // Get central body - simplified approach
-      let centralBody = null;
-      if (celestialBodies?.length > 0) {
-        centralBody = celestialBodies.find(b => 
-          b.naif_id === parseInt(physics.centralBodyNaifId) || b.naifId === parseInt(physics.centralBodyNaifId)
-        );
-      }
+      // Choose elements based on selected reference frame
+      const eclipticElements = physics; // Default elements are in ecliptic frame
+      const equatorialElements = physics.equatorialElements;
       
-      // Fallback to Bodies API or defaults
-      if (!centralBody) {
-        try {
-          const bodyData = Bodies.getByNaif(physics.centralBodyNaifId);
-          centralBody = bodyData ? {
-            name: bodyData.name,
-            GM: bodyData.GM || Bodies.getGM(physics.centralBodyNaifId),
-            radius: bodyData.radius
-          } : { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
-        } catch {
-          centralBody = { name: 'Earth', GM: 398600.4415, radius: 6371.0 };
+      const elementsToUse = (orbitalReferenceFrame === 'equatorial' && equatorialElements) 
+        ? equatorialElements 
+        : eclipticElements;
+      
+      setOrbitalElements({
+        semiMajorAxis: elementsToUse.semiMajorAxis,
+        eccentricity: elementsToUse.eccentricity,
+        inclination: elementsToUse.inclination,
+        longitudeOfAscendingNode: elementsToUse.longitudeOfAscendingNode,
+        argumentOfPeriapsis: elementsToUse.argumentOfPeriapsis,
+        trueAnomaly: elementsToUse.trueAnomaly,
+        meanAnomaly: elementsToUse.M0 !== undefined ? THREE.MathUtils.radToDeg(elementsToUse.M0) : elementsToUse.meanAnomaly,
+        eccentricAnomaly: elementsToUse.eccentricAnomaly,
+        period: elementsToUse.period,
+        specificOrbitalEnergy: elementsToUse.specificOrbitalEnergy,
+        specificAngularMomentum: elementsToUse.specificAngularMomentum,
+        periapsisRadial: elementsToUse.periapsisRadial,
+        apoapsisRadial: elementsToUse.apoapsisRadial,
+        periapsisAltitude: elementsToUse.periapsisAltitude,
+        apoapsisAltitude: elementsToUse.apoapsisAltitude,
+        meanMotion: elementsToUse.meanMotion,
+        periapsisVelocity: elementsToUse.periapsisVelocity,
+        apoapsisVelocity: elementsToUse.apoapsisVelocity,
+        referenceFrame: orbitalReferenceFrame,
+        availableFrames: {
+          ecliptic: !!eclipticElements,
+          equatorial: !!equatorialElements
         }
-      }
+      });
       
-      // Calculate orbital elements
-      const elements = Orbital.calculateElements(position, velocity, centralBody);
-      
-      // Validate elements first - don't proceed with apsis calculations if invalid
-      if (!elements || !Number.isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0 || 
-          !Number.isFinite(elements.eccentricity) || elements.eccentricity < 0) {
-        console.warn('[SatelliteDebugWindow] Invalid orbital elements calculated, skipping apsis timing');
-        setOrbitalElements(elements);
-        setApsisData(elements);
-        return;
-      }
-      
-      setOrbitalElements(elements);
-      
-      // Calculate apsis timing using pre-calculated orbital elements
-      if (elements.eccentricity < 1.0) {
+      // Calculate apsis timing if needed
+      if (physics.eccentricity < 1.0 && physics.period) {
         try {
           const currentTime = window.app3d?.timeUtils?.getSimulatedTime() || new Date();
-          const nextPeriapsisTime = ApsisService.getNextApsisTimeFromElements(
-            elements, 'periapsis', currentTime, centralBody
-          );
-          const nextApoapsisTime = ApsisService.getNextApsisTimeFromElements(
-            elements, 'apoapsis', currentTime, centralBody
-          );
           
-          const timeToPeriapsis = (nextPeriapsisTime.getTime() - currentTime.getTime()) / (1000 * 60);
-          const timeToApoapsis = (nextApoapsisTime.getTime() - currentTime.getTime()) / (1000 * 60);
+          // Get central body for apsis calculation
+          let centralBody = null;
+          if (celestialBodies?.length > 0) {
+            centralBody = celestialBodies.find(b => 
+              b.naif_id === parseInt(physics.centralBodyNaifId) || b.naifId === parseInt(physics.centralBodyNaifId)
+            );
+          }
           
-          setApsisData({
-            ...elements,
-            timeToPeriapsis: timeToPeriapsis > 0 ? timeToPeriapsis : null,
-            timeToApoapsis: timeToApoapsis > 0 ? timeToApoapsis : null,
-            periapsisAltitude: elements.periapsisAltitude,
-            apoapsisAltitude: elements.apoapsisAltitude
-          });
+          if (!centralBody) {
+            try {
+              const bodyData = Bodies.getByNaif(physics.centralBodyNaifId);
+              centralBody = bodyData ? {
+                name: bodyData.name,
+                GM: bodyData.GM || Bodies.getGM(physics.centralBodyNaifId),
+                radius: bodyData.radius
+              } : null;
+            } catch {
+              centralBody = null;
+            }
+          }
+          
+          if (centralBody) {
+            const elements = {
+              semiMajorAxis: physics.semiMajorAxis,
+              eccentricity: physics.eccentricity,
+              inclination: physics.inclination,
+              longitudeOfAscendingNode: physics.longitudeOfAscendingNode,
+              argumentOfPeriapsis: physics.argumentOfPeriapsis,
+              trueAnomaly: physics.trueAnomaly,
+              period: physics.period
+            };
+            
+            const nextPeriapsisTime = ApsisService.getNextApsisTimeFromElements(
+              elements, 'periapsis', currentTime, centralBody
+            );
+            const nextApoapsisTime = ApsisService.getNextApsisTimeFromElements(
+              elements, 'apoapsis', currentTime, centralBody
+            );
+            
+            // Use physics data for time calculations instead of manual calculation
+            const timeToPeriapsis = nextPeriapsisTime > currentTime ? (nextPeriapsisTime.getTime() - currentTime.getTime()) / (1000 * 60) : null;
+            const timeToApoapsis = nextApoapsisTime > currentTime ? (nextApoapsisTime.getTime() - currentTime.getTime()) / (1000 * 60) : null;
+            
+            setApsisData({
+              timeToPeriapsis,
+              timeToApoapsis,
+              periapsisAltitude: physics.periapsisAltitude,
+              apoapsisAltitude: physics.apoapsisAltitude
+            });
+          }
         } catch (apsisError) {
           console.warn('[SatelliteDebugWindow] Error calculating apsis timing:', apsisError);
-          setApsisData(elements);
         }
-      } else {
-        // For hyperbolic/parabolic orbits, don't calculate apsis timing
-        setApsisData(elements);
       }
-      
-    } catch (error) {
-      console.error('[SatelliteDebugWindow] Error calculating orbital elements:', error);
     }
-  };
+  }, [physics, celestialBodies, orbitalReferenceFrame]);
 
   // Fetch propagation data from orbit manager
   useEffect(() => {
@@ -515,11 +532,9 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
       ? { x: arr[0], y: arr[1], z: arr[2] }
       : { x: 0, y: 0, z: 0 };
 
-  // Helper to compute vector length from array
-  const vectorLength = (arr) =>
-    arr && arr.length === 3
-      ? Math.sqrt(arr[0] ** 2 + arr[1] ** 2 + arr[2] ** 2)
-      : 0;
+  // Simple helper for vector magnitude (only for UI display)
+  const vectorMagnitude = (arr) => 
+    arr && arr.length === 3 ? Math.sqrt(arr[0] ** 2 + arr[1] ** 2 + arr[2] ** 2) : 0;
 
   // Helper to get body name from NAIF ID using celestial bodies data
   const getBodyName = (naifId) => {
@@ -615,7 +630,6 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               {physics?.ballisticCoefficient && (
                 <DataRow label="Ballistic Coeff" value={formatNumber(physics.ballisticCoefficient)} unit="kg/m²" />
               )}
-              <DataRow label="Central Body" value={getBodyName(physics?.centralBodyNaifId || satellite.centralBodyNaifId)} />
             </Section>
 
             {/* Position and Time Section */}
@@ -625,6 +639,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               onToggle={() => setShowPosition(!showPosition)}
             >
               {simTime && <DataRow label="Sim Time" value={simTime} />}
+              <DataRow label="Central Body" value={getBodyName(physics?.centralBodyNaifId || satellite.centralBodyNaifId)} />
               {physics?.lat !== undefined && physics?.lon !== undefined ? (
                 <div className="space-y-1">
                   <DataRow label="Latitude" value={formatNumber(physics.lat)} unit="°" />
@@ -645,6 +660,9 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               {physics?.ground_track_velocity !== undefined && (
                 <DataRow label="Ground Speed" value={formatNumber(physics.ground_track_velocity * 3600)} unit="km/h" />
               )}
+              {physics?.distance_traveled !== undefined && (
+                <DataRow label="Distance Traveled" value={formatNumber(physics.distance_traveled)} unit="km" />
+              )}
             </Section>
 
             {/* State Vectors Section */}
@@ -655,21 +673,18 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
             >
               {renderVector(physics && toVector3(physics.position), "Position")}
               {renderVector(physics && toVector3(physics.velocity), "Velocity", true)}
-              <DataRow label="Speed" value={formatNumber(physics?.speed || vectorLength(physics?.velocity))} unit="km/s" />
+              <DataRow label="Speed" value={formatNumber(physics?.speed)} unit="km/s" />
               {physics?.ground_velocity !== undefined && (
                 <DataRow label="Ground Vel" value={formatNumber(physics.ground_velocity)} unit="km/s" />
               )}
               {physics?.orbital_velocity !== undefined && (
                 <DataRow label="Orbital Vel" value={formatNumber(physics.orbital_velocity)} unit="km/s" />
               )}
-              {physics?.radial_velocity !== undefined && (
-                <DataRow label="Radial Vel" value={formatNumber(physics.radial_velocity)} unit="km/s" />
+              {physics?.escape_velocity !== undefined && (
+                <DataRow label="Escape Vel" value={formatNumber(physics.escape_velocity)} unit="km/s" />
               )}
-              {physics?.angular_momentum !== undefined && (
-                <DataRow label="Angular Mom" value={formatNumber(vectorLength(physics.angular_momentum))} unit="km²/s" />
-              )}
-              {physics?.flight_path_angle !== undefined && (
-                <DataRow label="Flight Path" value={formatNumber(physics.flight_path_angle)} unit="°" />
+              {physics?.escape_velocity !== undefined && physics?.speed !== undefined && (
+                <DataRow label="v/v_esc" value={formatNumber(physics.speed / physics.escape_velocity, 3)} />
               )}
             </Section>
 
@@ -718,7 +733,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                   
                   <div className="grid grid-cols-3 gap-1 text-xs">
                     <span className="text-muted-foreground">Total</span>
-                    <span className="font-mono">{vectorLength(physics.a_total).toExponential(2)}</span>
+                    <span className="font-mono">{vectorMagnitude(physics.a_total).toExponential(2)}</span>
                     <span className="font-mono text-[11px]">
                       {physics.a_total[0].toExponential(1)}, 
                       {physics.a_total[1].toExponential(1)}, 
@@ -729,7 +744,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                   {physics.a_gravity_total && (
                     <div className="grid grid-cols-3 gap-1 text-xs">
                       <span className="text-muted-foreground">Gravity</span>
-                      <span className="font-mono">{vectorLength(physics.a_gravity_total).toExponential(2)}</span>
+                      <span className="font-mono">{vectorMagnitude(physics.a_gravity_total).toExponential(2)}</span>
                       <span className="font-mono text-[11px]">
                         {physics.a_gravity_total[0].toExponential(1)}, 
                         {physics.a_gravity_total[1].toExponential(1)}, 
@@ -738,10 +753,10 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                     </div>
                   )}
 
-                  {physics.a_j2 && vectorLength(physics.a_j2) > 1e-10 && (
+                  {physics.a_j2 && vectorMagnitude(physics.a_j2) > 1e-10 && (
                     <div className="grid grid-cols-3 gap-1 text-xs">
                       <span className="text-muted-foreground">J2</span>
-                      <span className="font-mono">{vectorLength(physics.a_j2).toExponential(2)}</span>
+                      <span className="font-mono">{vectorMagnitude(physics.a_j2).toExponential(2)}</span>
                       <span className="font-mono text-[11px]">
                         {physics.a_j2[0].toExponential(1)}, 
                         {physics.a_j2[1].toExponential(1)}, 
@@ -750,10 +765,10 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                     </div>
                   )}
 
-                  {physics.a_drag && vectorLength(physics.a_drag) > 1e-10 && (
+                  {physics.a_drag && vectorMagnitude(physics.a_drag) > 1e-10 && (
                     <div className="grid grid-cols-3 gap-1 text-xs">
                       <span className="text-muted-foreground">Drag</span>
-                      <span className="font-mono">{vectorLength(physics.a_drag).toExponential(2)}</span>
+                      <span className="font-mono">{vectorMagnitude(physics.a_drag).toExponential(2)}</span>
                       <span className="font-mono text-[11px]">
                         {physics.a_drag[0].toExponential(1)}, 
                         {physics.a_drag[1].toExponential(1)}, 
@@ -774,10 +789,10 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                       {showBreakdown && (
                         <div className="mt-1 space-y-0.5 max-h-32 overflow-y-auto">
                           {Object.entries(physics.a_bodies)
-                            .filter(([, vec]) => vectorLength(vec) >= 1e-10)
-                            .sort(([, a], [, b]) => vectorLength(b) - vectorLength(a))
+                            .filter(([, vec]) => vectorMagnitude(vec) >= 1e-10)
+                            .sort(([, a], [, b]) => vectorMagnitude(b) - vectorMagnitude(a))
                             .map(([bodyId, vec]) => {
-                              const magnitude = vectorLength(vec);
+                              const magnitude = vectorMagnitude(vec);
                               const bodyName = getBodyName(bodyId);
                               return (
                                 <div className="grid grid-cols-3 gap-1 text-xs" key={bodyId}>
@@ -808,6 +823,24 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                 onToggle={() => setShowOrbit(!showOrbit)}
               >
                 <div className="space-y-2">
+                  {/* Reference Frame Selector */}
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">Reference Frame:</Label>
+                    <select
+                      value={orbitalReferenceFrame}
+                      onChange={(e) => setOrbitalReferenceFrame(e.target.value)}
+                      className="flex-1 h-7 text-xs bg-background border border-input rounded px-2 text-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <option value="ecliptic">Ecliptic</option>
+                      {physics?.equatorialElements && (
+                        <option value="equatorial">
+                          {getBodyName(physics?.centralBodyNaifId || satellite.centralBodyNaifId)} Equatorial
+                        </option>
+                      )}
+                    </select>
+                  </div>
+                  
                   {/* Basic Elements */}
                   <div className="space-y-1">
                     <DataRow label="Semi-Major Axis" value={formatNumber(orbitalElements.semiMajorAxis)} unit="km" />

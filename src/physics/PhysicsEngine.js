@@ -9,6 +9,8 @@ import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 import { PhysicsConstants } from './core/PhysicsConstants.js';
 import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import { SubsystemManager } from './subsystems/SubsystemManager.js';
+import { CoordinateTransforms } from './utils/CoordinateTransforms.js';
+import { OrbitalElementsConverter } from './utils/OrbitalElementsConverter.js';
 
 // Extract the functions we need from the Astronomy module
 const { MakeTime, RotationAxis, Rotation_EQJ_ECL, RotateVector, GeoVector, VectorObserver } = Astronomy;
@@ -97,9 +99,12 @@ export class PhysicsEngine {
     async step(deltaTime) {
         const actualDeltaTime = deltaTime || this.timeStep;
         
-        // Only log if unusually large time step
-        if (actualDeltaTime > PhysicsConstants.SIMULATION.LARGE_TIME_STEP_WARNING) {
-            console.warn(`[PhysicsEngine] Large deltaTime in step(): ${actualDeltaTime} seconds`);
+        // Only log if deltaTime exceeds 1 day (86400 seconds)
+        // High timewarps are expected to have very large timesteps
+        const warningThreshold = 86400.0; // 1 day
+        
+        if (actualDeltaTime > warningThreshold) {
+            console.warn(`[PhysicsEngine] Very large deltaTime in step(): ${actualDeltaTime} seconds (${(actualDeltaTime / 86400).toFixed(2)} days)`);
         }
 
         // Don't update simulation time here - it's already been set by setTime()
@@ -183,6 +188,14 @@ export class PhysicsEngine {
                 body.GM = bodyConfig.GM;
                 body.soiRadius = bodyConfig.soiRadius;
                 body.rotationPeriod = bodyConfig.rotationPeriod;
+                body.polarRadius = bodyConfig.polarRadius || bodyConfig.radius;
+                body.equatorialRadius = bodyConfig.equatorialRadius || bodyConfig.radius;
+                // Copy orientation properties for coordinate transformations
+                body.tilt = bodyConfig.tilt;
+                body.obliquity = bodyConfig.obliquity;
+                body.poleRARate = bodyConfig.poleRARate;
+                body.poleDecRate = bodyConfig.poleDecRate;
+                body.spinRate = bodyConfig.spinRate;
                 // Don't modify barycenter mass/GM - let them keep original values for orbital calculations
                 // Physics filtering will handle excluding them from gravitational forces
             }
@@ -218,7 +231,7 @@ export class PhysicsEngine {
             // Try Astronomy Engine first
             try {
                 const axisInfo = RotationAxis(actualBodyNameForAE, astroTime);
-                return this._createOrientationFromAxisInfo(axisInfo, astroTime, actualBodyNameForAE);
+                return this._createOrientationFromAxisInfo(axisInfo, astroTime, bodyIdentifier, bodyConfig);
             } catch {
                 // Fall back to manual calculation using config data
                 return this._calculateOrientationFromConfig(bodyConfig, time);
@@ -238,22 +251,22 @@ export class PhysicsEngine {
     /**
      * Create orientation from Astronomy Engine axis info
      */
-    _createOrientationFromAxisInfo(axisInfo, astroTime, bodyIdentifier) {
+    _createOrientationFromAxisInfo(axisInfo, astroTime, bodyIdentifier, bodyConfig) {
         // Convert RA from hours to radians (15° per hour)
         const raRad = axisInfo.ra * (Math.PI / 12);
         const decRad = axisInfo.dec * (Math.PI / 180);
         // Normalize spin to [0, 360) degrees, then convert to [0, 2π) radians
         let normalizedSpin = ((axisInfo.spin % 360) + 360) % 360;
         
-        // Earth requires special handling due to Astronomy Engine's reference frame
-        // Astronomy Engine's Earth spin is ~90° behind GMST (Greenwich Mean Sidereal Time)
-        // At spin=0°, prime meridian faces 90° west of vernal equinox
-        // We need to add 90° to align with the standard expectation:
-        // - GMST=0h should mean prime meridian faces vernal equinox
-        // - This ensures our equirectangular texture (PM at center) displays correctly
-        if (bodyIdentifier === 'Earth' || bodyIdentifier === 'earth') {
-            normalizedSpin = ((normalizedSpin + 90) % 360 + 360) % 360;
+        // Apply surface coordinate alignment based on body configuration
+        // This aligns Astronomy Engine's celestial reference frame with the body's
+        // surface coordinate system (where longitude 0° should align with prime meridian)
+        let surfaceAlignmentOffset = 0;
+        if (bodyConfig && bodyConfig.surfaceCoordinateOffset !== undefined) {
+            surfaceAlignmentOffset = bodyConfig.surfaceCoordinateOffset;
         }
+        
+        normalizedSpin = ((normalizedSpin + surfaceAlignmentOffset) % 360 + 360) % 360;
         
         const spinRad = normalizedSpin * (Math.PI / 180);
 
@@ -281,7 +294,7 @@ export class PhysicsEngine {
             quaternion: quaternion,
             poleRA: axisInfo.ra,
             poleDec: axisInfo.dec,
-            spin: axisInfo.spin,
+            spin: normalizedSpin, // Use the adjusted spin value for consistency
             northPole: poleVector
         };
     }
@@ -311,7 +324,15 @@ export class PhysicsEngine {
         const poleDec = bodyConfig.poleDec + (bodyConfig.poleDecRate || 0) * centuriesSinceJ2000;
         
         // Spin changes rapidly (rate is in degrees per day)
-        const spin = bodyConfig.spin + (bodyConfig.spinRate || 0) * daysSinceJ2000;
+        let spin = bodyConfig.spin + (bodyConfig.spinRate || 0) * daysSinceJ2000;
+
+        // Apply surface coordinate alignment based on body configuration
+        let surfaceAlignmentOffset = 0;
+        if (bodyConfig && bodyConfig.surfaceCoordinateOffset !== undefined) {
+            surfaceAlignmentOffset = bodyConfig.surfaceCoordinateOffset;
+        }
+        
+        spin = ((spin + surfaceAlignmentOffset) % 360 + 360) % 360;
 
         // Convert to radians
         const raRad = poleRA * (Math.PI / 180);
@@ -591,8 +612,6 @@ export class PhysicsEngine {
             });
         }
         
-        // Dispatch event for UI updates
-        this._dispatchSatelliteEvent('satelliteAdded', satData);
         return id;
     }
 
@@ -609,8 +628,6 @@ export class PhysicsEngine {
             }
             
             this.satellites.delete(strId);
-            // Dispatch event for UI cleanup
-            this._dispatchSatelliteEvent('satelliteRemoved', { id: strId });
         }
     }
 
@@ -621,7 +638,6 @@ export class PhysicsEngine {
         const satellite = this.satellites.get(String(id));
         if (satellite) {
             satellite[property] = value;
-            this._dispatchSatelliteEvent('satellitePropertyUpdated', { id, property, value });
         }
     }
 
@@ -1178,6 +1194,8 @@ export class PhysicsEngine {
                 velocity: body.velocity.toArray(),
                 mass: body.mass,
                 radius: body.radius,
+                equatorialRadius: body.radius,
+                polarRadius: body.polarRadius || body.radius,
                 soiRadius: body.soiRadius, // Include SOI radius for orbit calculations
                 type: body.type,
                 J2: body.J2,
@@ -1191,6 +1209,8 @@ export class PhysicsEngine {
                 } : null,
                 GM: body.GM,
                 rotationPeriod: body.rotationPeriod,
+                tilt: body.tilt,
+                obliquity: body.obliquity,
                 quaternion: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w],
                 poleRA: body.poleRA,
                 poleDec: body.poleDec,
@@ -1206,16 +1226,86 @@ export class PhysicsEngine {
         for (const [id, satellite] of this.satellites) {
             // Get central body for this satellite
             const centralBody = this.bodies[satellite.centralBodyNaifId];
-            let altitude_radial = undefined;
-            let altitude_surface = undefined;
+            let orbitalElements = null;
+            let equatorialElements = null;
+            let lat = undefined;
+            let lon = undefined;
+            let ground_velocity = undefined;
+            let ground_track_velocity = undefined;
+            let escape_velocity = undefined;
+            
             if (centralBody && centralBody.radius !== undefined) {
-                altitude_radial = satellite.position.length();
-                altitude_surface = altitude_radial - centralBody.radius;
+                // Calculate orbital elements in ecliptic frame (default)
+                orbitalElements = OrbitalMechanics.calculateOrbitalElements(
+                    satellite.position,
+                    satellite.velocity,
+                    centralBody,
+                    centralBody.radius
+                );
+                
+                // Also calculate in equatorial frame if planet has orientation data
+                if (centralBody.tilt !== undefined || centralBody.obliquity !== undefined || centralBody.orientationGroup) {
+                    try {
+                        equatorialElements = OrbitalElementsConverter.calculateOrbitalElements(
+                            satellite.position,
+                            satellite.velocity,
+                            centralBody,
+                            'equatorial'
+                        );
+                    } catch (e) {
+                        console.warn('[PhysicsEngine] Failed to calculate equatorial elements:', e);
+                    }
+                }
+                
+                // Calculate escape velocity at current position
+                const altitude_radial = satellite.position.length();
+                if (centralBody.GM) {
+                    escape_velocity = Math.sqrt(2 * centralBody.GM / altitude_radial);
+                }
+                
+                // Calculate lat/lon using coordinate transformation
+                try {
+                    // Transform from planet-centered inertial to planet-fixed frame
+                    const transformed = CoordinateTransforms.transformCoordinates(
+                        satellite.position.toArray(),
+                        satellite.velocity.toArray(),
+                        'PCI', 'PF', centralBody, this.simulationTime
+                    );
+                    
+                    // Convert planet-fixed cartesian to lat/lon/alt
+                    const [latitude, longitude] = CoordinateTransforms.planetFixedToLatLonAlt(
+                        transformed.position, centralBody
+                    );
+                    
+                    lat = latitude;
+                    lon = longitude;
+                    
+                    // Calculate ground-relative velocity from planet-fixed velocity
+                    const groundVel = new THREE.Vector3(...transformed.velocity);
+                    ground_velocity = groundVel.length();
+                    
+                    // Calculate ground track velocity (horizontal component)
+                    const posNorm = new THREE.Vector3(...transformed.position).normalize();
+                    const radialComponent = groundVel.dot(posNorm);
+                    const tangentialVel = groundVel.clone().sub(posNorm.clone().multiplyScalar(radialComponent));
+                    ground_track_velocity = tangentialVel.length();
+                    
+                } catch (error) {
+                    // Fallback to simple spherical coordinates
+                    const pos = satellite.position;
+                    lat = THREE.MathUtils.radToDeg(Math.asin(pos.z / pos.length()));
+                    lon = THREE.MathUtils.radToDeg(Math.atan2(pos.y, pos.x));
+                }
             }
-            // Compute speed
-            const speed = satellite.velocity.length();
-            // Optionally, add more derived fields here
-
+            
+            // Track distance traveled
+            if (!satellite.lastPosition) {
+                satellite.lastPosition = satellite.position.clone();
+                satellite.distanceTraveled = 0;
+            }
+            const distanceStep = satellite.position.distanceTo(satellite.lastPosition);
+            satellite.distanceTraveled = (satellite.distanceTraveled || 0) + distanceStep;
+            satellite.lastPosition.copy(satellite.position);
             
             states[id] = {
                 id: id,
@@ -1227,13 +1317,31 @@ export class PhysicsEngine {
                 crossSectionalArea: satellite.crossSectionalArea,
                 dragCoefficient: satellite.dragCoefficient,
                 ballisticCoefficient: satellite.ballisticCoefficient,
-                altitude_radial,
-                altitude_surface,
-                speed,
+                speed: satellite.velocity.length(),
+                
+                // Geographic coordinates
+                lat,
+                lon,
+                
+                // Ground velocity components
+                ground_velocity,
+                ground_track_velocity,
+                
+                // Other orbital data
+                escape_velocity,
+                distance_traveled: satellite.distanceTraveled,
+                
+                // Include orbital elements in ecliptic frame
+                ...(orbitalElements || {}),
+                
+                // Add equatorial frame elements if available
+                equatorialElements: equatorialElements,
+                
                 // Include UI properties
                 color: satellite.color,
                 name: satellite.name,
                 centralBodyNaifId: satellite.centralBodyNaifId,
+                
                 // Include force components for debugging
                 a_bodies: satellite.a_bodies,
                 a_j2: satellite.a_j2,
@@ -1294,10 +1402,25 @@ export class PhysicsEngine {
                 naifId: Number(naifId),
                 name: body.name,
                 position: body.position.toArray(),
+                velocity: body.velocity?.toArray ? body.velocity.toArray() : [0, 0, 0],
                 mass: body.mass || 0,
                 GM: body.GM || 0,
                 radius: body.radius || 0,
-                type: body.type
+                type: body.type,
+                // Include orientation data for coordinate transformations
+                quaternion: body.quaternion ? [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w] : [0, 0, 0, 1],
+                rotationPeriod: body.rotationPeriod,
+                poleRA: body.poleRA,
+                poleDec: body.poleDec,
+                spin: body.spin,
+                spinReferenceTime: this.simulationTime.getTime(), // Time at which spin value is valid
+                // Include additional orientation calculation data
+                poleRARate: body.poleRARate || 0,
+                poleDecRate: body.poleDecRate || 0,
+                spinRate: body.spinRate || (body.rotationPeriod ? 360.0 / (body.rotationPeriod / 86400) : 0), // degrees per day
+                // Include shape data for proper geodetic calculations
+                equatorialRadius: body.radius,
+                polarRadius: body.polarRadius || body.radius
             });
         }
         return bodies;
@@ -1389,6 +1512,106 @@ export class PhysicsEngine {
         }
     }
     
+
+    /**
+     * Create satellite from geographic coordinates using consistent physics engine data
+     * This is the centralized, authoritative method for satellite creation
+     * @param {Object} params - Satellite parameters including lat, lon, altitude, etc.
+     * @param {number} centralBodyNaifId - NAIF ID of the central body
+     * @returns {Object} - { id, position, velocity } in planet-centric inertial coordinates
+     */
+    createSatelliteFromGeographic(params, centralBodyNaifId = 399) {
+        const centralBody = this.bodies[centralBodyNaifId];
+        if (!centralBody) {
+            throw new Error(`Central body with NAIF ID ${centralBodyNaifId} not found in physics engine`);
+        }
+
+        // Get the current authoritative body data from physics engine
+        const physicsBodies = this.getBodiesForOrbitPropagation();
+        const planetData = physicsBodies.find(b => b.naifId === centralBodyNaifId);
+        
+        if (!planetData) {
+            throw new Error(`Planet data for NAIF ID ${centralBodyNaifId} not available for orbit propagation`);
+        }
+
+        // Use current simulation time for coordinate transformation
+        const currentTime = this.simulationTime;
+        
+        // Use CoordinateTransforms with authoritative physics data
+        const { position, velocity } = CoordinateTransforms.createFromLatLon(params, planetData, currentTime);
+        
+        // Create satellite object for physics engine
+        const satelliteData = {
+            ...params,
+            position,
+            velocity,
+            centralBodyNaifId,
+            mass: params.mass || PhysicsConstants.SATELLITE_DEFAULTS.MASS,
+            size: params.size || PhysicsConstants.SATELLITE_DEFAULTS.RADIUS,
+            crossSectionalArea: params.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
+            dragCoefficient: params.dragCoefficient || PhysicsConstants.SATELLITE_DEFAULTS.DRAG_COEFFICIENT,
+            color: params.color || 0xffff00,
+            name: params.name || `Satellite ${Date.now()}`
+        };
+
+        // Add to physics engine
+        const id = this.addSatellite(satelliteData);
+        
+        return {
+            id,
+            position,
+            velocity,
+            planetData // Return the planet data used for verification
+        };
+    }
+
+    /**
+     * Create satellite from orbital elements using consistent physics engine data
+     * @param {Object} params - Orbital element parameters
+     * @param {number} centralBodyNaifId - NAIF ID of the central body
+     * @returns {Object} - { id, position, velocity } in planet-centric inertial coordinates
+     */
+    createSatelliteFromOrbitalElements(params, centralBodyNaifId = 399) {
+        const centralBody = this.bodies[centralBodyNaifId];
+        if (!centralBody) {
+            throw new Error(`Central body with NAIF ID ${centralBodyNaifId} not found in physics engine`);
+        }
+
+        // Get the current authoritative body data from physics engine
+        const physicsBodies = this.getBodiesForOrbitPropagation();
+        const planetData = physicsBodies.find(b => b.naifId === centralBodyNaifId);
+        
+        if (!planetData) {
+            throw new Error(`Planet data for NAIF ID ${centralBodyNaifId} not available for orbit propagation`);
+        }
+        
+        // Use CoordinateTransforms with authoritative physics data
+        const { position, velocity } = CoordinateTransforms.createFromOrbitalElements(params, planetData);
+        
+        // Create satellite object for physics engine
+        const satelliteData = {
+            ...params,
+            position,
+            velocity,
+            centralBodyNaifId,
+            mass: params.mass || PhysicsConstants.SATELLITE_DEFAULTS.MASS,
+            size: params.size || PhysicsConstants.SATELLITE_DEFAULTS.RADIUS,
+            crossSectionalArea: params.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
+            dragCoefficient: params.dragCoefficient || PhysicsConstants.SATELLITE_DEFAULTS.DRAG_COEFFICIENT,
+            color: params.color || 0xffff00,
+            name: params.name || `Satellite ${Date.now()}`
+        };
+
+        // Add to physics engine
+        const id = this.addSatellite(satelliteData);
+        
+        return {
+            id,
+            position,
+            velocity,
+            planetData // Return the planet data used for verification
+        };
+    }
 
     /**
      * Get performance statistics

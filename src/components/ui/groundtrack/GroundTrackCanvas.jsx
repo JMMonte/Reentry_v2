@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import PropTypes from 'prop-types';
 import { drawGrid, drawPOI, rasteriseCoverage } from './GroundTrackRendering';
-import { latLonToCanvas } from '../../../utils/MapProjection';
 import { groundTrackService } from '../../../services/GroundTrackService';
 
 const SAT_DOT_RADIUS = 4;
@@ -16,13 +15,38 @@ export default function GroundTrackCanvas({
     layers,
     showCoverage,
     poiData,
-    groundtracks = [],
-    currentTime,
+    groundtracks = []
 }) {
     const canvasRef = useRef(null);
     const tracksRef = useRef(tracks);
     const satsRef = useRef(satellites);
     const [processedTracks, setProcessedTracks] = useState({});
+    const frameRef = useRef(null);
+    const lastRenderRef = useRef({});
+    const needsRedrawRef = useRef(true);
+    
+    // Check if render parameters have changed
+    const checkNeedsRedraw = useCallback(() => {
+        const current = {
+            map,
+            planetNaifId,
+            layers: JSON.stringify(layers),
+            showCoverage,
+            groundtracks: JSON.stringify(groundtracks),
+            processedTracks: JSON.stringify(Object.keys(processedTracks))
+        };
+        
+        const hasChanged = Object.keys(current).some(key => 
+            current[key] !== lastRenderRef.current[key]
+        );
+        
+        if (hasChanged) {
+            lastRenderRef.current = current;
+            needsRedrawRef.current = true;
+        }
+        
+        return hasChanged;
+    }, [map, planetNaifId, layers, showCoverage, groundtracks, processedTracks]);
     
     useEffect(() => { tracksRef.current = tracks; }, [tracks]);
     useEffect(() => { satsRef.current = satellites; }, [satellites]);
@@ -74,7 +98,8 @@ export default function GroundTrackCanvas({
 
         // Draw current satellite positions using groundtracks (lat/lon)
         groundtracks.forEach(({ id, lat, lon }) => {
-            const { x, y } = latLonToCanvas(lat, lon, width, height);
+            // Use existing GroundTrackService for consistent coordinate projection
+            const { x, y } = groundTrackService.projectToCanvas(lat, lon, width, height);
             const color = satellites?.[id]?.color ?? 0xffffff;
             ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
             ctx.beginPath();
@@ -82,28 +107,53 @@ export default function GroundTrackCanvas({
             ctx.fill();
         });
 
-        // Draw ground-track polylines using processed coordinates
+        // Draw ground-track polylines with viewport culling and LOD
         Object.entries(processedTracks).forEach(([id, processedPts]) => {
             if (!processedPts?.length) return;
             const satColor = satsRef.current[id]?.color ?? 0xffffff;
             ctx.strokeStyle = `#${satColor.toString(16).padStart(6, '0')}`;
             ctx.lineWidth = 1;
-            ctx.beginPath();
             
-            processedPts.forEach((pt, idx) => {
-                if (idx === 0) {
-                    ctx.moveTo(pt.x, pt.y);
-                } else {
-                    // Handle dateline crossing
-                    if (pt.isDatelineCrossing) {
+            // Implement LOD based on number of points
+            const lodStep = processedPts.length > 1000 ? Math.ceil(processedPts.length / 500) : 1;
+            
+            ctx.beginPath();
+            let lastDrawnPt = null;
+            let segmentStarted = false;
+            
+            for (let i = 0; i < processedPts.length; i += lodStep) {
+                const pt = processedPts[i];
+                
+                // Viewport culling - check if point is visible
+                const isVisible = pt.x >= -10 && pt.x <= width + 10 && 
+                                pt.y >= -10 && pt.y <= height + 10;
+                
+                if (isVisible || (lastDrawnPt && isLineIntersectsViewport(lastDrawnPt, pt, width, height))) {
+                    if (!segmentStarted || pt.isDatelineCrossing) {
                         ctx.moveTo(pt.x, pt.y);
+                        segmentStarted = true;
                     } else {
                         ctx.lineTo(pt.x, pt.y);
                     }
+                    lastDrawnPt = pt;
+                } else if (segmentStarted) {
+                    // End current segment when going out of viewport
+                    segmentStarted = false;
                 }
-            });
+            }
             ctx.stroke();
         });
+        
+        // Helper function for viewport intersection
+        function isLineIntersectsViewport(pt1, pt2, w, h) {
+            // Simple bounding box check for line-viewport intersection
+            const minX = Math.min(pt1.x, pt2.x);
+            const maxX = Math.max(pt1.x, pt2.x);
+            const minY = Math.min(pt1.y, pt2.y);
+            const maxY = Math.max(pt1.y, pt2.y);
+            
+            return !(maxX < 0 || minX > w || maxY < 0 || minY > h);
+        }
 
         // POI layers from dynamic data
         if (layers.pois) {
@@ -124,6 +174,7 @@ export default function GroundTrackCanvas({
         }
 
         // Borders - now handled by parent component through map data
+        /* eslint-disable-next-line no-unused-vars */
         const drawBorders = (data, style) => {
             ctx.save();
             ctx.strokeStyle = style;
@@ -145,7 +196,8 @@ export default function GroundTrackCanvas({
                         let prevLon;
                         ring.forEach(([lon, lat], i) => {
                             lon = normalizeLon(lon);
-                            const { x, y } = latLonToCanvas(lat, lon, w, h);
+                            // Use existing GroundTrackService for consistent coordinate projection
+                            const { x, y } = groundTrackService.projectToCanvas(lat, lon, w, h);
                             if (i) {
                                 if (prevLon !== undefined && Math.abs(lon - prevLon) > 180) {
                                     ctx.moveTo(x, y);
@@ -169,7 +221,7 @@ export default function GroundTrackCanvas({
         // if (layers.states && stateGeoData) drawBorders(stateGeoData, 'rgba(255,255,255,0.5)');
     }, [map, width, height, layers, showCoverage, poiData, groundtracks, satellites, processedTracks, planetNaifId]);
 
-    // Process raw ECI tracks into canvas coordinates
+    // Process tracks - now handling pre-processed data from worker
     useEffect(() => {
         if (!planetNaifId || !Object.keys(tracksRef.current).length) {
             setProcessedTracks({});
@@ -181,27 +233,60 @@ export default function GroundTrackCanvas({
             
             for (const [id, rawPoints] of Object.entries(tracksRef.current)) {
                 if (rawPoints?.length) {
-                    processed[id] = await groundTrackService.processGroundTrack(
-                        rawPoints, planetNaifId, width, height
-                    );
+                    // Check if points are already processed (have lat/lon)
+                    if (rawPoints[0].lat !== undefined && rawPoints[0].lon !== undefined) {
+                        // Points are pre-processed from worker
+                        processed[id] = rawPoints.map(pt => {
+                            // Use pre-computed coordinates if available, otherwise use service
+                            let x = pt.x, y = pt.y;
+                            if (x === undefined || y === undefined) {
+                                const canvas = groundTrackService.projectToCanvas(pt.lat, pt.lon, width, height);
+                                x = canvas.x;
+                                y = canvas.y;
+                            }
+                            return {
+                                x,
+                                y,
+                                lat: pt.lat,
+                                lon: pt.lon,
+                                alt: pt.alt,
+                                time: pt.time,
+                                isDatelineCrossing: pt.isDatelineCrossing
+                            };
+                        });
+                    } else {
+                        // Fallback: process ECI coordinates (legacy support)
+                        processed[id] = await groundTrackService.processGroundTrack(
+                            rawPoints, planetNaifId, width, height
+                        );
+                    }
                 }
             }
             
             setProcessedTracks(processed);
+            needsRedrawRef.current = true;
         };
 
         processAllTracks();
     }, [tracks, planetNaifId, width, height]);
 
+    // Optimized render loop with dirty checking
     useEffect(() => {
-        let raf;
         const loop = () => {
-            drawFrame();
-            raf = requestAnimationFrame(loop);
+            // Only redraw if something has changed
+            if (needsRedrawRef.current || checkNeedsRedraw()) {
+                drawFrame();
+                needsRedrawRef.current = false;
+            }
+            frameRef.current = requestAnimationFrame(loop);
         };
         loop();
-        return () => cancelAnimationFrame(raf);
-    }, [drawFrame]);
+        return () => {
+            if (frameRef.current) {
+                cancelAnimationFrame(frameRef.current);
+            }
+        };
+    }, [drawFrame, checkNeedsRedraw]);
 
     return (
         <canvas

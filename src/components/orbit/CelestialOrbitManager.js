@@ -56,7 +56,6 @@ export class CelestialOrbitManager {
 
         // Set up shared positioning between orbit visualization and moon positioning
         stateCalculator.setOrbitCalculator(this.calculator);
-        console.log('[CelestialOrbitManager] Shared positioning algorithm enabled between orbits and moon positions');
 
     }
 

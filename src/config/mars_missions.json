@@ -1,0 +1,215 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-109.5, 19.0]
+      },
+      "properties": {
+        "name": "Sojourner (Pathfinder)",
+        "site": "Ares Vallis",
+        "agency": "NASA",
+        "landed": "1997-07-04T16:57:00Z",
+        "status": "Completed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [175.472636, -14.5692]
+      },
+      "properties": {
+        "name": "Spirit (MER-A)",
+        "site": "Gusev Crater",
+        "agency": "NASA",
+        "landed": "2004-01-04T04:35:00Z",
+        "status": "Completed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [354.4743, -1.9483]
+      },
+      "properties": {
+        "name": "Opportunity (MER-B)",
+        "site": "Meridiani Planum",
+        "agency": "NASA",
+        "landed": "2004-01-25T05:05:00Z",
+        "status": "Completed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [137.4417, 4.5895]
+      },
+      "properties": {
+        "name": "Curiosity",
+        "site": "Gale Crater",
+        "agency": "NASA",
+        "landed": "2012-08-06T05:17:57Z",
+        "status": "Active"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [77.45088, 18.4446]
+      },
+      "properties": {
+        "name": "Perseverance",
+        "site": "Jezero Crater",
+        "agency": "NASA",
+        "landed": "2021-02-18T20:55:00Z",
+        "status": "Active"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [109.925, 25.066]
+      },
+      "properties": {
+        "name": "Zhurong",
+        "site": "Utopia Planitia",
+        "agency": "CNSA",
+        "landed": "2021-05-15T00:18:00Z",
+        "status": "Inactive"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [134.3, 45.45]
+      },
+      "properties": {
+        "name": "Viking 1",
+        "site": "Chryse Planitia",
+        "agency": "NASA",
+        "landed": "1976-07-20T11:53:06Z",
+        "status": "Completed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [225.74, 47.97]
+      },
+      "properties": {
+        "name": "Viking 2",
+        "site": "Utopia Planitia",
+        "agency": "NASA",
+        "landed": "1976-09-03T22:37:50Z",
+        "status": "Completed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [282.55, -68.47]
+      },
+      "properties": {
+        "name": "Mars Polar Lander",
+        "site": "South Polar Region",
+        "agency": "NASA",
+        "landed": "1999-12-03",
+        "status": "Failed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [68.15, -68.22]
+      },
+      "properties": {
+        "name": "Phoenix",
+        "site": "Green Valley",
+        "agency": "NASA",
+        "landed": "2008-05-25T23:38:23Z",
+        "status": "Completed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [295.09, -45.0]
+      },
+      "properties": {
+        "name": "Beagle 2",
+        "site": "Isidis Planitia",
+        "agency": "ESA",
+        "landed": "2003-12-25",
+        "status": "Failed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [335.45, 10.61]
+      },
+      "properties": {
+        "name": "Schiaparelli EDM",
+        "site": "Meridiani Planum",
+        "agency": "ESA",
+        "landed": "2016-10-19",
+        "status": "Failed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [45.0, 15.0]
+      },
+      "properties": {
+        "name": "Mars 2",
+        "site": "Near Hellas Planitia",
+        "agency": "USSR",
+        "landed": "1971-11-27",
+        "status": "Failed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [341.92, -2.0]
+      },
+      "properties": {
+        "name": "Mars 3",
+        "site": "Ptolemaeus Crater",
+        "agency": "USSR",
+        "landed": "1971-12-02",
+        "status": "Failed"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [313.0, 23.9]
+      },
+      "properties": {
+        "name": "Mars 6",
+        "site": "Margaritifer Terra",
+        "agency": "USSR",
+        "landed": "1974-03-12",
+        "status": "Failed"
+      }
+    }
+  ]
+}

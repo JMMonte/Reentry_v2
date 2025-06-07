@@ -20,10 +20,8 @@ export class RadialGrid {
         const planetOrbitGroup = planet.getOrbitGroup();
 
         if (!planetOrbitGroup) {
-            console.error(`RadialGrid constructor: Planet ${planet.name} does not have a valid orbitGroup. Grid cannot be initialized.`);
-            // In a real scenario, might set a flag this.isValid = false and return
-            // For now, assume planetOrbitGroup is always valid based on Planet.js structure
-            // If it could be null, this.group might not be added, and subsequent calls would fail.
+            // Planet should always have an orbitGroup based on Planet.js structure
+            return;
         }
 
         this.parentRef = planetOrbitGroup; // Set parentRef to the orbitGroup
@@ -31,21 +29,8 @@ export class RadialGrid {
             planetOrbitGroup.add(this.group); // Add to planet's orbit group
             this.group.position.set(0, 0, 0);    // Set local position to origin
             this.group.quaternion.identity();    // Set local rotation to identity
-        } else {
-            // Fallback or error: if orbit group isn's available, add to scene as before,
-            // but this would likely not solve the user's original issue.
-            // This path should ideally not be hit.
-            console.warn(`RadialGrid: Planet ${planet.name}'s orbitGroup not found. Adding grid to scene as fallback.`);
-            this.scene = planet.scene; // Fallback to original scene ref
-            this.parentRef = this.scene;
-            if (this.scene) this.scene.add(this.group);
         }
 
-        // No counter-rotation needed when attached to scene
-        // this.group.rotation.set(Math.PI / 2, 0, -Math.PI);
-
-        // Add to the planet's parent group (should be rebaseGroup)
-        // this.scene.add(this.group); // scene is rebaseGroup for planets // REMOVED (handled above)
         this.labelsSprites = [];
         
         // Animation state for the entire grid
@@ -210,8 +195,7 @@ export class RadialGrid {
         const material = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
-            sizeAttenuation: false,
-            // depthTest: false // Optionally try disabling depth test here too
+            sizeAttenuation: false
         });
         const sprite = new THREE.Sprite(material);
         const pixelScale = 0.0002;

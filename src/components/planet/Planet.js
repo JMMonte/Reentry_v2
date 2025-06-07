@@ -92,8 +92,6 @@ export class Planet {
     }
 
     constructor(scene, renderer, timeManager, textureManager, config = {}) {
-        // Step 1: Validate config
-        this.#validateConfig(config);
         // Barycenter minimal path
         if (config.type === 'barycenter') {
             this.scene = scene;
@@ -203,7 +201,6 @@ export class Planet {
         }
 
         this.update(); // initial build and initial per-frame updates
-        // No longer need to apply base rotation here since equatorialGroup handles Y-up to Z-up conversion
     }
 
     /* ===== private helpers ===== */
@@ -292,9 +289,8 @@ export class Planet {
      * @param {number} delta - Time since last frame in seconds
      * @param {number} interpolationFactor - Interpolation factor for smooth motion (0-1)
      */
-    update(delta, interpolationFactor = 1.0) {
+    update() {
         if (this.type === 'barycenter') {
-            // Only interpolate orientation for barycenters
             if (this.orbitGroup) {
                 this.orbitGroup.position.copy(this.targetPosition);
             }
@@ -452,7 +448,7 @@ export class Planet {
      * Set visibility of the sphere of influence (SOI).
      * @param {boolean} v
      */
-    setSOIVisible(v) { 
+    setSOIVisible(v) {
         if (this.soiComponent) {
             this.soiComponent.setVisible(v);
         }
@@ -543,10 +539,10 @@ export class Planet {
 
         // Dispose all components if they have a dispose method
         this.components.forEach(c => c.dispose?.());
-        
+
         // Dispose distant component separately if it exists
         this.distantComponent?.dispose();
-        
+
         // Dispose surface features
         this.surface?.dispose();
 
@@ -625,18 +621,6 @@ export class Planet {
         planetInstance.setOrientationFromServerQuaternion(qServer);
     }
 
-    // --- Private helpers extracted from constructor ---
-    #validateConfig(config) {
-        if (typeof config.name !== 'string' || !config.name.trim()) {
-            console.error('[Planet] Missing or invalid required config field: name', config);
-        }
-        if (config.type !== 'barycenter') {
-            if (typeof config.radius !== 'number' || !isFinite(config.radius) || config.radius <= 0) {
-                console.error('[Planet] Missing or invalid required config field: radius', config);
-            }
-        }
-    }
-
     #initModel(config) {
         this.planetMesh = null;
         this.modelLoaded = false;
@@ -657,8 +641,8 @@ export class Planet {
                 }
             },
             undefined,
-            (error) => {
-                console.error('Error loading 3D model for', this.name, error);
+            () => {
+                // Failed to load 3D model for planet
             }
         );
     }
@@ -719,7 +703,7 @@ export class Planet {
             circleTextureSize: 32,
             fadeStartPixelSize: 320,
             fadeEndPixelSize: 240,
-            heightOffset: 0,
+            heightOffset: 5, // km above surface to prevent z-fighting
             ...config.surfaceOptions // allow config to override if needed
         };
         const polarScale = 1 - this.oblateness;
