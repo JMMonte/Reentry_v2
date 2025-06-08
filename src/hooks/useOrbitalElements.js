@@ -11,12 +11,23 @@ import { ApsisService } from '../services/ApsisService.js';
 export function useOrbitalElements(physics, celestialBodies, orbitalReferenceFrame = 'ecliptic') {
   const [orbitalElements, setOrbitalElements] = useState(null);
   const [apsisData, setApsisData] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Allow some time for celestial bodies to load
+  useEffect(() => {
+    const timer = setTimeout(() => setIsInitialized(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
-    if (!physics) {
+    if (!physics || !isInitialized) {
+      setOrbitalElements(null);
+      setApsisData(null);
       return;
     }
 
+    // Clear previous data while recalculating
+    setApsisData(null);
 
     // Check if physics already has orbital elements calculated
     if (physics.orbitalElements && physics.orbitalElements.semiMajorAxis !== undefined && physics.orbitalElements.eccentricity !== undefined) {
@@ -25,8 +36,11 @@ export function useOrbitalElements(physics, celestialBodies, orbitalReferenceFra
       const eclipticElements = physics.orbitalElements; // Default elements are in ecliptic frame
       const equatorialElements = physics.equatorialElements;
 
-      const elementsToUse = (orbitalReferenceFrame === 'equatorial' && equatorialElements)
-        ? equatorialElements
+      // Validate the selected reference frame has complete data
+      const elementsToUse = (orbitalReferenceFrame === 'equatorial' && equatorialElements && 
+                            equatorialElements.semiMajorAxis !== undefined && 
+                            equatorialElements.eccentricity !== undefined) 
+        ? equatorialElements 
         : eclipticElements;
 
       setOrbitalElements({
@@ -62,26 +76,51 @@ export function useOrbitalElements(physics, celestialBodies, orbitalReferenceFra
 
           // Get central body for apsis calculation
           let centralBody = null;
+          const targetNaifId = parseInt(physics.centralBodyNaifId);
+          
           if (celestialBodies?.length > 0) {
-            centralBody = celestialBodies.find(b =>
-              b.naif_id === parseInt(physics.centralBodyNaifId) || b.naifId === parseInt(physics.centralBodyNaifId)
+            const bodyFromContext = celestialBodies.find(b =>
+              b.naif_id === targetNaifId || b.naifId === targetNaifId
             );
+            
+            if (bodyFromContext) {
+              centralBody = {
+                name: bodyFromContext.name,
+                GM: bodyFromContext.GM || bodyFromContext.gm,
+                radius: bodyFromContext.radius
+              };
+            }
           }
 
           if (!centralBody) {
             try {
               const bodyData = window.app3d?.physicsAPI?.Bodies.getByNaif(physics.centralBodyNaifId);
-              centralBody = bodyData ? {
-                name: bodyData.name,
-                GM: bodyData.gm,
-                radius: bodyData.radius
-              } : null;
-            } catch {
-              centralBody = null;
+              if (bodyData) {
+                centralBody = {
+                  name: bodyData.name,
+                  GM: bodyData.gm || bodyData.GM,
+                  radius: bodyData.radius
+                };
+              }
+            } catch (error) {
+              // Fallback for common bodies if API fails
+              const commonBodies = {
+                399: { name: 'Earth', GM: 398600.4418, radius: 6371.0 }, // Earth
+                301: { name: 'Moon', GM: 4902.7779, radius: 1737.4 },   // Moon
+                499: { name: 'Mars', GM: 42828.37, radius: 3389.5 },    // Mars
+                10: { name: 'Sun', GM: 132712440018, radius: 695700 }   // Sun
+              };
+              
+              if (commonBodies[targetNaifId]) {
+                centralBody = commonBodies[targetNaifId];
+              } else {
+                centralBody = null;
+              }
             }
           }
 
-          if (centralBody) {
+          // Validate central body has required properties
+          if (centralBody && centralBody.GM && centralBody.radius) {
             const elements = {
               semiMajorAxis: elementsToUse.semiMajorAxis,
               eccentricity: elementsToUse.eccentricity,
@@ -109,13 +148,18 @@ export function useOrbitalElements(physics, celestialBodies, orbitalReferenceFra
               periapsisAltitude: elementsToUse.periapsisAltitude,
               apoapsisAltitude: elementsToUse.apoapsisAltitude
             });
+          } else {
+            // Silently skip apsis calculation if central body data is not available
+            // This is common during initialization or when celestial bodies are still loading
+            setApsisData(null);
           }
         } catch (apsisError) {
           console.warn('[useOrbitalElements] Error calculating apsis timing:', apsisError);
+          setApsisData(null);
         }
       }
     }
-  }, [physics, celestialBodies, orbitalReferenceFrame]);
+  }, [physics, celestialBodies, orbitalReferenceFrame, isInitialized]);
 
   return { orbitalElements, apsisData };
 }
