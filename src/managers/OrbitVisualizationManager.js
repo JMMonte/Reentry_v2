@@ -11,22 +11,86 @@ export class OrbitVisualizationManager {
         this.app = app;
         this.orbitLines = new Map(); // lineKey -> THREE.Line
         this.orbitSegmentCounts = new Map(); // satelliteId -> number of segments
+        
+        // Shared materials to reduce memory usage
+        this.sharedMaterials = {
+            regular: new Map(), // color -> material
+            dashed: new Map(),  // color -> material
+            connection: new Map() // color -> material
+        };
+    }
+
+    /**
+     * Get or create shared material to reduce memory usage
+     */
+    _getSharedMaterial(type, color, options = {}) {
+        const colorKey = color.toString();
+        const materialMap = this.sharedMaterials[type];
+        
+        if (!materialMap.has(colorKey)) {
+            let material;
+            
+            switch (type) {
+                case 'regular':
+                    material = new THREE.LineBasicMaterial({
+                        color: color,
+                        opacity: 0.6,
+                        transparent: true,
+                        ...options
+                    });
+                    break;
+                    
+                case 'dashed':
+                    material = new THREE.LineDashedMaterial({
+                        color: color,
+                        opacity: 0.6,
+                        transparent: true,
+                        dashSize: options.dashSize || 10,
+                        gapSize: options.gapSize || 5,
+                        ...options
+                    });
+                    break;
+                    
+                case 'connection':
+                    material = new THREE.LineDashedMaterial({
+                        color: color,
+                        opacity: 0.8,
+                        transparent: true,
+                        dashSize: 3,
+                        gapSize: 3,
+                        ...options
+                    });
+                    break;
+                    
+                default:
+                    material = new THREE.LineBasicMaterial({ color: color });
+            }
+            
+            materialMap.set(colorKey, material);
+        }
+        
+        return materialMap.get(colorKey);
     }
 
     /**
      * Update Three.js visualization
      */
-    updateOrbitVisualization(satelliteId, points, workerTransitions = [], physicsEngine, displaySettings) {
+    updateOrbitVisualization(satelliteId, points, physicsEngine, displaySettings) {
         if (points.length < 2) {
             return;
         }
 
         // Determine how many points to actually display
-        const satellite = physicsEngine.satellites.get(satelliteId);
-        if (!satellite) return;
+        if (!physicsEngine || !physicsEngine.satellites) {
+            console.warn('[OrbitVisualizationManager] Physics engine or satellites not available');
+            return;
+        }
         
-        // Get per-satellite simulation properties, fall back to global display settings
-        const satelliteProps = satellite.orbitSimProperties || {};
+        const satellite = physicsEngine.satellites.get(satelliteId);
+        if (!satellite) {
+            console.warn(`[OrbitVisualizationManager] Satellite ${satelliteId} not found in physics engine`);
+            return;
+        }
         
         // For now, just show all points - the orbit should be continuous
         // The physics engine will handle showing the correct portion based on time
@@ -117,35 +181,32 @@ export class OrbitVisualizationManager {
                 // Create new line
                 const geometry = new THREE.BufferGeometry();
                 const satellite = physicsEngine.satellites.get(satelliteId);
-                const color = satellite?.color || 0xffff00;
                 
-                // Use different materials for different segment types
+                // Get color with preference order: UI satellite > physics satellite > default
+                const uiSatellite = this.app3d?.satellites?.getSatellitesMap?.()?.get(satelliteId);
+                let color = 0xffff00; // Default yellow
+                
+                if (uiSatellite?.color !== undefined) {
+                    color = uiSatellite.color;
+                } else if (satellite?.color !== undefined) {
+                    color = satellite.color;
+                }
+                
+                
+                
+                // Use shared materials for different segment types
                 let material;
                 if (segment.isConnectionSegment) {
                     // Connection segments: Dotted line to show inter-SOI connections
-                    material = new THREE.LineDashedMaterial({
-                        color: segment.isTimeCompensated ? 0x00ff00 : color, // Green if time-compensated
-                        opacity: 0.8,
-                        transparent: true,
-                        dashSize: 3,
-                        gapSize: 3
-                    });
+                    const connectionColor = segment.isTimeCompensated ? 0x00ff00 : color;
+                    material = this._getSharedMaterial('connection', connectionColor);
                 } else if (segment.isAfterSOITransition) {
                     // Post-SOI segments: Dashed line
-                    material = new THREE.LineDashedMaterial({
-                        color: segment.isTimeCompensated ? 0x00ffff : color, // Cyan if time-compensated
-                        opacity: 0.6,
-                        transparent: true,
-                        dashSize: 10,
-                        gapSize: 5
-                    });
+                    const dashedColor = segment.isTimeCompensated ? 0x00ffff : color;
+                    material = this._getSharedMaterial('dashed', dashedColor);
                 } else {
                     // Regular segments: Solid line
-                    material = new THREE.LineBasicMaterial({
-                        color: color,
-                        opacity: 0.6,
-                        transparent: true
-                    });
+                    material = this._getSharedMaterial('regular', color);
                 }
                 
                 line = new THREE.Line(geometry, material);
@@ -213,6 +274,7 @@ export class OrbitVisualizationManager {
     removeSatelliteOrbit(satelliteId) {
         // Remove all orbit segments
         const segmentCount = this.orbitSegmentCounts.get(satelliteId) || 0;
+        
         for (let i = 0; i < segmentCount; i++) {
             const lineKey = `${satelliteId}_${i}`;
             const line = this.orbitLines.get(lineKey);
@@ -220,11 +282,18 @@ export class OrbitVisualizationManager {
                 if (line.parent) {
                     line.parent.remove(line);
                 }
-                line.geometry.dispose();
-                line.material.dispose();
+                
+                // Safely dispose geometry (each line has its own)
+                if (line.geometry) {
+                    line.geometry.dispose();
+                }
+                
+                // Don't dispose materials - they're shared and managed centrally
+                
                 this.orbitLines.delete(lineKey);
             }
         }
+        
         this.orbitSegmentCounts.delete(satelliteId);
     }
 
@@ -246,6 +315,7 @@ export class OrbitVisualizationManager {
             this.removeSatelliteOrbit(satelliteId);
         }
     }
+
 
     /**
      * Create maneuver prediction orbit line
@@ -531,7 +601,29 @@ export class OrbitVisualizationManager {
      * Dispose of resources
      */
     dispose() {
+        // Clear all visualizations
         this.clearAll();
+        
+        // Final cleanup - dispose any remaining lines
+        for (const line of this.orbitLines.values()) {
+            if (line.geometry) {
+                line.geometry.dispose();
+            }
+            if (line.parent) {
+                line.parent.remove(line);
+            }
+        }
+        
+        // Dispose all shared materials
+        Object.values(this.sharedMaterials).forEach(materialMap => {
+            materialMap.forEach(material => {
+                if (material && typeof material.dispose === 'function') {
+                    material.dispose();
+                }
+            });
+            materialMap.clear();
+        });
+        
         this.orbitLines.clear();
         this.orbitSegmentCounts.clear();
         this.app = null;

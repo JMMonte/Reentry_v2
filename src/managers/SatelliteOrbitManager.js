@@ -17,7 +17,7 @@ import { ApsisDetection } from '../services/ApsisDetection.js';
 export class SatelliteOrbitManager {
     constructor(app) {
         this.app = app;
-        this.physicsEngine = app.physicsIntegration?.physicsEngine;
+        this.physicsEngine = app.physicsIntegration;
         this.displaySettings = app.displaySettingsManager;
 
         // Initialize specialized managers
@@ -51,9 +51,6 @@ export class SatelliteOrbitManager {
 
         // Set up event listeners for satellite lifecycle
         this._setupEventListeners();
-
-        // Check initial orbit visibility setting
-        this.displaySettings?.getSetting('showOrbits') ?? true;
     }
 
 
@@ -80,7 +77,7 @@ export class SatelliteOrbitManager {
         const needsOrbitCalculation = !this.maneuverOrbitHandler.requestManeuverNodeVisualization(
             satelliteId,
             maneuverNode,
-            this.physicsEngine
+            this.physicsEngine?.physicsEngine
         );
 
         if (needsOrbitCalculation) {
@@ -100,7 +97,7 @@ export class SatelliteOrbitManager {
         }
 
         for (const satelliteId of this.updateQueue) {
-            const satellite = this.physicsEngine.satellites.get(satelliteId);
+            const satellite = this.physicsEngine.physicsEngine?.satellites?.get(satelliteId);
             if (!satellite) {
                 console.warn(`[SatelliteOrbitManager] Satellite ${satelliteId} not found in physics engine`);
                 continue;
@@ -183,7 +180,7 @@ export class SatelliteOrbitManager {
      */
     _calculateAndStartPropagation(satellite, satelliteId, cached, needsExtension, stateChanged) {
         // Analyze orbit to determine propagation parameters
-        const centralBody = this.physicsEngine.bodies[satellite.centralBodyNaifId];
+        const centralBody = this.physicsEngine.physicsEngine?.bodies?.[satellite.centralBodyNaifId];
         if (!centralBody) {
             console.error(`[SatelliteOrbitManager] Central body ${satellite.centralBodyNaifId} not found`);
             return;
@@ -213,6 +210,9 @@ export class SatelliteOrbitManager {
             detail: { satelliteId }
         }));
 
+        // Get maneuver nodes for this satellite from physics engine
+        const maneuverNodes = this.physicsEngine?.physicsEngine?.satelliteEngine?.getManeuverNodes?.(satelliteId) || [];
+
         // Start propagation job
         const success = this.workerPoolManager.startPropagationJob({
             satelliteId,
@@ -234,9 +234,12 @@ export class SatelliteOrbitManager {
             startTime,
             existingPoints,
             isExtension: needsExtension,
-            calculationTime: needsExtension && cached ? cached.calculationTime : (this.physicsEngine.simulationTime?.getTime() || Date.now()),
+            calculationTime: needsExtension && cached ? cached.calculationTime : (this.physicsEngine.physicsEngine?.simulationTime?.getTime() || Date.now()),
             requestedPeriods: orbitPeriods,
-            requestedPointsPerPeriod: pointsPerPeriod
+            requestedPointsPerPeriod: pointsPerPeriod,
+            timeWarp: this.app.timeWarp || 1,
+            integrationMethod: this.physicsEngine.physicsEngine?.satelliteEngine?.getIntegrationMethod() || 'auto',
+            maneuverNodes: maneuverNodes
         }, this._handleWorkerMessage.bind(this));
 
         if (!success) {
@@ -282,7 +285,7 @@ export class SatelliteOrbitManager {
             // Handle partial results preservation
             this.orbitCacheManager.setCachedOrbit(
                 satelliteId,
-                this.orbitCacheManager.createPartialCacheEntry(points, params, this.physicsEngine)
+                this.orbitCacheManager.createPartialCacheEntry(points, params, this.physicsEngine.physicsEngine)
             );
             return;
         }
@@ -300,10 +303,10 @@ export class SatelliteOrbitManager {
                 );
             } else {
                 // Cache the complete orbit
-                const satellite = this.physicsEngine.satellites.get(satelliteId);
+                const satellite = this.physicsEngine.physicsEngine?.satellites?.get(satelliteId);
                 this.orbitCacheManager.setCachedOrbit(
                     satelliteId,
-                    this.orbitCacheManager.createCacheEntry(points, params, satellite, this.physicsEngine)
+                    this.orbitCacheManager.createCacheEntry(points, params, satellite, this.physicsEngine.physicsEngine)
                 );
 
                 // Final visualization update
@@ -320,7 +323,7 @@ export class SatelliteOrbitManager {
                 }));
 
                 // Process any queued maneuver visualizations
-                this.maneuverOrbitHandler.processQueuedManeuvers(satelliteId, this.physicsEngine);
+                this.maneuverOrbitHandler.processQueuedManeuvers(satelliteId, this.physicsEngine.physicsEngine);
             }
         }
     }
@@ -336,7 +339,7 @@ export class SatelliteOrbitManager {
 
         // Update orbit visualization
         this.orbitVisualizationManager.updateOrbitVisualization(
-            satelliteId, points, workerTransitions, this.physicsEngine, this.displaySettings
+            satelliteId, points, this.physicsEngine?.physicsEngine, this.displaySettings
         );
 
         // Update apsis visualization for the satellite
@@ -382,7 +385,7 @@ export class SatelliteOrbitManager {
 
             // Get central body data
             const centralBodyId = physicsSatellite.centralBodyNaifId;
-            const centralBody = this.physicsEngine?.bodies?.[centralBodyId];
+            const centralBody = this.physicsEngine?.physicsEngine?.bodies?.[centralBodyId];
             if (!centralBody) {
                 console.warn(`[SatelliteOrbitManager] No central body data for NAIF ID ${centralBodyId}`);
                 return;
@@ -411,13 +414,13 @@ export class SatelliteOrbitManager {
 
                         // Get central body position for coordinate transformation
                         const centralBodyPosition = this.physicsEngine?.getBodyPosition?.(centralBodyId) || [0, 0, 0];
-                        
+
                         // Create apsis data for visualization (convert from absolute to planet-relative coordinates)
                         const apsisData = {
                             periapsis: nextPeriapsis ? {
                                 position: [
                                     nextPeriapsis.position[0] - centralBodyPosition[0],
-                                    nextPeriapsis.position[1] - centralBodyPosition[1], 
+                                    nextPeriapsis.position[1] - centralBodyPosition[1],
                                     nextPeriapsis.position[2] - centralBodyPosition[2]
                                 ],
                                 altitude: nextPeriapsis.distance - centralBody.radius,
@@ -522,7 +525,7 @@ export class SatelliteOrbitManager {
             } = e.detail;
 
             // Get the satellite from physics engine
-            const satellite = this.physicsEngine?.satellites.get(satelliteId);
+            const satellite = this.physicsEngine?.physicsEngine?.satellites?.get(satelliteId);
             if (satellite) {
                 // Update the satellite's properties
                 satellite.orbitSimProperties = allProperties;
@@ -556,8 +559,8 @@ export class SatelliteOrbitManager {
         this._boundOrbitPredictionCallback = () => {
             // Clear cache and update all orbits
             this.orbitCacheManager.clearAll();
-            if (this.physicsEngine?.satellites) {
-                for (const satelliteId of this.physicsEngine.satellites.keys()) {
+            if (this.physicsEngine?.physicsEngine?.satellites) {
+                for (const satelliteId of this.physicsEngine.physicsEngine.satellites.keys()) {
                     this.updateSatelliteOrbit(satelliteId);
                 }
             }

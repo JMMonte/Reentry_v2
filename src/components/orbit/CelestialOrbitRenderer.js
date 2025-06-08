@@ -8,40 +8,40 @@ export class CelestialOrbitRenderer {
     constructor() {
         this.orbitMeshes = new Map(); // orbitId -> THREE.Line
         
-        // Color schemes for different orbital systems
+        // Color schemes for different orbital systems (muted colors to avoid confusion with bright satellite orbits)
         this.colorSchemes = {
             // Heliocentric orbits (planets around Sun)
-            0: 0x8899bb,   // SSB (neutral gray-blue)
-            10: 0x8899bb,  // Sun (neutral gray-blue)
+            0: 0x6688aa,   // SSB (muted gray-blue)
+            10: 0x6688aa,  // Sun (muted gray-blue)
             
-            // Barycenter systems
-            3: 0x00FF00,   // Earth-Moon system (green)
-            4: 0xFF4500,   // Mars system (orange-red)
-            5: 0xFFA500,   // Jupiter system (orange)
-            6: 0xFFD700,   // Saturn system (gold)
-            7: 0x4FD0E7,   // Uranus system (cyan)
-            8: 0x4169E1,   // Neptune system (royal blue)
-            9: 0x8A2BE2,   // Pluto system (blue violet)
+            // Barycenter systems (desaturated colors)
+            3: 0x4d7d4d,   // Earth-Moon system (muted green)
+            4: 0x8b4513,   // Mars system (muted brown-red)
+            5: 0x996633,   // Jupiter system (muted orange-brown)
+            6: 0x998844,   // Saturn system (muted gold)
+            7: 0x4a7a8a,   // Uranus system (muted cyan)
+            8: 0x4d5d8a,   // Neptune system (muted blue)
+            9: 0x6a4d7a,   // Pluto system (muted violet)
             
             // Planet systems (for direct planet-moon orbits)
-            399: 0x00FF00, // Earth system (green)
-            499: 0xFF4500, // Mars system (orange-red)
-            599: 0xFFA500, // Jupiter system (orange)
-            699: 0xFFD700, // Saturn system (gold)
-            799: 0x4FD0E7, // Uranus system (cyan)
-            899: 0x4169E1, // Neptune system (royal blue)
-            999: 0x8A2BE2, // Pluto system (blue violet)
+            399: 0x4d7d4d, // Earth system (muted green)
+            499: 0x8b4513, // Mars system (muted brown-red)
+            599: 0x996633, // Jupiter system (muted orange-brown)
+            699: 0x998844, // Saturn system (muted gold)
+            799: 0x4a7a8a, // Uranus system (muted cyan)
+            899: 0x4d5d8a, // Neptune system (muted blue)
+            999: 0x6a4d7a, // Pluto system (muted violet)
         };
         
-        // Line styles
+        // Line styles (moderate opacity - visible but not competing with satellite orbits)
         this.lineStyles = {
             heliocentric: {
-                opacity: 0.8,
+                opacity: 0.6,
                 linewidth: 1,
                 dashed: false
             },
             subsystem: {
-                opacity: 0.6,
+                opacity: 0.5,
                 linewidth: 1,
                 dashed: true,
                 dashSize: 5,
@@ -199,7 +199,7 @@ export class CelestialOrbitRenderer {
         if (isDwarf) {
             return {
                 ...style,
-                opacity: style.opacity * 0.2
+                opacity: style.opacity * 0.7  // Subtle reduction for dwarf planets
             };
         }
         return style;

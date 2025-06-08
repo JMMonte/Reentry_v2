@@ -30,7 +30,7 @@ export class SatelliteComms {
             
             // Link quality requirements
             minElevationAngle: config.minElevationAngle || 5.0, // degrees
-            minLinkMargin: config.minLinkMargin || 3.0,         // dB
+            minLinkMargin: config.minLinkMargin || 1.5,         // dB - relaxed for space simulation
             maxDopplerShift: config.maxDopplerShift || 50,      // kHz
             
             // Network configuration

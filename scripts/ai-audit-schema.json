@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darksun.ai/audit-schema",
+  "title": "AI Codebase Audit Schema",
+  "description": "Structured schema for AI agents to understand and improve codebase",
+  "type": "object",
+  "properties": {
+    "meta": {
+      "type": "object",
+      "description": "Metadata about the analysis",
+      "properties": {
+        "analysisTimestamp": { "type": "string", "format": "date-time" },
+        "analysisVersion": { "type": "string" },
+        "fileCount": { "type": "integer" },
+        "confidenceScores": {
+          "type": "object",
+          "properties": {
+            "codebaseUnderstanding": { "type": "number", "minimum": 0, "maximum": 1 },
+            "issueDetection": { "type": "number", "minimum": 0, "maximum": 1 },
+            "fixRecommendations": { "type": "number", "minimum": 0, "maximum": 1 },
+            "architecturalAnalysis": { "type": "number", "minimum": 0, "maximum": 1 },
+            "overallReliability": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "codebase": {
+      "type": "object",
+      "description": "Comprehensive codebase understanding",
+      "properties": {
+        "structure": {
+          "type": "object",
+          "properties": {
+            "domains": {
+              "type": "object",
+              "patternProperties": {
+                "^(physics|react|threejs|managers|services|utils|unknown)$": {
+                  "type": "object",
+                  "properties": {
+                    "fileCount": { "type": "integer" },
+                    "totalLines": { "type": "integer" },
+                    "averageComplexity": { "type": "number" },
+                    "primaryPurpose": { "type": "string" },
+                    "keyPatterns": { "type": "array", "items": { "type": "string" } },
+                    "dependencies": { "type": "array", "items": { "type": "string" } },
+                    "responsibilities": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            },
+            "entryPoints": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string" },
+                  "purpose": { "type": "string" },
+                  "complexity": { "type": "number" },
+                  "dependencies": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            },
+            "dataFlow": {
+              "type": "object",
+              "properties": {
+                "primaryFlows": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "from": { "type": "string" },
+                      "to": { "type": "string" },
+                      "dataType": { "type": "string" },
+                      "mechanism": { "type": "string" },
+                      "frequency": { "type": "string" }
+                    }
+                  }
+                },
+                "criticalPaths": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": { "type": "array", "items": { "type": "string" } },
+                      "purpose": { "type": "string" },
+                      "performanceCharacteristics": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "patterns": {
+          "type": "object",
+          "properties": {
+            "designPatterns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pattern": { "type": "string" },
+                  "locations": { "type": "array", "items": { "type": "string" } },
+                  "implementation": { "type": "string" },
+                  "effectiveness": { "type": "number", "minimum": 0, "maximum": 1 }
+                }
+              }
+            },
+            "antiPatterns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pattern": { "type": "string" },
+                  "locations": { "type": "array", "items": { "type": "string" } },
+                  "severity": { "enum": ["low", "medium", "high", "critical"] },
+                  "impact": { "type": "string" },
+                  "refactoringStrategy": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "issues": {
+      "type": "object",
+      "description": "Detailed issues with full context for AI understanding",
+      "properties": {
+        "memoryLeaks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "enum": ["eventListener", "animationFrame", "worker", "threeJsResource", "timer", "staticCollection"] },
+              "severity": { "enum": ["low", "medium", "high", "critical"] },
+              "file": { "type": "string" },
+              "line": { "type": "integer" },
+              "code": { "type": "string" },
+              "context": {
+                "type": "object",
+                "properties": {
+                  "before": { "type": "array", "items": { "type": "string" } },
+                  "current": { "type": "string" },
+                  "after": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "aiContext": {
+                "type": "object",
+                "properties": {
+                  "whyProblem": { "type": "string" },
+                  "howToFix": { "type": "string" },
+                  "relatedPatterns": { "type": "array", "items": { "type": "string" } },
+                  "exampleFix": { "type": "string" },
+                  "testCase": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "architecturalViolations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "enum": ["boundaryViolation", "circularDependency", "godClass", "mixedConcerns"] },
+              "severity": { "enum": ["low", "medium", "high", "critical"] },
+              "file": { "type": "string" },
+              "description": { "type": "string" },
+              "violatedPrinciple": { "type": "string" },
+              "aiContext": {
+                "type": "object",
+                "properties": {
+                  "whyViolation": { "type": "string" },
+                  "designPrinciple": { "type": "string" },
+                  "refactoringStrategy": { "type": "string" },
+                  "exampleSolution": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "learningData": {
+      "type": "object",
+      "description": "Patterns and examples for AI learning",
+      "properties": {
+        "goodPatterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string" },
+              "file": { "type": "string" },
+              "description": { "type": "string" },
+              "code": { "type": "string" },
+              "whyGood": { "type": "string" },
+              "principlesFollowed": { "type": "array", "items": { "type": "string" } },
+              "reusableTemplate": { "type": "string" },
+              "variations": { "type": "array", "items": { "type": "string" } },
+              "applicableContexts": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "contextualExamples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "scenario": { "type": "string" },
+              "problem": { "type": "string" },
+              "solution": { "type": "string" },
+              "codeExample": { "type": "string" },
+              "explanation": { "type": "string" },
+              "alternatives": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "actionable": {
+      "type": "object",
+      "description": "Actionable intelligence for AI agents",
+      "properties": {
+        "automatedFixes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "enum": ["automated-fix", "refactoring", "optimization"] },
+              "category": { "type": "string" },
+              "description": { "type": "string" },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "implementation": {
+                "type": "object",
+                "properties": {
+                  "strategy": { "type": "string" },
+                  "codeChanges": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "file": { "type": "string" },
+                        "operation": { "enum": ["replace", "insert", "delete"] },
+                        "lineStart": { "type": "integer" },
+                        "lineEnd": { "type": "integer" },
+                        "oldCode": { "type": "string" },
+                        "newCode": { "type": "string" }
+                      }
+                    }
+                  },
+                  "testCase": { "type": "string" },
+                  "validationChecks": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "executionPlan": {
+                "type": "object",
+                "properties": {
+                  "prerequisites": { "type": "array", "items": { "type": "string" } },
+                  "steps": { "type": "array", "items": { "type": "string" } },
+                  "verification": { "type": "array", "items": { "type": "string" } },
+                  "rollbackPlan": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "refactoringPlans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "enum": ["class-decomposition", "function-extraction", "interface-segregation", "dependency-inversion"] },
+              "description": { "type": "string" },
+              "analysis": {
+                "type": "object",
+                "properties": {
+                  "currentStructure": { "type": "string" },
+                  "responsibilities": { "type": "array", "items": { "type": "string" } },
+                  "couplings": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "strategy": {
+                "type": "object",
+                "properties": {
+                  "approach": { "type": "string" },
+                  "phases": { "type": "array", "items": { "type": "string" } },
+                  "riskMitigation": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": ["meta", "codebase", "issues", "learningData", "actionable"]
+}

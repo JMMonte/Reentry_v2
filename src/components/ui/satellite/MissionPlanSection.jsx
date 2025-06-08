@@ -52,7 +52,7 @@ export function MissionPlanSection({
                             const time = rawTime instanceof Date && !isNaN(rawTime.getTime())
                                 ? rawTime
                                 : (currentSimTime instanceof Date ? currentSimTime : new Date());
-                            const dv = nodeModel.worldDV.length();
+                            const dv = Math.sqrt(nodeModel.worldDV.x * nodeModel.worldDV.x + nodeModel.worldDV.y * nodeModel.worldDV.y + nodeModel.worldDV.z * nodeModel.worldDV.z);
                             const orbit = nodeModel.node3D.predictedOrbit;
                             const period = orbit?._orbitPeriod || 0;
                             const vel = orbit?._currentVelocity ? orbit._currentVelocity.length() / 1000 : 0;
@@ -95,7 +95,7 @@ export function MissionPlanSection({
         nodes.forEach((nodeModel, idx) => {
             displayNodes.push({
                 time: nodeModel.time,
-                dv: nodeModel.worldDV.length(),
+                dv: Math.sqrt(nodeModel.worldDV.x * nodeModel.worldDV.x + nodeModel.worldDV.y * nodeModel.worldDV.y + nodeModel.worldDV.z * nodeModel.worldDV.z),
                 orbit: nodeModel.node3D.predictedOrbit,
                 preview: false,
                 idx
@@ -106,7 +106,7 @@ export function MissionPlanSection({
         previewNodes.forEach(node3D => {
             displayNodes.push({
                 time: node3D.time,
-                dv: node3D.localDV.length(),
+                dv: Math.sqrt(node3D.localDV.x * node3D.localDV.x + node3D.localDV.y * node3D.localDV.y + node3D.localDV.z * node3D.localDV.z),
                 orbit: node3D.predictedOrbit,
                 preview: true,
                 idx: null

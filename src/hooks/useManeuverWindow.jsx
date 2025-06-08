@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import * as THREE from 'three';
 import { ManeuverManager } from '../managers/ManeuverManager.js';
 import { ManeuverUtils } from '../utils/ManeuverUtils.js';
 import formatTimeDelta from '../utils/FormatUtils.js';
@@ -379,7 +378,7 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             const t = nodes[selectedIndex].time;
             setHours(t.getUTCHours()); setMinutes(t.getUTCMinutes()); setSeconds(t.getUTCSeconds()); setMilliseconds(t.getUTCMilliseconds());
             // Use stored localDV for editing - convert from km/s (backend) to m/s (UI)
-            const local = nodes[selectedIndex].localDV || new THREE.Vector3();
+            const local = nodes[selectedIndex].localDV || { x: 0, y: 0, z: 0 };
             setVx((local.x * 1000).toFixed(0)); setVy((local.y * 1000).toFixed(0)); setVz((local.z * 1000).toFixed(0));
         } else {
             setTimeMode('offset'); setOffsetSec('0');
@@ -409,11 +408,11 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             execTime = ManeuverUtils.computeExecutionTime(simulationTime, { timeMode, offsetSec, hours, minutes, seconds, milliseconds });
         }
         // Delta-V vector - convert from m/s (UI) to km/s (backend)
-        const dvLocal = new THREE.Vector3(
-            (parseFloat(vx) || 0) / 1000, // Convert m/s to km/s
-            (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
-            (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
-        );
+        const dvLocal = {
+            x: (parseFloat(vx) || 0) / 1000, // Convert m/s to km/s
+            y: (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
+            z: (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
+        };
         // Replace existing node if editing
         if (selectedIndex != null) {
             const existing = nodes[selectedIndex].node3D;
@@ -429,7 +428,7 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         }
         
         // Add new maneuver node
-        manager.sat.addManeuverNode(execTime, dvLocal.clone());
+        manager.sat.addManeuverNode(execTime, { ...dvLocal });
         // Reset selection and add-mode
         setSelectedIndex(null);
         setIsAdding(false);

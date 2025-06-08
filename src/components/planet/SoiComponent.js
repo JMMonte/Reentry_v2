@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RENDER_ORDER } from './Planet.js';
+import { RENDER_ORDER } from './PlanetConstants.js';
 
 export class SoiComponent {
     constructor(planet) {

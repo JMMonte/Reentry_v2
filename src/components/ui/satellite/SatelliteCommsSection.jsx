@@ -11,19 +11,20 @@ import { Button } from '../button';
 import { Input } from '../input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import { Switch } from '../switch';
-import { Separator } from '../separator';
-import { Badge } from '../badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../card';
 import { 
     Radio, 
     Antenna, 
     Signal, 
     Settings, 
-    Info, 
     CheckCircle, 
     XCircle,
     AlertTriangle,
-    Wifi
+    Wifi,
+    Power,
+    Zap,
+    Activity,
+    ArrowUpDown,
+    Target
 } from 'lucide-react';
 
 export function SatelliteCommsSection({ satelliteId, app }) {
@@ -34,42 +35,37 @@ export function SatelliteCommsSection({ satelliteId, app }) {
 
     // Get communication system status
     useEffect(() => {
+        if (!satelliteId || !app) return;
+
         const updateCommsStatus = () => {
-            let status = null;
-            let activeConnections = [];
+            // Use unified communications service
+            const commsService = app.communicationsService;
+            if (!commsService) {
+                setCommsStatus(null);
+                setConnections([]);
+                return;
+            }
 
-            // Try to get data from physics engine subsystem first (most accurate)
-            // Try accessing the physics engine directly or through physicsIntegration
-            let physicsEngine = app?.physicsIntegration?.physicsEngine || app?.physicsEngine;
-            if (physicsEngine?.subsystemManager) {
-                const subsystemManager = physicsEngine.subsystemManager;
-                const commsSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
+            // Get configuration
+            const config = commsService.getSatelliteCommsConfig(satelliteId);
+            
+            // Get connections for this satellite
+            const activeConnections = commsService.getSatelliteConnections(satelliteId);
+            
+            // Build status from config and connections
+            if (config) {
+                const status = {
+                    enabled: config.enabled || false,
+                    transmitPower: config.transmitPower,
+                    antennaGain: config.antennaGain,
+                    activeConnectionsCount: activeConnections.length,
+                    signalQuality: activeConnections.length > 0 ? 
+                        activeConnections.reduce((sum, conn) => sum + (conn.metadata?.linkQuality || 0), 0) / activeConnections.length : 0,
+                    config: config, // Include the full config object
+                    state: { status: config.enabled ? 'operational' : 'offline' },
+                    metrics: { successfulConnections: 0, connectionAttempts: 1 }
+                };
                 
-                if (commsSubsystem) {
-                    status = commsSubsystem.getStatus();
-                    activeConnections = commsSubsystem.getActiveConnections() || [];
-                }
-            }
-
-            // Fallback to SatelliteCommsManager if physics subsystem not available
-            if (!status && app?.satelliteCommsManager) {
-                const commsSystem = app.satelliteCommsManager.getCommsSystem(satelliteId);
-                if (commsSystem) {
-                    status = commsSystem.getStatus();
-                    activeConnections = commsSystem.getActiveConnections() || [];
-                }
-            }
-
-            // Final fallback to LineOfSightManager (legacy)
-            if (!status && app?.lineOfSightManager?.commsManager) {
-                const commsSystem = app.lineOfSightManager.commsManager.getCommsSystem(satelliteId);
-                if (commsSystem) {
-                    status = commsSystem.getStatus();
-                    activeConnections = commsSystem.getActiveConnections() || [];
-                }
-            }
-
-            if (status) {
                 setCommsStatus(status);
                 setConnections(activeConnections);
             } else {
@@ -81,9 +77,29 @@ export function SatelliteCommsSection({ satelliteId, app }) {
         // Initial load
         updateCommsStatus();
 
-        // Update every 2 seconds
+        // Subscribe to communications updates
+        const handleUpdate = (event) => {
+            if (event.detail?.satelliteId === satelliteId || !event.detail?.satelliteId) {
+                updateCommsStatus();
+            }
+        };
+        
+        // Listen for communications events
+        if (app.communicationsService) {
+            app.communicationsService.on('configUpdated', handleUpdate);
+            app.communicationsService.on('connectionsUpdated', updateCommsStatus);
+        }
+        
+        // Also update periodically as fallback
         const interval = setInterval(updateCommsStatus, 2000);
-        return () => clearInterval(interval);
+        
+        return () => {
+            clearInterval(interval);
+            if (app.communicationsService) {
+                app.communicationsService.removeListener('configUpdated', handleUpdate);
+                app.communicationsService.removeListener('connectionsUpdated', updateCommsStatus);
+            }
+        };
     }, [satelliteId, app]);
 
     const handleConfigChange = (key, value) => {
@@ -91,29 +107,9 @@ export function SatelliteCommsSection({ satelliteId, app }) {
     };
 
     const applyConfig = () => {
-        // Try to update physics subsystem first
-        let physicsEngine = app?.physicsIntegration?.physicsEngine || app?.physicsEngine;
-        if (physicsEngine?.subsystemManager) {
-            const subsystemManager = physicsEngine.subsystemManager;
-            const success = subsystemManager.updateSubsystemConfig(satelliteId, 'communication', tempConfig);
-            if (success) {
-                setTempConfig({});
-                setEditMode(false);
-                return;
-            }
-        }
-
-        // Fallback to SatelliteCommsManager
-        if (app?.satelliteCommsManager) {
-            app.satelliteCommsManager.updateSatelliteComms(satelliteId, tempConfig);
-            setTempConfig({});
-            setEditMode(false);
-            return;
-        }
-
-        // Final fallback to LineOfSightManager
-        if (app?.lineOfSightManager?.commsManager) {
-            app.lineOfSightManager.commsManager.updateSatelliteComms(satelliteId, tempConfig);
+        // Use unified communications service
+        if (app?.communicationsService) {
+            app.communicationsService.updateSatelliteCommsConfig(satelliteId, tempConfig);
             setTempConfig({});
             setEditMode(false);
         }
@@ -125,83 +121,50 @@ export function SatelliteCommsSection({ satelliteId, app }) {
     };
 
     const applyPreset = (presetName) => {
-        let presets = {};
-        let preset = null;
-
-        // Try to get presets from SatelliteCommsManager first (most comprehensive)
-        if (app?.satelliteCommsManager) {
-            presets = app.satelliteCommsManager.getPresets();
-            preset = presets[presetName];
-        }
-
-        // Fallback to LineOfSightManager presets
-        if (!preset && app?.lineOfSightManager?.commsManager) {
-            presets = app.lineOfSightManager.commsManager.getPresets();
-            preset = presets[presetName];
-        }
-
+        // Use unified communications service
+        if (!app?.communicationsService) return;
+        
+        const presets = app.communicationsService.getPresets();
+        const preset = presets[presetName];
+        
         if (preset) {
-            // Apply to physics subsystem first
-            if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
-                const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
-                subsystemManager.updateSubsystemConfig(satelliteId, 'communication', preset);
-            }
-
-            // Apply to SatelliteCommsManager
-            if (app?.satelliteCommsManager) {
-                app.satelliteCommsManager.updateSatelliteComms(satelliteId, preset);
-            }
-
-            // Apply to LineOfSightManager
-            if (app?.lineOfSightManager?.commsManager) {
-                app.lineOfSightManager.commsManager.updateSatelliteComms(satelliteId, preset);
-            }
-
+            // Apply preset through unified service
+            app.communicationsService.updateSatelliteCommsConfig(satelliteId, preset);
         }
     };
 
-    if (!commsStatus) {
-        // Show debug info about what sources are available
-        const debugInfo = [];
-        
-        if (app?.physicsIntegration?.physicsEngine?.subsystemManager) {
-            const subsystemManager = app.physicsIntegration.physicsEngine.subsystemManager;
-            const commsSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
-            debugInfo.push(`Physics Subsystem: ${commsSubsystem ? 'Found' : 'Not found'}`);
-        } else {
-            debugInfo.push('Physics Subsystem: Manager not available');
-        }
-        
-        if (app?.satelliteCommsManager) {
-            const commsSystem = app.satelliteCommsManager.getCommsSystem(satelliteId);
-            debugInfo.push(`SatelliteCommsManager: ${commsSystem ? 'Found' : 'Not found'}`);
-        } else {
-            debugInfo.push('SatelliteCommsManager: Not available');
-        }
+    // Data row component matching debug window style
+    const DataRow = ({ label, value, unit = '', icon: Icon, className = '' }) => (
+        <div className={`grid grid-cols-2 gap-1 ${className}`}>
+            <span className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                {Icon && <Icon className="h-3 w-3" />}
+                {label}:
+            </span>
+            <span className="text-xs font-mono text-foreground">
+                {value} {unit && <span className="text-muted-foreground">{unit}</span>}
+            </span>
+        </div>
+    );
 
+    DataRow.propTypes = {
+        label: PropTypes.string.isRequired,
+        value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+        unit: PropTypes.string,
+        icon: PropTypes.elementType,
+        className: PropTypes.string
+    };
+
+    if (!commsStatus) {
         return (
-            <Card className="w-full">
-                <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-sm">
-                        <Radio className="h-4 w-4" />
-                        Communications
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <AlertTriangle className="h-4 w-4" />
-                            No communication system found for satellite {satelliteId}
-                        </div>
-                        <div className="text-xs text-muted-foreground space-y-1">
-                            <div className="font-medium">Debug Info:</div>
-                            {debugInfo.map((info, idx) => (
-                                <div key={idx} className="pl-2">{info}</div>
-                            ))}
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
+            <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <AlertTriangle className="h-3 w-3" />
+                    <span>No communication system found</span>
+                </div>
+                <div className="text-xs text-muted-foreground pl-4">
+                    Satellite ID: {satelliteId}
+                </div>
+            </div>
         );
     }
 
@@ -231,246 +194,209 @@ export function SatelliteCommsSection({ satelliteId, app }) {
     const StatusIcon = getStatusIcon(state.status || 'offline');
 
     return (
-        <Card className="w-full">
-            <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                        <Radio className="h-4 w-4" />
-                        Communications
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className={`flex items-center gap-1 ${getStatusColor(state.status || 'offline')}`}>
-                            <StatusIcon className="h-3 w-3" />
-                            <span className="text-xs capitalize">{state.status || 'offline'}</span>
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditMode(!editMode)}
-                            className="h-6 px-2"
-                        >
-                            <Settings className="h-3 w-3" />
-                        </Button>
-                    </div>
-                </CardTitle>
-            </CardHeader>
-            
-            <CardContent className="space-y-4">
-                {/* System Overview */}
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                            <Antenna className="h-3 w-3" />
-                            <span className="font-medium">Hardware</span>
-                        </div>
-                        <div className="pl-5 space-y-1">
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Antenna:</span>
-                                <span className="capitalize">{config.antennaType || 'Unknown'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Gain:</span>
-                                <span>{config.antennaGain || 0} dBi</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Power:</span>
-                                <span>{config.transmitPower || 0} W</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Frequency:</span>
-                                <span>{config.transmitFrequency || 0} GHz</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                            <Signal className="h-3 w-3" />
-                            <span className="font-medium">Performance</span>
-                        </div>
-                        <div className="pl-5 space-y-1">
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Data Rate:</span>
-                                <span>{config.dataRate || 0} kbps</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Min Elevation:</span>
-                                <span>{config.minElevationAngle || 0}°</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Network:</span>
-                                <span className="capitalize">{(config.networkId || 'unknown').replace('_', ' ')}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Priority:</span>
-                                <Badge variant="outline" className="h-4 text-xs">
-                                    {config.priority || 'normal'}
-                                </Badge>
-                            </div>
-                        </div>
-                    </div>
+        <div className="space-y-2">
+            {/* Status Header */}
+            <div className="flex items-center justify-between">
+                <div className={`flex items-center gap-1 ${getStatusColor(state.status || 'offline')}`}>
+                    <StatusIcon className="h-3 w-3" />
+                    <span className="text-xs capitalize font-mono">{state.status || 'offline'}</span>
                 </div>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditMode(!editMode)}
+                    className="h-5 w-5 p-0"
+                >
+                    <Settings className="h-3 w-3" />
+                </Button>
+            </div>
 
-                <Separator />
+            {/* Communications Enable/Disable Toggle */}
+            <div className="flex items-center justify-between py-1">
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Radio className="h-3 w-3" />
+                    Communications:
+                </span>
+                <Switch
+                    checked={config.enabled || false}
+                    onCheckedChange={(checked) => {
+                        // Apply the change immediately using the unified communications service
+                        const newConfig = { enabled: checked };
+                        
+                        // Use the unified communications service first
+                        if (app?.communicationsService) {
+                            app.communicationsService.updateSatelliteCommsConfig(satelliteId, newConfig);
+                            return;
+                        }
+                        
+                        // Try to update via PhysicsAPI second
+                        if (app?.physicsAPI?.isReady()) {
+                            const success = app.physicsAPI.updateSatelliteCommsConfig(satelliteId, newConfig);
+                            if (success) return;
+                        }
+                        
+                        // Fallback: Try to update physics subsystem directly
+                        let physicsEngine = app?.physicsIntegration?.physicsEngine || app?.physicsEngine;
+                        if (physicsEngine?.subsystemManager) {
+                            const subsystemManager = physicsEngine.subsystemManager;
+                            const success = subsystemManager.updateSubsystemConfig(satelliteId, 'communication', newConfig);
+                            if (success) return;
+                        }
 
-                {/* Active Connections */}
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Wifi className="h-3 w-3" />
-                            <span className="font-medium text-xs">Active Links</span>
-                        </div>
-                        <Badge variant="secondary" className="h-4 text-xs">
-                            {connections.length}
-                        </Badge>
-                    </div>
-                    
-                    {connections.length > 0 ? (
-                        <div className="space-y-1">
-                            {connections.map((conn, idx) => (
-                                <div key={idx} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2 h-2 rounded-full bg-green-500" />
-                                        <span>→ {conn.targetSatelliteId}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-muted-foreground">{conn.dataRate} kbps</span>
-                                        <Badge 
-                                            variant={conn.quality > 70 ? "default" : conn.quality > 40 ? "secondary" : "destructive"}
-                                            className="h-4 text-xs"
-                                        >
-                                            {Math.round(conn.quality)}%
-                                        </Badge>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-xs text-muted-foreground text-center py-2">
-                            No active connections
-                        </div>
-                    )}
+                        // Fallback to SatelliteCommsManager
+                        if (app?.satelliteCommsManager) {
+                            app.satelliteCommsManager.updateSatelliteComms(satelliteId, newConfig);
+                            
+                            // Force update line-of-sight calculations when communications are toggled
+                            if (app?.lineOfSightManager?.isEnabled()) {
+                                app._syncConnectionsWorker();
+                            }
+                            return;
+                        }
+                    }}
+                />
+            </div>
+
+            {/* Hardware Configuration */}
+            <DataRow label="Antenna" value={config.antennaType || 'Unknown'} icon={Antenna} />
+            <DataRow label="Gain" value={config.antennaGain || 0} unit="dBi" icon={Signal} />
+            <DataRow label="Power" value={config.transmitPower || 0} unit="W" icon={Power} />
+            <DataRow label="Frequency" value={config.transmitFrequency || 0} unit="GHz" icon={Zap} />
+            <DataRow label="Data Rate" value={config.dataRate || 0} unit="kbps" icon={ArrowUpDown} />
+            <DataRow label="Min Elevation" value={config.minElevationAngle || 0} unit="°" icon={Target} />
+
+            {/* Active Connections */}
+            <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Wifi className="h-3 w-3" />
+                        Active Links:
+                    </span>
+                    <span className="text-xs font-mono bg-muted px-1 rounded">{connections.length}</span>
                 </div>
-
-                <Separator />
-
-                {/* Statistics */}
-                <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                        <Info className="h-3 w-3" />
-                        <span className="font-medium text-xs">Statistics</span>
+                
+                {connections.length > 0 && (
+                    <div className="space-y-1 pl-4">
+                        {connections.map((conn, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1">
+                                    <div className={`w-2 h-2 rounded-full ${conn.quality > 70 ? 'bg-green-500' : conn.quality > 40 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                                    <span className="font-mono">→ {conn.targetSatelliteId}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span className="text-muted-foreground">{conn.dataRate}k</span>
+                                    <span className="font-mono">{Math.round(conn.quality)}%</span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Success Rate:</span>
-                            <span>{Math.round((metrics.successfulConnections / Math.max(1, metrics.connectionAttempts)) * 100)}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Data Sent:</span>
-                            <span>{((state.totalDataTransmitted || 0) / 1024).toFixed(1)} KB</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Data Received:</span>
-                            <span>{((state.totalDataReceived || 0) / 1024).toFixed(1)} KB</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Power Usage:</span>
-                            <span>{(state.powerConsumption || state.batteryUsage || 0).toFixed(1)} W</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Configuration Panel */}
-                {editMode && (
-                    <>
-                        <Separator />
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <span className="font-medium text-xs">Configuration</span>
-                                <div className="flex gap-1">
-                                    <Button variant="outline" size="sm" onClick={resetConfig} className="h-6 px-2 text-xs">
-                                        Cancel
-                                    </Button>
-                                    <Button size="sm" onClick={applyConfig} className="h-6 px-2 text-xs">
-                                        Apply
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Preset Selection */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium">Apply Preset:</label>
-                                <Select onValueChange={applyPreset}>
-                                    <SelectTrigger className="h-6 text-xs">
-                                        <SelectValue placeholder="Select preset..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="cubesat">CubeSat</SelectItem>
-                                        <SelectItem value="communications_satellite">Communications Satellite</SelectItem>
-                                        <SelectItem value="scientific_probe">Scientific Probe</SelectItem>
-                                        <SelectItem value="military_satellite">Military Satellite</SelectItem>
-                                        <SelectItem value="earth_observation">Earth Observation</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            {/* Key Parameters */}
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                    <label className="text-xs">Transmit Power (W)</label>
-                                    <Input
-                                        type="number"
-                                        className="h-6 text-xs"
-                                        placeholder={config.transmitPower || '0'}
-                                        value={tempConfig.transmitPower || ''}
-                                        onChange={(e) => handleConfigChange('transmitPower', parseFloat(e.target.value))}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs">Antenna Gain (dBi)</label>
-                                    <Input
-                                        type="number"
-                                        className="h-6 text-xs"
-                                        placeholder={config.antennaGain || '0'}
-                                        value={tempConfig.antennaGain || ''}
-                                        onChange={(e) => handleConfigChange('antennaGain', parseFloat(e.target.value))}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs">Data Rate (kbps)</label>
-                                    <Input
-                                        type="number"
-                                        className="h-6 text-xs"
-                                        placeholder={config.dataRate || '0'}
-                                        value={tempConfig.dataRate || ''}
-                                        onChange={(e) => handleConfigChange('dataRate', parseFloat(e.target.value))}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs">Min Elevation (°)</label>
-                                    <Input
-                                        type="number"
-                                        className="h-6 text-xs"
-                                        placeholder={config.minElevationAngle || '0'}
-                                        value={tempConfig.minElevationAngle || ''}
-                                        onChange={(e) => handleConfigChange('minElevationAngle', parseFloat(e.target.value))}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Enable/Disable */}
-                            <div className="flex items-center justify-between">
-                                <label className="text-xs">Communications Enabled</label>
-                                <Switch
-                                    checked={tempConfig.enabled !== undefined ? tempConfig.enabled : config.enabled}
-                                    onCheckedChange={(checked) => handleConfigChange('enabled', checked)}
-                                />
-                            </div>
-                        </div>
-                    </>
                 )}
-            </CardContent>
-        </Card>
+            </div>
+
+            {/* Statistics */}
+            <DataRow 
+                label="Success Rate" 
+                value={`${Math.round((metrics.successfulConnections / Math.max(1, metrics.connectionAttempts)) * 100)}%`} 
+                icon={Activity} 
+            />
+            <DataRow 
+                label="Data Sent" 
+                value={((state.totalDataTransmitted || 0) / 1024).toFixed(1)} 
+                unit="KB" 
+                icon={ArrowUpDown} 
+            />
+            <DataRow 
+                label="Data Received" 
+                value={((state.totalDataReceived || 0) / 1024).toFixed(1)} 
+                unit="KB" 
+                icon={ArrowUpDown} 
+            />
+            <DataRow 
+                label="Power Usage" 
+                value={(state.powerConsumption || state.batteryUsage || 0).toFixed(1)} 
+                unit="W" 
+                icon={Power} 
+            />
+
+            {/* Configuration Panel */}
+            {editMode && (
+                <div className="space-y-2 mt-3 pt-2 border-t border-border/50">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Configuration</span>
+                        <div className="flex gap-1">
+                            <Button variant="outline" size="sm" onClick={resetConfig} className="h-5 px-2 text-xs">
+                                Cancel
+                            </Button>
+                            <Button size="sm" onClick={applyConfig} className="h-5 px-2 text-xs">
+                                Apply
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Preset Selection */}
+                    <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Preset:</label>
+                        <Select onValueChange={applyPreset}>
+                            <SelectTrigger className="h-5 text-xs">
+                                <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="cubesat">CubeSat</SelectItem>
+                                <SelectItem value="communications_satellite">Comms Sat</SelectItem>
+                                <SelectItem value="scientific_probe">Science</SelectItem>
+                                <SelectItem value="military_satellite">Military</SelectItem>
+                                <SelectItem value="earth_observation">Earth Obs</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Key Parameters in Compact Grid */}
+                    <div className="grid grid-cols-2 gap-1 text-xs">
+                        <div className="space-y-1">
+                            <label className="text-muted-foreground">Power (W)</label>
+                            <Input
+                                type="number"
+                                className="h-5 text-xs font-mono"
+                                placeholder={config.transmitPower || '0'}
+                                value={tempConfig.transmitPower || ''}
+                                onChange={(e) => handleConfigChange('transmitPower', parseFloat(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-muted-foreground">Gain (dBi)</label>
+                            <Input
+                                type="number"
+                                className="h-5 text-xs font-mono"
+                                placeholder={config.antennaGain || '0'}
+                                value={tempConfig.antennaGain || ''}
+                                onChange={(e) => handleConfigChange('antennaGain', parseFloat(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-muted-foreground">Rate (kbps)</label>
+                            <Input
+                                type="number"
+                                className="h-5 text-xs font-mono"
+                                placeholder={config.dataRate || '0'}
+                                value={tempConfig.dataRate || ''}
+                                onChange={(e) => handleConfigChange('dataRate', parseFloat(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-muted-foreground">Elevation (°)</label>
+                            <Input
+                                type="number"
+                                className="h-5 text-xs font-mono"
+                                placeholder={config.minElevationAngle || '0'}
+                                value={tempConfig.minElevationAngle || ''}
+                                onChange={(e) => handleConfigChange('minElevationAngle', parseFloat(e.target.value))}
+                            />
+                        </div>
+                    </div>
+
+                </div>
+            )}
+        </div>
     );
 }
 

@@ -43,7 +43,7 @@ export class GhostPlanetManager {
     /**
      * Create or update ghost planets for SOI transitions
      */
-    updateGhostPlanets(satelliteId, transitions, points) {
+    updateGhostPlanets(satelliteId, transitions) {
         let satelliteGhosts = this.ghostPlanets.get(satelliteId);
         if (!satelliteGhosts) {
             satelliteGhosts = new Map();
@@ -76,7 +76,7 @@ export class GhostPlanetManager {
         }
         
         // Update label orientations to face camera
-        for (const [key, ghost] of satelliteGhosts) {
+        for (const [ghost] of satelliteGhosts) {
             if (ghost.labelMesh && this.app.camera) {
                 ghost.labelMesh.lookAt(this.app.camera.position);
             }
@@ -205,7 +205,7 @@ export class GhostPlanetManager {
     removeGhostPlanets(satelliteId) {
         const ghosts = this.ghostPlanets.get(satelliteId);
         if (ghosts) {
-            for (const [key, ghost] of ghosts) {
+            for (const [ghost] of ghosts) {
                 if (ghost.group) {
                     this.app.scene.remove(ghost.group);
                     this._disposeGhostGroup(ghost.group);
@@ -232,8 +232,8 @@ export class GhostPlanetManager {
      * Clear all ghost planets
      */
     clearAll() {
-        for (const [satelliteId, ghosts] of this.ghostPlanets) {
-            for (const [key, ghost] of ghosts) {
+        for (const [ghosts] of this.ghostPlanets) {
+            for (const [ghost] of ghosts) {
                 if (ghost.group) {
                     this.app.scene.remove(ghost.group);
                     this._disposeGhostGroup(ghost.group);
@@ -249,8 +249,8 @@ export class GhostPlanetManager {
     updateLabelOrientations() {
         if (!this.app.camera) return;
         
-        for (const [satelliteId, ghosts] of this.ghostPlanets) {
-            for (const [key, ghost] of ghosts) {
+        for (const [ghosts] of this.ghostPlanets) {
+            for (const [ghost] of ghosts) {
                 if (ghost.labelMesh) {
                     ghost.labelMesh.lookAt(this.app.camera.position);
                 }

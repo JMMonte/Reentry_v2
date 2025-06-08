@@ -11,6 +11,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RingComponent } from './RingComponent.js';
 import { SoiComponent } from './SoiComponent.js';
 import { DistantMeshComponent } from './DistantMeshComponent.js';
+import { getPlanetManager } from '../../managers/PlanetManager.js';
 
 /*
  * Planet.js
@@ -52,23 +53,13 @@ import { DistantMeshComponent } from './DistantMeshComponent.js';
  * This design ensures that all planet orientation and rotation logic is centralized and avoids accidental double-rotation.
  */
 
-// ---- General Render Order Constants ----
-export const RENDER_ORDER = {
-    SOI: 0,
-    SURFACE: 0,
-    CLOUDS: 0,
-    ATMOSPHERE: 100, // Much higher to ensure it renders after planet
-    POI: 3,
-    RINGS: 4
-};
-//
-// Render order system:
-//  - General constants above are used for all planet sub-meshes.
-//
+// Import shared constants to avoid circular dependencies
+import { RENDER_ORDER, PLANET_DEFAULTS } from './PlanetConstants.js';
 
 export class Planet {
     /* ---------- static ---------- */
     static instances = [];
+    static _instanceSet = new WeakSet(); // WeakSet allows GC of unreferenced planets
     static camera = null;
     static setCamera(cam) { Planet.camera = cam; }
 
@@ -143,9 +134,9 @@ export class Planet {
         this.targetPosition = new THREE.Vector3();
         this.targetOrientation = new THREE.Quaternion();
         this.hasBeenInitializedByServer = false;
-        this.meshRes = config.meshRes || 128;
-        this.atmosphereRes = config.atmosphereRes || 128;
-        this.cloudRes = config.cloudRes || 128;
+        this.meshRes = config.meshRes || PLANET_DEFAULTS.DEFAULT_MESH_RES;
+        this.atmosphereRes = config.atmosphereRes || PLANET_DEFAULTS.DEFAULT_ATMOSPHERE_RES;
+        this.cloudRes = config.cloudRes || PLANET_DEFAULTS.DEFAULT_CLOUD_RES;
         this.atmosphereThickness = (config.atmosphere && typeof config.atmosphere.thickness === 'number') ? config.atmosphere.thickness : 0;
         this.cloudThickness = config.cloudThickness || 0;
         this.orbitElements = config.orbitElements || null;
@@ -156,13 +147,22 @@ export class Planet {
             this.lodLevels = config.lodLevels || [];
         }
         // For irregular bodies, use a slightly higher threshold to account for their elongated shape
-        this.dotPixelSizeThreshold = (config.dimensions && config.isDwarf) ? 3 : 2;
+        this.dotPixelSizeThreshold = (config.dimensions && config.isDwarf) ? 
+            PLANET_DEFAULTS.DOT_PIXEL_SIZE_THRESHOLD_DWARF : 
+            PLANET_DEFAULTS.DOT_PIXEL_SIZE_THRESHOLD;
         this.dotColor = config.dotColor || 0xffffff;
         this.soiRadius = config.soiRadius || 0;
         this.components = [];
         this.modelUrl = config.model || null;
         this.velocity = new THREE.Vector3(0, 0, 0); // Always present
+        
+        // Use PlanetManager instead of static array
+        const planetManager = getPlanetManager();
+        planetManager.addPlanet(this);
+        
+        // Keep static array for backward compatibility (will deprecate later)
         Planet.instances.push(this);
+        Planet._instanceSet.add(this); // Also add to WeakSet
         this.planetLight = null;
         this.#initGroups();
 
@@ -545,7 +545,15 @@ export class Planet {
 
         // Dispose surface features
         this.surface?.dispose();
+        
+        // Dispose materials if they have a dispose method
+        this.materials?.dispose();
 
+        // Remove from PlanetManager
+        const planetManager = getPlanetManager();
+        planetManager.removePlanet(this);
+
+        // Remove from static array (backward compatibility)
         const i = Planet.instances.indexOf(this);
         if (i !== -1) Planet.instances.splice(i, 1);
     }

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { CelestialOrbit } from './CelestialOrbit.js';
 import { CelestialOrbitCalculator } from './CelestialOrbitCalculator.js';
 import { CelestialOrbitRenderer } from './CelestialOrbitRenderer.js';
@@ -30,7 +31,12 @@ export class CelestialOrbitManager {
         // Configuration
         this.config = {
             updateThreshold: 5000, // 5 seconds
-            timeJumpThreshold: 86400000 // 24 hours
+            timeJumpThreshold: 86400000, // 24 hours
+            culling: {
+                enabled: true,
+                minPixelSize: 3.0,      // Minimum apparent size in pixels (aggressive culling for tiny moon orbits)
+                maxRenderDistance: 9.461e12  // Maximum distance in km (1 light year)
+            }
         };
 
         // Mark initialization as complete after a short delay
@@ -64,7 +70,7 @@ export class CelestialOrbitManager {
      */
     renderAllOrbits() {
         // Try to initialize calculator if not available
-        if (!this.calculator && this.app.physicsIntegration?.physicsEngine) {
+        if (!this.calculator && this.app.physicsIntegration) {
             this.initialize(this.app.physicsIntegration.physicsEngine);
         }
 
@@ -106,6 +112,17 @@ export class CelestialOrbitManager {
      * Create orbit for a single celestial body
      */
     createOrbitForBody(bodyId, hierarchyInfo, currentTime) {
+        // Check if orbit should be culled
+        if (this.config.culling.enabled && this.shouldCullOrbit(bodyId)) {
+            // Remove existing orbit if it exists
+            const existingOrbit = this.orbits.get(bodyId);
+            if (existingOrbit) {
+                this.renderer.disposeOrbit(existingOrbit);
+                this.orbits.delete(bodyId);
+            }
+            return false;
+        }
+        
         // Always use actual hierarchical parent
         // Moons orbit barycenters, not planets - this ensures proper orbital mechanics
         const parentId = hierarchyInfo.parent;
@@ -162,7 +179,7 @@ export class CelestialOrbitManager {
      */
     update() {
         // Try to initialize calculator if not available
-        if (!this.calculator && this.app.physicsIntegration?.physicsEngine) {
+        if (!this.calculator && this.app.physicsIntegration) {
             this.initialize(this.app.physicsIntegration.physicsEngine);
         }
 
@@ -307,6 +324,77 @@ export class CelestialOrbitManager {
 
         // Clear orbit data
         this.orbits.clear();
+    }
+
+    /**
+     * Check if orbit should be culled based on apparent size
+     */
+    shouldCullOrbit(bodyId) {
+        if (!this.app.camera) return false;
+        
+        // During initialization, don't cull anything
+        if (this._isInitializing) return false;
+        
+        // Don't cull major planets
+        const majorBodies = [10, 199, 299, 399, 499, 599, 699, 799, 899]; // Sun + planets
+        if (majorBodies.includes(bodyId)) return false;
+        
+        const hierarchyInfo = this.app.hierarchy?.hierarchy?.[bodyId];
+        if (!hierarchyInfo) return false; // Don't cull if we don't have info
+        
+        // Try to get position from physics first (most reliable)
+        const physicsEngine = this.app.physicsIntegration?.physicsEngine;
+        if (!physicsEngine) return false; // Don't cull if physics not ready
+        
+        // Get body position from physics
+        let bodyPos;
+        try {
+            const stateVector = physicsEngine.stateCalculator?.calculateStateVector(bodyId, physicsEngine.simulationTime);
+            if (!stateVector || !stateVector.position) return false;
+            bodyPos = new THREE.Vector3(...stateVector.position);
+        } catch {
+            // If we can't calculate position, don't cull
+            return false;
+        }
+        
+        // Get camera position
+        const cameraPos = this.app.camera.position;
+        
+        // Calculate distance from camera to body's orbit center (parent)
+        const parentId = hierarchyInfo.parent;
+        let orbitCenterPos = new THREE.Vector3(0, 0, 0); // Default to SSB
+        
+        if (parentId && parentId !== 0) {
+            try {
+                const parentState = physicsEngine.stateCalculator?.calculateStateVector(parentId, physicsEngine.simulationTime);
+                if (parentState && parentState.position) {
+                    orbitCenterPos = new THREE.Vector3(...parentState.position);
+                }
+            } catch {
+                // Use body position as fallback
+            }
+        }
+        
+        // Distance from camera to orbit center
+        const distanceToOrbitCenter = cameraPos.distanceTo(orbitCenterPos);
+        
+        // Get orbit radius
+        const orbitRadius = bodyPos.distanceTo(orbitCenterPos);
+        
+        // Don't cull if orbit radius is 0 (body at parent position)
+        if (orbitRadius < 1) return false;
+        
+        // Calculate apparent size in pixels
+        const fov = this.app.camera.fov * Math.PI / 180;
+        const screenHeight = window.innerHeight;
+        const apparentSize = (orbitRadius * 2 / distanceToOrbitCenter) * (screenHeight / (2 * Math.tan(fov / 2)));
+        
+        // Special handling for moons - use more aggressive culling
+        const isMoon = hierarchyInfo.type === 'moon';
+        const minPixelSize = isMoon ? this.config.culling.minPixelSize * 2 : this.config.culling.minPixelSize;
+        
+        // Cull if apparent size is less than minimum pixel size
+        return apparentSize < minPixelSize;
     }
 
     /**

@@ -189,8 +189,10 @@ export class SatelliteVectors {
         }
 
         // Update individual body vectors if enabled
-        if (satData.a_bodies && this.vectorTypes.individualBodies) {
-            this._updateBodyVectors(vectors, satData.a_bodies);
+        // Use direct accelerations for intuitive vector display, fall back to tidal perturbations
+        const bodyAccelerations = satData.a_bodies_direct || satData.a_bodies;
+        if (bodyAccelerations && this.vectorTypes.individualBodies) {
+            this._updateBodyVectors(vectors, bodyAccelerations);
         } else {
             // Hide all body vectors
             if (vectors.bodyVectors) {

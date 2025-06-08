@@ -66,14 +66,15 @@ export class SatelliteManager {
             throw new Error(`Physics satellite ${id} not found`);
         }
         
-        // Create UI satellite
+        // Create UI satellite - use physics satellite color if no UI color provided
+        const finalColor = uiParams.color !== undefined ? uiParams.color : (physicsSat.color !== undefined ? physicsSat.color : 0xffff00);
         const sat = new Satellite({
             id,
             scene: this.app3d.scene,
             app3d: this.app3d,
             planetConfig: uiParams.planetConfig || this.app3d.bodiesByNaifId?.[physicsSat.centralBodyNaifId],
             centralBodyNaifId: physicsSat.centralBodyNaifId,
-            color: uiParams.color || 0xffff00,
+            color: finalColor,
             name: uiParams.name || physicsSat.name || `Satellite ${id}`
         });
         
@@ -99,6 +100,9 @@ export class SatelliteManager {
             id: params.id ?? this._nextId++,
             centralBodyNaifId
         };
+        
+        
+        
         
         // Create physics satellite
         const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
@@ -197,8 +201,8 @@ export class SatelliteManager {
 
     _collectThirdBodyPositions() {
         // Use physics engine bodies instead of visual bodies for proper orbit propagation
-        if (this.app3d.physicsIntegration?.physicsEngine) {
-            const physicsState = this.app3d.physicsIntegration.physicsEngine.getSimulationState();
+        if (this.app3d.physicsIntegration) {
+            const physicsState = this.app3d.physicsIntegration.getSimulationState();
             return Object.values(physicsState.bodies || {})
                 .filter(body => body.mass > 0 || body.GM > 0) // Only bodies with gravitational influence
                 .map(body => ({
@@ -335,6 +339,27 @@ export class SatelliteManager {
     setTimeWarp(v) {
         for (const sat of this._satellites.values()) sat.timeWarp = v;
         // physicsProvider?.setTimeWarp(v)  ← stub
+    }
+
+    setIntegrationMethod(method) {
+        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
+        if (physicsEngine && physicsEngine.satelliteEngine) {
+            physicsEngine.satelliteEngine.setIntegrationMethod(method);
+        }
+    }
+
+    setPhysicsTimeStep(timeStep) {
+        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
+        if (physicsEngine && physicsEngine.satelliteEngine) {
+            physicsEngine.satelliteEngine.setPhysicsTimeStep(timeStep);
+        }
+    }
+
+    setSensitivityScale(scale) {
+        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
+        if (physicsEngine && physicsEngine.satelliteEngine) {
+            physicsEngine.satelliteEngine.setSensitivityScale(scale);
+        }
     }
 
     refreshOrbitPaths() { this._lastOrbitUpdate = 0; }

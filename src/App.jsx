@@ -244,14 +244,21 @@ function AppWithCanvas() {
   useEffect(() => { setCheckedInitialState(true); }, []);
   
   useEffect(() => {
+    let timeoutId = null;
     const check = () => {
       if (document.getElementById('three-canvas')) {
         setCanvasReady(true);
       } else {
-        setTimeout(check, 10);
+        timeoutId = setTimeout(check, 10);
       }
     };
     check();
+    
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, []);
   
   if (!checkedInitialState) return null;

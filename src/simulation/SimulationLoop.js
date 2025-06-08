@@ -127,6 +127,11 @@ export class SimulationLoop {
             // Throttled UI updates (20Hz instead of 60Hz)
             if (this._frameCount % this._uiUpdateFrequency === 0) {
                 this._updateUI();
+                
+                // Update line of sight connections if enabled
+                if (this.app.lineOfSightManager?.isEnabled()) {
+                    this.app._syncConnectionsWorker();
+                }
             }
             
             this._performanceMetrics.updateTime = performance.now() - updateStart;
@@ -191,6 +196,9 @@ export class SimulationLoop {
                 break;
             case 'physicsTimeStep':
                 this.satellites.setPhysicsTimeStep(value);
+                break;
+            case 'integrationMethod':
+                this.satellites.setIntegrationMethod(value);
                 break;
             case 'sensitivityScale':
                 this.satellites.setSensitivityScale(value);

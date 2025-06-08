@@ -3,10 +3,15 @@ import { PhysicsEngine } from './PhysicsEngine.js';
 import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 import { solarSystemDataManager } from './PlanetaryDataManager.js';
+import { PhysicsConstants } from './core/PhysicsConstants.js';
 
 /**
  * Physics Manager - Main interface between application and physics engine
  * Handles initialization, updates, and bridges to existing codebase
+ * 
+ * ARCHITECTURE NOTE: This is the integration layer between pure physics (PhysicsEngine) 
+ * and the Three.js application. It's acceptable for this layer to use Three.js for 
+ * app integration purposes, while keeping the core PhysicsEngine purely mathematical.
  */
 export class PhysicsManager {
     constructor(app) {
@@ -72,7 +77,6 @@ export class PhysicsManager {
             // Set up time sync with app's TimeUtils
             this._setupTimeSync();
 
-            // Physics updates are now driven by SimulationLoop via stepPhysicsExternal()
             console.log('[PhysicsManager] Initialized - physics driven by SimulationLoop');
 
             this.isInitialized = true;
@@ -84,48 +88,14 @@ export class PhysicsManager {
         }
     }
 
-    /**
-     * Update simulation time and propagate physics
-     * @deprecated Use stepPhysicsExternal() from SimulationLoop instead
-     * This method can cause redundant physics updates and should not be called directly
-     */
-    async setSimulationTime(newTime) {
-        console.warn('[PhysicsManager] setSimulationTime() is deprecated - physics time should be managed by SimulationLoop');
-        
-        if (!this.isInitialized) return;
-
-        // Only update time if absolutely necessary (e.g., for initialization)
-        // Regular time updates should go through stepPhysicsExternal()
-        await this.physicsEngine.setTime(newTime);
-
-        // Get current state without stepping (planets are already at correct positions from setTime)
-        const state = this.physicsEngine.getSimulationState();
-
-        // Sync with existing celestial bodies in the app
-        this._syncWithCelestialBodies(state);
-
-        // Update orbit visualizations
-        this._updateOrbitVisualizations();
-
-        // Notify any listeners
-        this._dispatchPhysicsUpdate(state);
-    }
 
     /**
      * Step the simulation forward by deltaTime seconds
      */
     async stepSimulation(deltaTime) {
-        // Debug: Count step calls and track total time
-        if (!this._stepCallCount) {
-            this._stepCallCount = 0;
-            this._totalDeltaTime = 0;
-        }
-        this._stepCallCount++;
-        this._totalDeltaTime += deltaTime;
-        
         if (!this.isInitialized) return;
 
-        const state = await this.physicsEngine.step(deltaTime);
+        const state = await this.physicsEngine.step(deltaTime, 1); // timeWarp = 1 for initialization
 
         // Sync with existing celestial bodies
         this._syncWithCelestialBodies(state);
@@ -256,24 +226,11 @@ export class PhysicsManager {
             new THREE.Vector3().fromArray(parent.velocity)
         );
 
-        const mu = parent.mu || (parent.mass * 6.6743e-20); // G in km³/kg/s²
+        const mu = parent.mu || (parent.mass * PhysicsConstants.PHYSICS.G); // G in km³/kg/s²
         
         return OrbitalMechanics.calculateOrbitalElements(relPos, relVel, mu, parent.radius || 0);
     }
 
-    /**
-     * Set physics integration method
-     */
-    setIntegrator(method) {
-        this.physicsEngine.setIntegrator(method);
-    }
-
-    /**
-     * Enable/disable relativistic corrections
-     */
-    setRelativisticCorrections(enabled) {
-        this.physicsEngine.setRelativisticCorrections(enabled);
-    }
 
     /**
      * Get available timewarp options
@@ -427,11 +384,11 @@ export class PhysicsManager {
             // For very large steps, we can do it in one go since orbits are stable
             if (stepSize > 60.0) {
                 // Single large step for stable orbits
-                physicsState = await this.physicsEngine.step(totalTimeToAdvance);
+                physicsState = await this.physicsEngine.step(totalTimeToAdvance, timeWarp);
             } else {
                 // Multiple smaller steps for accuracy
                 for (let i = 0; i < numSteps; i++) {
-                    physicsState = await this.physicsEngine.step(stepSize);
+                    physicsState = await this.physicsEngine.step(stepSize, timeWarp);
                 }
             }
             
@@ -503,7 +460,7 @@ export class PhysicsManager {
         
         // Single physics update
         await this.physicsEngine.setTime(finalTime);
-        const physicsState = await this.physicsEngine.step(timeToAdvance);
+        const physicsState = await this.physicsEngine.step(timeToAdvance, this.getCurrentTimeWarp());
         
         // Full syncing for satellites
         this._syncWithCelestialBodies(physicsState);
@@ -690,13 +647,14 @@ export class PhysicsManager {
     /**
      * Check if a system is a multi-body system where bodies orbit around a shared barycenter
      */
-    _isMultiBodySystem(bodyNaifId, parentNaifId) {
-        // Known multi-body systems where the barycenter is significantly displaced
-        const knownMultiBodySystems = [
-            3  // Earth-Moon Barycenter (EMB)
-        ];
+    _isMultiBodySystem(bodyNaifId) {
+        // Check if the body itself is marked as a multi-body system component
+        const bodyConfig = solarSystemDataManager.getBodyByNaif(bodyNaifId);
+        if (bodyConfig && bodyConfig.multiBodySystemComponent) {
+            return true;
+        }
         
-        return knownMultiBodySystems.includes(parentNaifId);
+        return false;
     }
 
     /**
@@ -746,16 +704,27 @@ export class PhysicsManager {
                     // const bodyConfig = this.physicsEngine.positionManager?.hierarchy?.getBodyInfo?.(naifId);
                     const isMultiBodySystem = this._isMultiBodySystem(naifId, parentNaifId);
                     
-                    if (parentNaifId && state.bodies[parentNaifId] && isMultiBodySystem) {
-                        // Multi-body system: calculate relative position to parent
-                        const parentState = state.bodies[parentNaifId];
-                        celestialBody.targetPosition.set(
-                            bodyState.position[0] - parentState.position[0],
-                            bodyState.position[1] - parentState.position[1],
-                            bodyState.position[2] - parentState.position[2]
-                        );
+                    // Check if this body is parented to another body in the Three.js scene
+                    const orbitGroup = celestialBody.getOrbitGroup?.();
+                    const hasSceneParent = orbitGroup && orbitGroup.parent && orbitGroup.parent !== this.app.scene;
+                    
+                    if (hasSceneParent || isMultiBodySystem) {
+                        // Body is parented to another body (barycenter) in the scene graph
+                        // OR it's a multi-body system component
+                        // Calculate relative position to parent
+                        if (parentNaifId && state.bodies[parentNaifId]) {
+                            const parentState = state.bodies[parentNaifId];
+                            celestialBody.targetPosition.set(
+                                bodyState.position[0] - parentState.position[0],
+                                bodyState.position[1] - parentState.position[1],
+                                bodyState.position[2] - parentState.position[2]
+                            );
+                        } else {
+                            // Fallback to 0,0,0 if no parent found
+                            celestialBody.targetPosition.set(0, 0, 0);
+                        }
                     } else {
-                        // Single-planet system or no parent: use absolute position
+                        // Body is at scene root: use absolute SSB position
                         celestialBody.targetPosition.set(
                             bodyState.position[0],
                             bodyState.position[1],
@@ -844,137 +813,6 @@ export class PhysicsManager {
             }
         }
 
-        // Also update the bodiesByNaifId map for backward compatibility
-        if (this.app.bodiesByNaifId) {
-            for (const [naifId, bodyState] of Object.entries(state.bodies)) {
-                const body = this.app.bodiesByNaifId[naifId];
-                if (body && Array.isArray(bodyState.position)) {
-                    // Store absolute position
-                    if (!body.absolutePosition) {
-                        body.absolutePosition = new THREE.Vector3();
-                    }
-                    body.absolutePosition.set(
-                        bodyState.position[0],
-                        bodyState.position[1],
-                        bodyState.position[2]
-                    );
-                    
-                    // Update target position for rendering
-                    if (body.targetPosition) {
-                        // Check if this body has a parent in the hierarchy
-                        const bodyConfig2 = solarSystemDataManager.getBodyByNaif(parseInt(naifId));
-                        let parentNaifId2 = null;
-                        if (bodyConfig2 && bodyConfig2.parent) {
-                            const parentConfig2 = solarSystemDataManager.getBodyByName(bodyConfig2.parent);
-                            if (parentConfig2 && parentConfig2.naifId !== undefined) {
-                                parentNaifId2 = parentConfig2.naifId;
-                            }
-                        }
-                        
-                        if (parentNaifId2 && state.bodies[parentNaifId2]) {
-                            // Calculate relative position to parent
-                            const parentState = state.bodies[parentNaifId2];
-                            body.targetPosition.set(
-                                bodyState.position[0] - parentState.position[0],
-                                bodyState.position[1] - parentState.position[1],
-                                bodyState.position[2] - parentState.position[2]
-                            );
-                        } else {
-                            // No parent, use absolute position
-                            body.targetPosition.set(
-                                bodyState.position[0],
-                                bodyState.position[1],
-                                bodyState.position[2]
-                            );
-                        }
-                    }
-
-                    // Store velocity
-                    if (!body.velocity) {
-                        body.velocity = new THREE.Vector3();
-                    }
-                    if (Array.isArray(bodyState.velocity)) {
-                        body.velocity.set(
-                            bodyState.velocity[0],
-                            bodyState.velocity[1],
-                            bodyState.velocity[2]
-                        );
-                    }
-
-                    // Update orientation
-                    if (body.targetOrientation && bodyState.quaternion) {
-                        const newQuat = new THREE.Quaternion(
-                            bodyState.quaternion[0],
-                            bodyState.quaternion[1],
-                            bodyState.quaternion[2],
-                            bodyState.quaternion[3]
-                        );
-                        
-                        // Check for flips
-                        const lastQuat = this._lastOrientations.get(parseInt(naifId));
-                        if (lastQuat) {
-                            const dot = lastQuat.dot(newQuat);
-                            if (dot < 0) {
-                                newQuat.x *= -1;
-                                newQuat.y *= -1;
-                                newQuat.z *= -1;
-                                newQuat.w *= -1;
-                            }
-                        }
-                        
-                        body.targetOrientation.copy(newQuat);
-                        
-                        // Store for next comparison
-                        const naifIdNum = parseInt(naifId);
-                        if (!this._lastOrientations.has(naifIdNum)) {
-                            this._lastOrientations.set(naifIdNum, new THREE.Quaternion());
-                        }
-                        this._lastOrientations.get(naifIdNum).copy(newQuat);
-                    }
-
-                    // Store additional orientation data
-                    if (bodyState.poleRA !== undefined) {
-                        body.poleRA = bodyState.poleRA;
-                        body.poleDec = bodyState.poleDec;
-                        body.spin = bodyState.spin;
-
-                        if (bodyState.northPole && Array.isArray(bodyState.northPole)) {
-                            if (!body.northPole) {
-                                body.northPole = new THREE.Vector3();
-                            }
-                            body.northPole.fromArray(bodyState.northPole);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Also update barycenter positions
-        if (state.barycenters && this.app.bodiesByNaifId) {
-            for (const [naifId, barycenterState] of Object.entries(state.barycenters)) {
-                const barycenter = this.app.bodiesByNaifId[naifId];
-                if (barycenter && barycenter.targetPosition && Array.isArray(barycenterState.position)) {
-                    // Barycenters always use absolute positions (no parent in rendering)
-                    barycenter.targetPosition.set(
-                        barycenterState.position[0],
-                        barycenterState.position[1],
-                        barycenterState.position[2]
-                    );
-                    
-                    // Store velocity if available
-                    if (barycenterState.velocity && Array.isArray(barycenterState.velocity)) {
-                        if (!barycenter.velocity) {
-                            barycenter.velocity = new THREE.Vector3();
-                        }
-                        barycenter.velocity.set(
-                            barycenterState.velocity[0],
-                            barycenterState.velocity[1],
-                            barycenterState.velocity[2]
-                        );
-                    }
-                }
-            }
-        }
 
     }
 
@@ -1078,7 +916,7 @@ export class PhysicsManager {
             new THREE.Vector3().fromArray(parent.velocity)
         );
 
-        const mu = parent.mu || (parent.mass * 6.6743e-20); // G in km³/kg/s²
+        const mu = parent.mu || (parent.mass * PhysicsConstants.PHYSICS.G); // G in km³/kg/s²
         
         // Calculate orbital elements
         const elements = OrbitalMechanics.calculateOrbitalElements(relPos, relVel, mu, parent.radius || 0);
@@ -1125,11 +963,68 @@ export class PhysicsManager {
     }
 
     /**
+     * Get current simulation state from physics engine
+     * @returns {Object} Current physics state with bodies, satellites, etc.
+     */
+    getSimulationState() {
+        if (!this.isInitialized || !this.physicsEngine) {
+            return null;
+        }
+        return this.physicsEngine.getSimulationState();
+    }
+
+    /**
+     * Get satellites for line of sight calculations
+     * @returns {Array} Array of satellite data for line of sight
+     */
+    getSatellitesForLineOfSight() {
+        if (!this.isInitialized || !this.physicsEngine) {
+            return [];
+        }
+        return this.physicsEngine.getSatellitesForLineOfSight();
+    }
+
+    /**
+     * Get bodies for line of sight calculations
+     * @returns {Array} Array of celestial body data for line of sight
+     */
+    getBodiesForLineOfSight() {
+        if (!this.isInitialized || !this.physicsEngine) {
+            return [];
+        }
+        return this.physicsEngine.getBodiesForLineOfSight();
+    }
+
+    /**
+     * Add maneuver node to satellite
+     * @param {string} satelliteId - ID of the satellite
+     * @param {Object} maneuverNode - Maneuver node data
+     * @returns {string} Node ID
+     */
+    addManeuverNode(satelliteId, maneuverNode) {
+        if (!this.isInitialized || !this.physicsEngine) {
+            return null;
+        }
+        return this.physicsEngine.addManeuverNode(satelliteId, maneuverNode);
+    }
+
+    /**
+     * Remove maneuver node from satellite
+     * @param {string} satelliteId - ID of the satellite
+     * @param {string} nodeId - ID of the maneuver node
+     */
+    removeManeuverNode(satelliteId, nodeId) {
+        if (!this.isInitialized || !this.physicsEngine) {
+            return;
+        }
+        this.physicsEngine.removeManeuverNode(satelliteId, nodeId);
+    }
+
+    /**
      * Private: Set up synchronization with app's time system
-     * DISABLED: Time is now driven by SimulationLoop through stepPhysicsExternal
      */
     _setupTimeSync() {
-        // Disabled - time sync is now handled by SimulationLoop calling stepPhysicsExternal
-        console.log('[PhysicsManager] Time sync disabled - time driven by SimulationLoop');
+        // Time sync is now handled by SimulationLoop calling stepPhysicsExternal
+        console.log('[PhysicsManager] Time sync handled by SimulationLoop');
     }
 } 

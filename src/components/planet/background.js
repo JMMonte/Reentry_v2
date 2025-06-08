@@ -21,14 +21,27 @@ function magnitudeToSize(mag) {
     return size;
 }
 
-// Vertex shader
+// Vertex shader with camera-relative sizing
 const vertexShader = `
     attribute float size;
+    uniform float screenHeight;
+    uniform float fov;
     varying float vSize;
+    
     void main() {
         vSize = size;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size;
+        float distance = length(mvPosition.xyz);
+        
+        // Calculate pixel size based on distance and FOV
+        // Stars should be point-like with size based on magnitude
+        float baseSizePixels = size * 1.2; // Base size from magnitude (1.2 scale factor)
+        
+        // Adjust for FOV (wider FOV = smaller stars)
+        float fovFactor = 50.0 / fov; // Normalized to 50 degree FOV
+        
+        // Final pixel size with minimum visibility
+        gl_PointSize = max(baseSizePixels * fovFactor, 1.0);
         gl_Position = projectionMatrix * mvPosition;
     }
 `;
@@ -54,9 +67,19 @@ export class BackgroundStars {
         this.starGeometry = new THREE.BufferGeometry();
         this.starPositions = [];
         this.starSizes = [];
+        
+        // Uniforms for shader
+        this.uniforms = {
+            screenHeight: { value: window.innerHeight },
+            fov: { value: camera.fov }
+        };
 
         this.initStars();
         this.addStarsToScene();
+        
+        // Listen for window resize
+        this._onResize = this.onResize.bind(this);
+        window.addEventListener('resize', this._onResize);
     }
 
     initStars() {
@@ -80,7 +103,7 @@ export class BackgroundStars {
 
     addStarsToScene() {
         const starMaterial = new THREE.ShaderMaterial({
-            uniforms: {},
+            uniforms: this.uniforms,
             vertexShader,
             fragmentShader,
             transparent: true,
@@ -92,8 +115,21 @@ export class BackgroundStars {
         this.stars.frustumCulled = false; // Always render stars regardless of frustum culling
         this.scene.add(this.stars);
     }
+    
+    onResize() {
+        this.uniforms.screenHeight.value = window.innerHeight;
+    }
+    
+    update() {
+        // Update FOV if camera FOV changed
+        if (this.camera && this.uniforms.fov.value !== this.camera.fov) {
+            this.uniforms.fov.value = this.camera.fov;
+        }
+    }
 
     dispose() {
+        window.removeEventListener('resize', this._onResize);
+        
         if (this.stars) {
             this.scene.remove(this.stars);
             this.stars.geometry.dispose();
@@ -103,5 +139,6 @@ export class BackgroundStars {
         this.starGeometry = null;
         this.starPositions = null;
         this.starSizes = null;
+        this.uniforms = null;
     }
 }

@@ -16,13 +16,14 @@ export class SatelliteCommsManager {
         // Communication presets for different satellite types
         this.presets = {
             cubesat: {
-                antennaGain: 2.0,
-                transmitPower: 1.0,
+                antennaGain: 8.0,  // More realistic directional antenna
+                transmitPower: 5.0, // Higher power for space simulation
                 antennaType: 'omnidirectional',
                 protocols: ['inter_satellite', 'ground_station'],
                 dataRate: 100,
-                minElevationAngle: 10.0,
-                networkId: 'cubesat_network'
+                minElevationAngle: 5.0, // Lower elevation requirement
+                networkId: 'cubesat_network',
+                enabled: true // Enable communications by default
             },
 
             communications_satellite: {
@@ -34,7 +35,8 @@ export class SatelliteCommsManager {
                 dataRate: 10000,
                 minElevationAngle: 5.0,
                 relayCapable: true,
-                networkId: 'commercial_network'
+                networkId: 'commercial_network',
+                enabled: true
             },
 
             scientific_probe: {
@@ -44,7 +46,8 @@ export class SatelliteCommsManager {
                 protocols: ['deep_space', 'ground_station'],
                 dataRate: 500,
                 minElevationAngle: 0.0,
-                networkId: 'deep_space_network'
+                networkId: 'deep_space_network',
+                enabled: true
             },
 
             military_satellite: {
@@ -57,7 +60,8 @@ export class SatelliteCommsManager {
                 minElevationAngle: 3.0,
                 encryption: true,
                 priority: 'high',
-                networkId: 'military_network'
+                networkId: 'military_network',
+                enabled: true
             },
 
             earth_observation: {
@@ -67,7 +71,8 @@ export class SatelliteCommsManager {
                 protocols: ['ground_station', 'relay'],
                 dataRate: 2000,
                 minElevationAngle: 5.0,
-                networkId: 'earth_observation_network'
+                networkId: 'earth_observation_network',
+                enabled: true
             }
         };
 
@@ -85,6 +90,8 @@ export class SatelliteCommsManager {
      * Create communication system for a satellite
      */
     createCommsSystem(satelliteId, config = {}) {
+        console.log(`[SatelliteCommsManager] Creating comms system for ${satelliteId} with config:`, config);
+        
         // Apply preset if specified
         let finalConfig = { ...config };
         if (config.preset && this.presets[config.preset]) {
@@ -94,9 +101,13 @@ export class SatelliteCommsManager {
 
         // Apply global settings
         finalConfig.updateInterval = finalConfig.updateInterval || this.globalSettings.updateInterval;
+        
+        console.log(`[SatelliteCommsManager] Final config for ${satelliteId}:`, finalConfig);
 
         const comms = new SatelliteComms(satelliteId, finalConfig);
         this.commsystems.set(satelliteId, comms);
+        
+        console.log(`[SatelliteCommsManager] Created and stored comms system for ${satelliteId}. Total systems:`, this.commsystems.size);
 
         return comms;
     }

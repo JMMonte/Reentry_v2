@@ -136,4 +136,40 @@ export class Sun {
         const tex = this.textureManager?.getTexture('sunTexture');
         return tex?.image || null;
     }
+
+    // Dispose of Three.js resources to prevent memory leaks
+    dispose() {
+        // Dispose geometry
+        if (this.sun?.geometry) {
+            this.sun.geometry.dispose();
+        }
+
+        // Dispose material
+        if (this.sun?.material) {
+            if (this.sun.material.map) {
+                this.sun.material.map.dispose();
+            }
+            this.sun.material.dispose();
+        }
+
+        // Dispose lensflare textures
+        if (this.lensflare?.elements) {
+            this.lensflare.elements.forEach(element => {
+                if (element.texture) {
+                    element.texture.dispose();
+                }
+            });
+        }
+
+        // Remove from parent if attached
+        if (this.orbitGroup?.parent) {
+            this.orbitGroup.parent.remove(this.orbitGroup);
+        }
+
+        // Clear references
+        this.sun = null;
+        this.sunLight = null;
+        this.lensflare = null;
+        this.orbitGroup = null;
+    }
 }

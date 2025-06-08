@@ -253,8 +253,6 @@ export class PlanetSurface {
         const circleGeom = this.circleGeom;
         const poiRenderOrder = this.poiRenderOrder ?? 3;
 
-
-        let addedCount = 0;
         geojson?.features.forEach(feat => {
             const [lon, lat] = feat.geometry.coordinates;
             // Compute position on oblate spheroid via mesh scale + offset
@@ -283,9 +281,7 @@ export class PlanetSurface {
             mesh.visible = true;
             this.root.add(mesh);
             this.points[category].push(mesh);
-            addedCount++;
         });
-
     }
 
     /* ===== visibility helpers ===== */

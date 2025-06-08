@@ -8,9 +8,6 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Button } from '../button';
-import { Badge } from '../badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../card';
-import { Separator } from '../separator';
 import { 
     Clock, 
     Signal, 
@@ -21,7 +18,9 @@ import {
     TrendingUp,
     TrendingDown,
     Wifi,
-    WifiOff
+    WifiOff,
+    Timer,
+    BarChart3
 } from 'lucide-react';
 
 export function SatelliteCommsTimeline({ satelliteId, app }) {
@@ -43,8 +42,8 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                 if (simDateTime && simDateTime instanceof Date) {
                     simTime = simDateTime.getTime() / 1000;
                 }
-            } else if (app?.physicsIntegration?.physicsEngine?.simulationTime) {
-                const physicsTime = app.physicsIntegration.physicsEngine.simulationTime;
+            } else if (app?.physicsIntegration?.simulationTime) {
+                const physicsTime = app.physicsIntegration.simulationTime;
                 if (physicsTime && physicsTime instanceof Date) {
                     simTime = physicsTime.getTime() / 1000;
                 }
@@ -228,225 +227,191 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
             : 0
     };
 
+    // Data row component matching debug window style
+    const DataRow = ({ label, value, unit = '', icon: Icon, className = '' }) => (
+        <div className={`grid grid-cols-2 gap-1 ${className}`}>
+            <span className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                {Icon && <Icon className="h-3 w-3" />}
+                {label}:
+            </span>
+            <span className="text-xs font-mono text-foreground">
+                {value} {unit && <span className="text-muted-foreground">{unit}</span>}
+            </span>
+        </div>
+    );
+
+    DataRow.propTypes = {
+        label: PropTypes.string.isRequired,
+        value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+        unit: PropTypes.string,
+        icon: PropTypes.elementType,
+        className: PropTypes.string
+    };
+
     return (
-        <Card className="w-full">
-            <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4" />
-                        Communications Timeline
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setIsRecording(!isRecording)}
-                            className="h-6 px-2"
-                        >
-                            {isRecording ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={clearHistory}
-                            className="h-6 px-2"
-                        >
-                            <RotateCcw className="h-3 w-3" />
-                        </Button>
-                    </div>
-                </CardTitle>
-            </CardHeader>
-            
-            <CardContent className="space-y-4">
-                {/* Timeline Statistics */}
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="space-y-1">
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Total Connections:</span>
-                            <span>{stats.totalConnections}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Currently Active:</span>
-                            <span>{stats.activeConnections}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Data Transferred:</span>
-                            <span>{(stats.totalDataTransferred / 1024).toFixed(1)} KB</span>
-                        </div>
-                    </div>
-                    <div className="space-y-1">
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Avg Duration:</span>
-                            <span>{formatDuration(stats.averageConnectionDuration)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Uptime:</span>
-                            <span>{stats.uptimePercentage.toFixed(1)}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">Recording:</span>
-                            <Badge variant={isRecording ? "default" : "secondary"} className="h-4 text-xs">
-                                {isRecording ? 'ON' : 'OFF'}
-                            </Badge>
-                        </div>
-                    </div>
+        <div className="space-y-2">
+            {/* Control Header */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                    <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-green-500' : 'bg-gray-500'}`} />
+                    <span className="text-xs font-mono">{isRecording ? 'Recording' : 'Paused'}</span>
                 </div>
+                <div className="flex items-center gap-1">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsRecording(!isRecording)}
+                        className="h-5 w-5 p-0"
+                    >
+                        {isRecording ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearHistory}
+                        className="h-5 w-5 p-0"
+                    >
+                        <RotateCcw className="h-3 w-3" />
+                    </Button>
+                </div>
+            </div>
 
-                <Separator />
+            {/* Timeline Statistics */}
+            <DataRow label="Total Connections" value={stats.totalConnections} icon={Wifi} />
+            <DataRow label="Currently Active" value={stats.activeConnections} icon={Activity} />
+            <DataRow label="Data Transferred" value={(stats.totalDataTransferred / 1024).toFixed(1)} unit="KB" icon={BarChart3} />
+            <DataRow label="Avg Duration" value={formatDuration(stats.averageConnectionDuration)} icon={Timer} />
+            <DataRow label="Uptime" value={`${stats.uptimePercentage.toFixed(1)}%`} icon={TrendingUp} />
+            <DataRow label="Window" value={formatDuration(timeWindow)} icon={Clock} />
 
-                {/* Recent Connection Events */}
-                <div className="space-y-2">
-                    <div className="flex items-center gap-2">
+            {/* Recent Connection Events */}
+            <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Activity className="h-3 w-3" />
-                        <span className="font-medium text-xs">Recent Events</span>
-                        <Badge variant="outline" className="h-4 text-xs">
-                            {connectionHistory.slice(-5).length}
-                        </Badge>
-                    </div>
-                    
-                    {connectionHistory.length > 0 ? (
-                        <div className="space-y-1 max-h-32 overflow-y-auto">
-                            {connectionHistory.slice(-5).reverse().map((event, idx) => (
-                                <div key={event.id || idx} className="flex items-center justify-between text-xs p-2 bg-muted/30 rounded">
-                                    <div className="flex items-center gap-2">
-                                        {event.endTime === null ? (
-                                            <Wifi className="h-3 w-3 text-green-500" />
-                                        ) : (
-                                            <WifiOff className="h-3 w-3 text-red-500" />
-                                        )}
-                                        <span>→ {event.targetId}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-muted-foreground">
-                                            {event.endTime === null 
-                                                ? formatDuration(currentTime - event.startTime)
-                                                : formatDuration(event.endTime - event.startTime)
-                                            }
-                                        </span>
-                                        <Badge 
-                                            variant={event.quality > 70 ? "default" : event.quality > 40 ? "secondary" : "destructive"}
-                                            className="h-4 text-xs"
-                                        >
-                                            {Math.round(event.quality)}%
-                                        </Badge>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-xs text-muted-foreground text-center py-2">
-                            No connection events recorded
-                        </div>
-                    )}
+                        Recent Events:
+                    </span>
+                    <span className="text-xs font-mono bg-muted px-1 rounded">{connectionHistory.slice(-5).length}</span>
                 </div>
-
-                <Separator />
-
-                {/* Data Transfer Timeline */}
-                <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                        <Signal className="h-3 w-3" />
-                        <span className="font-medium text-xs">Data Transfers</span>
-                        <Badge variant="outline" className="h-4 text-xs">
-                            {dataTransferEvents.length}
-                        </Badge>
+                
+                {connectionHistory.length > 0 && (
+                    <div className="space-y-1 pl-4 max-h-32 overflow-y-auto">
+                        {connectionHistory.slice(-3).reverse().map((event, idx) => (
+                            <div key={event.id || idx} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1">
+                                    {event.endTime === null ? (
+                                        <Wifi className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                        <WifiOff className="h-3 w-3 text-red-500" />
+                                    )}
+                                    <span className="font-mono">→ {event.targetId}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span className="text-muted-foreground">
+                                        {event.endTime === null 
+                                            ? formatDuration(currentTime - event.startTime)
+                                            : formatDuration(event.endTime - event.startTime)
+                                        }
+                                    </span>
+                                    <span className="font-mono">{Math.round(event.quality)}%</span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                    
-                    {dataTransferEvents.length > 0 ? (
-                        <div className="space-y-1 max-h-24 overflow-y-auto">
-                            {dataTransferEvents.slice(-3).reverse().map((event, idx) => (
-                                <div key={idx} className="flex items-center justify-between text-xs p-1 bg-muted/20 rounded">
-                                    <div className="flex items-center gap-2">
-                                        {event.dataAmount > 0 ? (
-                                            <TrendingUp className="h-3 w-3 text-blue-500" />
-                                        ) : (
-                                            <TrendingDown className="h-3 w-3 text-orange-500" />
-                                        )}
-                                        <span>{formatTime(event.timestamp)}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-muted-foreground">
-                                            {(event.dataAmount / 1024).toFixed(1)} KB
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            ({event.connections} links)
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-xs text-muted-foreground text-center py-2">
-                            No data transfer events recorded
-                        </div>
-                    )}
-                </div>
-
-                {/* Status Timeline Visualization */}
-                {timelineData.length > 0 && (
-                    <>
-                        <Separator />
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                                <Activity className="h-3 w-3" />
-                                <span className="font-medium text-xs">Status Timeline</span>
-                                <span className="text-xs text-muted-foreground">
-                                    ({formatDuration(timeWindow)} window)
-                                </span>
-                            </div>
-                            
-                            {/* Simple timeline visualization */}
-                            <div className="flex h-4 bg-muted/20 rounded overflow-hidden">
-                                {timelineData.slice(-20).map((data, idx) => (
-                                    <div
-                                        key={idx}
-                                        className={`flex-1 ${getStatusColor(data.status)}`}
-                                        title={`${formatTime(data.timestamp)}: ${data.status} (${data.connectionCount} connections)`}
-                                    />
-                                ))}
-                            </div>
-                            
-                            {/* Timeline legend */}
-                            <div className="flex items-center gap-3 text-xs">
-                                <div className="flex items-center gap-1">
-                                    <div className="w-2 h-2 rounded bg-green-500" />
-                                    <span>Operational</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <div className="w-2 h-2 rounded bg-yellow-500" />
-                                    <span>Degraded</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <div className="w-2 h-2 rounded bg-red-500" />
-                                    <span>Offline</span>
-                                </div>
-                            </div>
-                        </div>
-                    </>
                 )}
+            </div>
 
-                {/* Time Window Controls */}
-                <Separator />
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <span className="font-medium text-xs">Time Window</span>
-                        <div className="flex gap-1">
-                            {[900, 1800, 3600, 7200].map(window => (
-                                <Button
-                                    key={window}
-                                    variant={timeWindow === window ? "default" : "outline"}
-                                    size="sm"
-                                    onClick={() => setTimeWindow(window)}
-                                    className="h-5 px-2 text-xs"
-                                >
-                                    {window < 3600 ? `${window/60}m` : `${window/3600}h`}
-                                </Button>
-                            ))}
+            {/* Data Transfer Events */}
+            <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Signal className="h-3 w-3" />
+                        Data Transfers:
+                    </span>
+                    <span className="text-xs font-mono bg-muted px-1 rounded">{dataTransferEvents.length}</span>
+                </div>
+                
+                {dataTransferEvents.length > 0 && (
+                    <div className="space-y-1 pl-4 max-h-24 overflow-y-auto">
+                        {dataTransferEvents.slice(-3).reverse().map((event, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1">
+                                    {event.dataAmount > 0 ? (
+                                        <TrendingUp className="h-3 w-3 text-blue-500" />
+                                    ) : (
+                                        <TrendingDown className="h-3 w-3 text-orange-500" />
+                                    )}
+                                    <span className="font-mono">{formatTime(event.timestamp)}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span className="text-muted-foreground">
+                                        {(event.dataAmount / 1024).toFixed(1)}KB
+                                    </span>
+                                    <span className="font-mono">({event.connections})</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Status Timeline Visualization */}
+            {timelineData.length > 0 && (
+                <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Activity className="h-3 w-3" />
+                        Status Timeline ({formatDuration(timeWindow)}):
+                    </span>
+                    
+                    {/* Simple timeline visualization */}
+                    <div className="flex h-2 bg-muted/20 rounded overflow-hidden">
+                        {timelineData.slice(-20).map((data, idx) => (
+                            <div
+                                key={idx}
+                                className={`flex-1 ${getStatusColor(data.status)}`}
+                                title={`${formatTime(data.timestamp)}: ${data.status} (${data.connectionCount} connections)`}
+                            />
+                        ))}
+                    </div>
+                    
+                    {/* Timeline legend */}
+                    <div className="flex items-center gap-2 text-xs pl-4">
+                        <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded bg-green-500" />
+                            <span>OK</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded bg-yellow-500" />
+                            <span>Deg</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded bg-red-500" />
+                            <span>Off</span>
                         </div>
                     </div>
                 </div>
-            </CardContent>
-        </Card>
+            )}
+
+            {/* Time Window Controls */}
+            <div className="space-y-1 mt-3 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Time Window:</span>
+                    <div className="flex gap-1">
+                        {[900, 1800, 3600, 7200].map(window => (
+                            <Button
+                                key={window}
+                                variant={timeWindow === window ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setTimeWindow(window)}
+                                className="h-5 px-1 text-xs"
+                            >
+                                {window < 3600 ? `${window/60}m` : `${window/3600}h`}
+                            </Button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
 

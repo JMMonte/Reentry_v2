@@ -21,13 +21,13 @@
  * All components now use this new unified API structure.
  */
 
-import * as THREE from 'three';
 
 // Core physics modules
 import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 import { GravityCalculator } from './core/GravityCalculator.js';
 import { AtmosphericModels } from './core/AtmosphericModels.js';
+import { PhysicsConstants } from './core/PhysicsConstants.js';
 
 // Physics utilities
 import { PhysicsUtils } from './utils/PhysicsUtils.js';
@@ -40,9 +40,6 @@ import { SolarSystemHierarchy } from './SolarSystemHierarchy.js';
 
 // Body data
 import { solarSystemDataManager } from './PlanetaryDataManager.js';
-
-// Constants
-import { PhysicsConstants } from './core/PhysicsConstants.js';
 
 /**
  * Orbital Mechanics Calculations
@@ -157,6 +154,13 @@ export const Orbital = {
         const mu = typeof centralBody === 'number' ? centralBody : 
                   (centralBody.GM || centralBody.gravitationalParameter);
         return 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis, 3) / mu);
+    },
+
+    /**
+     * Calculate orbital period from position and velocity vectors
+     */
+    calculateOrbitalPeriod: (position, velocity, centralBodyOrGM) => {
+        return OrbitalMechanics.calculateOrbitalPeriod(position, velocity, centralBodyOrGM);
     }
 };
 
@@ -245,7 +249,7 @@ export const Bodies = {
      * Get body rotation rate (rad/s)
      */
     getRotationRate: (body) => {
-        const period = body.rotationPeriod || 86400; // Default to 1 day in seconds
+        const period = body.rotationPeriod || PhysicsConstants.TIME.SECONDS_IN_DAY; // Default to 1 day in seconds
         return (2 * Math.PI) / Math.abs(period);
     },
 
@@ -262,7 +266,7 @@ export const Bodies = {
      */
     getAll: () => {
         const manager = solarSystemDataManager;
-        return manager.getAllBodies();
+        return Array.from(manager.bodies.values());
     },
 
     /**
@@ -289,7 +293,7 @@ export const Forces = {
     /**
      * Calculate satellite acceleration (all forces) using UnifiedSatellitePropagator
      */
-    satelliteAcceleration: (satellite, centralBody, atmosphericData) => {
+    satelliteAcceleration: (satellite, centralBody) => {
         // Convert to UnifiedSatellitePropagator format
         const satState = {
             position: Array.isArray(satellite.position) ? satellite.position : satellite.position.toArray(),
@@ -315,8 +319,8 @@ export const Forces = {
             includeThirdBody: false
         });
 
-        // Return in original format (Three.js Vector3 for compatibility)
-        return new THREE.Vector3().fromArray(accelArray);
+        // Return as array for physics layer compatibility
+        return accelArray;
     }
 };
 
@@ -393,8 +397,8 @@ export const Utils = {
     convert: {
         degreesToRadians: (degrees) => degrees * (Math.PI / 180),
         radiansToDegrees: (radians) => radians * (180 / Math.PI),
-        kmToAU: (km) => km / 149597870.7,
-        auToKm: (au) => au * 149597870.7
+        kmToAU: (km) => km / PhysicsConstants.PHYSICS.AU,
+        auToKm: (au) => au * PhysicsConstants.PHYSICS.AU
     },
 
     /**
@@ -424,17 +428,40 @@ export const Utils = {
      * Vector operations
      */
     vector: {
-        magnitude: (vec) => Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z),
+        magnitude: (vec) => {
+            // Support both array and object formats
+            if (Array.isArray(vec)) {
+                return Math.sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+            }
+            return Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+        },
         normalize: (vec) => {
             const mag = Utils.vector.magnitude(vec);
-            return new THREE.Vector3(vec.x / mag, vec.y / mag, vec.z / mag);
+            if (Array.isArray(vec)) {
+                return [vec[0] / mag, vec[1] / mag, vec[2] / mag];
+            }
+            return [vec.x / mag, vec.y / mag, vec.z / mag];
         },
-        dot: (a, b) => a.x * b.x + a.y * b.y + a.z * b.z,
-        cross: (a, b) => new THREE.Vector3(
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x
-        ),
+        dot: (a, b) => {
+            if (Array.isArray(a)) {
+                return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+            }
+            return a.x * b.x + a.y * b.y + a.z * b.z;
+        },
+        cross: (a, b) => {
+            if (Array.isArray(a)) {
+                return [
+                    a[1] * b[2] - a[2] * b[1],
+                    a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0]
+                ];
+            }
+            return [
+                a.y * b.z - a.z * b.y,
+                a.z * b.x - a.x * b.z,
+                a.x * b.y - a.y * b.x
+            ];
+        },
         
         /**
          * Convert local delta-V (prograde, normal, radial) to world coordinates

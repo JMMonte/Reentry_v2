@@ -8,8 +8,10 @@
 
 let satellites = [];
 let bodies = [];
-let groundStations = [];
 let physicsState = null;
+
+// Store active timeout IDs for cleanup
+const activeTimeouts = new Set();
 
 // Configuration parameters
 const CONFIG = {
@@ -22,32 +24,56 @@ const CONFIG = {
     HUMIDITY_PERCENT: 50                // relative humidity percentage
 };
 
+// Cleanup function for worker termination
+function cleanup() {
+    // Clear all active timeouts
+    activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    activeTimeouts.clear();
+
+    // Clear data
+    satellites = [];
+    bodies = [];
+    physicsState = null;
+}
+
 self.onmessage = function (e) {
+    // Handle termination signal
+    if (e.data && e.data.type === 'terminate') {
+        cleanup();
+        self.close();
+        return;
+    }
+
+    // Handle cleanup request
+    if (e.data && e.data.type === 'cleanup') {
+        cleanup();
+        return;
+    }
+
     switch (e.data.type) {
         case 'UPDATE_SCENE':
             satellites = e.data.satellites || [];
             bodies = e.data.bodies || [];
-            groundStations = e.data.groundStations || [];
-            
+
             // Update configuration if provided
             if (e.data.config) {
                 Object.assign(CONFIG, e.data.config);
             }
-            
+
             calculateLineOfSight();
             break;
-            
+
         case 'UPDATE_PHYSICS_STATE':
             physicsState = e.data.physicsState;
             break;
-            
+
         case 'UPDATE_CONFIG':
             Object.assign(CONFIG, e.data.config);
             if (satellites.length > 0) {
                 calculateLineOfSight();
             }
             break;
-            
+
         case 'CALCULATE_SPECIFIC_LOS':
             calculateSpecificLineOfSight(e.data.from, e.data.to);
             break;
@@ -55,62 +81,120 @@ self.onmessage = function (e) {
 };
 
 /**
+ * Simple distance calculation helper
+ */
+function calculateDistance(pos1, pos2) {
+    const dx = pos2[0] - pos1[0];
+    const dy = pos2[1] - pos1[1];
+    const dz = pos2[2] - pos1[2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/**
+ * Check if a line segment intersects with a sphere (planet/moon)
+ * @param {Array} lineStart - [x, y, z] start of line segment
+ * @param {Array} lineEnd - [x, y, z] end of line segment  
+ * @param {Array} sphereCenter - [x, y, z] center of sphere
+ * @param {number} sphereRadius - radius of sphere in km
+ * @param {number} atmosphereHeight - additional height for atmosphere in km
+ * @returns {Object} intersection result
+ */
+function lineIntersectsSphere(lineStart, lineEnd, sphereCenter, sphereRadius, atmosphereHeight = 0) {
+    // Vector from line start to sphere center
+    const dx = sphereCenter[0] - lineStart[0];
+    const dy = sphereCenter[1] - lineStart[1]; 
+    const dz = sphereCenter[2] - lineStart[2];
+    
+    // Line direction vector (not normalized)
+    const ldx = lineEnd[0] - lineStart[0];
+    const ldy = lineEnd[1] - lineStart[1];
+    const ldz = lineEnd[2] - lineStart[2];
+    
+    // Length of line direction vector
+    const lineLength = Math.sqrt(ldx * ldx + ldy * ldy + ldz * ldz);
+    if (lineLength === 0) return { intersects: false, distance: 0 };
+    
+    // Normalize line direction
+    const dirx = ldx / lineLength;
+    const diry = ldy / lineLength;
+    const dirz = ldz / lineLength;
+    
+    // Project vector to sphere center onto line direction
+    const projection = dx * dirx + dy * diry + dz * dirz;
+    
+    // Clamp projection to line segment bounds
+    const t = Math.max(0, Math.min(lineLength, projection));
+    
+    // Find closest point on line segment to sphere center
+    const closestX = lineStart[0] + t * dirx;
+    const closestY = lineStart[1] + t * diry;
+    const closestZ = lineStart[2] + t * dirz;
+    
+    // Distance from sphere center to closest point on line
+    const distanceToLine = calculateDistance(sphereCenter, [closestX, closestY, closestZ]);
+    
+    // Check intersection with planet surface
+    const planetIntersection = distanceToLine <= sphereRadius;
+    
+    // Check intersection with atmosphere
+    const effectiveRadius = sphereRadius + atmosphereHeight;
+    const atmosphereIntersection = distanceToLine <= effectiveRadius;
+    
+    return {
+        intersects: planetIntersection,
+        atmosphereIntersection,
+        distance: distanceToLine,
+        planetRadius: sphereRadius,
+        atmosphereRadius: effectiveRadius,
+        penetrationDepth: Math.max(0, effectiveRadius - distanceToLine)
+    };
+}
+
+/**
  * Calculate line of sight between all satellites and ground stations
  */
 function calculateLineOfSight() {
     const connections = [];
     const currentTime = physicsState?.currentTime || Date.now();
-    
+
     // Satellite-to-satellite visibility
     for (let i = 0; i < satellites.length; i++) {
         for (let j = i + 1; j < satellites.length; j++) {
-            const visibility = calculateVisibility(
-                satellites[i], 
-                satellites[j], 
-                'satellite', 
-                'satellite',
-                currentTime
-            );
-            
-            if (visibility.visible) {
+
+            try {
+                // Calculate proper line-of-sight with planetary occlusion
+                const visibility = calculateVisibility(satellites[i], satellites[j]);
+
+                if (visibility.visible) {
+                    connections.push({
+                        type: 'satellite-satellite',
+                        from: satellites[i].id,
+                        to: satellites[j].id,
+                        points: [satellites[i].position, satellites[j].position],
+                        color: getConnectionColor(visibility),
+                        metadata: visibility
+                    });
+                }
+            } catch (error) {
+                console.error(`[LineOfSightWorker] Error calculating visibility:`, error);
+                // Add connection anyway for debugging
                 connections.push({
                     type: 'satellite-satellite',
                     from: satellites[i].id,
                     to: satellites[j].id,
                     points: [satellites[i].position, satellites[j].position],
-                    color: getConnectionColor(visibility),
-                    metadata: visibility
+                    color: 'red',
+                    metadata: { visible: true, linkQuality: 0, error: error.message }
                 });
             }
         }
     }
-    
-    // Satellite-to-ground visibility
-    for (const satellite of satellites) {
-        for (const groundStation of groundStations) {
-            const visibility = calculateVisibility(
-                satellite,
-                groundStation,
-                'satellite',
-                'ground',
-                currentTime
-            );
-            
-            if (visibility.visible) {
-                connections.push({
-                    type: 'satellite-ground',
-                    from: satellite.id,
-                    to: groundStation.id,
-                    points: [satellite.position, groundStation.position],
-                    color: getConnectionColor(visibility),
-                    metadata: visibility
-                });
-            }
-        }
-    }
-    
-    self.postMessage({ 
-        type: 'CONNECTIONS_UPDATED', 
+
+    // Satellite-to-ground visibility (simplified for now)
+    // TODO: Implement ground station connections when needed
+
+    self.postMessage({
+        type: 'CONNECTIONS_UPDATED',
         connections,
         timestamp: currentTime
     });
@@ -121,7 +205,7 @@ function calculateLineOfSight() {
  */
 function calculateSpecificLineOfSight(fromObj, toObj) {
     const visibility = calculateVisibility(fromObj, toObj, 'unknown', 'unknown', Date.now());
-    
+
     self.postMessage({
         type: 'SPECIFIC_LOS_RESULT',
         from: fromObj.id,
@@ -131,313 +215,146 @@ function calculateSpecificLineOfSight(fromObj, toObj) {
 }
 
 /**
- * Main visibility calculation with physics-based considerations
+ * Main visibility calculation with proper planetary occlusion
  */
-function calculateVisibility(objA, objB, typeA, typeB) {
+function calculateVisibility(objA, objB) {
     const posA = objA.position;
     const posB = objB.position;
-    
-    // Calculate basic geometric parameters
-    const dx = posB[0] - posA[0];
-    const dy = posB[1] - posA[1];
-    const dz = posB[2] - posA[2];
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    
-    if (distance <= 0) {
-        return { visible: false, reason: 'zero_distance' };
+
+    // Basic distance calculation
+    const distance = calculateDistance(posA, posB);
+
+    if (distance <= 0 || !isFinite(distance)) {
+        return { visible: false, reason: 'invalid_distance', distance: 0 };
     }
-    
-    const rayDirection = [dx / distance, dy / distance, dz / distance];
-    
-    // Check for body occlusion with physics-based improvements
-    const occlusionResult = checkPhysicsBasedOcclusion(posA, posB, rayDirection, distance);
-    if (occlusionResult.occluded) {
+
+    // Check maximum communication range
+    const maxRange = 50000; // km - increased for interplanetary communications
+    if (distance > maxRange) {
         return { 
             visible: false, 
-            reason: 'occluded', 
-            occludingBody: occlusionResult.body,
-            distance
+            reason: 'out_of_range', 
+            distance,
+            linkQuality: 0,
+            signalStrength: -150
         };
     }
-    
-    // Calculate elevation angles for ground-satellite links
-    let elevationAngle = null;
-    if (typeA === 'ground' || typeB === 'ground') {
-        const groundPos = typeA === 'ground' ? posA : posB;
-        const satPos = typeA === 'ground' ? posB : posA;
-        elevationAngle = calculateElevationAngle(groundPos, satPos);
-        
-        if (elevationAngle < CONFIG.MIN_ELEVATION_ANGLE) {
-            return { 
-                visible: false, 
-                reason: 'low_elevation', 
-                elevationAngle,
-                minElevation: CONFIG.MIN_ELEVATION_ANGLE,
-                distance
-            };
-        }
-    }
-    
-    // Calculate atmospheric effects if enabled
+
+    // Check for planetary/lunar occlusion
+    let occluded = false;
+    let occludingBody = null;
     let atmosphericLoss = 0;
-    let refractedPath = distance;
-    
-    if (CONFIG.ATMOSPHERIC_REFRACTION && (typeA === 'ground' || typeB === 'ground')) {
-        const atmosphericResult = calculateAtmosphericEffects(
-            typeA === 'ground' ? posA : posB,  // ground position
-            typeA === 'ground' ? posB : posA,  // satellite position
-            elevationAngle
+    let grazeAtmosphere = false;
+
+    for (const body of bodies) {
+        if (!body.position || !body.radius || body.radius <= 0) continue;
+
+        // Get atmosphere height based on body type
+        const atmosphereHeight = getAtmosphereHeight(body);
+        
+        // Check line-sphere intersection
+        const intersection = lineIntersectsSphere(
+            posA, 
+            posB, 
+            body.position, 
+            body.radius, 
+            atmosphereHeight
         );
-        
-        atmosphericLoss = atmosphericResult.loss;
-        refractedPath = atmosphericResult.refractedDistance;
-        
-        // Check if atmospheric loss is too high for communication
-        if (atmosphericLoss > 50) { // dB threshold
-            return { 
-                visible: false, 
-                reason: 'atmospheric_loss', 
-                atmosphericLoss,
-                distance
-            };
+
+        if (intersection.intersects) {
+            // Line passes through the solid body - complete occlusion
+            occluded = true;
+            occludingBody = body;
+            break;
+        } else if (intersection.atmosphereIntersection && atmosphereHeight > 0) {
+            // Line grazes atmosphere - signal attenuation but not complete block
+            grazeAtmosphere = true;
+            const penetrationRatio = intersection.penetrationDepth / atmosphereHeight;
+            atmosphericLoss += penetrationRatio * 20; // dB loss based on penetration depth
         }
     }
-    
-    return {
+
+    if (occluded) {
+        return {
+            visible: false,
+            reason: 'occluded',
+            occludingBody: occludingBody?.naifId || 'unknown',
+            distance,
+            linkQuality: 0,
+            signalStrength: -150,
+            atmosphericLoss: 0
+        };
+    }
+
+    // Calculate link quality based on distance and atmospheric effects
+    const baseQuality = Math.max(0, 100 * (1 - distance / maxRange));
+    const atmosphericPenalty = Math.min(50, atmosphericLoss); // Max 50% penalty
+    const linkQuality = Math.max(0, baseQuality - atmosphericPenalty);
+
+    // Calculate signal strength (simplified path loss model)
+    // Free space path loss: 20*log10(distance) + 20*log10(frequency) + 32.44
+    const frequencyGHz = CONFIG.FREQUENCY_GHZ || 2.4;
+    const freeSpaceLoss = 20 * Math.log10(distance) + 20 * Math.log10(frequencyGHz) + 32.44;
+    const signalStrength = 30 - freeSpaceLoss - atmosphericLoss; // Assume 30dBm transmit power
+
+    const result = {
         visible: true,
         distance,
-        elevationAngle,
+        linkQuality,
+        signalStrength,
         atmosphericLoss,
-        refractedPath,
-        signalStrength: calculateSignalStrength(distance, atmosphericLoss),
-        linkQuality: calculateLinkQuality(distance, elevationAngle, atmosphericLoss)
+        grazeAtmosphere,
+        elevationAngle: null, // Could calculate relative to central body
+        freeSpaceLoss
     };
+
+    return result;
 }
 
 /**
- * Physics-based occlusion check considering Earth oblateness and atmospheric effects
+ * Get atmosphere height for a celestial body using planetary config data
  */
-function checkPhysicsBasedOcclusion(posA, posB, rayDirection, maxDistance) {
-    for (const body of bodies) {
-        let effectiveRadius = body.radius;
-        
-        // Apply Earth oblateness if enabled and this is Earth
-        if (CONFIG.CONSIDER_OBLATENESS && body.naifId === 399) {
-            const earthConstants = {
-                EARTH_RADIUS: 6371.0,
-                RAD_TO_DEG: 180 / Math.PI,
-                DEG_TO_RAD: Math.PI / 180
-            };
-            const flattening = earthConstants.EARTH_J2 * 2; // Approximate flattening
-            
-            // Calculate latitude-dependent radius
-            const bodyCenter = body.position;
-            const latEffect = calculateLatitudeEffect(posA, posB, bodyCenter);
-            effectiveRadius = body.radius * (1 - flattening * latEffect);
-        }
-        
-        // Add atmospheric buffer for bodies with atmospheres
-        if (body.naifId === 399 || body.naifId === 499 || body.naifId === 299) { // Earth, Mars, Venus
-            const atmosData = {
-                EARTH: {
-                    ATMOSPHERIC_RADIUS: 100, // km
-                    SCALE_HEIGHT: 8.5 // km
-                }
-            };
-            if (body.naifId === 399 && atmosData.EARTH) {
-                effectiveRadius += atmosData.EARTH.ATMOSPHERIC_RADIUS;
-            } else if (body.naifId === 499 && atmosData.MARS) {
-                effectiveRadius += atmosData.MARS.ATMOSPHERIC_RADIUS;
-            } else if (body.naifId === 299 && atmosData.VENUS) {
-                effectiveRadius += atmosData.VENUS.ATMOSPHERIC_RADIUS;
-            }
-        }
-        
-        if (sphereIntersect(
-            posA[0], posA[1], posA[2],
-            rayDirection[0], rayDirection[1], rayDirection[2],
-            body.position[0], body.position[1], body.position[2],
-            effectiveRadius,
-            maxDistance
-        )) {
-            return { occluded: true, body: body.naifId };
-        }
+function getAtmosphereHeight(body) {
+    // Use real atmosphere data from planetary configurations
+    if (!body || !body.radius || body.radius <= 0) return 0;
+    
+    // First priority: use atmosphere thickness from planetary config
+    if (body.atmosphereThickness && body.atmosphereThickness > 0) {
+        return body.atmosphereThickness;
     }
     
-    return { occluded: false };
-}
-
-/**
- * Calculate elevation angle from ground station to satellite
- */
-function calculateElevationAngle(groundPos, satPos) {
-    // Vector from ground to satellite
-    const dx = satPos[0] - groundPos[0];
-    const dy = satPos[1] - groundPos[1]; 
-    const dz = satPos[2] - groundPos[2];
-    
-    // Ground station local "up" vector (assuming Earth-centered coordinates)
-    const groundRadius = Math.sqrt(groundPos[0] * groundPos[0] + groundPos[1] * groundPos[1] + groundPos[2] * groundPos[2]);
-    const upX = groundPos[0] / groundRadius;
-    const upY = groundPos[1] / groundRadius;
-    const upZ = groundPos[2] / groundRadius;
-    
-    // Satellite range vector
-    const rangeLength = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const rangeX = dx / rangeLength;
-    const rangeY = dy / rangeLength;
-    const rangeZ = dz / rangeLength;
-    
-    // Elevation angle = 90° - angle between up vector and range vector
-    const dotProduct = upX * rangeX + upY * rangeY + upZ * rangeZ;
-    const elevationRad = Math.asin(Math.max(-1, Math.min(1, dotProduct)));
-    
-    return elevationRad * (180 / Math.PI);
-}
-
-/**
- * Calculate atmospheric effects on radio propagation
- */
-function calculateAtmosphericEffects(groundPos, satPos, elevationAngle) {
-    if (!elevationAngle || elevationAngle <= 0) {
-        return { loss: 100, refractedDistance: Infinity }; // Below horizon
+    // Second priority: use atmospheric model maxAltitude
+    if (body.atmosphericModel?.maxAltitude && body.atmosphericModel.maxAltitude > 0) {
+        return body.atmosphericModel.maxAltitude;
     }
     
-    const distance = Math.sqrt(
-        (satPos[0] - groundPos[0]) ** 2 +
-        (satPos[1] - groundPos[1]) ** 2 +
-        (satPos[2] - groundPos[2]) ** 2
-    );
-    
-    // Atmospheric absorption (simplified model)
-    const frequency = CONFIG.FREQUENCY_GHZ;
-    const elevationRad = elevationAngle * (Math.PI / 180);
-    
-    // Path through atmosphere (sec(zenith angle) approximation)
-    const zenithAngle = Math.PI / 2 - elevationRad;
-    const atmosphericPath = 100 / Math.cos(zenithAngle); // 100 km atmospheric radius
-    
-    // Frequency-dependent atmospheric absorption
-    let absorptionCoeff = 0;
-    if (frequency < 1) {
-        absorptionCoeff = 0.001; // Very low at low frequencies
-    } else if (frequency < 10) {
-        absorptionCoeff = 0.01 * frequency; // Linear increase
-    } else {
-        absorptionCoeff = 0.1 + 0.05 * (frequency - 10); // Higher absorption
-    }
-    
-    // Weather effects
-    const humidityFactor = 1 + (CONFIG.HUMIDITY_PERCENT / 100) * 0.5;
-    const weatherAttenuation = absorptionCoeff * atmosphericPath * humidityFactor;
-    
-    // Ionospheric scintillation (simplified)
-    const scintillationLoss = Math.random() * 2; // 0-2 dB random variation
-    
-    const totalLoss = weatherAttenuation + scintillationLoss;
-    
-    // Refraction effect on path length
-    const refractionIndex = 1 + 0.000315 * (CONFIG.PRESSURE_PA / 101325) * (273.15 / CONFIG.TEMPERATURE_K);
-    const refractedDistance = distance * refractionIndex;
-    
-    return {
-        loss: totalLoss,
-        refractedDistance,
-        atmosphericPath,
-        scintillationLoss
-    };
+    // No atmosphere data available
+    return 0;
 }
 
-/**
- * Calculate latitude effect for Earth oblateness
- */
-function calculateLatitudeEffect(posA, posB, bodyCenter) {
-    // Simplified latitude calculation from midpoint
-    const midX = (posA[0] + posB[0]) / 2 - bodyCenter[0];
-    const midY = (posA[1] + posB[1]) / 2 - bodyCenter[1];
-    const midZ = (posA[2] + posB[2]) / 2 - bodyCenter[2];
-    
-    const r = Math.sqrt(midX * midX + midY * midY + midZ * midZ);
-    const latSin = Math.abs(midZ) / r; // sin(latitude) approximation
-    
-    return latSin * latSin; // sin²(latitude) for J2 effect
-}
 
-/**
- * Calculate signal strength based on distance and atmospheric loss
- */
-function calculateSignalStrength(distance, atmosphericLoss) {
-    // Free space path loss (dB)
-    const frequency = CONFIG.FREQUENCY_GHZ;
-    const freeSpaceLoss = 20 * Math.log10(distance) + 20 * Math.log10(frequency) + 92.45;
-    
-    // Total loss
-    const totalLoss = freeSpaceLoss + atmosphericLoss;
-    
-    // Assume transmit power of 30 dBm, convert to received signal strength
-    const receivedPower = 30 - totalLoss; // dBm
-    
-    return receivedPower;
-}
+// Elevation angle calculation removed - not needed for simplified implementation
 
-/**
- * Calculate overall link quality score
- */
-function calculateLinkQuality(distance, elevationAngle, atmosphericLoss) {
-    let quality = 100; // Start with perfect quality
-    
-    // Distance penalty
-    quality -= Math.min(50, distance / 1000); // Reduce by distance in 1000s of km
-    
-    // Elevation angle bonus/penalty
-    if (elevationAngle) {
-        if (elevationAngle < 10) {
-            quality -= (10 - elevationAngle) * 5; // Penalty for low elevation
-        } else if (elevationAngle > 45) {
-            quality += Math.min(10, (elevationAngle - 45) / 5); // Bonus for high elevation
-        }
-    }
-    
-    // Atmospheric loss penalty
-    quality -= atmosphericLoss * 2;
-    
-    return Math.max(0, Math.min(100, quality));
-}
+// Atmospheric effects calculation removed - not needed for simplified implementation
+
+// Latitude effect calculation removed - not needed for simplified implementation
+
+// Signal strength calculation removed - handled in calculateVisibility
+
+// Link quality calculation removed - handled in calculateVisibility
 
 /**
  * Get connection color based on link quality
  */
 function getConnectionColor(visibility) {
     if (!visibility.visible) return 'red';
-    
+
     const quality = visibility.linkQuality || 50;
-    
+
     if (quality > 80) return 'green';
     if (quality > 60) return 'yellow';
     if (quality > 40) return 'orange';
     return 'red';
 }
 
-/**
- * Ray-sphere intersection with improved numerical stability
- */
-function sphereIntersect(ox, oy, oz, dx, dy, dz, cx, cy, cz, radius, maxDistance) {
-    const ocx = ox - cx;
-    const ocy = oy - cy; 
-    const ocz = oz - cz;
-    
-    const a = dx * dx + dy * dy + dz * dz; // Should be ~1 for normalized direction
-    const b = 2 * (ocx * dx + ocy * dy + ocz * dz);
-    const c = ocx * ocx + ocy * ocy + ocz * ocz - radius * radius;
-    
-    const discriminant = b * b - 4 * a * c;
-    
-    if (discriminant < 0) return false;
-    
-    const sqrtDisc = Math.sqrt(discriminant);
-    const t1 = (-b - sqrtDisc) / (2 * a);
-    const t2 = (-b + sqrtDisc) / (2 * a);
-    
-    // Check if intersection occurs within the line segment
-    return (t1 > 0.001 && t1 < maxDistance) || (t2 > 0.001 && t2 < maxDistance);
-}
+// Ray-sphere intersection removed - not needed for simplified implementation

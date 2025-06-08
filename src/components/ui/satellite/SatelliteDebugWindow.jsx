@@ -8,9 +8,7 @@ import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
 import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
-import { Bodies } from '../../../physics/PhysicsAPI.js';
 import { ApsisService } from '../../../services/ApsisService.js';
-import * as THREE from 'three';
 import { SatelliteCommsSection } from './SatelliteCommsSection.jsx';
 import { SatelliteCommsTimeline } from './SatelliteCommsTimeline.jsx';
 
@@ -180,7 +178,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
         longitudeOfAscendingNode: elementsToUse.longitudeOfAscendingNode,
         argumentOfPeriapsis: elementsToUse.argumentOfPeriapsis,
         trueAnomaly: elementsToUse.trueAnomaly,
-        meanAnomaly: elementsToUse.M0 !== undefined ? THREE.MathUtils.radToDeg(elementsToUse.M0) : elementsToUse.meanAnomaly,
+        meanAnomaly: elementsToUse.M0 !== undefined ? (elementsToUse.M0 * 180 / Math.PI) : elementsToUse.meanAnomaly,
         eccentricAnomaly: elementsToUse.eccentricAnomaly,
         period: elementsToUse.period,
         specificOrbitalEnergy: elementsToUse.specificOrbitalEnergy,
@@ -214,10 +212,10 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
           
           if (!centralBody) {
             try {
-              const bodyData = Bodies.getByNaif(physics.centralBodyNaifId);
+              const bodyData = window.app3d?.physicsAPI?.Bodies.getByNaif(physics.centralBodyNaifId);
               centralBody = bodyData ? {
                 name: bodyData.name,
-                GM: bodyData.GM || Bodies.getGM(physics.centralBodyNaifId),
+                GM: bodyData.gm,
                 radius: bodyData.radius
               } : null;
             } catch {
@@ -694,12 +692,10 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               isOpen={showCommunications}
               onToggle={() => setShowCommunications(!showCommunications)}
             >
-              <div className="p-1">
-                <SatelliteCommsSection 
-                  satelliteId={satellite.id} 
-                  app={satellite?.app3d || window.app3d} 
-                />
-              </div>
+              <SatelliteCommsSection 
+                satelliteId={satellite.id} 
+                app={satellite?.app3d || window.app3d} 
+              />
             </Section>
 
             {/* Communication Timeline Section */}
@@ -708,12 +704,10 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               isOpen={showCommTimeline}
               onToggle={() => setShowCommTimeline(!showCommTimeline)}
             >
-              <div className="p-1">
-                <SatelliteCommsTimeline 
-                  satelliteId={satellite.id} 
-                  app={satellite?.app3d || window.app3d} 
-                />
-              </div>
+              <SatelliteCommsTimeline 
+                satelliteId={satellite.id} 
+                app={satellite?.app3d || window.app3d} 
+              />
             </Section>
 
             {/* Forces and Accelerations Section */}
@@ -923,7 +917,6 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                     <Input
                       type="number"
                       min="0.1"
-                      max="10"
                       step="0.1"
                       value={orbitPeriods}
                       onChange={(e) => {

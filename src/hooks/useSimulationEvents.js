@@ -61,23 +61,32 @@ export function useSimulationEvents({
     return () => window.removeEventListener('sceneReadyFromBackend', handleSceneReady);
   }, [setIsSimReady, setLoadingProgress, setLoadingStage]);
 
-  // Assets loaded events
+  // Assets loaded events - prevent progress from going backwards
   useEffect(() => {
     const handleAssetsLoaded = () => {
       setIsAssetsLoaded(true);
-      setLoadingProgress(50);
+      // Only update progress if it's less than 50% to avoid overriding detailed progress
+      setLoadingProgress(prev => prev < 50 ? 50 : prev);
       setLoadingStage('Building Solar System...');
     };
     window.addEventListener('assetsLoaded', handleAssetsLoaded);
     return () => window.removeEventListener('assetsLoaded', handleAssetsLoaded);
   }, [setIsAssetsLoaded, setLoadingProgress, setLoadingStage]);
 
-  // Loading progress events
+  // Loading progress events - prevent backwards progress and smooth updates
   useEffect(() => {
     const handleLoadingProgress = (e) => {
       const { progress, stage } = e.detail;
-      if (typeof progress === 'number') setLoadingProgress(progress);
-      if (typeof stage === 'string') setLoadingStage(stage);
+      
+      // Only allow progress to move forward (prevents jumping backwards)
+      if (typeof progress === 'number') {
+        setLoadingProgress(prev => Math.max(prev, progress));
+      }
+      
+      // Always update stage messages
+      if (typeof stage === 'string') {
+        setLoadingStage(stage);
+      }
     };
     
     window.addEventListener('loadingProgress', handleLoadingProgress);

@@ -193,6 +193,9 @@ export class PlanetMaterials {
         this.textureManager = textureManager;
         this.maxAnisotropy = rendererCapabilities.getMaxAnisotropy();
         this.config = materialsConfig;
+        // Track created resources for disposal
+        this._createdMaterials = new Set();
+        this._createdGeometries = new Set();
         // Use generic surface material creator with config
         this.surfaceCreator = (tm, aniso) => createSurfaceMaterial(tm, aniso, materialsConfig.surfaceConfig || {});
         
@@ -218,6 +221,7 @@ export class PlanetMaterials {
         if (mat.map) mat.map.anisotropy = this.maxAnisotropy;
         if (mat.normalMap) mat.normalMap.anisotropy = this.maxAnisotropy;
         // if (mat.bumpMap) mat.bumpMap.anisotropy = this.maxAnisotropy;
+        this._createdMaterials.add(mat);
         return mat;
     }
 
@@ -228,6 +232,7 @@ export class PlanetMaterials {
         // prevent clouds from occluding the planet surface
         mat.depthWrite = false;
         mat.depthTest = true;
+        this._createdMaterials.add(mat);
         return mat;
     }
 
@@ -323,6 +328,7 @@ export class PlanetMaterials {
             
             for (const { meshRes, distance } of lodLevels) {
                 const geometry = new THREE.SphereGeometry(1, meshRes, Math.floor(meshRes / 2));
+                this._createdGeometries.add(geometry);
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.scale.set(1, coreY, 1);
                 mesh.renderOrder = renderOrder;
@@ -334,6 +340,7 @@ export class PlanetMaterials {
         } else {
             // Create single mesh with default resolution
             const geometry = new THREE.SphereGeometry(1, defaultResolution, Math.floor(defaultResolution / 2));
+            this._createdGeometries.add(geometry);
             const mesh = new THREE.Mesh(geometry, material);
             mesh.name = `atmosphere_${config.name}`;
             mesh.scale.set(1, coreY, 1);
@@ -364,5 +371,23 @@ export class PlanetMaterials {
             emissive: options.emissive ?? 0xffffff,
             emissiveIntensity: options.emissiveIntensity ?? emissivity
         });
+    }
+    
+    /**
+     * Dispose all tracked materials and geometries
+     */
+    dispose() {
+        // Dispose all tracked materials
+        // Note: Don't dispose textures here as they are managed by TextureManager
+        this._createdMaterials.forEach(material => {
+            material.dispose();
+        });
+        this._createdMaterials.clear();
+        
+        // Dispose all tracked geometries
+        this._createdGeometries.forEach(geometry => {
+            geometry.dispose();
+        });
+        this._createdGeometries.clear();
     }
 } 

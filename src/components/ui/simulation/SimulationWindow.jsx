@@ -47,10 +47,11 @@ export function SimulationWindow({ isOpen, onClose }) {
             return;
         }
         // batch handlers instead of per-event setState
+        let rafId = null;
         const scheduleFlush = () => {
             if (!flushSimRef.current) {
                 flushSimRef.current = true;
-                requestAnimationFrame(() => {
+                rafId = requestAnimationFrame(() => {
                     setSimulationData(prev => {
                         const next = { ...prev };
                         for (const [sid, updates] of Object.entries(pendingSimRef.current)) {
@@ -64,6 +65,7 @@ export function SimulationWindow({ isOpen, onClose }) {
                     });
                     pendingSimRef.current = {};
                     flushSimRef.current = false;
+                    rafId = null;
                 });
             }
         };
@@ -84,6 +86,10 @@ export function SimulationWindow({ isOpen, onClose }) {
         return () => {
             document.removeEventListener('orbitDataUpdate', handleOrbitUpdate);
             document.removeEventListener('simulationDataUpdate', handleParamUpdate);
+            // Cancel pending animation frame
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+            }
         };
     }, [isOpen]);
 

@@ -5,7 +5,7 @@ import {
     getPlanetOptions,
     getSatelliteOptions
 } from '../utils/BodySelectionUtils';
-import { solarSystemDataManager } from '../physics/PlanetaryDataManager.js';
+import { usePhysicsBodies } from './usePhysicsReady';
 
 
 /**
@@ -34,6 +34,9 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
     // Option lists
     const [planetOptions, setPlanetOptions] = useState([]);
     const [satelliteOptions, setSatelliteOptions] = useState([]);
+    
+    // Get physics bodies when ready
+    const physicsBodies = usePhysicsBodies();
 
     // Populate planet options when scene is ready
     useEffect(() => {
@@ -88,10 +91,10 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
         'ceres', 'eris', 'makemake', 'haumea'
     ];
     
-    // Use imported PlanetaryDataManager
+    // Use physics bodies when available
     
-    if (solarSystemDataManager) {
-        // Use dynamic hierarchy from PlanetaryDataManager
+    if (physicsBodies.length > 0 && ready) {
+        // Use dynamic hierarchy from physics bodies
         planetOrder.forEach(planetName => {
             const planetObj = planetOptions.find(o => o.value === planetName);
             if (!planetObj) return; // Planet not available in options
@@ -100,10 +103,9 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
             const barycenterKey = planetName === 'earth' ? 'emb' : `${planetName}_barycenter`;
             const barycenterObj = planetOptions.find(o => o.value === barycenterKey);
             
-            // Find moons that orbit this planet's barycenter using PlanetaryDataManager
+            // Find moons that orbit this planet's barycenter
             const moonObjs = [];
-            const allBodies = Array.from(solarSystemDataManager.bodies.values());
-            for (const config of allBodies) {
+            for (const config of physicsBodies) {
                 if (config.type === 'moon' && config.parent === barycenterKey) {
                     const moonObj = planetOptions.find(o => o.value === config.name);
                     if (moonObj) {
@@ -118,8 +120,7 @@ export function useBodySelection({ app3dRef, satellites, importedState, ready })
             groupedPlanetOptions.push({ planet: planetObj, moons: children });
         });
     } else {
-        // Fallback to hardcoded moon patterns if PlanetaryDataManager not available
-        console.warn('[useBodySelection] PlanetaryDataManager not available, using fallback moon patterns');
+        // Fallback to hardcoded moon patterns when physics bodies not yet available
         
         planetOrder.forEach(planetName => {
             const planetObj = planetOptions.find(o => o.value === planetName);

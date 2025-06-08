@@ -14,6 +14,8 @@ import { SimulationWindow } from './simulation/SimulationWindow';
 import { SatelliteManeuverWindow } from './satellite/SatelliteManeuverWindow';
 import { Button } from './button';
 import { GroundTrackWindow } from './groundtrack/GroundTrackWindow';
+import EnhancedLoader from './EnhancedLoader';
+import { Brain } from 'lucide-react';
 
 // Toast logic
 export const ToastContext = createContext({ showToast: () => { } });
@@ -203,18 +205,83 @@ export function Layout({
     const [maneuverSat, setManeuverSat] = useState(null);
     const handleOpenManeuver = (satellite) => setManeuverSat(satellite);
     const [showIntro, setShowIntro] = useState(false);
+    const [currentSlide, setCurrentSlide] = useState(0);
+    const [isMobile, setIsMobile] = useState(false);
 
     // Removed duplicate usePhysicsSatellites() call - now passed as prop for better performance
 
+    // Check mobile on mount and resize
     useEffect(() => {
-        if (typeof window !== 'undefined' && !localStorage.getItem('introShown')) {
-            setShowIntro(true);
-        }
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+        
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
     }, []);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !localStorage.getItem('introShown') && !isLoadingInitialData) {
+            // Show intro only after loading is complete
+            const timer = setTimeout(() => {
+                setShowIntro(true);
+            }, 1000); // Give fade-out time to complete
+            return () => clearTimeout(timer);
+        }
+    }, [isLoadingInitialData]);
+
+    // Intro slides data
+    const introSlides = [
+        {
+            title: "Welcome to Darksun",
+            content: "Professional orbital mechanics simulation for satellite constellation design, interplanetary missions, and space communication networks.",
+            image: "/assets/images/Screenshot 2025-04-22 at 22.44.48.png" // Overview screenshot
+        },
+        {
+            title: "Satellite Operations",
+            content: "Create satellites, plan maneuvers, and monitor subsystems including power, thermal, communications, and propulsion systems.",
+            image: "/assets/images/Screenshot 2025-04-25 at 02.20.23.png" // Satellite screenshot
+        },
+        {
+            title: "Mission Planning", 
+            content: "Design interplanetary transfers, gravity assists, and complex trajectories with AI-powered mission planning assistance.",
+            image: "/assets/images/Screenshot 2025-04-25 at 02.22.55.png" // Mission planning screenshot
+        }
+    ];
 
     const handleDismissIntro = () => {
         localStorage.setItem('introShown', 'true');
         setShowIntro(false);
+        setCurrentSlide(0);
+    };
+
+    const handleOpenAI = () => {
+        handleDismissIntro();
+        // Open the chat modal using the onClose function structure
+        if (chatModalProps?.onClose) {
+            // If onClose exists, we can infer the modal state setter
+            // The chatModalProps.onClose is () => modalState.setIsChatVisible(false)
+            // So we need to call the opposite - setIsChatVisible(true)
+            // We'll trigger this through the navbar chat toggle
+            if (navbarProps?.onChatToggle) {
+                navbarProps.onChatToggle();
+            }
+        }
+    };
+
+    const handleNextSlide = () => {
+        if (currentSlide < introSlides.length - 1) {
+            setCurrentSlide(currentSlide + 1);
+        } else {
+            handleDismissIntro();
+        }
+    };
+
+    const handlePrevSlide = () => {
+        if (currentSlide > 0) {
+            setCurrentSlide(currentSlide - 1);
+        }
     };
 
     // Open reset modal if URL contains type=recovery and access_token
@@ -240,80 +307,33 @@ export function Layout({
         <ToastContext.Provider value={{ showToast }}>
             <Navbar {...navbarProps} />
             <main>{children}</main>
-
-            {/* Loading Spinner Overlay */}
-            {isLoadingInitialData && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)', 
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    zIndex: 9999, 
-                    color: 'white',
-                    fontSize: '16px',
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-                }}>
-                    <style>
-                        {`
-                            @keyframes progressOpacity {
-                                0%, 100% {
-                                    opacity: 0.5;
-                                }
-                                50% {
-                                    opacity: 1;
-                                }
-                            }
-                        `}
-                    </style>
-                    
-                    {/* Current Stage Message */}
-                    <span style={{ 
-                        marginBottom: '20px', 
-                        letterSpacing: '0.5px',
-                        fontSize: '18px',
-                        fontWeight: '500'
-                    }}>
-                        {loadingStage}
-                    </span>
-                    
-                    {/* Progress Bar Container */}
-                    <div style={{
-                        width: '300px',
-                        height: '8px',
-                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                        borderRadius: '4px',
-                        overflow: 'hidden',
-                        marginBottom: '10px',
-                        position: 'relative',
-                        border: '1px solid rgba(255, 255, 255, 0.2)'
-                    }}>
-                        {/* Progress Bar Fill */}
-                        <div style={{
-                            width: `${loadingProgress}%`,
-                            height: '100%',
-                            background: '#ffffff',
-                            borderRadius: '3px',
-                            transition: 'width 0.5s ease',
-                            animation: loadingProgress < 100 ? 'progressOpacity 1.5s ease-in-out infinite' : 'none'
-                        }}></div>
-                    </div>
-                    
-                    {/* Progress Percentage */}
-                    <span style={{
-                        fontSize: '14px',
-                        opacity: 0.8,
-                        letterSpacing: '0.3px'
-                    }}>
-                        {Math.round(loadingProgress)}%
-                    </span>
+            
+            {/* Darkmatter credit */}
+            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
+                <div className="text-sm font-mono mix-blend-difference text-white pointer-events-auto flex items-center gap-1">
+                    made with <Brain size={16} /> by{' '}
+                    <a 
+                        href="https://darkmatter.is" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                    >
+                        Darkmatter
+                    </a>
                 </div>
-            )}
+            </div>
+
+            {/* Enhanced Loading Overlay with fade-out */}
+            <div 
+                className={`transition-opacity duration-1000 ${
+                    isLoadingInitialData ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+            >
+                <EnhancedLoader 
+                    loadingProgress={loadingProgress} 
+                    loadingStage={loadingStage} 
+                />
+            </div>
 
             <ModalPortal>
                 <ChatModal {...chatModalProps} />
@@ -375,24 +395,101 @@ export function Layout({
                         </DraggableModal>
                     );
                 })}
-                {/* Intro modal */}
+                {/* Responsive Tutorial with Images */}
                 {showIntro && (
-                    <div className="fixed bottom-4 left-4 z-50 max-w-xs w-64 bg-white dark:bg-gray-800 text-black dark:text-white p-4 rounded-lg shadow-lg">
-                        <button
-                            className="absolute top-2 right-2 text-xl font-bold leading-none"
-                            onClick={handleDismissIntro}
-                            aria-label="Close intro"
-                        >
-                            ×
-                        </button>
-                        <h2 className="text-lg font-semibold mb-2">Welcome to Darksun!</h2>
-                        <p className="text-sm">
-                            This simulation tool lets you explore satellites in 3D. Use the navbar to create satellites, add maneuvers, talk with the AI helper chat, satellite list, and display options. Click on Earth points for more information.
-                        </p>
-                        <div className="mt-3 flex justify-end">
-                            <Button size="sm" onClick={handleDismissIntro}>Got it!</Button>
+                    <DraggableModal
+                        title={`Getting Started (${currentSlide + 1}/${introSlides.length})`}
+                        isOpen={true}
+                        onClose={handleDismissIntro}
+                        defaultPosition={{ 
+                            x: isMobile ? 20 : Math.max(20, window.innerWidth / 2 - 350), 
+                            y: isMobile ? 20 : Math.max(20, window.innerHeight / 2 - 200)
+                        }}
+                        defaultWidth={isMobile ? window.innerWidth - 40 : 700}
+                        defaultHeight={isMobile ? window.innerHeight - 80 : 400}
+                        minWidth={isMobile ? 300 : 600}
+                        minHeight={isMobile ? 400 : 350}
+                        resizable={!isMobile}
+                    >
+                        <div className="h-full flex flex-col space-y-4">
+                            {/* Content Area */}
+                            <div className={`flex-1 ${isMobile ? 'flex flex-col space-y-4' : 'grid grid-cols-2 gap-6'}`}>
+                                {/* Image */}
+                                <div className={`bg-zinc-900/30 border border-zinc-800 rounded overflow-hidden ${
+                                    isMobile ? 'h-48 flex-shrink-0' : ''
+                                }`}>
+                                    <img 
+                                        src={introSlides[currentSlide].image}
+                                        alt={introSlides[currentSlide].title}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            // Fallback to a simple placeholder if image fails to load
+                                            e.target.style.display = 'none';
+                                            e.target.parentNode.innerHTML = `<div class="w-full h-full flex items-center justify-center text-zinc-500 ${isMobile ? 'text-4xl' : 'text-6xl'}">🛰️</div>`;
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Text Content */}
+                                <div className={`flex flex-col justify-center space-y-4 ${
+                                    isMobile ? 'flex-1' : ''
+                                }`}>
+                                    <h2 className={`font-semibold text-white ${
+                                        isMobile ? 'text-lg' : 'text-xl'
+                                    }`}>
+                                        {introSlides[currentSlide].title}
+                                    </h2>
+                                    
+                                    <p className="text-sm text-zinc-300 leading-relaxed">
+                                        {introSlides[currentSlide].content}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Navigation */}
+                            <div className={`pt-4 border-t border-zinc-800 ${
+                                isMobile ? 'flex flex-col space-y-3' : 'flex items-center justify-between'
+                            }`}>
+                                <div className={`flex gap-2 ${
+                                    isMobile ? 'justify-center' : ''
+                                }`}>
+                                    {introSlides.map((_, index) => (
+                                        <div
+                                            key={index}
+                                            className={`w-2 h-2 rounded-full transition-colors ${
+                                                index === currentSlide ? 'bg-white' : 'bg-zinc-600'
+                                            }`}
+                                        />
+                                    ))}
+                                </div>
+
+                                <div className={`flex gap-2 ${
+                                    isMobile ? 'justify-center' : ''
+                                }`}>
+                                    {currentSlide > 0 && (
+                                        <Button variant="ghost" size="sm" onClick={handlePrevSlide}>
+                                            Previous
+                                        </Button>
+                                    )}
+                                    
+                                    {currentSlide === introSlides.length - 1 ? (
+                                        <>
+                                            <Button variant="outline" size="sm" onClick={handleOpenAI}>
+                                                Talk with Darksun AI
+                                            </Button>
+                                            <Button size="sm" onClick={handleNextSlide}>
+                                                Begin
+                                            </Button>
+                                        </>
+                                    ) : (
+                                        <Button size="sm" onClick={handleNextSlide}>
+                                            Next
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    </DraggableModal>
                 )}
                 <ResetPasswordModal isOpen={resetModalOpen} onClose={() => setResetModalOpen(false)} showToast={showToast} />
             </ModalPortal>

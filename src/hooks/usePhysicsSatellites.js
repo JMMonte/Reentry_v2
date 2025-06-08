@@ -9,11 +9,11 @@ export function usePhysicsSatellites(app3d) {
     const [satellites, setSatellites] = useState({});
 
     useEffect(() => {
-        if (!app3d?.physicsIntegration?.physicsEngine) return;
+        if (!app3d?.physicsIntegration) return;
 
         // Function to update satellites from physics engine
         const updateSatellites = () => {
-            const state = app3d.physicsIntegration.physicsEngine.getSimulationState?.();
+            const state = app3d.physicsIntegration.getSimulationState?.();
             setSatellites(state?.satellites || {});
         };
 

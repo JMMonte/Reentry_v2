@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '../button';
 import { Switch } from '../switch';
 import { Input } from '../input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import {
   Settings2,
   Grid,
@@ -18,8 +19,7 @@ import {
   Link,
   CheckSquare,
   Loader2,
-  Info,
-  Cloud
+  Info
 } from 'lucide-react';
 import { DraggableModal } from '../modal/DraggableModal';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../tooltip';
@@ -34,7 +34,7 @@ export const defaultSettings = {
   enableFXAA: { value: true, name: 'Anti-Aliasing (FXAA)', icon: Settings2,
     description: 'Enable fast approximate anti-aliasing for smoother rendering.'
   },
-  pixelRatio: { value: Math.min(window.devicePixelRatio, 2.0), name: 'Pixel Ratio', icon: Settings2, type: 'number', min: 0.5, max: 2, step: 0.1,
+  pixelRatio: { value: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio : 1, 2.0), name: 'Pixel Ratio', icon: Settings2, type: 'number', min: 0.5, max: 2, step: 0.1,
     description: 'Adjust pixel ratio to control antialias strength (effective resolution).'
   },
   showSurfaceLines: { value: true, name: 'Terrain Lines', icon: Mountain },
@@ -80,6 +80,14 @@ export const defaultSettings = {
   },
   sensitivityScale: { value: 1.0, name: 'Sensitivity Scale', icon: LineChart, type: 'number', min: 0, max: 10, step: 0.1,
     description: `Higher values tighten the integrator's error tolerance in high-force areas (e.g. atmosphere), increasing accuracy but slowing propagation; lower values speed up simulation with less accuracy.`
+  },
+  integrationMethod: { value: 'auto', name: 'Integration Method', icon: Settings2, type: 'select', 
+    options: [
+      { value: 'auto', label: 'Auto (Recommended)' },
+      { value: 'rk45', label: 'RK45 (High Precision)' },
+      { value: 'rk4', label: 'RK4 (Performance)' }
+    ],
+    description: 'Choose the numerical integration method for satellite motion. Auto selects the best method based on time warp. RK45 provides superior precision but uses more CPU. RK4 is faster but less accurate for large timesteps.'
   },
   ambientLight: { value: 0.01, name: 'Ambient Light Intensity', icon: Settings2, type: 'number', min: 0, max: 1, step: 0.05,
     description: 'Controls the overall brightness of the scene.'
@@ -133,6 +141,7 @@ const categories = [
       'orbitPredictionInterval',
       'orbitPointsPerPeriod',
       'physicsTimeStep',
+      'integrationMethod',
       'perturbationScale',
       'sensitivityScale'
     ],
@@ -193,6 +202,9 @@ Accordion.propTypes = {
 function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
   const isNumber = setting.type === 'number';
   const isRange = setting.type === 'range';
+  const isSelect = setting.type === 'select';
+  const currentValue = value !== undefined ? value : setting.value;
+  
   return (
     <div key={keyName} className="flex items-center justify-between px-2 py-1 text-xs">
       <div className="flex items-center gap-1">
@@ -219,7 +231,7 @@ function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
               min={setting.min}
               max={setting.max}
               step={setting.step}
-              value={value !== undefined ? value : setting.value}
+              value={currentValue}
               onChange={e => onChange(keyName, parseFloat(e.target.value))}
             />
             {loading && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
@@ -231,13 +243,29 @@ function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
             min={setting.min}
             max={setting.max}
             step={setting.step}
-            value={value !== undefined ? value : setting.value}
+            value={currentValue}
             onChange={e => onChange(keyName, parseFloat(e.target.value))}
           />
+        ) : isSelect ? (
+          <div className="flex items-center">
+            <Select value={currentValue} onValueChange={val => onChange(keyName, val)}>
+              <SelectTrigger className="text-xs h-6 w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {setting.options.map(option => (
+                  <SelectItem key={option.value} value={option.value} className="text-xs">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {loading && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+          </div>
         ) : (
           <Switch
             className="scale-[0.6]"
-            checked={value !== undefined ? value : setting.value}
+            checked={currentValue}
             onCheckedChange={checked => onChange(keyName, checked)}
             disabled={setting.disabled}
           />

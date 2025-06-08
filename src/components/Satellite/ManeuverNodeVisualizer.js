@@ -171,13 +171,6 @@ export class ManeuverVisualizationManager {
     _updateNodeVisual(visual, visualData) {
         // Update position
         visual.group.position.set(...visualData.position);
-        
-        // Debug logging
-        console.log('[ManeuverVisualizationManager] Updated maneuver node position:', {
-            nodeId: visualData.nodeId,
-            position: visualData.position,
-            worldPosition: visual.group.getWorldPosition(new THREE.Vector3()).toArray()
-        });
 
         // Update arrow direction and length
         const arrowLength = Math.min(visualData.deltaVMagnitude * 50, 100);

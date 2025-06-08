@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback } from 'react';
-import * as THREE from 'three';
 import { ManeuverNodeRenderer } from '../components/Satellite/ManeuverNodeRenderer.js';
 
 /**
@@ -13,7 +12,6 @@ export function useManeuverPreview({
     satellite,
     previewManager,
     maneuverMode,
-    timeMode,
     executionTime,
     deltaV,
     hohmannParams,

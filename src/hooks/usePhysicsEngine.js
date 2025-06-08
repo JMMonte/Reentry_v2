@@ -36,7 +36,7 @@ export function usePhysicsEngine(app) {
         // Check if already initialized
         if (app.physicsIntegration.isInitialized) {
             setIsPhysicsInitialized(true);
-            const currentState = app.physicsIntegration.physicsEngine.getSimulationState();
+            const currentState = app.physicsIntegration.getSimulationState();
             setPhysicsState(currentState);
         }
 

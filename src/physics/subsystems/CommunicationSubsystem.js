@@ -7,6 +7,7 @@
  */
 
 import { SatelliteSubsystem } from './SatelliteSubsystem.js';
+import { PhysicsConstants } from '../core/PhysicsConstants.js';
 
 export class CommunicationSubsystem extends SatelliteSubsystem {
     constructor(satelliteId, config = {}) {
@@ -297,7 +298,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
 
         // Calculate free space path loss (Friis equation)
         const frequency = this.config.transmitFrequency * 1e9; // Convert to Hz
-        const wavelength = 299792458 / frequency; // c / f
+        const wavelength = PhysicsConstants.PHYSICS.C / frequency; // c / f (m)
         const pathLoss = 20 * Math.log10(4 * Math.PI * distance * 1000 / wavelength); // dB
 
         // Link budget calculation

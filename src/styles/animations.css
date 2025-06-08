@@ -6,3 +6,82 @@
 .animate-blink {
   animation: blink 1s ease-in-out infinite;
 }
+
+/* Enhanced Loader Animations */
+@keyframes orbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes orbit-reverse {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+@keyframes starfield {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(-100px); }
+}
+
+@keyframes glow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+@keyframes progressFill {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(0%); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+/* CSS Classes for Enhanced Loader */
+.loader-orbit {
+  animation: orbit 3s linear infinite;
+}
+
+.loader-orbit-reverse {
+  animation: orbit-reverse 2s linear infinite;
+}
+
+.loader-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.loader-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  background-size: 200px 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.loader-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.loader-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.starfield-bg {
+  background-image: radial-gradient(2px 2px at 20px 30px, #eee, transparent),
+                    radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
+                    radial-gradient(1px 1px at 90px 40px, #fff, transparent),
+                    radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.6), transparent),
+                    radial-gradient(2px 2px at 160px 30px, #ddd, transparent);
+  background-repeat: repeat;
+  background-size: 200px 100px;
+  animation: starfield 20s linear infinite;
+}

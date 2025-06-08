@@ -78,6 +78,8 @@ import { SimulationLoop } from './simulation/SimulationLoop.js';
 import { PhysicsManager } from './physics/PhysicsManager.js';
 import { LineOfSightManager } from './managers/LineOfSightManager.js';
 import { SatelliteCommsManager } from './managers/SatelliteCommsManager.js';
+import { CommunicationsService } from './services/CommunicationsService.js';
+import Physics from './physics/PhysicsAPI.js';
 
 // Controls
 import { CameraControls } from './controls/CameraControls.js';
@@ -91,6 +93,8 @@ import {
 import { setupEventListeners as setupGlobalListeners }
     from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
+// Memory monitoring for development
+import { setupMemoryMonitoring } from './utils/MemoryMonitor.js';
 
 // Domain helpers
 import { Planet } from './components/planet/Planet.js';
@@ -150,6 +154,9 @@ class App3D extends EventTarget {
         
         // Initialize satellite communications manager
         this.satelliteCommsManager = new SatelliteCommsManager();
+        
+        // Initialize unified communications service
+        this.communicationsService = new CommunicationsService();
 
         this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
@@ -234,6 +241,54 @@ class App3D extends EventTarget {
                 this._displaySettingsManager,
                 this.physicsIntegration
             );
+            
+            // Initialize communications service with managers
+            this.communicationsService.initialize(
+                this.lineOfSightManager,
+                this.satelliteCommsManager,
+                this.physicsIntegration.physicsEngine
+            );
+            
+            // Create physics API for React components - direct access to unified API
+            this.physicsAPI = {
+                ...Physics,
+                isReady: () => this.physicsIntegration?.isInitialized || false,
+                waitForReady: () => Promise.resolve(true), // Always ready (static API)
+                markReady: () => {}, // No-op since Physics API is always ready
+                dispose: () => {}, // No cleanup needed for static API
+                // Provide access to physics engine for advanced operations
+                getPhysicsEngine: () => this.physicsIntegration.physicsEngine,
+                // Legacy compatibility methods
+                getAllBodies: () => {
+                    const engine = this.physicsIntegration.physicsEngine;
+                    if (!engine || !engine.bodies) return [];
+                    
+                    // Convert bodies object to array format expected by components
+                    return Object.values(engine.bodies).map(body => ({
+                        id: body.naifId || body.id,
+                        naifId: body.naifId || body.id,
+                        name: body.name,
+                        position: body.position,
+                        ...body
+                    }));
+                },
+                getAllSatelliteUIData: () => {
+                    const engine = this.physicsIntegration.physicsEngine;
+                    if (!engine || !engine.satellites) return [];
+                    
+                    return Array.from(engine.satellites.values()).map(sat => ({
+                        id: sat.id,
+                        position: sat.position,
+                        velocity: sat.velocity,
+                        ...sat
+                    }));
+                }
+            };
+            
+            // Expose on window for components that expect it
+            if (window.app3d === this) {
+                window.app3d.physicsAPI = this.physicsAPI;
+            }
 
             this._initPOIPicking();
             this._setupControls();
@@ -256,9 +311,14 @@ class App3D extends EventTarget {
                 
                 // Set up satellite communication system integration
                 this._setupSatelliteCommsIntegration();
+                
+                // Physics API is always ready (static functions)
+                console.log('[App3D] Physics API ready - using unified PhysicsAPI');
             } catch (physicsError) {
                 console.warn('[App3D] Physics integration failed to initialize:', physicsError);
                 // Continue without physics integration - fallback to existing systems
+                // Physics API remains available as static functions
+                console.log('[App3D] Physics API available in fallback mode');
             }
 
             // Physics worker (latency-hiding)
@@ -303,6 +363,17 @@ class App3D extends EventTarget {
             // Re-apply display settings to ensure all are set with simulationLoop present
             this.displaySettingsManager?.applyAll?.();
 
+            // Set up memory monitoring in development
+            if (window.location.search.includes('debug')) {
+                this.memoryMonitor = setupMemoryMonitoring(this, {
+                    enabled: true,
+                    showOverlay: window.location.search.includes('memoryOverlay'),
+                    interval: 5000,
+                    warnThreshold: 1000,     // 1GB warning threshold
+                    criticalThreshold: 2000  // 2GB critical threshold
+                });
+            }
+
             this._isInitialized = true;
             this._dispatchSceneReady();
         } catch (err) {
@@ -328,7 +399,6 @@ class App3D extends EventTarget {
             
             // Dispatch scene ready event
             window.dispatchEvent(new CustomEvent('sceneReadyFromBackend'));
-            console.log('[App3D] Scene initialized locally');
         } catch (sceneError) {
             console.error('[App3D] Failed to initialize local scene:', sceneError);
             throw sceneError;
@@ -355,8 +425,20 @@ class App3D extends EventTarget {
         // Satellite orbit manager
         this.satelliteOrbitManager?.dispose?.();
         
-        // Satellite communications manager
+        // Communications cleanup
+        this.communicationsService?.dispose?.();
         this.satelliteCommsManager?.dispose?.();
+        this.physicsAPI?.dispose?.();
+        
+        // Remove satellite event listeners to prevent memory leaks
+        if (this._handleSatelliteAdded) {
+            window.removeEventListener('satelliteAdded', this._handleSatelliteAdded);
+            this._handleSatelliteAdded = null;
+        }
+        if (this._handleSatelliteRemoved) {
+            window.removeEventListener('satelliteRemoved', this._handleSatelliteRemoved);
+            this._handleSatelliteRemoved = null;
+        }
         
         // Simulation controller
         this.simulationController?.dispose?.();
@@ -386,7 +468,7 @@ class App3D extends EventTarget {
         });
         
         // Cleanup shared GroundtrackPath worker
-        import('./components/Satellite/GroundtrackPath.js').then(module => {
+        import('./services/GroundtrackPath.js').then(module => {
             if (module.GroundtrackPath && module.GroundtrackPath.forceCleanup) {
                 module.GroundtrackPath.forceCleanup();
             }
@@ -404,6 +486,21 @@ class App3D extends EventTarget {
 
         // Listeners
         this._removeWindowResizeListener();
+        
+        // Clean up pointer event listeners and animation frames
+        if (this._pointerMoveHandler && this.canvas) {
+            this.canvas.removeEventListener('pointermove', this._pointerMoveHandler);
+        }
+        if (this._pointerDownHandler && this.canvas) {
+            this.canvas.removeEventListener('pointerdown', this._pointerDownHandler);
+        }
+        // Cancel pending animation frame
+        if (this._pendingRAF) {
+            const rafId = this._pendingRAF();
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+            }
+        }
         
         // Clean up global event listeners
         if (this._cleanupGlobalListeners) {
@@ -425,6 +522,9 @@ class App3D extends EventTarget {
         this._bodyWorldPositions.clear();
         this._lastUpdateFrame.clear();
         this._visibleBodies.clear();
+        
+        // Stop memory monitoring
+        this.memoryMonitor?.stop();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -454,16 +554,24 @@ class App3D extends EventTarget {
 
         // event throttling
         let pending = false;
+        let rafId = null;
         const onMove = evt => {
             if (pending) return;
             pending = true;
-            requestAnimationFrame(() => {
+            rafId = requestAnimationFrame(() => {
                 this._handlePointerMove(evt);
                 pending = false;
+                rafId = null;
             });
         };
-        this.canvas.addEventListener('pointermove', onMove);
-        this.canvas.addEventListener('pointerdown', this._handlePointerDown.bind(this));
+        
+        // Store references for cleanup
+        this._pointerMoveHandler = onMove;
+        this._pointerDownHandler = this._handlePointerDown.bind(this);
+        this._pendingRAF = () => rafId;
+        
+        this.canvas.addEventListener('pointermove', this._pointerMoveHandler);
+        this.canvas.addEventListener('pointerdown', this._pointerDownHandler);
     }
 
     _injectStatsPanel() {
@@ -501,7 +609,6 @@ class App3D extends EventTarget {
     // 8. SATELLITE CONNECTIONS WORKER (Delegated to LineOfSightManager)
     // ──────────────────────────────────────────────────────────────────────────
     _toggleSatelliteLinks(enabled) {
-        console.log('[App3D] _toggleSatelliteLinks called with:', enabled);
         this.lineOfSightManager.setEnabled(enabled);
         if (enabled) {
             this._syncConnectionsWorker();
@@ -514,10 +621,11 @@ class App3D extends EventTarget {
             return;
         }
         
-        const physicsEngine = this.physicsIntegration.physicsEngine;
-        const sats = physicsEngine.getSatellitesForLineOfSight();
-        const bodies = physicsEngine.getBodiesForLineOfSight();
+        this.physicsIntegration.physicsEngine;
+        const sats = this.physicsIntegration.getSatellitesForLineOfSight();
+        const bodies = this.physicsIntegration.getBodiesForLineOfSight();
         
+
         if (this.lineOfSightManager) {
             this.lineOfSightManager.updateConnections(sats, bodies, []);
         } else {
@@ -839,8 +947,21 @@ class App3D extends EventTarget {
         });
 
         // Update satellite vectors if visible and using new implementation
-        if (this.satelliteVectors?.update && this.displaySettings?.getSetting('showSatVectors')) {
+        if (this.satelliteVectors?.update && this.displaySettingsManager?.getSetting('showSatVectors')) {
             this.satelliteVectors.update();
+        }
+        
+        // Update satellite communications connections if enabled (throttled)
+        if (this.lineOfSightManager?.isEnabled()) {
+            // Only update every 10 frames (about 6 times per second at 60fps)
+            if (this._frameCount % 10 === 0) {
+                this._syncConnectionsWorker();
+            }
+        }
+        
+        // Update background stars to handle FOV changes
+        if (this.backgroundStars?.update) {
+            this.backgroundStars.update();
         }
         
         this.labelRenderer?.render?.(this.scene, this.camera);
@@ -856,31 +977,36 @@ class App3D extends EventTarget {
      * Set up integration between PhysicsEngine satellite events and SatelliteCommsManager
      */
     _setupSatelliteCommsIntegration() {
-        if (!this.physicsIntegration?.physicsEngine || !this.satelliteCommsManager) {
+        if (!this.physicsIntegration || !this.satelliteCommsManager) {
             console.warn('[App3D] Cannot set up comms integration - missing physics or comms manager');
             return;
         }
         
-        // Listen for satellite added events from PhysicsEngine
-        window.addEventListener('satelliteAdded', (event) => {
+        // Create bound event handlers for proper cleanup
+        this._handleSatelliteAdded = (event) => {
             const satellite = event.detail;
             console.log(`[App3D] Setting up communications for satellite ${satellite.id}`);
             
             // Get communication config from satellite if available
-            const commsConfig = satellite.commsConfig || { preset: 'cubesat' };
+            const commsConfig = satellite.commsConfig || { preset: 'cubesat', enabled: true };
+            console.log(`[App3D] Comms config for ${satellite.id}:`, commsConfig);
             
             // Create communication system in SatelliteCommsManager
             this.satelliteCommsManager.createCommsSystem(satellite.id, commsConfig);
-        });
+            console.log(`[App3D] Created comms system for ${satellite.id}`);
+        };
         
-        // Listen for satellite removed events
-        window.addEventListener('satelliteRemoved', (event) => {
+        this._handleSatelliteRemoved = (event) => {
             const satelliteId = event.detail.id;
             console.log(`[App3D] Removing communications for satellite ${satelliteId}`);
             
             // Remove communication system from SatelliteCommsManager
             this.satelliteCommsManager.removeCommsSystem(satelliteId);
-        });
+        };
+        
+        // Listen for satellite added/removed events from PhysicsEngine
+        window.addEventListener('satelliteAdded', this._handleSatelliteAdded);
+        window.addEventListener('satelliteRemoved', this._handleSatelliteRemoved);
         
         console.log('[App3D] Satellite communications integration set up successfully');
     }

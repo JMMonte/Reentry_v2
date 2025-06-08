@@ -4,7 +4,7 @@
  * Handles maneuver node orbit visualization and prediction
  */
 import * as THREE from 'three';
-import { Utils } from '../physics/PhysicsAPI.js';
+import { Utils, Orbital } from '../physics/PhysicsAPI.js';
 
 export class ManeuverOrbitHandler {
     constructor(app, workerPoolManager, orbitCacheManager) {
@@ -21,16 +21,59 @@ export class ManeuverOrbitHandler {
      * This will calculate the position at maneuver time and post-maneuver orbit
      */
     requestManeuverNodeVisualization(satelliteId, maneuverNode, physicsEngine) {
-        const satellite = physicsEngine?.satellites.get(satelliteId);
-        if (!satellite) {
-            console.error(`[ManeuverOrbitHandler] Satellite ${satelliteId} not found`);
-            return;
+        if (!physicsEngine || !physicsEngine.satellites) {
+            console.error(`[ManeuverOrbitHandler] Physics engine not available or satellites not initialized`);
+            return false;
         }
         
-        // Get the current orbit data
-        const orbitData = this.orbitCacheManager.getCachedOrbit(satelliteId);
+        const satellite = physicsEngine.satellites.get(satelliteId);
+        if (!satellite) {
+            console.error(`[ManeuverOrbitHandler] Satellite ${satelliteId} not found`);
+            return false;
+        }
+        
+        // Get the orbit data to use for this maneuver node
+        // For nested maneuver nodes, we need to use the post-maneuver orbit from the previous node
+        let orbitData = null;
+        let baseOrbitId = satelliteId; // Default to original satellite orbit
+        
+        // Check if there are previous maneuver nodes for this satellite
+        const allManeuverNodes = physicsEngine?.maneuverNodes?.get(satelliteId) || [];
+        if (allManeuverNodes.length > 0) {
+            // Sort by execution time to find the correct sequence
+            const sortedNodes = [...allManeuverNodes].sort((a, b) => 
+                a.executionTime.getTime() - b.executionTime.getTime()
+            );
+            
+            // Find the current maneuver node in the sorted list
+            const currentNodeIndex = sortedNodes.findIndex(node => node.id === maneuverNode.id);
+            
+            // If there's a previous maneuver node, use its post-maneuver orbit
+            if (currentNodeIndex > 0) {
+                const previousNode = sortedNodes[currentNodeIndex - 1];
+                const previousManeuverOrbitId = `${satelliteId}_maneuver_${previousNode.id}`;
+                
+                // Try to get the cached orbit from the previous maneuver
+                orbitData = this.orbitCacheManager.getCachedOrbit(previousManeuverOrbitId);
+                if (orbitData) {
+                    baseOrbitId = previousManeuverOrbitId;
+                    console.log(`[ManeuverOrbitHandler] Using orbit from previous maneuver ${previousNode.id} for node ${maneuverNode.id}`);
+                } else {
+                    // Cache not available yet - request immediate calculation and queue this maneuver
+                    console.log(`[ManeuverOrbitHandler] Previous maneuver orbit not cached, queuing current maneuver for later processing`);
+                    this._requestPreviousManeuverCalculation(satelliteId, previousNode, maneuverNode, physicsEngine);
+                    return false; // Indicate that orbit calculation is needed first
+                }
+            }
+        }
+        
+        // If we didn't get orbit data from a previous maneuver, use the original satellite orbit
+        if (!orbitData) {
+            orbitData = this.orbitCacheManager.getCachedOrbit(satelliteId);
+        }
+        
         if (!orbitData || !orbitData.points || orbitData.points.length === 0) {
-            console.warn(`[ManeuverOrbitHandler] No orbit data available for satellite ${satelliteId}`);
+            console.warn(`[ManeuverOrbitHandler] No orbit data available for satellite ${satelliteId} (base orbit: ${baseOrbitId})`);
             // Queue maneuver visualization for after orbit is calculated
             if (!this.maneuverQueue.has(satelliteId)) {
                 this.maneuverQueue.set(satelliteId, []);
@@ -42,7 +85,24 @@ export class ManeuverOrbitHandler {
         // Find the point in the orbit closest to maneuver execution time
         const currentTime = physicsEngine.simulationTime || new Date();
         const maneuverTime = maneuverNode.executionTime;
-        const timeDelta = (maneuverTime.getTime() - currentTime.getTime()) / 1000; // seconds
+        
+        // Calculate time delta based on the orbit's reference time
+        let timeDelta;
+        if (baseOrbitId === satelliteId) {
+            // Using original satellite orbit - time is relative to current simulation time
+            timeDelta = (maneuverTime.getTime() - currentTime.getTime()) / 1000; // seconds
+        } else {
+            // Using previous maneuver's orbit - time is relative to that maneuver's execution time
+            const allManeuverNodes = physicsEngine?.maneuverNodes?.get(satelliteId) || [];
+            const sortedNodes = [...allManeuverNodes].sort((a, b) => 
+                a.executionTime.getTime() - b.executionTime.getTime()
+            );
+            const currentNodeIndex = sortedNodes.findIndex(node => node.id === maneuverNode.id);
+            const previousNode = sortedNodes[currentNodeIndex - 1];
+            
+            // Time delta from the previous maneuver's execution time
+            timeDelta = (maneuverTime.getTime() - previousNode.executionTime.getTime()) / 1000; // seconds
+        }
         
         // Find the orbit point at or near the maneuver time
         let nodePoint = null;
@@ -75,17 +135,21 @@ export class ManeuverOrbitHandler {
         
         const worldDeltaV = Utils.vector.localToWorldDeltaV(localDeltaV, position, velocity);
         
+        // Calculate post-maneuver velocity for proper reference frame
+        const postManeuverVelocity = velocity.clone().add(worldDeltaV);
+        
         // Convert position from absolute SSB coordinates to planet-relative coordinates
         // (same transformation we use for apsis visualization)
         const centralBodyId = nodePoint.centralBodyId || satellite.centralBodyNaifId;
-        const centralBodyPosition = physicsEngine?.getBodyPosition?.(centralBodyId) || [0, 0, 0];
+        const centralBody = physicsEngine?.bodies?.[centralBodyId];
+        const centralBodyPosition = centralBody?.position?.toArray?.() || [0, 0, 0];
         const planetRelativePosition = [
             nodePoint.position[0] - centralBodyPosition[0],
             nodePoint.position[1] - centralBodyPosition[1],
             nodePoint.position[2] - centralBodyPosition[2]
         ];
         
-        // Create visualization data
+        // Create visualization data with correct reference frame
         const visualData = {
             nodeId: maneuverNode.id,
             position: planetRelativePosition,
@@ -97,9 +161,13 @@ export class ManeuverOrbitHandler {
             predictedOrbitPoints: [],
             timeIndex: nodeIndex,
             referenceFrame: {
-                centralBodyId: nodePoint.centralBodyId,
+                centralBodyId: centralBodyId,
                 position: position.toArray(),
-                velocity: velocity.toArray()
+                velocity: postManeuverVelocity.toArray(), // Use POST-maneuver velocity for reference frame
+                // Store both pre and post velocities for debugging/analysis
+                preManeuverVelocity: velocity.toArray(),
+                deltaV: worldDeltaV.toArray(),
+                orbitContext: baseOrbitId // Track which orbit this node is based on
             }
         };
         
@@ -137,8 +205,16 @@ export class ManeuverOrbitHandler {
         const orbitPeriods = satelliteProps.periods || this.app.displaySettingsManager?.getSetting('orbitPredictionInterval') || 1;
         const pointsPerPeriod = satelliteProps.pointsPerPeriod || this.app.displaySettingsManager?.getSetting('orbitPointsPerPeriod') || 180;
         
-        // Estimate duration based on orbit type
-        const duration = 86400 * orbitPeriods; // days in seconds
+        // Calculate actual orbital period for the post-maneuver orbit
+        const centralBodyGM = centralBody?.GM || 398600.4415; // Earth default
+        const position = new THREE.Vector3(...maneuverPoint.position);
+        const orbitalPeriod = Orbital.calculateOrbitalPeriod(position, postManeuverVelocity, centralBodyGM);
+        
+        // Calculate duration based on actual orbital period
+        // For non-elliptical orbits (period = 0), fall back to 1 day per "period"
+        const duration = orbitalPeriod > 0 ? 
+            orbitPeriods * orbitalPeriod : 
+            orbitPeriods * 86400;
         const timeStep = duration / (pointsPerPeriod * orbitPeriods);
         
         // Create a unique ID for this maneuver prediction
@@ -184,6 +260,12 @@ export class ManeuverOrbitHandler {
                 params.maneuverNodeId,
                 points
             );
+            
+            // Process any queued maneuvers that might be waiting for this orbit
+            const physicsEngine = this.app.physicsIntegration?.physicsEngine;
+            if (physicsEngine) {
+                this.processQueuedManeuvers(params.parentSatelliteId, physicsEngine);
+            }
         }
     }
 
@@ -272,6 +354,28 @@ export class ManeuverOrbitHandler {
      */
     removeManeuverQueue(satelliteId) {
         this.maneuverQueue.delete(satelliteId);
+    }
+
+    /**
+     * Request calculation of a previous maneuver's orbit to enable chaining
+     * This delegates to existing systems rather than reimplementing physics
+     */
+    _requestPreviousManeuverCalculation(satelliteId, previousNode, currentManeuverNode, physicsEngine) {
+        // Queue the current maneuver for processing after the previous one completes
+        if (!this.maneuverQueue.has(satelliteId)) {
+            this.maneuverQueue.set(satelliteId, []);
+        }
+        
+        // Add current maneuver to queue
+        this.maneuverQueue.get(satelliteId).push(currentManeuverNode);
+        
+        // Check if the previous maneuver visualization is already in progress
+        // If not, trigger its calculation by re-requesting it
+        console.log(`[ManeuverOrbitHandler] Requesting calculation for previous maneuver ${previousNode.id}`);
+        
+        // Use the existing system to calculate the previous maneuver
+        // This will eventually populate the cache and then process the queue
+        this.requestManeuverNodeVisualization(satelliteId, previousNode, physicsEngine);
     }
 
     /**

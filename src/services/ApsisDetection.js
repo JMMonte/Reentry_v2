@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 
 export class ApsisDetection {
-    
+
     /**
      * Detect all apsis points in a trajectory segment
      * @param {Array} orbitPoints - Array of orbit points with {position, time, centralBodyId}
@@ -38,16 +38,18 @@ export class ApsisDetection {
             if (segment.points.length < 3) continue;
 
             const segmentApsis = this._detectApsisInSegment(
-                segment.points, 
+                segment.points,
                 segment.centralBodyId,
                 { minimumSeparation, toleranceRatio, requireAlternating }
             );
-            
+
             allApsisPoints.push(...segmentApsis);
         }
 
         // Sort by time
-        return allApsisPoints.sort((a, b) => a.time - b.time);
+        const sortedPoints = allApsisPoints.sort((a, b) => a.time - b.time);
+
+        return sortedPoints;
     }
 
     /**
@@ -79,10 +81,10 @@ export class ApsisDetection {
      * @returns {number} Distance in kilometers
      */
     static calculateDistance(satellitePos, centralBodyPos = [0, 0, 0]) {
-        const satPos = satellitePos.isVector3 ? 
+        const satPos = satellitePos.isVector3 ?
             new THREE.Vector3(satellitePos.x, satellitePos.y, satellitePos.z) :
             new THREE.Vector3(...satellitePos);
-            
+
         const bodyPos = centralBodyPos.isVector3 ?
             new THREE.Vector3(centralBodyPos.x, centralBodyPos.y, centralBodyPos.z) :
             new THREE.Vector3(...centralBodyPos);
@@ -103,7 +105,7 @@ export class ApsisDetection {
         }
 
         const factor = (targetTime - point1.time) / (point2.time - point1.time);
-        
+
         return [
             point1.position[0] + factor * (point2.position[0] - point1.position[0]),
             point1.position[1] + factor * (point2.position[1] - point1.position[1]),
@@ -153,7 +155,7 @@ export class ApsisDetection {
         // Find minimum/maximum of quadratic
         const dt1 = t1 - t2;
         const dt3 = t3 - t2;
-        
+
         const a = ((d1 - d2) / dt1 - (d3 - d2) / dt3) / (dt1 - dt3);
         const b = (d1 - d2) / dt1 - a * dt1;
 
@@ -162,7 +164,7 @@ export class ApsisDetection {
             // Find extremum: dt/dt = 2at + b = 0 => t = -b/(2a)
             const deltaT = -b / (2 * a);
             refinedTime = t2 + deltaT;
-            
+
             // Clamp to reasonable bounds
             refinedTime = Math.max(t1, Math.min(t3, refinedTime));
         }
@@ -204,15 +206,15 @@ export class ApsisDetection {
 
         for (let i = 0; i < orbitPoints.length; i++) {
             const point = orbitPoints[i];
-            
+
             if (!point.position || !Array.isArray(point.position) || point.position.length !== 3) {
                 errors.push(`Point ${i}: position must be array of 3 numbers`);
             }
-            
+
             if (typeof point.time !== 'number' || !isFinite(point.time)) {
                 errors.push(`Point ${i}: time must be a finite number`);
             }
-            
+
             if (point.centralBodyId === undefined) {
                 errors.push(`Point ${i}: centralBodyId is required`);
             }
@@ -241,7 +243,7 @@ export class ApsisDetection {
                 };
                 segments.push(currentSegment);
             }
-            
+
             currentSegment.points.push(point);
         }
 
@@ -253,7 +255,7 @@ export class ApsisDetection {
      * @private
      */
     static _detectApsisInSegment(points, centralBodyId, options) {
-        const { minimumSeparation, toleranceRatio, requireAlternating } = options;
+        const { minimumSeparation, requireAlternating } = options;
         const apsisPoints = [];
 
         if (points.length < 3) return apsisPoints;
@@ -288,7 +290,7 @@ export class ApsisDetection {
             const first = distances[0];
             const second = distances[1];
             const last = distances[distances.length - 1];
-            
+
             // Check if first point is a local extremum (comparing with last and second)
             if (first.distance < second.distance && first.distance < last.distance) {
                 addApsisPoint(0, 'periapsis');
@@ -318,7 +320,7 @@ export class ApsisDetection {
             const last = distances[distances.length - 1];
             const secondLast = distances[distances.length - 2];
             const first = distances[0];
-            
+
             // Only check if we don't already have both types or if allowing duplicates
             if (last.distance < secondLast.distance && last.distance < first.distance) {
                 addApsisPoint(distances.length - 1, 'periapsis');
@@ -348,7 +350,7 @@ export class ApsisDetection {
         const futurePoints = orbitPoints.slice(currentIndex);
 
         // Filter by central body if specified
-        const relevantPoints = centralBodyId ? 
+        const relevantPoints = centralBodyId ?
             futurePoints.filter(p => p.centralBodyId === centralBodyId) :
             futurePoints;
 
@@ -397,7 +399,7 @@ export class ApsisDetection {
         if (periapsis.length > 1) {
             const periods = [];
             for (let i = 1; i < periapsis.length; i++) {
-                periods.push(periapsis[i].time - periapsis[i-1].time);
+                periods.push(periapsis[i].time - periapsis[i - 1].time);
             }
             averagePeriod = periods.reduce((sum, p) => sum + p, 0) / periods.length;
         }
@@ -415,7 +417,7 @@ export class ApsisDetection {
             apoapsisCount: apoapsis.length,
             averagePeriod,
             distanceRange,
-            eccentricity: distanceRange.max > 0 ? 
+            eccentricity: distanceRange.max > 0 ?
                 (distanceRange.max - distanceRange.min) / (distanceRange.max + distanceRange.min) : 0
         };
     }
@@ -440,12 +442,12 @@ export class ApsisDetection {
         // Check alternating pattern
         let alternatingCount = 0;
         for (let i = 1; i < apsisPoints.length; i++) {
-            if (apsisPoints[i].type !== apsisPoints[i-1].type) {
+            if (apsisPoints[i].type !== apsisPoints[i - 1].type) {
                 alternatingCount++;
             }
         }
         const alternatingRatio = alternatingCount / (apsisPoints.length - 1);
-        
+
         if (alternatingRatio < 0.8) {
             irregularityScore += 0.3;
             reasons.push('Non-alternating apsis pattern');
@@ -456,14 +458,14 @@ export class ApsisDetection {
         if (periapsis.length > 2) {
             const periods = [];
             for (let i = 1; i < periapsis.length; i++) {
-                periods.push(periapsis[i].time - periapsis[i-1].time);
+                periods.push(periapsis[i].time - periapsis[i - 1].time);
             }
-            
+
             const avgPeriod = periods.reduce((sum, p) => sum + p, 0) / periods.length;
             const periodVariation = Math.sqrt(
                 periods.reduce((sum, p) => sum + Math.pow(p - avgPeriod, 2), 0) / periods.length
             ) / avgPeriod;
-            
+
             if (periodVariation > 0.1) {
                 irregularityScore += periodVariation;
                 reasons.push('High period variation');

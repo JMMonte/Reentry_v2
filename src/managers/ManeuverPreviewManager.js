@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
-import { UnifiedSatellitePropagator } from '../physics/core/UnifiedSatellitePropagator.js';
 import { createManeuverNodeDTO } from '../types/DataTransferObjects.js';
 
 /**
@@ -51,15 +50,13 @@ export class ManeuverPreviewManager {
             dragCoefficient: satellite.dragCoefficient || 2.2
         };
 
-        const propagationPoints = UnifiedSatellitePropagator.propagateOrbit({
-            satellite: satelliteConfig,
-            bodies: physicsState.bodies,
-            duration: Math.abs(dtToManeuver),
-            timeStep: Math.min(60, Math.abs(dtToManeuver) / 10), // Adaptive time step
-            includeJ2: true,
-            includeDrag: true,
-            includeThirdBody: true
-        });
+        const propagationPoints = Orbital.propagateOrbit({
+            position: satelliteConfig.position,
+            velocity: satelliteConfig.velocity,
+            mass: satelliteConfig.mass,
+            crossSectionalArea: satelliteConfig.crossSectionalArea,
+            dragCoefficient: satelliteConfig.dragCoefficient
+        }, Math.min(60, Math.abs(dtToManeuver) / 10), Math.abs(dtToManeuver), physicsState.bodies[satellite.centralBodyNaifId]);
 
         // Get state at maneuver time (last point if propagating forward, first if backward)
         const stateAtManeuver = dtToManeuver >= 0 ? 
@@ -84,16 +81,25 @@ export class ManeuverPreviewManager {
             dragCoefficient: satellite.dragCoefficient || 2.2
         };
 
-        const predictionDuration = satellite.app3d.getDisplaySetting?.('orbitPredictionInterval') * 86400 || 86400; // Default 1 day
-        const postManeuverPoints = UnifiedSatellitePropagator.propagateOrbit({
-            satellite: postManeuverConfig,
-            bodies: physicsState.bodies,
-            duration: predictionDuration,
-            timeStep: 60, // 1 minute steps
-            includeJ2: true,
-            includeDrag: true,
-            includeThirdBody: true
-        });
+        // Calculate actual orbital period for the post-maneuver orbit
+        const centralBodyGM = physicsState.bodies[satellite.centralBodyNaifId]?.GM || 398600.4415; // Earth default
+        const orbitalPeriod = Orbital.calculateOrbitalPeriod(posAtManeuver, velAfterManeuver, centralBodyGM);
+        
+        // Get the number of periods to display from settings
+        const predictionPeriods = satellite.app3d.getDisplaySetting?.('orbitPredictionInterval') || 1;
+        
+        // Calculate prediction duration based on actual orbital period
+        // For non-elliptical orbits (period = 0), fall back to 1 day per "period"
+        const predictionDuration = orbitalPeriod > 0 ? 
+            predictionPeriods * orbitalPeriod : 
+            predictionPeriods * 86400;
+        const postManeuverPoints = Orbital.propagateOrbit({
+            position: postManeuverConfig.position,
+            velocity: postManeuverConfig.velocity,
+            mass: postManeuverConfig.mass,
+            crossSectionalArea: postManeuverConfig.crossSectionalArea,
+            dragCoefficient: postManeuverConfig.dragCoefficient
+        }, 60, predictionDuration, physicsState.bodies[satellite.centralBodyNaifId]);
 
         // Calculate orbital elements for the post-maneuver orbit
         const orbitalElements = Orbital.calculateElements(
@@ -274,15 +280,13 @@ export class ManeuverPreviewManager {
             }
         };
 
-        const points = UnifiedSatellitePropagator.propagateOrbit({
-            satellite: satelliteConfig,
-            bodies: physicsState.bodies,
-            duration: Math.abs(dt),
-            timeStep: Math.min(60, Math.abs(dt) / 5),
-            includeJ2: true,
-            includeDrag: true,
-            includeThirdBody: true
-        });
+        const points = Orbital.propagateOrbit({
+            position: satelliteConfig.position,
+            velocity: satelliteConfig.velocity,
+            mass: satelliteConfig.mass,
+            crossSectionalArea: satelliteConfig.crossSectionalArea,
+            dragCoefficient: satelliteConfig.dragCoefficient
+        }, Math.min(60, Math.abs(dt) / 5), Math.abs(dt), physicsState.bodies[centralBodyId] || { GM: 398600.4415 });
 
         // Return the final state
         const finalPoint = dt >= 0 ? points[points.length - 1] : points[0];

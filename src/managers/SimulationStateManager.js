@@ -75,6 +75,12 @@ export class SimulationStateManager {
         this._restoreDisplaySettings(state.displaySettings);
         this._restoreSatellitesArray(state.satellites);
         this._restoreCameraState(state.camera);
+        // Restore additional state elements
+        this._restoreSelectedBody(state.selectedBody);
+        this._restoreGroundStations(state.groundStations);
+        this._restoreCommunicationLinks(state.communicationLinks);
+        this._restoreManeuverExecutions(state.maneuverExecutions);
+        this._restoreUIState(state.uiState);
     }
 
     /**
@@ -87,7 +93,13 @@ export class SimulationStateManager {
             camera: this._serializeCameraState(),
             displaySettings: this._serializeDisplaySettings(),
             simulatedTime: this.app.timeUtils.getSimulatedTime().toISOString(),
-            timeWarp: this.app.timeUtils.timeWarp
+            timeWarp: this.app.timeUtils.timeWarp,
+            // Additional state elements
+            selectedBody: this._serializeSelectedBody(),
+            groundStations: this._serializeGroundStations(),
+            communicationLinks: this._serializeCommunicationLinks(),
+            maneuverExecutions: this._serializeManeuverExecutions(),
+            uiState: this._serializeUIState()
         };
     }
 
@@ -107,7 +119,7 @@ export class SimulationStateManager {
                         typeof parsed === 'object' &&
                         parsed !== null &&
                         !Array.isArray(parsed) &&
-                        Object.keys(parsed).every(key => ['satellites', 'camera', 'displaySettings', 'simulatedTime', 'timeWarp'].includes(key))
+                        Object.keys(parsed).every(key => ['satellites', 'camera', 'displaySettings', 'simulatedTime', 'timeWarp', 'selectedBody', 'groundStations', 'communicationLinks', 'maneuverExecutions', 'uiState'].includes(key))
                     ) {
                         // Validate satellites
                         if ('satellites' in parsed && !Array.isArray(parsed.satellites)) return null;
@@ -115,6 +127,12 @@ export class SimulationStateManager {
                         if ('camera' in parsed && (typeof parsed.camera !== 'object' || parsed.camera === null || Array.isArray(parsed.camera))) return null;
                         // Validate displaySettings
                         if ('displaySettings' in parsed && (typeof parsed.displaySettings !== 'object' || parsed.displaySettings === null || Array.isArray(parsed.displaySettings))) return null;
+                        // Validate new optional fields
+                        if ('selectedBody' in parsed && parsed.selectedBody !== null && (typeof parsed.selectedBody !== 'object' || Array.isArray(parsed.selectedBody))) return null;
+                        if ('groundStations' in parsed && parsed.groundStations !== null && !Array.isArray(parsed.groundStations)) return null;
+                        if ('communicationLinks' in parsed && parsed.communicationLinks !== null && !Array.isArray(parsed.communicationLinks)) return null;
+                        if ('maneuverExecutions' in parsed && parsed.maneuverExecutions !== null && !Array.isArray(parsed.maneuverExecutions)) return null;
+                        if ('uiState' in parsed && parsed.uiState !== null && (typeof parsed.uiState !== 'object' || Array.isArray(parsed.uiState))) return null;
                         return parsed;
                     }
                 }
@@ -159,11 +177,58 @@ export class SimulationStateManager {
     _restoreSatellitesArray(satellites) {
         if (!Array.isArray(satellites)) return;
         satellites.forEach(params => {
-            if (
-                params.position?.x !== undefined && params.position?.y !== undefined && params.position?.z !== undefined &&
-                params.velocity?.x !== undefined && params.velocity?.y !== undefined && params.velocity?.z !== undefined
-            ) {
-                const sat = this.createSatellite(params);
+            // Validate position and velocity values are finite numbers
+            const positionValid = params.position?.x !== undefined && params.position?.y !== undefined && params.position?.z !== undefined &&
+                                isFinite(params.position.x) && isFinite(params.position.y) && isFinite(params.position.z);
+            
+            const velocityValid = params.velocity?.x !== undefined && params.velocity?.y !== undefined && params.velocity?.z !== undefined &&
+                                isFinite(params.velocity.x) && isFinite(params.velocity.y) && isFinite(params.velocity.z);
+            
+            if (positionValid && velocityValid) {
+                // Pass all serialized properties to createSatellite, only if they exist
+                const satParams = {
+                    ...params
+                };
+                
+                // Only include properties that were actually serialized (not undefined)
+                if (params.size !== undefined) satParams.size = params.size;
+                if (params.crossSectionalArea !== undefined) satParams.crossSectionalArea = params.crossSectionalArea;
+                if (params.dragCoefficient !== undefined) satParams.dragCoefficient = params.dragCoefficient;
+                if (params.ballisticCoefficient !== undefined) satParams.ballisticCoefficient = params.ballisticCoefficient;
+                if (params.centralBodyNaifId !== undefined) satParams.centralBodyNaifId = params.centralBodyNaifId;
+                if (params.orbitSimProperties !== undefined) satParams.orbitSimProperties = params.orbitSimProperties;
+                if (params.commsConfig !== undefined) satParams.commsConfig = params.commsConfig;
+                
+                // Log detailed info about what we're trying to create
+                console.log(`[SimulationStateManager] Creating satellite from state:`, {
+                    id: params.id,
+                    position: params.position,
+                    velocity: params.velocity,
+                    centralBodyNaifId: params.centralBodyNaifId
+                });
+                
+                const sat = this.createSatellite(satParams);
+                
+                if (!sat) {
+                    console.warn('[SimulationStateManager] Failed to create satellite:', params);
+                    return;
+                }
+                
+                console.log(`[SimulationStateManager] Successfully created satellite ${sat.id}`);
+                
+                // Validate satellite was created with valid position/velocity
+                if (sat.position && Array.isArray(sat.position.toArray)) {
+                    const posArray = sat.position.toArray();
+                    const velArray = sat.velocity.toArray();
+                    if (!posArray.every(v => isFinite(v)) || !velArray.every(v => isFinite(v))) {
+                        console.error(`[SimulationStateManager] Satellite ${sat.id} created with invalid values:`, {
+                            position: posArray,
+                            velocity: velArray
+                        });
+                    }
+                }
+                
+                // Restore maneuver nodes
                 if (params.maneuverNodes) {
                     params.maneuverNodes.forEach(nodeData => {
                         const time = new Date(nodeData.time);
@@ -174,7 +239,13 @@ export class SimulationStateManager {
                     });
                 }
             } else {
-                console.warn('Skipped satellite with invalid position/velocity:', params);
+                console.warn('[SimulationStateManager] Skipping satellite with invalid position/velocity values:', {
+                    id: params.id,
+                    position: params.position,
+                    velocity: params.velocity,
+                    positionValid,
+                    velocityValid
+                });
             }
         });
     }
@@ -205,6 +276,31 @@ export class SimulationStateManager {
                 velocity: { x: sat.velocity.x, y: sat.velocity.y, z: sat.velocity.z },
                 mass: sat.mass,
                 color: sat.color,
+                // Physical properties
+                size: sat.size,
+                crossSectionalArea: sat.crossSectionalArea,
+                dragCoefficient: sat.dragCoefficient,
+                ballisticCoefficient: sat.ballisticCoefficient,
+                // Orbital properties
+                centralBodyNaifId: sat.centralBodyNaifId,
+                // Visualization properties
+                orbitSimProperties: sat.orbitSimProperties ? {
+                    periods: sat.orbitSimProperties.periods,
+                    pointsPerPeriod: sat.orbitSimProperties.pointsPerPeriod
+                } : undefined,
+                // Communications properties
+                commsConfig: sat.commsConfig ? {
+                    enabled: sat.commsConfig.enabled,
+                    preset: sat.commsConfig.preset,
+                    antennaGain: sat.commsConfig.antennaGain,
+                    transmitPower: sat.commsConfig.transmitPower,
+                    dataRate: sat.commsConfig.dataRate,
+                    minElevationAngle: sat.commsConfig.minElevationAngle,
+                    frequency: sat.commsConfig.frequency,
+                    receiverSensitivity: sat.commsConfig.receiverSensitivity,
+                    antennaPattern: sat.commsConfig.antennaPattern
+                } : undefined,
+                // Maneuver nodes
                 maneuverNodes: sat.maneuverNodes.map(node => ({
                     time: node.time.toISOString(),
                     dv: {
@@ -237,5 +333,188 @@ export class SimulationStateManager {
 
     _serializeDisplaySettings() {
         return this.app.displaySettingsManager ? { ...this.app.displaySettingsManager.settings } : undefined;
+    }
+
+    // Additional serialization methods
+    _serializeSelectedBody() {
+        if (!this.app.selectedBody) return null;
+        return {
+            naifId: this.app.selectedBody.naifId,
+            name: this.app.selectedBody.name
+        };
+    }
+
+    _serializeGroundStations() {
+        // Ground stations are typically loaded from config and don't need full serialization
+        // Just track which ones are active/visible
+        const groundStations = this.app.groundStations;
+        if (!groundStations || !Array.isArray(groundStations)) return null;
+        
+        return groundStations
+            .filter(station => station.visible !== false)
+            .map(station => ({
+                id: station.id,
+                visible: station.visible,
+                // Add any custom properties that might have been modified
+            }));
+    }
+
+    _serializeCommunicationLinks() {
+        // Serialize active communication links
+        const commsManager = this.app.satelliteCommsManager;
+        if (!commsManager) return null;
+        
+        const links = [];
+        if (commsManager.activeConnections) {
+            commsManager.activeConnections.forEach((connections, satelliteId) => {
+                connections.forEach(conn => {
+                    links.push({
+                        satelliteId,
+                        targetId: conn.targetId,
+                        type: conn.type,
+                        // Don't serialize computed values like signal strength
+                    });
+                });
+            });
+        }
+        return links;
+    }
+
+    _serializeManeuverExecutions() {
+        // Serialize any in-progress maneuver executions
+        const maneuverManager = this.app.maneuverManager;
+        if (!maneuverManager) return null;
+        
+        const executions = [];
+        // Check if there are any active maneuver executions
+        if (maneuverManager.activeExecutions) {
+            maneuverManager.activeExecutions.forEach((execution, nodeId) => {
+                executions.push({
+                    nodeId,
+                    satelliteId: execution.satelliteId,
+                    startTime: execution.startTime,
+                    progress: execution.progress,
+                    // Other execution state
+                });
+            });
+        }
+        return executions;
+    }
+
+    _serializeUIState() {
+        // Serialize relevant UI state
+        return {
+            // Open windows/panels
+            satelliteDebugWindows: this._getOpenSatelliteDebugWindows(),
+            maneuverWindows: this._getOpenManeuverWindows(),
+            // Selected objects
+            selectedSatelliteId: this.app.selectedSatelliteId,
+            // Active modes
+            maneuverMode: this.app.maneuverMode,
+            // Add other UI state as needed
+        };
+    }
+
+    _getOpenSatelliteDebugWindows() {
+        // This would need to be tracked by the UI components
+        // For now, return empty array
+        return [];
+    }
+
+    _getOpenManeuverWindows() {
+        // This would need to be tracked by the UI components
+        // For now, return empty array
+        return [];
+    }
+
+    // Additional restoration methods
+    _restoreSelectedBody(selectedBody) {
+        if (!selectedBody || !selectedBody.naifId) return;
+        
+        // Find the body by NAIF ID
+        const body = this.app.bodiesByNaifId?.[selectedBody.naifId];
+        if (body) {
+            this.app.updateSelectedBody(body);
+        }
+    }
+
+    _restoreGroundStations(groundStations) {
+        // Ground stations are loaded from config, so we just restore visibility
+        if (!groundStations || !Array.isArray(groundStations)) return;
+        
+        // This would need implementation in the ground station manager
+        // For now, just log
+        console.log('[SimulationStateManager] Ground station state restoration not yet implemented');
+    }
+
+    _restoreCommunicationLinks(links) {
+        if (!links || !Array.isArray(links)) return;
+        
+        // Communication links will be rebuilt automatically based on satellite positions
+        // But we could force a rebuild here if needed
+        if (this.app.satelliteCommsManager) {
+            // Force update of all connections after satellites are loaded
+            this._commsUpdateTimeout = setTimeout(() => {
+                // Get current satellites and recalculate communication links
+                const satellites = Array.from(this.app.physicsIntegration?.physicsEngine?.satellites?.values() || []);
+                const bodies = this.app.physicsIntegration?.physicsEngine?.bodies || {};
+                
+                if (satellites.length > 0) {
+                    this.app.satelliteCommsManager.calculateCommunicationLinks(satellites, bodies);
+                    console.log('[SimulationStateManager] Recalculated communication links for imported state');
+                }
+                this._commsUpdateTimeout = null;
+            }, 1000); // Delay to ensure satellites are loaded
+        }
+    }
+
+    _restoreManeuverExecutions(executions) {
+        if (!executions || !Array.isArray(executions)) return;
+        
+        // Restore any in-progress maneuver executions
+        // This would need implementation in the maneuver manager
+        console.log('[SimulationStateManager] Maneuver execution restoration not yet implemented');
+    }
+
+    _restoreUIState(uiState) {
+        if (!uiState) return;
+        
+        // Restore UI state elements
+        if (uiState.selectedSatelliteId) {
+            // Select the satellite after a delay to ensure it's loaded
+            this._uiRestoreTimeout = setTimeout(() => {
+                const satellite = this.satellites.getSatellite(uiState.selectedSatelliteId);
+                if (satellite) {
+                    // Trigger satellite selection
+                    this.app.selectedSatelliteId = uiState.selectedSatelliteId;
+                }
+                this._uiRestoreTimeout = null;
+            }, 500);
+        }
+        
+        // Restore other UI state as needed
+        if (uiState.maneuverMode !== undefined) {
+            this.app.maneuverMode = uiState.maneuverMode;
+        }
+    }
+
+    /**
+     * Cleanup method to dispose of resources and prevent memory leaks
+     */
+    dispose() {
+        // Clear any pending timeouts
+        if (this._commsUpdateTimeout) {
+            clearTimeout(this._commsUpdateTimeout);
+            this._commsUpdateTimeout = null;
+        }
+        
+        if (this._uiRestoreTimeout) {
+            clearTimeout(this._uiRestoreTimeout);
+            this._uiRestoreTimeout = null;
+        }
+        
+        // Clear references
+        this.app = null;
+        this.satellites = null;
     }
 } 

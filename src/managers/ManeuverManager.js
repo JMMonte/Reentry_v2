@@ -1,6 +1,4 @@
-import * as THREE from 'three';
-import { ManeuverNodeModel } from '../models/ManeuverNodeModel.js';
-import { Orbital, Bodies, Utils, Constants } from '../physics/PhysicsAPI.js';
+import { Orbital, Bodies, Utils } from '../physics/PhysicsAPI.js';
 
 /**
  * Encapsulates maneuver operations for a satellite (manual burns, transfers).
@@ -18,15 +16,15 @@ export class ManeuverManager {
     /**
      * Rebuild array of UI node models sorted by execution time.
      */
-    buildNodeModels(currentSimTime) {
+    buildNodeModels() {
         return this.sat.maneuverNodes
             .slice()
             .sort((a, b) => a.executionTime.getTime() - b.executionTime.getTime())
             .map(n => {
-                const localDV = new THREE.Vector3(n.deltaV.prograde, n.deltaV.normal, n.deltaV.radial);
+                const localDV = { x: n.deltaV.prograde, y: n.deltaV.normal, z: n.deltaV.radial };
                 // Calculate worldDV if we have position and velocity
                 // For now, just use the magnitude from the DTO
-                const worldDV = new THREE.Vector3(n.deltaMagnitude, 0, 0);
+                const worldDV = { x: n.deltaMagnitude, y: 0, z: 0 };
                 
                 return {
                     node: n,
@@ -56,14 +54,14 @@ export class ManeuverManager {
         const executeTime = Utils.time.computeExecutionTime(simNow, timeMode, { 
             offsetSec, hours, minutes, seconds, milliseconds 
         });
-        const dvLocal = new THREE.Vector3(parseFloat(vx) || 0, parseFloat(vy) || 0, parseFloat(vz) || 0);
+        const dvLocal = { x: parseFloat(vx) || 0, y: parseFloat(vy) || 0, z: parseFloat(vz) || 0 };
 
         // Optionally remove an existing node before scheduling a new one
         if (replaceOldNode) {
             this.sat.removeManeuverNode(replaceOldNode);
         }
 
-        const newNode = this.sat.addManeuverNode(executeTime, dvLocal.clone());
+        const newNode = this.sat.addManeuverNode(executeTime, { ...dvLocal });
         // newNode is now a DTO, no need to set localDV or call update()
         return newNode;
     }
@@ -143,9 +141,6 @@ export class ManeuverManager {
         const mu = earthData?.GM || Bodies.getGM('earth');
         const r1Vec = this.sat.position.clone();
         const v1Vec = this.sat.velocity.clone();
-        const r1 = r1Vec.length();
-        // Target orbit radius
-        const r_target = (parseFloat(ellApoKm) || 0) + earthData?.radius;
         // Find next periapsis for first burn using new Physics API
         let burnTime = Orbital.nextPeriapsis(
             r1Vec,
@@ -175,8 +170,8 @@ export class ManeuverManager {
         const transferTime = transfer.transferTime;
         const burn2Time = new Date(burnTime.getTime() + transferTime * 1000);
         // Add maneuver nodes
-        const node1 = this.sat.addManeuverNode(burnTime, new THREE.Vector3(dv1, 0, 0));
-        const node2 = this.sat.addManeuverNode(burn2Time, new THREE.Vector3(dv2, 0, 0));
+        const node1 = this.sat.addManeuverNode(burnTime, { x: dv1, y: 0, z: 0 });
+        const node2 = this.sat.addManeuverNode(burn2Time, { x: dv2, y: 0, z: 0 });
         // Nodes are now DTOs, no need to set localDV or call update()
         // Sorting is done by PhysicsEngine
         return { node1, node2, burnTime, burn2Time, dv1, dv2, dv_plane, transferTime };
@@ -189,5 +184,14 @@ export class ManeuverManager {
         // node3D is now a DTO or a compatibility shim
         this.sat.removeManeuverNode(node3D);
         // Sorting is no longer needed as PhysicsEngine maintains order
+    }
+
+    /**
+     * Dispose of resources and clear references
+     */
+    dispose() {
+        // Clear references to help garbage collection
+        this.sat = null;
+        this.timeUtils = null;
     }
 } 

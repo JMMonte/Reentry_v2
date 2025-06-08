@@ -13,7 +13,8 @@ export * from './PhysicsAPI.js';
 
 // Direct access to core components (for advanced usage)
 export { PhysicsEngine } from './PhysicsEngine.js';
-export { PhysicsManager } from './PhysicsManager.js';
+export { SatelliteEngine } from './engines/SatelliteEngine.js';
+export { CelestialBodyEngine } from './engines/CelestialBodyEngine.js';
 
 // Main unified API (the primary interface)
 export { default as PhysicsAPI } from './PhysicsAPI.js';

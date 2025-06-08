@@ -236,13 +236,13 @@ export default [
         cloudThickness: 100, // km
         atmosphere: {
             thickness: 200, // km - visible haze layer
-            densityScaleHeight: 15, // km (approx for lower atmosphere)
+            densityScaleHeight: 55, // km (approx for lower atmosphere)
             pressure: 1.45, // bar (surface pressure)
             composition: { nitrogen: 0.95, methane: 0.049, hydrogen: 0.001 },
             hazeIntensity: 5, // Stronger haze
-            scaleHeightMultiplier: 3.0,
-            rayleighScaleHeight: 20, // km
-            mieScaleHeight: 20, // km (tholin haze layers)
+            scaleHeightMultiplier: 1.0,
+            rayleighScaleHeight: 50, // km
+            mieScaleHeight: 50, // km (tholin haze layers)
             rayleighScatteringCoeff: [0.00005, 0.0002, 0.01], // Even more blue
             mieScatteringCoeff: 0.02, // More haze
             mieAnisotropy: 0.7,

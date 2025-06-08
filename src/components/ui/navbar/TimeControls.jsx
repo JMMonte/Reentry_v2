@@ -12,14 +12,20 @@ function TimeControls({ timeWarp, onTimeWarpChange, simulatedTime, onSimulatedTi
     
     // Listen for time warp lag warnings
     useEffect(() => {
+        let lagTimeoutId = null;
         const handleLag = () => {
             setIsLagging(true);
+            // Clear any existing timeout
+            if (lagTimeoutId) clearTimeout(lagTimeoutId);
             // Clear warning after 2 seconds
-            setTimeout(() => setIsLagging(false), 2000);
+            lagTimeoutId = setTimeout(() => setIsLagging(false), 2000);
         };
         
         document.addEventListener('timeWarpLagging', handleLag);
-        return () => document.removeEventListener('timeWarpLagging', handleLag);
+        return () => {
+            document.removeEventListener('timeWarpLagging', handleLag);
+            if (lagTimeoutId) clearTimeout(lagTimeoutId);
+        };
     }, []);
     
     // Get precision indicator based on time warp

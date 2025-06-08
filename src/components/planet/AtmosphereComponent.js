@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 // import { Planet } from './Planet.js'; // Removed unused import
 import { PhysicsConstants } from '../../physics/core/PhysicsConstants.js';
-import { RENDER_ORDER } from './Planet.js';
+// Move RENDER_ORDER to a separate constants file to avoid circular dependency
+import { RENDER_ORDER } from './PlanetConstants.js';
 
 export class AtmosphereComponent {
     constructor(planet, config, shaders) {

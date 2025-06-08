@@ -24,7 +24,7 @@ export class LineOfSightManager {
         this._enabled = false;
         this._connections = [];
         this._lastWorkerSync = 0;
-        this._workerSyncInterval = 500; // ms
+        this._workerSyncInterval = 500; // ms - sync every 500ms (2Hz) to prevent spam
 
         // Three.js objects
         this._satelliteLinks = new THREE.Group();
@@ -40,8 +40,14 @@ export class LineOfSightManager {
         this._config = {
             MIN_ELEVATION_ANGLE: 5.0,
             ATMOSPHERIC_REFRACTION: true,
-            UPDATE_INTERVAL: 500
+            UPDATE_INTERVAL: 500,
+            CONNECTION_PERSISTENCE_TIME: 3000, // Keep connections alive for 3 seconds after losing signal
+            CONNECTION_FADE_TIME: 1000 // Fade out duration when connection is lost
         };
+
+        // Connection persistence tracking
+        this._persistentConnections = new Map(); // Track connections with timestamps
+        this._fadingConnections = new Set(); // Track connections in fade-out state
 
         this._initializeWorker();
     }
@@ -79,11 +85,16 @@ export class LineOfSightManager {
             return;
         }
         // Prepare data for worker
-        const satelliteData = satellites.map(sat => ({
-            id: sat.id,
-            position: sat.getPosition ? sat.getPosition() : sat.position,
-            velocity: sat.getVelocity ? sat.getVelocity() : sat.velocity
-        }));
+        const satelliteData = satellites.map(sat => {
+            const position = sat.getPosition ? sat.getPosition() : sat.position;
+            const velocity = sat.getVelocity ? sat.getVelocity() : sat.velocity;
+            
+            return {
+                id: sat.id,
+                position,
+                velocity
+            };
+        });
         const bodyData = bodies.map(body => ({
             naifId: body.naifId,
             position: body.getPosition ? body.getPosition() : body.position,
@@ -188,15 +199,26 @@ export class LineOfSightManager {
      */
     _handleWorkerMessage(data) {
         switch (data.type) {
-            case 'CONNECTIONS_UPDATED':
+            case 'CONNECTIONS_UPDATED': {
+                const previousCount = this._connections.length;
                 this._connections = data.connections || [];
                 this._renderConnections(this._connections);
+                
+                // Emit event for other systems to listen to
+                window.dispatchEvent(new CustomEvent('lineOfSightConnectionsUpdated', {
+                    detail: {
+                        connections: this._connections,
+                        previousCount,
+                        newCount: this._connections.length,
+                        timestamp: data.timestamp || Date.now()
+                    }
+                }));
                 break;
+            }
             case 'SPECIFIC_LOS_RESULT':
                 // Optionally handle specific line of sight query results
                 break;
             default:
-                // Only warn for unknown types if needed
                 break;
         }
     }
@@ -205,32 +227,22 @@ export class LineOfSightManager {
      * Render connection lines in the 3D scene
      */
     _renderConnections(connections) {
-        // Clear existing connections
-        this._clearConnections();
+        // Don't clear all connections - instead reuse existing lines when possible
+        // this._clearConnections(); // Commented out to prevent memory leak
         if (!connections || connections.length === 0) {
+            // Hide existing connections instead of deleting them
+            this._satelliteLinks.visible = false;
             return;
         }
+        
+        // Make sure the connections group is visible
+        this._satelliteLinks.visible = true;
         // Ensure the group is added to the scene
         if (!this.scene.children.includes(this._satelliteLinks)) {
             this.scene.add(this._satelliteLinks);
         }
-        // Add a test line at the origin for debugging using Line2
-        const testGeometry = new LineGeometry();
-        const testPositions = [
-            0, 0, 0,
-            1000, 1000, 1000  // 1000 km line
-        ];
-        testGeometry.setPositions(testPositions);
-        const testMaterial = new LineMaterial({
-            color: 0xff00ff,
-            linewidth: 10,
-            resolution: this._resolution
-        });
-        const testLine = new Line2(testGeometry, testMaterial);
-        testLine.name = 'TEST_LINE';
-        testLine.renderOrder = 9999;
-        testLine.frustumCulled = false;
-        this._satelliteLinks.add(testLine);
+        // Test line removed to prevent memory leak
+        // Debug test lines should only be created once, not every frame
         
         // Initialize line pool if needed
         if (!this._linePool) {
@@ -238,8 +250,9 @@ export class LineOfSightManager {
             this._activeLines = new Map();
         }
         
-        // Mark all current lines as unused
-        const usedLines = new Set();
+        // Track current active connections and update persistent tracking
+        const currentTime = Date.now();
+        const activeConnectionKeys = new Set();
         
         connections.forEach((connection) => {
             if (!connection.points || connection.points.length !== 2) {
@@ -247,6 +260,18 @@ export class LineOfSightManager {
             }
             
             const lineKey = `${connection.from}_${connection.to}`;
+            activeConnectionKeys.add(lineKey);
+            
+            // Update persistent connection timestamp
+            this._persistentConnections.set(lineKey, {
+                connection,
+                lastSeenTime: currentTime,
+                isActive: true
+            });
+            
+            // Remove from fading set if it was fading
+            this._fadingConnections.delete(lineKey);
+            
             let line = this._activeLines.get(lineKey);
             
             if (!line) {
@@ -257,7 +282,7 @@ export class LineOfSightManager {
                     // Create new line only if pool is empty
                     const geometry = new LineGeometry();
                     const material = new LineMaterial({
-                        transparent: false,
+                        transparent: true,
                         opacity: 1.0,
                         depthTest: true,
                         depthWrite: false,
@@ -280,11 +305,12 @@ export class LineOfSightManager {
             ];
             line.geometry.setPositions(positions);
             
-            // Update color only if changed
+            // Update color and opacity
             const color = this._getConnectionColor(connection);
             if (line.material.color.getHex() !== color) {
                 line.material.color.setHex(color);
             }
+            line.material.opacity = 1.0; // Full opacity for active connections
             
             // Update metadata
             line.name = `Connection_${connection.from}_${connection.to}`;
@@ -294,16 +320,48 @@ export class LineOfSightManager {
                 from: connection.from,
                 to: connection.to
             };
-            
-            usedLines.add(lineKey);
         });
         
-        // Return unused lines to pool
-        for (const [key, line] of this._activeLines) {
-            if (!usedLines.has(key)) {
-                this._satelliteLinks.remove(line);
-                this._activeLines.delete(key);
-                this._linePool.push(line);
+        // Handle persistent connections that are no longer active
+        for (const [lineKey, persistentData] of this._persistentConnections) {
+            if (!activeConnectionKeys.has(lineKey)) {
+                const timeSinceLastSeen = currentTime - persistentData.lastSeenTime;
+                
+                if (timeSinceLastSeen > this._config.CONNECTION_PERSISTENCE_TIME) {
+                    // Connection has been gone too long, return it to pool
+                    const line = this._activeLines.get(lineKey);
+                    if (line) {
+                        this._satelliteLinks.remove(line);
+                        this._activeLines.delete(lineKey);
+                        // Reset line properties before returning to pool
+                        line.material.opacity = 1.0;
+                        line.material.color.setHex(0xffffff);
+                        line.visible = true;
+                        this._linePool.push(line);
+                    }
+                    this._persistentConnections.delete(lineKey);
+                    this._fadingConnections.delete(lineKey);
+                } else {
+                    // Keep connection but mark as inactive and potentially fading
+                    persistentData.isActive = false;
+                    
+                    const line = this._activeLines.get(lineKey);
+                    if (line) {
+                        // Start fading after a short delay
+                        const fadeStartTime = this._config.CONNECTION_PERSISTENCE_TIME - this._config.CONNECTION_FADE_TIME;
+                        if (timeSinceLastSeen > fadeStartTime) {
+                            this._fadingConnections.add(lineKey);
+                            
+                            // Calculate fade opacity
+                            const fadeProgress = (timeSinceLastSeen - fadeStartTime) / this._config.CONNECTION_FADE_TIME;
+                            const opacity = Math.max(0.1, 1.0 - fadeProgress);
+                            line.material.opacity = opacity;
+                            
+                            // Change color to indicate lost connection
+                            line.material.color.setHex(0x888888); // Gray for lost connections
+                        }
+                    }
+                }
             }
         }
     }
@@ -333,8 +391,29 @@ export class LineOfSightManager {
             this._satelliteLinks.remove(child);
 
             // Dispose of geometry and material
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => mat.dispose());
+                } else {
+                    child.material.dispose();
+                }
+            }
+        }
+        
+        // Clear the active lines map and line pool
+        if (this._activeLines) {
+            this._activeLines.clear();
+        }
+        if (this._linePool) {
+            // Dispose of pooled line objects
+            this._linePool.forEach(line => {
+                if (line.geometry) line.geometry.dispose();
+                if (line.material) line.material.dispose();
+            });
+            this._linePool.length = 0;
         }
     }
 
@@ -400,6 +479,19 @@ export class LineOfSightManager {
         if (this._lineOfSightWorker) {
             this._lineOfSightWorker.terminate();
             this._lineOfSightWorker = null;
+        }
+        // Clear persistent connection tracking
+        if (this._persistentConnections) {
+            this._persistentConnections.clear();
+        }
+        if (this._fadingConnections) {
+            this._fadingConnections.clear();
+        }
+        if (this._activeLines) {
+            this._activeLines.clear();
+        }
+        if (this._linePool) {
+            this._linePool.length = 0;
         }
         // Reset state
         this._enabled = false;

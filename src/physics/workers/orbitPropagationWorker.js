@@ -17,6 +17,9 @@ let physicsState = {
 
 const messageHandler = new WorkerMessageHandler();
 
+// Store active timeout IDs for cleanup
+const activeTimeouts = new Set();
+
 // Set up message handlers
 messageHandler.onInitialize((data) => {
     physicsState = {
@@ -33,12 +36,38 @@ messageHandler.addHandler('propagate', async (data) => {
     await propagateOrbitUsingUnifiedPropagator(data);
 });
 
+// Add cleanup handler for worker termination
+messageHandler.addHandler('cleanup', () => {
+    // Clear all active timeouts
+    activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    activeTimeouts.clear();
+    
+    // Clear cached data
+    physicsState = {
+        bodies: {},
+        hierarchy: null,
+        initialTime: Date.now()
+    };
+});
+
 // Set up message listener
-self.onmessage = (event) => messageHandler.handleMessage(event);
+self.onmessage = (event) => {
+    // Handle termination signal
+    if (event.data && event.data.type === 'terminate') {
+        // Clean up resources
+        activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+        activeTimeouts.clear();
+        self.close();
+        return;
+    }
+    
+    messageHandler.handleMessage(event);
+};
 
 // Clean propagation function using UnifiedSatellitePropagator
 async function propagateOrbitUsingUnifiedPropagator(params) {
     const { satelliteId } = params;
+    
     
     // Convert parameters to UnifiedSatellitePropagator format
     const satellite = {
@@ -59,7 +88,10 @@ async function propagateOrbitUsingUnifiedPropagator(params) {
         maxPoints: params.maxPoints, // No default limit - let UI control this
         includeJ2: params.includeJ2 !== false,
         includeDrag: params.includeDrag !== false,
-        includeThirdBody: params.includeThirdBody !== false
+        includeThirdBody: params.includeThirdBody !== false,
+        timeWarp: params.timeWarp || 1,
+        method: params.method || 'auto', // auto, rk4, or rk45
+        maneuverNodes: params.maneuverNodes || [] // Include maneuver nodes for propagation
     };
     
     try {
@@ -86,7 +118,13 @@ async function propagateOrbitUsingUnifiedPropagator(params) {
             
             // Small delay to avoid overwhelming main thread
             if (!isComplete) {
-                await new Promise(resolve => setTimeout(resolve, 1));
+                await new Promise(resolve => {
+                    const timeoutId = setTimeout(() => {
+                        activeTimeouts.delete(timeoutId);
+                        resolve();
+                    }, 1);
+                    activeTimeouts.add(timeoutId);
+                });
             }
         }
         
@@ -97,6 +135,7 @@ async function propagateOrbitUsingUnifiedPropagator(params) {
         });
         
     } catch (error) {
+        console.error('[OrbitWorker] Error during propagation:', error);
         messageHandler.sendError({
             satelliteId,
             error: error.message,

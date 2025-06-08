@@ -5,15 +5,15 @@ import React, {
     useMemo,
 } from 'react';
 import PropTypes from 'prop-types';
-import * as THREE from 'three';
 import { DraggableModal } from '../modal/DraggableModal';
 import { usePlanetList } from '../../../hooks/useGroundTrack';
 import GroundTrackCanvas from './GroundTrackCanvas.jsx';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 import { Button } from '../button';
-import { GroundtrackPath } from '../../Satellite/GroundtrackPath.js';
+import { GroundtrackPath } from '../../../services/GroundtrackPath.js';
 import { Switch } from '../switch';
 import { groundTrackService } from '../../../services/GroundTrackService.js';
+import { usePhysicsBodies } from '../../../hooks/usePhysicsBodies.js';
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -24,6 +24,8 @@ export function GroundTrackWindow({
     planets,
     simulationTime,
 }) {
+    // Get physics bodies data through proper hook
+    const { bodies: physicsBodies } = usePhysicsBodies();
     // Note: tracks state removed - now using trackPoints from GroundtrackPath system
     const [selectedPlanetNaifId, setSelectedPlanetNaifId] = useState(
         planets?.[0]?.naifId || 399
@@ -64,15 +66,42 @@ export function GroundTrackWindow({
 
     // Prepare POI data from the planet's surface for canvas rendering
     const poiData = useMemo(() => {
-        if (!activeLayers.pois || !planet?.surface?.points) return {};
-        return Object.entries(planet.surface.points).reduce((acc, [key, meshes]) => {
-            acc[key] = meshes.map(mesh => {
-                const feat = mesh.userData.feature;
-                const [lon, lat] = feat.geometry.coordinates;
-                return { lon, lat };
-            });
-            return acc;
-        }, {});
+        if (!activeLayers.pois || !planet?.surface?.points) {
+            return {};
+        }
+        
+        const processedData = {};
+        
+        // Handle different possible data structures
+        Object.entries(planet.surface.points).forEach(([key, data]) => {
+            if (Array.isArray(data)) {
+                // Direct array of features/meshes
+                processedData[key] = data.map(item => {
+                    if (item.userData?.feature) {
+                        // Three.js mesh with userData
+                        const feat = item.userData.feature;
+                        const [lon, lat] = feat.geometry.coordinates;
+                        return { lon, lat };
+                    } else if (item.geometry?.coordinates) {
+                        // Direct GeoJSON feature
+                        const [lon, lat] = item.geometry.coordinates;
+                        return { lon, lat };
+                    } else if (item.lon !== undefined && item.lat !== undefined) {
+                        // Direct coordinate object
+                        return { lon: item.lon, lat: item.lat };
+                    }
+                    return null;
+                }).filter(Boolean);
+            } else if (data?.features) {
+                // GeoJSON FeatureCollection
+                processedData[key] = data.features.map(feat => {
+                    const [lon, lat] = feat.geometry.coordinates;
+                    return { lon, lat };
+                });
+            }
+        });
+        
+        return processedData;
     }, [planet, activeLayers.pois]);
 
     // State for satellite ground tracks and current positions
@@ -108,8 +137,8 @@ export function GroundTrackWindow({
                 const path = new GroundtrackPath();
                 newPaths.set(sat.id, path);
                 
-                // Get physics bodies for orbit propagation
-                const bodies = window.app3d?.physicsIntegration?.physicsEngine?.getBodiesForOrbitPropagation() || [];
+                // Use physics bodies from hook instead of direct access
+                const bodies = physicsBodies || [];
                 
                 // Update the groundtrack path with current satellite state
                 const period = 6000; // 100 minutes in seconds (typical LEO)
@@ -118,10 +147,19 @@ export function GroundTrackWindow({
                 // Use simulation time if available, otherwise current time
                 const startTime = simulationTime || Date.now();
                 
+                // Handle both array and object position/velocity formats
+                const position = Array.isArray(sat.position) 
+                    ? { x: sat.position[0], y: sat.position[1], z: sat.position[2] }
+                    : { x: sat.position.x, y: sat.position.y, z: sat.position.z };
+                
+                const velocity = Array.isArray(sat.velocity)
+                    ? { x: sat.velocity[0], y: sat.velocity[1], z: sat.velocity[2] }
+                    : { x: sat.velocity.x, y: sat.velocity.y, z: sat.velocity.z };
+                
                 path.update(
                     startTime,
-                    new THREE.Vector3(sat.position[0], sat.position[1], sat.position[2]),
-                    new THREE.Vector3(sat.velocity[0], sat.velocity[1], sat.velocity[2]),
+                    position,
+                    velocity,
                     sat.id,
                     bodies,
                     period,
@@ -147,8 +185,8 @@ export function GroundTrackWindow({
         
         // Update current positions from satellite data - convert to lat/lon for canvas
         const updatePositions = async () => {
-            // Get current planet state from physics engine
-            const bodies = window.app3d?.physicsIntegration?.physicsEngine?.getBodiesForOrbitPropagation() || [];
+            // Use physics bodies from hook to get current planet state
+            const bodies = physicsBodies || [];
             const currentPlanetState = bodies.find(b => b.naifId === planet.naifId);
             
             const positions = await Promise.all(satellites.map(async sat => {
@@ -157,7 +195,11 @@ export function GroundTrackWindow({
                 }
                 
                 try {
-                    const eciPos = [sat.position[0], sat.position[1], sat.position[2]];
+                    // Handle both array and object position formats
+                    const eciPos = Array.isArray(sat.position) 
+                        ? [sat.position[0], sat.position[1], sat.position[2]]
+                        : [sat.position.x, sat.position.y, sat.position.z];
+                    
                     const currentTime = simulationTime || Date.now();
                     const geoPos = await groundTrackService.transformECIToSurface(
                         eciPos, 
@@ -257,14 +299,14 @@ export function GroundTrackWindow({
     // UI: layer toggles for available features
     const availableLayers = {
         grid: true,
-        countryBorders: !!planet?.surface?.countryGeo,
-        states: !!planet?.surface?.stateGeo,
-        cities: !!planet?.surface?.cities,
-        airports: !!planet?.surface?.airports,
-        spaceports: !!planet?.surface?.spaceports,
-        groundStations: !!planet?.surface?.groundStations,
-        observatories: !!planet?.surface?.observatories,
-        missions: !!planet?.surface?.missions,
+        countryBorders: !!(planet?.surface?.countryGeo?.features?.length),
+        states: !!(planet?.surface?.stateGeo?.features?.length),
+        cities: !!(planet?.surface?.points?.cities?.length),
+        airports: !!(planet?.surface?.points?.airports?.length),
+        spaceports: !!(planet?.surface?.points?.spaceports?.length),
+        groundStations: !!(planet?.surface?.points?.groundStations?.length),
+        observatories: !!(planet?.surface?.points?.observatories?.length),
+        missions: !!(planet?.surface?.points?.missions?.length),
         pois: !!planet?.surface?.points,
     };
     const layerToggles = (
@@ -308,6 +350,7 @@ export function GroundTrackWindow({
                 showCoverage={showCoverage}
                 poiData={poiData}
                 groundtracks={currentPositions}
+                planet={planet}
                 currentTime={simulationTime || Date.now()}
             />
         </DraggableModal>

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { ApsisVisualizer } from '../planet/ApsisVisualizer.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
-import { GroundtrackPath } from './GroundtrackPath.js';
+import { GroundtrackPath } from '../../services/GroundtrackPath.js';
 import { ManeuverVisualizationManager } from './ManeuverNodeVisualizer.js';
 import { createManeuverNodeDTO } from '../../types/DataTransferObjects.js';
 
@@ -69,8 +69,9 @@ export class Satellite {
         // Request orbit update from new orbit manager after a short delay
         // to ensure physics engine has the satellite data
         if (this.app3d?.satelliteOrbitManager) {
-            setTimeout(() => {
+            this._orbitUpdateTimeout = setTimeout(() => {
                 this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
+                this._orbitUpdateTimeout = null;
             }, 100);
         }
     }
@@ -116,6 +117,12 @@ export class Satellite {
         // Check for NaN or invalid values in position
         if (satState.position.some(v => !Number.isFinite(v))) {
             console.error(`[Satellite] Invalid position values for satellite ${this.id}:`, satState.position);
+            
+            // Try to remove this satellite from physics engine to prevent spam
+            if (this.app3d?.physicsIntegration?.physicsEngine?.satelliteEngine?.removeSatellite) {
+                console.warn(`[Satellite] Removing satellite ${this.id} due to invalid state`);
+                this.app3d.physicsIntegration.physicsEngine.satelliteEngine.removeSatellite(this.id);
+            }
             return;
         }
         
@@ -194,6 +201,11 @@ export class Satellite {
         this.color = c;
         this.visualizer.setColor(c);
         
+        // Update apsis visualizer color to match satellite
+        if (this.apsisVisualizer) {
+            this.apsisVisualizer.updateColor(c);
+        }
+        
         // Update orbit color in new manager
         if (this.app3d?.satelliteOrbitManager) {
             this.app3d.satelliteOrbitManager.updateSatelliteColor(this.id, c);
@@ -214,6 +226,12 @@ export class Satellite {
     }
 
     dispose() {
+        // Clear any pending timeouts
+        if (this._orbitUpdateTimeout) {
+            clearTimeout(this._orbitUpdateTimeout);
+            this._orbitUpdateTimeout = null;
+        }
+        
         // Remove visualizer mesh from its actual parent (might be planet group or scene)
         if (this.visualizer?.mesh?.parent) {
             this.visualizer.mesh.parent.remove(this.visualizer.mesh);
@@ -348,7 +366,7 @@ export class Satellite {
         });
         
         // Add to physics engine
-        const nodeId = this.app3d.physicsIntegration.physicsEngine.addManeuverNode(
+        const nodeId = this.app3d.physicsIntegration.addManeuverNode(
             this.id,
             maneuverNode
         );
@@ -370,7 +388,7 @@ export class Satellite {
         }
         
         // Remove from physics engine
-        this.app3d.physicsIntegration.physicsEngine.removeManeuverNode(
+        this.app3d.physicsIntegration.removeManeuverNode(
             this.id,
             node.id
         );

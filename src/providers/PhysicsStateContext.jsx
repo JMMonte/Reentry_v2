@@ -41,8 +41,8 @@ export function PhysicsStateProvider({ children }) {
         window.addEventListener('satellitePropertyUpdated', handleSatellitePropertyUpdated);
 
         // Optionally: initial fetch from window.app3d or similar
-        if (window.app3d?.physicsIntegration?.physicsEngine?.getSimulationState) {
-            const state = window.app3d.physicsIntegration.physicsEngine.getSimulationState();
+        if (window.app3d?.physicsIntegration?.getSimulationState) {
+            const state = window.app3d.physicsIntegration.getSimulationState();
             if (state?.satellites && typeof state.satellites === 'object') {
                 // Convert Map to object if needed
                 const satObj = {};

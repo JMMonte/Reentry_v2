@@ -10,6 +10,17 @@ import { PhysicsConstants } from '../core/PhysicsConstants.js';
  * Consolidates RK4, RK45, Euler, and other integration schemes
  */
 
+// Store active timeout IDs for cleanup
+const activeTimeouts = new Set();
+
+/**
+ * Cleanup function to clear all active timeouts
+ */
+export function cleanupTimeouts() {
+    activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    activeTimeouts.clear();
+}
+
 // Pre-allocated vector pools for RK4 integration to avoid GC pressure
 const _rk4VectorPools = {
     positions: Array.from({ length: 8 }, () => new THREE.Vector3()),
@@ -121,111 +132,110 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
     while (t < targetTime) {
         if (t + dt > targetTime) dt = targetTime - t;
         
-            // RK45 stages (optimized to reuse acceleration result)
-        const acc = accelerationFunc(pos, vel);
-        const k1 = acc.clone().multiplyScalar(dt);
+        // RK45 stages - properly separate position and velocity k-values
+        // Stage 1
+        const k1v = accelerationFunc(pos, vel);
+        const k1p = vel.clone();
         
-        const pos2 = pos.clone().addScaledVector(vel, a21 * dt).addScaledVector(k1, a21 * dt * 0.5);
-        const vel2 = vel.clone().addScaledVector(k1, a21);
-        acc.copy(accelerationFunc(pos2, vel2));
-        const k2 = acc.clone().multiplyScalar(dt);
+        // Stage 2
+        const pos2 = pos.clone().addScaledVector(k1p, a21 * dt);
+        const vel2 = vel.clone().addScaledVector(k1v, a21 * dt);
+        const k2v = accelerationFunc(pos2, vel2);
+        const k2p = vel2.clone();
         
+        // Stage 3
         const pos3 = pos.clone()
-            .addScaledVector(vel, (a31 + a32) * dt)
-            .addScaledVector(k1, a31 * dt * 0.5)
-            .addScaledVector(k2, a32 * dt * 0.5);
+            .addScaledVector(k1p, a31 * dt)
+            .addScaledVector(k2p, a32 * dt);
         const vel3 = vel.clone()
-            .addScaledVector(k1, a31)
-            .addScaledVector(k2, a32);
-        acc.copy(accelerationFunc(pos3, vel3));
-        const k3 = acc.clone().multiplyScalar(dt);
+            .addScaledVector(k1v, a31 * dt)
+            .addScaledVector(k2v, a32 * dt);
+        const k3v = accelerationFunc(pos3, vel3);
+        const k3p = vel3.clone();
         
+        // Stage 4
         const pos4 = pos.clone()
-            .addScaledVector(vel, (a41 + a42 + a43) * dt)
-            .addScaledVector(k1, a41 * dt * 0.5)
-            .addScaledVector(k2, a42 * dt * 0.5)
-            .addScaledVector(k3, a43 * dt * 0.5);
+            .addScaledVector(k1p, a41 * dt)
+            .addScaledVector(k2p, a42 * dt)
+            .addScaledVector(k3p, a43 * dt);
         const vel4 = vel.clone()
-            .addScaledVector(k1, a41)
-            .addScaledVector(k2, a42)
-            .addScaledVector(k3, a43);
-        acc.copy(accelerationFunc(pos4, vel4));
-        const k4 = acc.clone().multiplyScalar(dt);
+            .addScaledVector(k1v, a41 * dt)
+            .addScaledVector(k2v, a42 * dt)
+            .addScaledVector(k3v, a43 * dt);
+        const k4v = accelerationFunc(pos4, vel4);
+        const k4p = vel4.clone();
         
+        // Stage 5
         const pos5 = pos.clone()
-            .addScaledVector(vel, (a51 + a52 + a53 + a54) * dt)
-            .addScaledVector(k1, a51 * dt * 0.5)
-            .addScaledVector(k2, a52 * dt * 0.5)
-            .addScaledVector(k3, a53 * dt * 0.5)
-            .addScaledVector(k4, a54 * dt * 0.5);
+            .addScaledVector(k1p, a51 * dt)
+            .addScaledVector(k2p, a52 * dt)
+            .addScaledVector(k3p, a53 * dt)
+            .addScaledVector(k4p, a54 * dt);
         const vel5 = vel.clone()
-            .addScaledVector(k1, a51)
-            .addScaledVector(k2, a52)
-            .addScaledVector(k3, a53)
-            .addScaledVector(k4, a54);
-        acc.copy(accelerationFunc(pos5, vel5));
-        const k5 = acc.clone().multiplyScalar(dt);
+            .addScaledVector(k1v, a51 * dt)
+            .addScaledVector(k2v, a52 * dt)
+            .addScaledVector(k3v, a53 * dt)
+            .addScaledVector(k4v, a54 * dt);
+        const k5v = accelerationFunc(pos5, vel5);
+        const k5p = vel5.clone();
         
+        // Stage 6
         const pos6 = pos.clone()
-            .addScaledVector(vel, (a61 + a62 + a63 + a64 + a65) * dt)
-            .addScaledVector(k1, a61 * dt * 0.5)
-            .addScaledVector(k2, a62 * dt * 0.5)
-            .addScaledVector(k3, a63 * dt * 0.5)
-            .addScaledVector(k4, a64 * dt * 0.5)
-            .addScaledVector(k5, a65 * dt * 0.5);
+            .addScaledVector(k1p, a61 * dt)
+            .addScaledVector(k2p, a62 * dt)
+            .addScaledVector(k3p, a63 * dt)
+            .addScaledVector(k4p, a64 * dt)
+            .addScaledVector(k5p, a65 * dt);
         const vel6 = vel.clone()
-            .addScaledVector(k1, a61)
-            .addScaledVector(k2, a62)
-            .addScaledVector(k3, a63)
-            .addScaledVector(k4, a64)
-            .addScaledVector(k5, a65);
-        acc.copy(accelerationFunc(pos6, vel6));
-        const k6 = acc.clone().multiplyScalar(dt);
+            .addScaledVector(k1v, a61 * dt)
+            .addScaledVector(k2v, a62 * dt)
+            .addScaledVector(k3v, a63 * dt)
+            .addScaledVector(k4v, a64 * dt)
+            .addScaledVector(k5v, a65 * dt);
+        const k6v = accelerationFunc(pos6, vel6);
+        const k6p = vel6.clone();
         
-        // 4th order solution
+        // 4th order solution (note: b2 = 0 in Dormand-Prince)
         const newPos4 = pos.clone()
-            .addScaledVector(vel, dt)
-            .addScaledVector(k1, b1 * dt * 0.5)
-            .addScaledVector(k3, b3 * dt * 0.5)
-            .addScaledVector(k4, b4 * dt * 0.5)
-            .addScaledVector(k5, b5 * dt * 0.5)
-            .addScaledVector(k6, b6 * dt * 0.5);
+            .addScaledVector(k1p, b1 * dt)
+            .addScaledVector(k3p, b3 * dt)
+            .addScaledVector(k4p, b4 * dt)
+            .addScaledVector(k5p, b5 * dt)
+            .addScaledVector(k6p, b6 * dt);
             
         const newVel4 = vel.clone()
-            .addScaledVector(k1, b1)
-            .addScaledVector(k3, b3)
-            .addScaledVector(k4, b4)
-            .addScaledVector(k5, b5)
-            .addScaledVector(k6, b6);
+            .addScaledVector(k1v, b1 * dt)
+            .addScaledVector(k3v, b3 * dt)
+            .addScaledVector(k4v, b4 * dt)
+            .addScaledVector(k5v, b5 * dt)
+            .addScaledVector(k6v, b6 * dt);
+        
+        // Stage 7 (needed for 5th order solution)
+        const k7v = accelerationFunc(newPos4, newVel4);
+        const k7p = newVel4.clone();
         
         // 5th order solution (for error estimation)
-        const pos7 = newPos4.clone();
-        const vel7 = newVel4.clone();
-        acc.copy(accelerationFunc(pos7, vel7));
-        const k7 = acc.clone().multiplyScalar(dt);
-        
         const newPos5 = pos.clone()
-            .addScaledVector(vel, dt)
-            .addScaledVector(k1, b1s * dt * 0.5)
-            .addScaledVector(k3, b3s * dt * 0.5)
-            .addScaledVector(k4, b4s * dt * 0.5)
-            .addScaledVector(k5, b5s * dt * 0.5)
-            .addScaledVector(k6, b6s * dt * 0.5)
-            .addScaledVector(k7, b7s * dt * 0.5);
+            .addScaledVector(k1p, b1s * dt)
+            .addScaledVector(k3p, b3s * dt)
+            .addScaledVector(k4p, b4s * dt)
+            .addScaledVector(k5p, b5s * dt)
+            .addScaledVector(k6p, b6s * dt)
+            .addScaledVector(k7p, b7s * dt);
             
         const newVel5 = vel.clone()
-            .addScaledVector(k1, b1s)
-            .addScaledVector(k3, b3s)
-            .addScaledVector(k4, b4s)
-            .addScaledVector(k5, b5s)
-            .addScaledVector(k6, b6s)
-            .addScaledVector(k7, b7s);
+            .addScaledVector(k1v, b1s * dt)
+            .addScaledVector(k3v, b3s * dt)
+            .addScaledVector(k4v, b4s * dt)
+            .addScaledVector(k5v, b5s * dt)
+            .addScaledVector(k6v, b6s * dt)
+            .addScaledVector(k7v, b7s * dt);
         
         // Error estimation
         const errPos = newPos5.clone().sub(newPos4).length();
         const errVel = newVel5.clone().sub(newVel4).length();
         
-        const accMag = k1.length() / dt;
+        const accMag = k1v.length();
         const dynTol = absTol / (1 + Math.log1p(sensitivityScale * accMag));
         
         const scalePos = dynTol + relTol * Math.max(pos.length(), newPos4.length());
@@ -650,7 +660,13 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
         // Progress callback
         if (onProgress && ((i + 1) % batchSize === 0 || i === numPoints - 1)) {
             onProgress((i + 1) / numPoints);
-            await new Promise(resolve => setTimeout(resolve, 0)); // Yield
+            await new Promise(resolve => {
+                const timeoutId = setTimeout(() => {
+                    activeTimeouts.delete(timeoutId);
+                    resolve();
+                }, 0);
+                activeTimeouts.add(timeoutId);
+            }); // Yield
         }
     }
 
@@ -686,7 +702,13 @@ export async function propagateAtmosphere(
     for (let i = 0; i < steps; i++) {
         // Yield periodically
         if (i && i % 20 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0));
+            await new Promise(resolve => {
+                const timeoutId = setTimeout(() => {
+                    activeTimeouts.delete(timeoutId);
+                    resolve();
+                }, 0);
+                activeTimeouts.add(timeoutId);
+            });
         }
 
         // Compute accelerations

@@ -14,7 +14,12 @@ export default defineConfig({
     chunkSizeWarningLimit: 10000
   },
   worker: {
-    format: 'es'
+    format: 'es',
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name]-[hash].js'
+      }
+    }
   },
   resolve: {
     alias: {
@@ -22,6 +27,9 @@ export default defineConfig({
     }
   },
   server: {
-    port: 4000
+    port: 4000,
+    fs: {
+      allow: ['..', './']
+    }
   }
 })

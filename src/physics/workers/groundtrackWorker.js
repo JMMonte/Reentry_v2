@@ -14,9 +14,11 @@ const planetDataCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 // Cleanup interval (1 minute)
 const CLEANUP_INTERVAL_MS = 60 * 1000;
+// Store active timeout IDs for cleanup
+const activeTimeouts = new Set();
 
-// Set up periodic cache cleanup
-let cleanupInterval = setInterval(() => {
+// Cache cleanup helper function
+function cleanupStaleEntries() {
     const now = Date.now();
     const idsToDelete = [];
     
@@ -29,8 +31,29 @@ let cleanupInterval = setInterval(() => {
     idsToDelete.forEach(id => {
         delete groundtrackMap[id];
     });
+    
+    return idsToDelete.length;
+}
 
-}, CLEANUP_INTERVAL_MS);
+// Set up periodic cache cleanup
+let cleanupInterval = setInterval(cleanupStaleEntries, CLEANUP_INTERVAL_MS);
+
+// Cleanup function for worker termination
+function cleanup() {
+    // Clear interval
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+        cleanupInterval = null;
+    }
+    
+    // Clear all active timeouts
+    activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    activeTimeouts.clear();
+    
+    // Clear caches
+    groundtrackMap = {};
+    planetDataCache.clear();
+}
 
 // Throttle variables for progress updates
 const PROGRESS_THROTTLE_MS = 200; // Longer throttle for groundtrack as conversion is expensive
@@ -40,6 +63,19 @@ let lastProgressTime = 0;
 const groundTrackService = new GroundTrackService();
 
 self.onmessage = async function (e) {
+    // Handle termination signal
+    if (e.data && e.data.type === 'terminate') {
+        cleanup();
+        self.close();
+        return;
+    }
+    
+    // Handle cleanup request
+    if (e.data && e.data.type === 'cleanup') {
+        cleanup();
+        return;
+    }
+    
     if (e.data.type === 'UPDATE_GROUNDTRACK') {
         const { id, startTime, position, velocity, bodies, period, numPoints, seq, centralBodyNaifId, canvasWidth, canvasHeight } = e.data;
         if (id === undefined || id === null) return;
@@ -96,7 +132,6 @@ self.onmessage = async function (e) {
             }
         }
 
-        const groundPoints = [];
         const processedPoints = [];
         const batchSize = Math.max(1, Math.floor(propagatedPoints.length / 20)); // Yield approx 20 times
         let prevLon = undefined;
@@ -152,7 +187,6 @@ self.onmessage = async function (e) {
                 eci: { x: eciPosArray[0], y: eciPosArray[1], z: eciPosArray[2] }
             };
             
-            groundPoints.push(processedPoint);
             processedPoints.push(processedPoint);
             
             // Stream chunks to UI for progressive loading
@@ -168,12 +202,18 @@ self.onmessage = async function (e) {
 
             // Yield control periodically to prevent blocking
             if ((i + 1) % batchSize === 0 && i < compatiblePoints.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 0));
+                await new Promise(resolve => {
+                    const timeoutId = setTimeout(() => {
+                        activeTimeouts.delete(timeoutId);
+                        resolve();
+                    }, 0);
+                    activeTimeouts.add(timeoutId);
+                });
             }
         }
 
         groundtrackMap[id] = {
-            points: groundPoints,
+            points: processedPoints,
             timestamp: Date.now()
         };
         // flush any remaining points
@@ -204,23 +244,12 @@ self.onmessage = async function (e) {
             groundtrackMap = {};
         }
     } else if (e.data.type === 'CLEANUP') {
-        // Force cleanup of stale entries
-        const now = Date.now();
-        const idsToDelete = [];
-        
-        for (const [id, entry] of Object.entries(groundtrackMap)) {
-            if (entry.timestamp && (now - entry.timestamp) > CACHE_TTL_MS) {
-                idsToDelete.push(id);
-            }
-        }
-        
-        idsToDelete.forEach(id => {
-            delete groundtrackMap[id];
-        });
+        // Force cleanup of stale entries using shared function
+        const cleanedCount = cleanupStaleEntries();
         
         self.postMessage({ 
             type: 'CLEANUP_COMPLETE', 
-            cleaned: idsToDelete.length 
+            cleaned: cleanedCount 
         });
     } else if (e.data.type === 'TERMINATE') {
         // Clean shutdown

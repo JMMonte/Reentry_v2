@@ -1,7 +1,7 @@
 /**
  * Manages display settings and their application to the App3D scene and satellites.
  */
-import { Planet } from '../components/planet/Planet.js';
+import { getPlanetManager } from './PlanetManager.js';
 export class DisplaySettingsManager {
     /**
      * @param {App3D} app3d - Reference to the main App3D instance
@@ -29,6 +29,10 @@ export class DisplaySettingsManager {
      * Apply all settings to the scene and satellites.
      */
     applyAll() {
+        if (!this.settings) {
+            console.warn('[DisplaySettingsManager] No settings to apply');
+            return;
+        }
         Object.entries(this.settings).forEach(([key, value]) => {
             this._applySetting(key, value);
         });
@@ -103,11 +107,7 @@ export class DisplaySettingsManager {
             }
             case 'showGrid': {
                 // Iterate through planets and set grid visibility
-                Planet.instances.forEach(planet => {
-                    if (planet.radialGrid && typeof planet.setRadialGridVisible === 'function') {
-                        planet.setRadialGridVisible(value);
-                    }
-                });
+                getPlanetManager().updateVisibilitySetting(key, value);
                 break;
             }
             case 'showPlanetVectors':
@@ -133,57 +133,30 @@ export class DisplaySettingsManager {
                 }
                 break;
             case 'showSurfaceLines':
-                Planet.instances.forEach(p => {
+                getPlanetManager().forEach(p => {
                     if (typeof p.setSurfaceLinesVisible === 'function') p.setSurfaceLinesVisible(value);
                 });
                 break;
             // Removed duplicate showOrbits case - handled below
             case 'showCities':
-                Planet.instances.forEach(p => {
-                    if (typeof p.setCitiesVisible === 'function') p.setCitiesVisible(value);
-                });
-                break;
             case 'showAirports':
-                Planet.instances.forEach(p => {
-                    if (typeof p.setAirportsVisible === 'function') p.setAirportsVisible(value);
-                });
-                break;
             case 'showSpaceports':
-                Planet.instances.forEach(p => {
-                    if (typeof p.setSpaceportsVisible === 'function') p.setSpaceportsVisible(value);
-                });
-                break;
             case 'showObservatories':
-                Planet.instances.forEach(p => {
-                    if (typeof p.setObservatoriesVisible === 'function') p.setObservatoriesVisible(value);
-                });
-                break;
             case 'showGroundStations':
-                Planet.instances.forEach(p => {
-                    if (typeof p.setGroundStationsVisible === 'function') p.setGroundStationsVisible(value);
-                });
-                break;
             case 'showMissions':
-                Planet.instances.forEach(p => {
-                    if (typeof p.setMissionsVisible === 'function') p.setMissionsVisible(value);
-                });
-                break;
             case 'showCountryBorders':
-                Planet.instances.forEach(p => {
-                    if (typeof p.setCountryBordersVisible === 'function') p.setCountryBordersVisible(value);
-                });
+                // Use PlanetManager for better performance and memory management
+                getPlanetManager().updateVisibilitySetting(key, value);
                 break;
             case 'showTopographicIsolines':
                 // Toggle topographic isolines (state-style geo features) on all planets
-                Planet.instances.forEach(p => {
+                getPlanetManager().forEach(p => {
                     if (typeof p.setStatesVisible === 'function') p.setStatesVisible(value);
                 });
                 break;
             case 'showSOI':
                 // Toggle sphere of influence rim glow on all planets
-                Planet.instances.forEach(p => {
-                    if (typeof p.setSOIVisible === 'function') p.setSOIVisible(value);
-                });
+                getPlanetManager().updateVisibilitySetting(key, value);
                 break;
             case 'showPlanetOrbits':
                 if (app3d.orbitManager) {

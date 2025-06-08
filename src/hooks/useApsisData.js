@@ -7,7 +7,7 @@
 
 import { useMemo, useCallback } from 'react';
 import { ApsisService } from '../services/ApsisService.js';
-import { Bodies } from '../physics/PhysicsAPI.js';
+import { ApsisDetection } from '../services/ApsisDetection.js';
 
 /**
  * Hook for getting apsis data for a satellite
@@ -17,10 +17,29 @@ import { Bodies } from '../physics/PhysicsAPI.js';
  * @returns {Object} - Apsis data and helper functions
  */
 export function useApsisData(satellite, currentTime, options = {}) {
-    // Get central body data
+    // Get central body data via PhysicsAPI
     const centralBody = useMemo(() => {
         if (!satellite?.centralBodyNaifId) return null;
-        return Bodies.getByNaif(satellite.centralBodyNaifId);
+        
+        // Use PhysicsAPI if available
+        if (window.app3d?.physicsAPI?.isReady()) {
+            return window.app3d.physicsAPI.Bodies.getByNaif(satellite.centralBodyNaifId);
+        }
+        
+        // Fallback - try to access directly (for backwards compatibility)
+        try {
+            if (window.app3d?.physicsIntegration?.bodies) {
+                const bodies = Array.isArray(window.app3d.physicsIntegration.bodies) 
+                    ? window.app3d.physicsIntegration.bodies
+                    : Object.values(window.app3d.physicsIntegration.bodies);
+                
+                return bodies.find(body => body.naifId === satellite.centralBodyNaifId);
+            }
+        } catch (error) {
+            console.warn('[useApsisData] Error accessing physics bodies:', error);
+        }
+        
+        return null;
     }, [satellite?.centralBodyNaifId]);
 
     // Calculate apsis data
@@ -42,6 +61,24 @@ export function useApsisData(satellite, currentTime, options = {}) {
         if (!satellite || !centralBody || !currentTime) {
             return new Date(currentTime?.getTime() + 3600000); // +1 hour fallback
         }
+        
+        // Try numerical detection first if orbit points are available
+        if (satellite.orbitPoints && satellite.orbitPoints.length > 3) {
+            try {
+                const nextPeriapsis = ApsisDetection.findNextPeriapsis(
+                    satellite.orbitPoints,
+                    currentTime.getTime(),
+                    centralBody.naifId || centralBody.naif_id
+                );
+                if (nextPeriapsis) {
+                    return new Date(nextPeriapsis.time);
+                }
+            } catch (error) {
+                console.warn('[useApsisData] Numerical detection failed, falling back to analytical:', error);
+            }
+        }
+        
+        // Fallback to analytical calculation
         return ApsisService.getNextPeriapsisTime(satellite, centralBody, currentTime);
     }, [satellite, centralBody, currentTime]);
 
@@ -49,6 +86,24 @@ export function useApsisData(satellite, currentTime, options = {}) {
         if (!satellite || !centralBody || !currentTime) {
             return new Date(currentTime?.getTime() + 7200000); // +2 hours fallback
         }
+        
+        // Try numerical detection first if orbit points are available
+        if (satellite.orbitPoints && satellite.orbitPoints.length > 3) {
+            try {
+                const nextApoapsis = ApsisDetection.findNextApoapsis(
+                    satellite.orbitPoints,
+                    currentTime.getTime(),
+                    centralBody.naifId || centralBody.naif_id
+                );
+                if (nextApoapsis) {
+                    return new Date(nextApoapsis.time);
+                }
+            } catch (error) {
+                console.warn('[useApsisData] Numerical detection failed, falling back to analytical:', error);
+            }
+        }
+        
+        // Fallback to analytical calculation
         return ApsisService.getNextApoapsisTime(satellite, centralBody, currentTime);
     }, [satellite, centralBody, currentTime]);
 
@@ -87,6 +142,7 @@ export function useApsisData(satellite, currentTime, options = {}) {
     };
 }
 
+
 /**
  * Hook for managing apsis times in maneuver node context
  * Handles complex logic for chaining nodes and computing times relative to existing maneuvers
@@ -97,52 +153,22 @@ export function useApsisData(satellite, currentTime, options = {}) {
  * @param {boolean} isAdding - Whether adding a new node
  * @returns {Object} - Maneuver-specific apsis functions
  */
-export function useManeuverApsisData(satellite, simulationTime, nodes = [], selectedIndex = null, isAdding = false) {
+export function useManeuverApsisData(satellite, simulationTime) {
     const baseApsisData = useApsisData(satellite, simulationTime);
 
     // Compute next periapsis considering maneuver node context
     const computeNextPeriapsis = useCallback(() => {
-        // If working with existing nodes, calculate based on that context
-        if ((selectedIndex != null || isAdding) && nodes.length > 0) {
-            const baseNodeIndex = selectedIndex != null ? selectedIndex : nodes.length - 1;
-            const baseNode = nodes[baseNodeIndex]?.node3D;
-            
-            const baselineTime = baseNode?.executionTime || baseNode?.time;
-            if (!baselineTime) {
-                console.error('[useManeuverApsisData] No execution time found for base node');
-                return new Date(simulationTime.getTime() + 3600 * 1000); // Default to 1 hour
-            }
-            
-            // Add one orbital period to the baseline time
-            const periodMs = (baseApsisData.orbitalPeriod || 3600) * 1000; // Convert to milliseconds
-            return new Date(baselineTime.getTime() + periodMs);
-        }
-        
-        // Use service for calculation from current satellite state
+        // SIMPLIFIED APPROACH: Use current satellite's apsis timing to avoid jittery calculations
+        // This provides stable, consistent results for maneuver planning
         return baseApsisData.getNextPeriapsisTime();
-    }, [satellite, simulationTime, nodes, selectedIndex, isAdding, baseApsisData]);
+    }, [baseApsisData]);
 
     // Compute next apoapsis considering maneuver node context
     const computeNextApoapsis = useCallback(() => {
-        // Similar logic to periapsis but add half a period more
-        if ((selectedIndex != null || isAdding) && nodes.length > 0) {
-            const baseNodeIndex = selectedIndex != null ? selectedIndex : nodes.length - 1;
-            const baseNode = nodes[baseNodeIndex]?.node3D;
-            
-            const baselineTime = baseNode?.executionTime || baseNode?.time;
-            if (!baselineTime) {
-                console.error('[useManeuverApsisData] No execution time found for base node');
-                return new Date(simulationTime.getTime() + 7200 * 1000); // Default to 2 hours
-            }
-            
-            // Add one and a half orbital periods to get to apoapsis
-            const periodMs = (baseApsisData.orbitalPeriod || 3600) * 1000;
-            return new Date(baselineTime.getTime() + (periodMs * 1.5));
-        }
-        
-        // Use service for calculation from current satellite state
+        // SIMPLIFIED APPROACH: Use current satellite's apsis timing to avoid jittery calculations
+        // This provides stable, consistent results for maneuver planning
         return baseApsisData.getNextApoapsisTime();
-    }, [satellite, simulationTime, nodes, selectedIndex, isAdding, baseApsisData]);
+    }, [baseApsisData]);
 
     return {
         ...baseApsisData,

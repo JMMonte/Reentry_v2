@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import * as THREE from 'three';
 import { ManeuverUtils } from '../utils/ManeuverUtils.js';
 
 export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, getHohmannPreviewData, currentTime, computeNextPeriapsis, computeNextApoapsis, isAdding, selectedIndex, nodes }) {
@@ -60,40 +59,6 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
             }
         } else if (maneuverMode === 'hohmann') {
             // TODO: Create Hohmann preview using new architecture
-            // The following code is commented out for now, as preview node creation is disabled during refactoring.
-            /*
-            const data = getHohmannPreviewData();
-            // Create preview nodes
-            const node1 = new ManeuverNode({ satellite, time: data.time1, deltaV: new THREE.Vector3(data.dv1, 0, data.dv_plane) });
-            const node2 = new ManeuverNode({ satellite, time: data.time2, deltaV: new THREE.Vector3(data.dv2, 0, 0) });
-            // Style both nodes
-            [node1, node2].forEach(node => {
-                const white = 0xffffff;
-                node.mesh.material.color.set(white);
-                node.mesh.material.opacity = 0.8;
-                node.mesh.material.transparent = true;
-                if (node.arrow.line) node.arrow.line.material.color.set(white);
-                if (node.arrow.cone) node.arrow.cone.material.color.set(white);
-                if (node.predictedOrbit.orbitLine.material) node.predictedOrbit.orbitLine.material.color.set(white);
-                // Make sure the preview orbit line is visible
-                node.predictedOrbit.orbitLine.visible = true;
-                // Immediately compute and draw the preview orbit
-                node._lastPredTime = 0;
-            });
-            // Do not modify satellite.maneuverNodes permanently; use previewNodes for chaining only
-            // Chained update: temporarily inject node1 for node2 propagation
-            const originalNodes = [...satellite.maneuverNodes];
-            satellite.maneuverNodes.push(node1);
-            satellite.maneuverNodes.sort((a,b) => a.time.getTime() - b.time.getTime());
-            node1._lastPredTime = 0;
-            node2._lastPredTime = 0;
-            // Restore real nodes list
-            satellite.maneuverNodes = originalNodes;
-            // Store refs and previewNodes
-            hohmannNodeRefs.current = [node1, node2];
-            satellite.app3d.previewNodes = [node1, node2];
-            satellite.app3d.previewNode = node1;
-            */
         }
 
         // Cleanup on unmount or before next mode change
@@ -155,11 +120,11 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
         if (isAdding && satellite._isPreviewingManeuver) {
             // Create/update preview visualization
             // Convert from m/s (UI) to km/s (backend)
-            const deltaV = new THREE.Vector3(
-                (parseFloat(vx) || 0) / 1000,
-                (parseFloat(vy) || 0) / 1000,
-                (parseFloat(vz) || 0) / 1000
-            );
+            const deltaV = {
+                x: (parseFloat(vx) || 0) / 1000,
+                y: (parseFloat(vy) || 0) / 1000,
+                z: (parseFloat(vz) || 0) / 1000
+            };
             
             
             // Create a preview DTO with a stable ID
@@ -171,7 +136,7 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
                     normal: deltaV.y,
                     radial: deltaV.z
                 },
-                deltaMagnitude: deltaV.length()
+                deltaMagnitude: Math.sqrt(deltaV.x * deltaV.x + deltaV.y * deltaV.y + deltaV.z * deltaV.z)
             };
             
             // Request visualization through the orbit manager
@@ -205,7 +170,7 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
 
         // Reset throttle so first node honors new settings
         node1.time = data.time1;
-        node1.localDV = new THREE.Vector3(data.dv1, 0, data.dv_plane);
+        node1.localDV = { x: data.dv1, y: 0, z: data.dv_plane };
         node1._lastPredTime = 0;
 
         // Save original maneuver nodes array
@@ -220,7 +185,7 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
 
             // Now update node2 (it will see node1 in the satellite's maneuverNodes)
             node2.time = data.time2;
-            node2.localDV = new THREE.Vector3(data.dv2, 0, 0);
+            node2.localDV = { x: data.dv2, y: 0, z: 0 };
             // Reset throttle so second node honors new settings
             node2._lastPredTime = 0;
 
