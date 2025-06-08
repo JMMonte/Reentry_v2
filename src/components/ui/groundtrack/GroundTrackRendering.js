@@ -140,44 +140,221 @@ function drawLineString(ctx, coordinates, w, h) {
 
 
 
-/** Produce semi-transparent coverage bitmap for one satellite */
-export async function rasteriseCoverage(ctx, w, h, { lat, lon, altitude }, colorRGB, planetNaifId = 399) {
-    const cov = ctx.createImageData(w, h);
-    const [sr, sg, sb] = colorRGB;
+/** 
+ * Efficient scanline-based coverage rendering with dateline handling
+ * Much faster than pixel-by-pixel approach - only processes affected scanlines
+ * @param {Object} options - Additional rendering options
+ * @param {boolean} options.gradient - Enable gradient falloff
+ * @param {Array<number>} options.elevationAngles - Array of elevation angles for rings
+ */
+export function renderCoverageEfficient(ctx, w, h, { lat, lon, altitude }, color, opacity = 0.3, planetNaifId = 399, options = {}) {
+    const { gradient = true, elevationAngles = null, planetData = null } = options;
     
-    // Use existing GroundTrackService for coverage radius calculation
-    const coverageRadiusDeg = await groundTrackService.calculateCoverageRadius(
-        { lat, lon, alt: altitude }, 
-        planetNaifId
-    );
+    // Get coverage radius in degrees - synchronous calculation
+    if (!planetData || !planetData.radius) {
+        console.warn('renderCoverageEfficient: Planet data not provided');
+        return;
+    }
     
-    // Convert coverage radius to threshold for great circle distance calculation
+    const planetRadius = planetData.radius;
+    const centralAngle = Math.acos(planetRadius / (planetRadius + altitude));
+    const coverageRadiusDeg = centralAngle * (180 / Math.PI);
+    
+    // Project satellite position to canvas
+    const satPos = groundTrackService.projectToCanvas(lat, lon, w, h);
+    
+    // Calculate pixel radius (approximate - accurate enough for visualization)
+    // At equator: 360 degrees = w pixels, so radiusPixels = (coverageRadiusDeg / 360) * w
+    // Adjust for latitude distortion
+    const latRadians = deg2rad(lat);
+    const radiusPixelsX = (coverageRadiusDeg / 360) * w;
+    const radiusPixelsY = (coverageRadiusDeg / 180) * h;
+    
+    ctx.save();
+    
+    // Check if coverage crosses dateline
+    const westBound = lon - coverageRadiusDeg;
+    const eastBound = lon + coverageRadiusDeg;
+    const crossesDateline = westBound < -180 || eastBound > 180;
+    
+    // Always use gradient rendering which now handles edge wrapping
+    if (elevationAngles) {
+        renderElevationRings(ctx, satPos.x, satPos.y, radiusPixelsX, radiusPixelsY, color, elevationAngles, altitude, planetNaifId);
+    } else if (gradient) {
+        renderCoverageGradient(ctx, satPos.x, satPos.y, radiusPixelsX, radiusPixelsY, color, opacity, w);
+    } else {
+        // Fallback to pixel-based for complex cases (poles, etc)
+        ctx.globalAlpha = opacity;
+        ctx.fillStyle = color;
+        if (Math.abs(lat) + coverageRadiusDeg > 90) {
+            // Polar coverage
+            renderCoverageWithWrapping(ctx, w, h, lat, lon, coverageRadiusDeg);
+        } else {
+            // Use gradient without gradient effect
+            renderCoverageGradient(ctx, satPos.x, satPos.y, radiusPixelsX, radiusPixelsY, color, opacity, w);
+        }
+    }
+    
+    ctx.restore();
+}
+
+/** Render coverage circle using efficient scanline algorithm */
+function renderCoverageCircle(ctx, centerX, centerY, radiusX, radiusY, w, h) {
+    // Calculate Y bounds
+    const minY = Math.max(0, Math.floor(centerY - radiusY));
+    const maxY = Math.min(h - 1, Math.ceil(centerY + radiusY));
+    
+    ctx.beginPath();
+    
+    // Scanline algorithm - only process rows that intersect the ellipse
+    for (let y = minY; y <= maxY; y++) {
+        const dy = (y - centerY) / radiusY;
+        if (Math.abs(dy) > 1) continue;
+        
+        // Calculate horizontal span at this scanline
+        const dx = Math.sqrt(1 - dy * dy);
+        const xSpan = dx * radiusX;
+        
+        const x1 = Math.max(0, Math.floor(centerX - xSpan));
+        const x2 = Math.min(w - 1, Math.ceil(centerX + xSpan));
+        
+        // Draw horizontal line for this scanline
+        ctx.moveTo(x1, y);
+        ctx.lineTo(x2, y);
+    }
+    
+    ctx.fill();
+}
+
+/** Handle coverage that wraps around map edges */
+function renderCoverageWithWrapping(ctx, w, h, lat, lon, coverageRadiusDeg) {
+    // Create off-screen canvas for wrapped coverage
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Use existing pixel-by-pixel for edge cases (more accurate for wrapping)
+    // But limit to affected region for performance
+    const minLat = Math.max(-90, lat - coverageRadiusDeg);
+    const maxLat = Math.min(90, lat + coverageRadiusDeg);
+    
+    const minY = Math.floor(((90 - maxLat) / 180) * h);
+    const maxY = Math.ceil(((90 - minLat) / 180) * h);
+    
+    // Only process affected scanlines
+    const imageData = tempCtx.createImageData(w, maxY - minY);
+    const data = imageData.data;
+    
     const cosThresh = Math.cos(deg2rad(coverageRadiusDeg));
     const lat1 = deg2rad(lat);
     const lon1 = deg2rad(lon);
     const sinLat1 = Math.sin(lat1);
     const cosLat1 = Math.cos(lat1);
-
-    for (let y = 0; y < h; y++) {
-        const lat2 = deg2rad(90 - (y * 180) / h);
+    
+    for (let y = 0; y < (maxY - minY); y++) {
+        const actualY = y + minY;
+        const lat2 = deg2rad(90 - (actualY * 180) / h);
         const sinLat2 = Math.sin(lat2);
         const cosLat2 = Math.cos(lat2);
+        
         for (let x = 0; x < w; x++) {
-            let dLon = Math.abs(
-                deg2rad(180 - (x * 360) / w) - lon1
-            );
+            const lon2 = deg2rad(-180 + (x * 360) / w);
+            let dLon = Math.abs(lon2 - lon1);
             if (dLon > Math.PI) dLon = 2 * Math.PI - dLon;
-            const cosC =
-                sinLat1 * sinLat2 +
-                cosLat1 * cosLat2 * Math.cos(dLon);
+            
+            const cosC = sinLat1 * sinLat2 + cosLat1 * cosLat2 * Math.cos(dLon);
+            
             if (cosC >= cosThresh) {
                 const idx = (y * w + x) * 4;
-                cov.data[idx] = sr;
-                cov.data[idx + 1] = sg;
-                cov.data[idx + 2] = sb;
-                cov.data[idx + 3] = 68;
+                // Use semi-transparent white, will be tinted by fillStyle
+                data[idx] = 255;
+                data[idx + 1] = 255;
+                data[idx + 2] = 255;
+                data[idx + 3] = 255;
             }
         }
     }
-    ctx.putImageData(cov, 0, 0);
+    
+    tempCtx.putImageData(imageData, 0, 0);
+    ctx.drawImage(tempCanvas, 0, minY, w, maxY - minY, 0, minY, w, maxY - minY);
+}
+
+/** Render coverage with gradient falloff for signal strength visualization */
+function renderCoverageGradient(ctx, centerX, centerY, radiusX, radiusY, color, maxOpacity, w) {
+    // Check if coverage crosses the map edge
+    const leftEdge = centerX - radiusX;
+    const rightEdge = centerX + radiusX;
+    
+    // Parse color for gradient
+    const colorMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    const [r, g, b] = colorMatch ? colorMatch.slice(1) : [255, 255, 255];
+    
+    // Helper function to draw a single coverage circle with gradient
+    const drawCoverageCircle = (x, y) => {
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, Math.max(radiusX, radiusY));
+        gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${maxOpacity})`);
+        gradient.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${maxOpacity * 0.7})`);
+        gradient.addColorStop(0.85, `rgba(${r}, ${g}, ${b}, ${maxOpacity * 0.3})`);
+        gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.ellipse(x, y, radiusX, radiusY, 0, 0, 2 * Math.PI);
+        ctx.fill();
+    };
+    
+    // Draw main coverage circle
+    drawCoverageCircle(centerX, centerY);
+    
+    // Handle edge wrapping
+    if (leftEdge < 0) {
+        // Coverage extends past left edge, draw wrapped portion on right
+        drawCoverageCircle(centerX + w, centerY);
+    }
+    if (rightEdge > w) {
+        // Coverage extends past right edge, draw wrapped portion on left
+        drawCoverageCircle(centerX - w, centerY);
+    }
+}
+
+/** Render multiple elevation angle rings */
+async function renderElevationRings(ctx, centerX, centerY, maxRadiusX, maxRadiusY, color, elevationAngles, altitude, planetNaifId) {
+    // Sort elevation angles from largest to smallest
+    const angles = [...elevationAngles].sort((a, b) => b - a);
+    
+    // Calculate radius for each elevation angle
+    for (let i = 0; i < angles.length; i++) {
+        const elevAngle = angles[i];
+        
+        // Calculate coverage radius for this elevation angle
+        // This is a simplified calculation - you may want to use more accurate formula
+        const factor = Math.cos(deg2rad(elevAngle));
+        const radiusX = maxRadiusX * factor;
+        const radiusY = maxRadiusY * factor;
+        
+        // Render with decreasing opacity
+        const opacity = 0.2 - (i * 0.05);
+        ctx.globalAlpha = opacity;
+        ctx.fillStyle = color;
+        
+        ctx.beginPath();
+        ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Add ring outline
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+}
+
+/** Legacy pixel-by-pixel coverage for compatibility */
+export function rasteriseCoverage(ctx, w, h, { lat, lon, altitude }, colorRGB, planetNaifId = 399, planetData = null) {
+    // Convert RGB array to hex color
+    const color = `rgb(${colorRGB[0]}, ${colorRGB[1]}, ${colorRGB[2]})`;
+    
+    // Use new efficient renderer with gradient by default
+    renderCoverageEfficient(ctx, w, h, { lat, lon, altitude }, color, 0.267, planetNaifId, { gradient: true, planetData });
 } 

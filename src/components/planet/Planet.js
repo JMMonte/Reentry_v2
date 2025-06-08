@@ -12,6 +12,7 @@ import { RingComponent } from './RingComponent.js';
 import { SoiComponent } from './SoiComponent.js';
 import { DistantMeshComponent } from './DistantMeshComponent.js';
 import { getPlanetManager } from '../../managers/PlanetManager.js';
+import { shaderOptimizer } from '../../utils/ShaderUniformOptimizer.js';
 
 /*
  * Planet.js
@@ -329,6 +330,7 @@ export class Planet {
      */
     updateAtmosphereUniforms(camera, sun) {
         if (this.atmosphereComponent && typeof this.atmosphereComponent.updateUniforms === 'function') {
+            // Always call the atmosphere update - it handles its own logic
             this.atmosphereComponent.updateUniforms(camera, sun);
         }
     }

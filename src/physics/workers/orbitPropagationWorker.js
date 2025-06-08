@@ -98,33 +98,40 @@ async function propagateOrbitUsingUnifiedPropagator(params) {
         // Use UnifiedSatellitePropagator for consistent physics
         const orbitPoints = UnifiedSatellitePropagator.propagateOrbit(propagationParams);
         
-        // Send points in chunks to avoid overwhelming main thread
-        const pointsPerChunk = params.pointsPerChunk || 100;
+        // Send points in larger chunks for better performance
+        const pointsPerChunk = params.pointsPerChunk || 1000; // Increased from 100
         
-        for (let i = 0; i < orbitPoints.length; i += pointsPerChunk) {
-            const chunk = orbitPoints.slice(i, i + pointsPerChunk);
-            const progress = (i + chunk.length) / orbitPoints.length;
-            const isComplete = i + chunk.length >= orbitPoints.length;
-            
-            // Send chunk to main thread
+        // For small orbits, send all at once
+        if (orbitPoints.length <= pointsPerChunk) {
             messageHandler.sendProgress('chunk', {
                 satelliteId,
-                points: chunk,
+                points: orbitPoints,
                 soiTransitions: [], // TODO: Add SOI transitions if needed
-                progress,
-                isComplete,
-                finalSolarSystemState: isComplete ? physicsState.bodies : null
+                progress: 1,
+                isComplete: true,
+                finalSolarSystemState: physicsState.bodies
             });
-            
-            // Small delay to avoid overwhelming main thread
-            if (!isComplete) {
-                await new Promise(resolve => {
-                    const timeoutId = setTimeout(() => {
-                        activeTimeouts.delete(timeoutId);
-                        resolve();
-                    }, 1);
-                    activeTimeouts.add(timeoutId);
+        } else {
+            // For large orbits, send in chunks without artificial delays
+            for (let i = 0; i < orbitPoints.length; i += pointsPerChunk) {
+                const chunk = orbitPoints.slice(i, i + pointsPerChunk);
+                const progress = (i + chunk.length) / orbitPoints.length;
+                const isComplete = i + chunk.length >= orbitPoints.length;
+                
+                // Send chunk to main thread
+                messageHandler.sendProgress('chunk', {
+                    satelliteId,
+                    points: chunk,
+                    soiTransitions: [], // TODO: Add SOI transitions if needed
+                    progress,
+                    isComplete,
+                    finalSolarSystemState: isComplete ? physicsState.bodies : null
                 });
+                
+                // Only yield control for very large datasets to prevent blocking
+                if (!isComplete && orbitPoints.length > 10000 && i % 5000 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
             }
         }
         

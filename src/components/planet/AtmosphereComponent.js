@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { PhysicsConstants } from '../../physics/core/PhysicsConstants.js';
 // Move RENDER_ORDER to a separate constants file to avoid circular dependency
 import { RENDER_ORDER } from './PlanetConstants.js';
+import { shaderOptimizer } from '../../utils/ShaderUniformOptimizer.js';
 
 export class AtmosphereComponent {
     constructor(planet, config, shaders) {
@@ -253,9 +254,11 @@ export class AtmosphereComponent {
         // Relative sun
         const sunRel = this._sunPos.clone().sub(this._planetPos);
         
-        // Update uniforms using the material we found
-        material.uniforms.uCameraPosition.value.copy(this._camRel);
-        material.uniforms.uSunPosition.value.copy(sunRel);
+        // Update uniforms using the material we found - with optimization
+        shaderOptimizer.updateUniforms(material, {
+            uCameraPosition: this._camRel,
+            uSunPosition: sunRel
+        });
         
         // Calculate LOD factor based on distance
         const distance = this._camRel.length();

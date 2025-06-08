@@ -20,6 +20,7 @@ import {
     createSatelliteFromOrbitalElements as createSatFromOEInternal,
     createSatelliteFromLatLonCircular as createSatFromLatLonCircularInternal
 } from '../components/Satellite/createSatellite.js';
+import { objectPool, withVector3, withVector3s } from '../utils/ObjectPool.js';
 
 /* ────────────── small helpers ────────────── */
 
@@ -190,11 +191,20 @@ export class SatelliteManager {
         const { timeWarp } = this.app3d.timeUtils;
         const thirdBodies = this._collectThirdBodyPositions();
 
-        // physicsProvider?.update(…)  ← stub
+        try {
+            // physicsProvider?.update(…)  ← stub
 
-        this._updateVisualsAndPaths(
-            simTimeMs, realDtS, warpDtS, perfNow, timeWarp, thirdBodies
-        );
+            this._updateVisualsAndPaths(
+                simTimeMs, realDtS, warpDtS, perfNow, timeWarp, thirdBodies
+            );
+        } finally {
+            // Release pooled vectors back to the pool
+            for (const body of thirdBodies) {
+                if (body.position) {
+                    objectPool.releaseVector3(body.position);
+                }
+            }
+        }
     }
 
     /* ───── internals ───── */
@@ -227,17 +237,27 @@ export class SatelliteManager {
         }
         
         // Fallback to visual bodies if physics engine not available
-        return (this.app3d.celestialBodies ?? [])
-            .filter(Boolean)
-            .map(body => {
-                const mesh =
-                    body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
-                if (!mesh) return null;
-                const pos = new THREE.Vector3();
-                mesh.getWorldPosition(pos);
-                return { name: body.name, position: pos, mass: body.mass ?? 0 };
-            })
-            .filter(Boolean);
+        const bodies = [];
+        const celestialBodies = this.app3d.celestialBodies ?? [];
+        
+        for (const body of celestialBodies) {
+            if (!body) continue;
+            
+            const mesh = body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
+            if (!mesh) continue;
+            
+            // Use object pooling to avoid creating new Vector3 every frame
+            const pos = objectPool.getVector3();
+            mesh.getWorldPosition(pos);
+            
+            bodies.push({ 
+                name: body.name, 
+                position: pos, // This will be released after use
+                mass: body.mass ?? 0 
+            });
+        }
+        
+        return bodies;
     }
 
     _updateVisualsAndPaths(simMs, dtReal, dtWarp, perfNow, timeWarp, thirds) {

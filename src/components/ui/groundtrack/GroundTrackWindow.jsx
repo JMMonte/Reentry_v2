@@ -13,6 +13,7 @@ import { Button } from '../button';
 import { Switch } from '../switch';
 import { usePhysicsBodies } from '../../../hooks/usePhysicsBodies.js';
 import { useGroundTrackPaths } from '../../../hooks/useGroundTrackPaths.js';
+import { POIVisibilityPanel } from './POIVisibilityPanel.jsx';
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -41,7 +42,7 @@ export function GroundTrackWindow({
         missions: false,
         pois: true,
     });
-    const [showCoverage] = useState(false);
+    const [showCoverage, setShowCoverage] = useState(false);
 
     const planetList = usePlanetList(planets).filter(
         p => p.type !== 'barycenter' &&
@@ -80,14 +81,26 @@ export function GroundTrackWindow({
                         // Three.js mesh with userData
                         const feat = item.userData.feature;
                         const [lon, lat] = feat.geometry.coordinates;
-                        return { lon, lat };
+                        return { 
+                            lon, 
+                            lat,
+                            name: feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank
+                        };
                     } else if (item.geometry?.coordinates) {
                         // Direct GeoJSON feature
                         const [lon, lat] = item.geometry.coordinates;
-                        return { lon, lat };
+                        return { 
+                            lon, 
+                            lat,
+                            name: item.properties?.name || item.properties?.NAME || item.properties?.scalerank
+                        };
                     } else if (item.lon !== undefined && item.lat !== undefined) {
                         // Direct coordinate object
-                        return { lon: item.lon, lat: item.lat };
+                        return { 
+                            lon: item.lon, 
+                            lat: item.lat,
+                            name: item.name || item.properties?.name
+                        };
                     }
                     return null;
                 }).filter(Boolean);
@@ -95,7 +108,11 @@ export function GroundTrackWindow({
                 // GeoJSON FeatureCollection
                 processedData[key] = data.features.map(feat => {
                     const [lon, lat] = feat.geometry.coordinates;
-                    return { lon, lat };
+                    return { 
+                        lon, 
+                        lat,
+                        name: feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank
+                    };
                 });
             }
         });
@@ -214,6 +231,17 @@ export function GroundTrackWindow({
                     </label>
                 ) : null
             )}
+            {/* Coverage toggle - only show if there are satellites */}
+            {Object.keys(filteredSatellites).length > 0 && (
+                <label className="flex items-center gap-1 text-xs">
+                    <Switch
+                        checked={showCoverage}
+                        onCheckedChange={setShowCoverage}
+                        id="coverage-toggle"
+                    />
+                    Coverage
+                </label>
+            )}
         </div>
     );
 
@@ -224,10 +252,10 @@ export function GroundTrackWindow({
             onClose={onClose}
             rightElement={planetSelector}
             defaultWidth={500}
-            defaultHeight={300}
+            defaultHeight={450}
             resizable
             minWidth={300}
-            minHeight={200}
+            minHeight={300}
         >
             {layerToggles}
             <GroundTrackCanvas
@@ -244,6 +272,14 @@ export function GroundTrackWindow({
                 planet={planet}
                 physicsBodies={physicsBodies}
                 currentTime={simulationTime || Date.now()}
+            />
+            <POIVisibilityPanel
+                poiData={poiData}
+                satellites={filteredSatellites}
+                currentPositions={currentPositions}
+                showCoverage={showCoverage}
+                planetData={planet}
+                tracks={trackPoints}
             />
         </DraggableModal>
     );

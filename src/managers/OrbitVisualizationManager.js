@@ -210,7 +210,7 @@ export class OrbitVisualizationManager {
                 }
                 
                 line = new THREE.Line(geometry, material);
-                line.frustumCulled = false;
+                line.frustumCulled = true; // Enable frustum culling for performance
                 line.name = `orbit_${satelliteId}_segment_${segmentIndex}`;
                 
                 // Add to parent body's mesh group

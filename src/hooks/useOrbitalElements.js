@@ -102,7 +102,7 @@ export function useOrbitalElements(physics, celestialBodies, orbitalReferenceFra
                   radius: bodyData.radius
                 };
               }
-            } catch (error) {
+            } catch {
               // Fallback for common bodies if API fails
               const commonBodies = {
                 399: { name: 'Earth', GM: 398600.4418, radius: 6371.0 }, // Earth

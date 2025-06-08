@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { objectPool, withVector3 } from '../utils/ObjectPool.js';
 
 class CameraControls {
     constructor(camera, controls) {
@@ -21,11 +22,19 @@ class CameraControls {
         if (this.followTarget) {
             const newBodyPos = this.getBodyPosition(this.followTarget);
             if (this.lastBodyPos) {
-                const delta = newBodyPos.clone().sub(this.lastBodyPos);
+                // Use pooled vector for delta calculation
+                const delta = objectPool.getVector3();
+                delta.copy(newBodyPos).sub(this.lastBodyPos);
                 this.controls.target.add(delta);
                 this.camera.position.add(delta);
+                objectPool.releaseVector3(delta);
             }
-            this.lastBodyPos = newBodyPos.clone();
+            
+            // Update lastBodyPos in place instead of cloning
+            if (!this.lastBodyPos) {
+                this.lastBodyPos = new THREE.Vector3();
+            }
+            this.lastBodyPos.copy(newBodyPos);
         }
         this.controls.update();
     }
@@ -98,7 +107,12 @@ class CameraControls {
 
     /** Get world position of a body mesh */
     getBodyPosition(body) {
-        const pos = new THREE.Vector3();
+        // Reuse a cached vector instead of creating new one every frame
+        if (!this._bodyPosCache) {
+            this._bodyPosCache = new THREE.Vector3();
+        }
+        const pos = this._bodyPosCache;
+        
         if (body.getMesh) {
             const mesh = body.getMesh();
             if (mesh && typeof mesh.getWorldPosition === 'function') {

@@ -49,6 +49,12 @@ export class Satellite {
         this._oldPosition = new THREE.Vector3();
         this._oldVelocity = new THREE.Vector3();
         
+        // Dirty flags for optimized updates
+        this._isDirty = true; // Force initial update
+        this._lastUpdateTime = 0;
+        this._positionThreshold = 1.0; // 1 km threshold for position changes
+        this._velocityThreshold = 0.01; // 0.01 km/s threshold for velocity changes
+        
         this._initVisuals();
         
         // If we have an initial position, set it on the mesh

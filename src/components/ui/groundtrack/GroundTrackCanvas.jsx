@@ -105,13 +105,14 @@ export default function GroundTrackCanvas({
                 }
             }
 
-            if (showCoverage && groundtracks.length && planetNaifId) {
-                // Render coverage asynchronously to avoid blocking
-                groundtracks.forEach(async ({ id, lat, lon, alt }) => {
+            if (showCoverage && groundtracks.length && planetNaifId && planet) {
+                // Render coverage synchronously for better performance
+                // The new scanline algorithm is fast enough
+                for (const { id, lat, lon, alt } of groundtracks) {
                     const sat = satsRef.current[id];
-                    if (!sat) return;
+                    if (!sat) continue;
                     const color = sat.color ?? 0xffffff;
-                    await rasteriseCoverage(
+                    rasteriseCoverage(
                         ctx,
                         w,
                         h,
@@ -121,9 +122,10 @@ export default function GroundTrackCanvas({
                             (color >> 8) & 0xff,
                             color & 0xff,
                         ],
-                        planetNaifId
+                        planetNaifId,
+                        planet  // Pass planet data
                     );
-                });
+                }
             }
 
             // Draw current satellite positions using groundtracks (lat/lon)
