@@ -200,6 +200,15 @@ export class ManeuverOrbitHandler {
             return;
         }
         
+        // CRITICAL: Convert from SSB coordinates to planet-relative coordinates
+        // The maneuverPoint.position is in SSB frame, but orbit propagator needs planet-relative
+        const centralBodyPosition = centralBody?.position?.toArray?.() || [0, 0, 0];
+        const planetRelativePosition = [
+            maneuverPoint.position[0] - centralBodyPosition[0],
+            maneuverPoint.position[1] - centralBodyPosition[1],
+            maneuverPoint.position[2] - centralBodyPosition[2]
+        ];
+        
         // Use per-satellite simulation properties if available, otherwise fall back to global settings
         const satelliteProps = satellite.orbitSimProperties || {};
         const orbitPeriods = satelliteProps.periods || this.app.displaySettingsManager?.getSetting('orbitPredictionInterval') || 1;
@@ -207,7 +216,7 @@ export class ManeuverOrbitHandler {
         
         // Calculate actual orbital period for the post-maneuver orbit
         const centralBodyGM = centralBody?.GM || 398600.4415; // Earth default
-        const position = new THREE.Vector3(...maneuverPoint.position);
+        const position = new THREE.Vector3(...planetRelativePosition); // Use planet-relative position
         const orbitalPeriod = Orbital.calculateOrbitalPeriod(position, postManeuverVelocity, centralBodyGM);
         
         // Calculate duration based on actual orbital period
@@ -224,7 +233,7 @@ export class ManeuverOrbitHandler {
         const success = this.workerPoolManager.startPropagationJob({
             satelliteId: predictionId,
             satellite: {
-                position: maneuverPoint.position,
+                position: planetRelativePosition, // Use planet-relative position for propagation
                 velocity: postManeuverVelocity.toArray(),
                 centralBodyNaifId: maneuverPoint.centralBodyId,
                 mass: satellite.mass || 1000,

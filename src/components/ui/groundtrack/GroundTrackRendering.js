@@ -100,78 +100,44 @@ export function drawGeoJSONLines(ctx, geoJsonData, w, h, color, lineWidth = 1) {
 function drawLineString(ctx, coordinates, w, h) {
     if (!coordinates || coordinates.length < 2) return;
     
-    // Split coordinates into segments that don't cross the dateline
-    const segments = splitAtDateline(coordinates);
+    ctx.beginPath();
+    let lastX = null;
+    let lastY = null;
+    let pathStarted = false;
     
-    // Draw each segment separately
-    segments.forEach(segment => {
-        if (segment.length < 2) return;
+    for (let i = 0; i < coordinates.length; i++) {
+        const [lon, lat] = coordinates[i];
+        const { x, y } = groundTrackService.projectToCanvas(lat, lon, w, h);
         
-        ctx.beginPath();
-        let moved = false;
-        
-        segment.forEach(([lon, lat]) => {
-            // GeoJSON format is [longitude, latitude] but projectToCanvas expects (lat, lon)
-            const { x, y } = groundTrackService.projectToCanvas(lat, lon, w, h);
-            
-            if (!moved) {
+        // Check if we should break the path
+        if (lastX !== null) {
+            const xDiff = Math.abs(x - lastX);
+            // If x coordinate jumps more than half the map width, it's a date line crossing
+            if (xDiff > w / 2) {
+                // Don't draw this segment - start a new path
+                ctx.stroke(); // Finish current path
+                ctx.beginPath(); // Start new path
                 ctx.moveTo(x, y);
-                moved = true;
+                pathStarted = true;
             } else {
+                // Normal segment
                 ctx.lineTo(x, y);
             }
-        });
+        } else {
+            // First point
+            ctx.moveTo(x, y);
+            pathStarted = true;
+        }
         
+        lastX = x;
+        lastY = y;
+    }
+    
+    if (pathStarted) {
         ctx.stroke();
-    });
+    }
 }
 
-/** Split coordinates at dateline crossings for rendering */
-export function splitAtDateline(coordinates) {
-    if (!coordinates || coordinates.length < 2) return [coordinates];
-    
-    
-    const segments = [];
-    let currentSegment = [coordinates[0]];
-    
-    for (let i = 1; i < coordinates.length; i++) {
-        const [currentLon, currentLat] = coordinates[i];
-        const [lastLon, lastLat] = coordinates[i - 1];
-        
-        // Calculate raw longitude difference
-        const rawLonDiff = currentLon - lastLon;
-        
-        // For rendering purposes, we need to prevent horizontal lines across the map
-        // This happens when there's a large longitude jump that would create
-        // a line spanning most of the map width
-        
-        // Check for true date line wrap-around artifacts
-        // These occur when we jump from ~-180 to ~+180 or vice versa
-        const isDatelineWrap = (
-            (lastLon < -170 && currentLon > 170) ||  // -180 to +180 wrap
-            (lastLon > 170 && currentLon < -170)     // +180 to -180 wrap
-        );
-        
-        if (isDatelineWrap) {
-            
-            // Complete the current segment and start a new one
-            if (currentSegment.length >= 1) {
-                segments.push([...currentSegment]);
-            }
-            currentSegment = [coordinates[i]];
-        } else {
-            // Normal progression - add to current segment
-            currentSegment.push(coordinates[i]);
-        }
-    }
-    
-    // Add the final segment if it has at least one point
-    if (currentSegment.length >= 1) {
-        segments.push(currentSegment);
-    }
-    
-    return segments.filter(segment => segment.length >= 2);
-}
 
 
 /** Produce semi-transparent coverage bitmap for one satellite */
