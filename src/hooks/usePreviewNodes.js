@@ -4,10 +4,81 @@ import { ManeuverUtils } from '../utils/ManeuverUtils.js';
 export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, getHohmannPreviewData, currentTime, computeNextPeriapsis, computeNextApoapsis, isAdding, selectedIndex, nodes }) {
     const manualNodeRef = useRef(null);
     const hohmannNodeRefs = useRef([]);
+    
+    // Debug: Check if satellite has required components
+    useEffect(() => {
+        if (satellite && isAdding) {
+            console.log('[usePreviewNodes] Satellite components check:', {
+                hasManeuverNodeVisualizer: !!satellite.maneuverNodeVisualizer,
+                hasManeuverOrbitHandler: !!satellite.app3d?.satelliteOrbitManager?.maneuverOrbitHandler,
+                hasPhysicsEngine: !!satellite.app3d?.physicsIntegration?.physicsEngine,
+                hasSatelliteOrbitManager: !!satellite.app3d?.satelliteOrbitManager
+            });
+        }
+    }, [satellite, isAdding]);
 
     // Retrieve display settings for orbit prediction
     const predPeriods = satellite.app3d.getDisplaySetting('orbitPredictionInterval');
     const ptsPerPeriod = satellite.app3d.getDisplaySetting('orbitPointsPerPeriod');
+    // Update preview when parameters change
+    useEffect(() => {
+        if (maneuverMode === 'manual' && isAdding) {
+            // Always update/create the preview node with new parameters
+            const execTime = ManeuverUtils.computeExecutionTime(
+                currentTime,
+                { timeMode, offsetSec, hours, minutes, seconds, milliseconds }
+            );
+            
+            const deltaV = {
+                prograde: (parseFloat(vx) || 0) / 1000,
+                normal: (parseFloat(vy) || 0) / 1000,
+                radial: (parseFloat(vz) || 0) / 1000
+            };
+            
+            const deltaMagnitude = Math.sqrt(
+                deltaV.prograde * deltaV.prograde + 
+                deltaV.normal * deltaV.normal + 
+                deltaV.radial * deltaV.radial
+            );
+            
+            // Create/update the preview node with stable ID
+            const previewNode = {
+                id: `preview_manual_${satellite.id}`,
+                executionTime: execTime,
+                deltaV: deltaV,
+                deltaMagnitude: deltaMagnitude,
+                isPreview: true
+            };
+            
+            // Store reference
+            satellite._currentPreviewNode = previewNode;
+            satellite._isPreviewingManeuver = true;
+            
+            // Request updated visualization (even with zero delta-V to show orbit at maneuver point)
+            const physicsEngine = satellite.app3d?.physicsIntegration?.physicsEngine;
+            const maneuverOrbitHandler = satellite.app3d?.satelliteOrbitManager?.maneuverOrbitHandler;
+            
+            if (physicsEngine && maneuverOrbitHandler && satellite.maneuverNodeVisualizer) {
+                // Only log once per preview node creation to avoid spam
+                if (!satellite._lastPreviewLogTime || Date.now() - satellite._lastPreviewLogTime > 1000) {
+                    console.log('[usePreviewNodes] Updating preview for:', previewNode.id, 'deltaV magnitude:', deltaMagnitude);
+                    satellite._lastPreviewLogTime = Date.now();
+                }
+                maneuverOrbitHandler.requestManeuverNodeVisualization(
+                    satellite.id,
+                    previewNode,
+                    physicsEngine
+                );
+            } else {
+                console.warn('[usePreviewNodes] Missing components:', {
+                    hasPhysicsEngine: !!physicsEngine,
+                    hasManeuverOrbitHandler: !!maneuverOrbitHandler,
+                    hasManeuverNodeVisualizer: !!satellite.maneuverNodeVisualizer
+                });
+            }
+        }
+    }, [maneuverMode, isAdding, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, currentTime, satellite]);
+    
     // Create or dispose preview nodes on mode or display-setting changes
     useEffect(() => {
         // Clean up any existing previews
@@ -24,11 +95,11 @@ export function usePreviewNodes({ satellite, maneuverMode, timeMode, offsetSec, 
 
         if (maneuverMode === 'manual' && (isAdding || selectedIndex != null)) {
             if (isAdding) {
-                // Create a simple preview visualization
-                // We'll use the satellite's maneuverNodeVisualizer to show a preview
-                
-                // Store a flag that we're in preview mode
-                satellite._isPreviewingManeuver = true;
+                // Preview creation is handled in the other effect
+                // Just ensure the initial state is set
+                if (!satellite._isPreviewingManeuver) {
+                    satellite._isPreviewingManeuver = true;
+                }
             } else {
                 // Edit existing node: preview the selected node and its followers
                 const model = nodes[selectedIndex];

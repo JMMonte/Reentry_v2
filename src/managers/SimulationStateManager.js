@@ -179,17 +179,17 @@ export class SimulationStateManager {
         satellites.forEach(params => {
             // Validate position and velocity values are finite numbers
             const positionValid = params.position?.x !== undefined && params.position?.y !== undefined && params.position?.z !== undefined &&
-                                isFinite(params.position.x) && isFinite(params.position.y) && isFinite(params.position.z);
-            
+                isFinite(params.position.x) && isFinite(params.position.y) && isFinite(params.position.z);
+
             const velocityValid = params.velocity?.x !== undefined && params.velocity?.y !== undefined && params.velocity?.z !== undefined &&
-                                isFinite(params.velocity.x) && isFinite(params.velocity.y) && isFinite(params.velocity.z);
-            
+                isFinite(params.velocity.x) && isFinite(params.velocity.y) && isFinite(params.velocity.z);
+
             if (positionValid && velocityValid) {
                 // Pass all serialized properties to createSatellite, only if they exist
                 const satParams = {
                     ...params
                 };
-                
+
                 // Only include properties that were actually serialized (not undefined)
                 if (params.size !== undefined) satParams.size = params.size;
                 if (params.crossSectionalArea !== undefined) satParams.crossSectionalArea = params.crossSectionalArea;
@@ -198,24 +198,14 @@ export class SimulationStateManager {
                 if (params.centralBodyNaifId !== undefined) satParams.centralBodyNaifId = params.centralBodyNaifId;
                 if (params.orbitSimProperties !== undefined) satParams.orbitSimProperties = params.orbitSimProperties;
                 if (params.commsConfig !== undefined) satParams.commsConfig = params.commsConfig;
-                
-                // Log detailed info about what we're trying to create
-                console.log(`[SimulationStateManager] Creating satellite from state:`, {
-                    id: params.id,
-                    position: params.position,
-                    velocity: params.velocity,
-                    centralBodyNaifId: params.centralBodyNaifId
-                });
-                
+
                 const sat = this.createSatellite(satParams);
-                
+
                 if (!sat) {
                     console.warn('[SimulationStateManager] Failed to create satellite:', params);
                     return;
                 }
-                
-                console.log(`[SimulationStateManager] Successfully created satellite ${sat.id}`);
-                
+
                 // Validate satellite was created with valid position/velocity
                 if (sat.position && Array.isArray(sat.position.toArray)) {
                     const posArray = sat.position.toArray();
@@ -227,7 +217,7 @@ export class SimulationStateManager {
                         });
                     }
                 }
-                
+
                 // Restore maneuver nodes
                 if (params.maneuverNodes) {
                     params.maneuverNodes.forEach(nodeData => {
@@ -349,7 +339,7 @@ export class SimulationStateManager {
         // Just track which ones are active/visible
         const groundStations = this.app.groundStations;
         if (!groundStations || !Array.isArray(groundStations)) return null;
-        
+
         return groundStations
             .filter(station => station.visible !== false)
             .map(station => ({
@@ -363,7 +353,7 @@ export class SimulationStateManager {
         // Serialize active communication links
         const commsManager = this.app.satelliteCommsManager;
         if (!commsManager) return null;
-        
+
         const links = [];
         if (commsManager.activeConnections) {
             commsManager.activeConnections.forEach((connections, satelliteId) => {
@@ -384,7 +374,7 @@ export class SimulationStateManager {
         // Serialize any in-progress maneuver executions
         const maneuverManager = this.app.maneuverManager;
         if (!maneuverManager) return null;
-        
+
         const executions = [];
         // Check if there are any active maneuver executions
         if (maneuverManager.activeExecutions) {
@@ -430,7 +420,7 @@ export class SimulationStateManager {
     // Additional restoration methods
     _restoreSelectedBody(selectedBody) {
         if (!selectedBody || !selectedBody.naifId) return;
-        
+
         // Find the body by NAIF ID
         const body = this.app.bodiesByNaifId?.[selectedBody.naifId];
         if (body) {
@@ -441,15 +431,11 @@ export class SimulationStateManager {
     _restoreGroundStations(groundStations) {
         // Ground stations are loaded from config, so we just restore visibility
         if (!groundStations || !Array.isArray(groundStations)) return;
-        
-        // This would need implementation in the ground station manager
-        // For now, just log
-        console.log('[SimulationStateManager] Ground station state restoration not yet implemented');
     }
 
     _restoreCommunicationLinks(links) {
         if (!links || !Array.isArray(links)) return;
-        
+
         // Communication links will be rebuilt automatically based on satellite positions
         // But we could force a rebuild here if needed
         if (this.app.satelliteCommsManager) {
@@ -458,10 +444,9 @@ export class SimulationStateManager {
                 // Get current satellites and recalculate communication links
                 const satellites = Array.from(this.app.physicsIntegration?.physicsEngine?.satellites?.values() || []);
                 const bodies = this.app.physicsIntegration?.physicsEngine?.bodies || {};
-                
+
                 if (satellites.length > 0) {
                     this.app.satelliteCommsManager.calculateCommunicationLinks(satellites, bodies);
-                    console.log('[SimulationStateManager] Recalculated communication links for imported state');
                 }
                 this._commsUpdateTimeout = null;
             }, 1000); // Delay to ensure satellites are loaded
@@ -470,15 +455,11 @@ export class SimulationStateManager {
 
     _restoreManeuverExecutions(executions) {
         if (!executions || !Array.isArray(executions)) return;
-        
-        // Restore any in-progress maneuver executions
-        // This would need implementation in the maneuver manager
-        console.log('[SimulationStateManager] Maneuver execution restoration not yet implemented');
     }
 
     _restoreUIState(uiState) {
         if (!uiState) return;
-        
+
         // Restore UI state elements
         if (uiState.selectedSatelliteId) {
             // Select the satellite after a delay to ensure it's loaded
@@ -491,7 +472,7 @@ export class SimulationStateManager {
                 this._uiRestoreTimeout = null;
             }, 500);
         }
-        
+
         // Restore other UI state as needed
         if (uiState.maneuverMode !== undefined) {
             this.app.maneuverMode = uiState.maneuverMode;
@@ -507,12 +488,12 @@ export class SimulationStateManager {
             clearTimeout(this._commsUpdateTimeout);
             this._commsUpdateTimeout = null;
         }
-        
+
         if (this._uiRestoreTimeout) {
             clearTimeout(this._uiRestoreTimeout);
             this._uiRestoreTimeout = null;
         }
-        
+
         // Clear references
         this.app = null;
         this.satellites = null;

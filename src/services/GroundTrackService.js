@@ -4,7 +4,6 @@
  */
 
 import { CoordinateTransforms } from '../physics/utils/CoordinateTransforms.js';
-import { Bodies } from '../physics/PhysicsAPI.js';
 
 export class GroundTrackService {
     constructor() {
@@ -28,13 +27,10 @@ export class GroundTrackService {
             // Try to use provided planet state first (has current orientation)
             let planetData = planetState;
             
-            // Fallback to static data if no state provided
+            // In worker context, planet data must be provided
             if (!planetData) {
-                planetData = await Bodies.getData(planetNaifId);
-                if (!planetData) {
-                    console.warn(`Planet data not found for NAIF ID: ${planetNaifId}`);
-                    return { lat: 0, lon: 0, alt: 0 };
-                }
+                console.warn(`Planet data not provided for NAIF ID: ${planetNaifId}`);
+                return { lat: 0, lon: 0, alt: 0 };
             }
 
             const time = new Date(timeMs);
@@ -100,9 +96,10 @@ export class GroundTrackService {
      * @param {number} planetNaifId - Planet NAIF ID
      * @param {number} width - Canvas width
      * @param {number} height - Canvas height
+     * @param {Object} planetState - Optional planet state from physics bodies
      * @returns {Array} Processed canvas points with edge handling
      */
-    async processGroundTrack(rawPoints, planetNaifId, width, height) {
+    async processGroundTrack(rawPoints, planetNaifId, width, height, planetState = null) {
         if (!rawPoints.length || planetNaifId === undefined) return [];
 
         const processedPoints = [];
@@ -116,7 +113,8 @@ export class GroundTrackService {
             const surface = await this.transformECIToSurface(
                 [point.position.x, point.position.y, point.position.z],
                 planetNaifId,
-                point.time
+                point.time,
+                planetState
             );
 
             // Project to canvas coordinates
@@ -147,10 +145,13 @@ export class GroundTrackService {
      * @param {number} planetNaifId - Planet NAIF ID
      * @returns {Promise<number>} Coverage radius in degrees
      */
-    async calculateCoverageRadius(surfacePos, planetNaifId) {
+    async calculateCoverageRadius(surfacePos, planetNaifId, planetData = null) {
         try {
-            const planetData = await Bodies.getData(planetNaifId);
-            if (!planetData) return 0;
+            // Planet data must be provided in worker context
+            if (!planetData) {
+                console.warn('calculateCoverageRadius: Planet data not provided');
+                return 0;
+            }
 
             const planetRadius = planetData.radius;
             const altitude = surfacePos.alt;

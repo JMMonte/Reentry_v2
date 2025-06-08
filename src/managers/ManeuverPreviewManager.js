@@ -29,11 +29,17 @@ export class ManeuverPreviewManager {
             baseState = null // Optional: state to build preview from (for chained maneuvers)
         } = params;
 
-        // Use base state or current satellite state
+        // Use base state or current satellite state from physics engine
+        const physicsEngine = satellite.app3d.physicsEngine;
+        const currentTime = physicsEngine.getSimulatedTime();
+        
+        // Get the satellite's current state from physics engine for synchronization
+        const physicsSatellite = physicsEngine.satellites.get(satellite.id);
+        
         const initialState = baseState || {
-            position: satellite.position.clone(),
-            velocity: satellite.velocity.clone(),
-            time: satellite.app3d.physicsEngine.getSimulatedTime()
+            position: physicsSatellite ? new THREE.Vector3(...physicsSatellite.position) : satellite.position.clone(),
+            velocity: physicsSatellite ? new THREE.Vector3(...physicsSatellite.velocity) : satellite.velocity.clone(),
+            time: currentTime
         };
 
         // Calculate time to maneuver

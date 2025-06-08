@@ -16,13 +16,110 @@ export class GroundtrackPath {
     static _handlers = new Map();          // Map<satId, GroundtrackPath>
 
     static _initSharedWorker() {
-        GroundtrackPath._worker = new Worker(
-            new URL('../physics/workers/groundtrackWorker.js', import.meta.url),
-            { type: 'module' },
-        );
+        try {
+            // Create inline worker code
+            const workerCode = `
+                // Inline groundtrack worker
+                self.onmessage = function (e) {
+                    if (e.data.type === 'UPDATE_GROUNDTRACK') {
+                        const { 
+                            id, 
+                            seq, 
+                            startTime, 
+                            position, 
+                            velocity, 
+                            bodies, 
+                            period, 
+                            numPoints, 
+                            centralBodyNaifId,
+                            canvasWidth,
+                            canvasHeight
+                        } = e.data;
+                        
+                        try {
+                            // For now, send back raw ECI coordinates and let main thread do the conversion
+                            // This ensures we use the exact same coordinate transformation as the satellite position
+                            const points = [];
+                            const dt = period / numPoints; // time step in seconds
+                            
+                            // Current position and velocity
+                            let pos = { ...position };
+                            let vel = { ...velocity };
+                            
+                            for (let i = 0; i < numPoints; i++) {
+                                const time = startTime + i * dt * 1000; // Convert to milliseconds
+                                
+                                // Simple two-body propagation (Euler integration)
+                                // Find central body
+                                const centralBody = bodies.find(b => b.naifId === centralBodyNaifId) || 
+                                                  bodies.find(b => b.naifId === 399); // Default to Earth
+                                
+                                if (centralBody) {
+                                    const r = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+                                    const GM = centralBody.GM || 398600.4418; // Earth's GM in km³/s²
+                                    
+                                    // Gravitational acceleration
+                                    const acc = GM / (r * r * r);
+                                    const ax = -acc * pos.x;
+                                    const ay = -acc * pos.y;
+                                    const az = -acc * pos.z;
+                                    
+                                    // Update velocity and position (Euler method)
+                                    vel.x += ax * dt;
+                                    vel.y += ay * dt;
+                                    vel.z += az * dt;
+                                    
+                                    pos.x += vel.x * dt;
+                                    pos.y += vel.y * dt;
+                                    pos.z += vel.z * dt;
+                                }
+                                
+                                // Send raw ECI coordinates - main thread will do coordinate transformation
+                                points.push({
+                                    time,
+                                    position: { x: pos.x, y: pos.y, z: pos.z }
+                                });
+                            }
+                            
+                            // Send response with raw ECI data
+                            self.postMessage({
+                                type: 'GROUNDTRACK_UPDATE',
+                                id,
+                                points,
+                                seq,
+                                isProcessed: false // Mark as not processed - needs coordinate conversion
+                            });
+                            
+                        } catch (error) {
+                            self.postMessage({
+                                type: 'GROUNDTRACK_ERROR',
+                                id,
+                                error: error.message,
+                                seq
+                            });
+                        }
+                    }
+                };
+            `;
+            
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+            GroundtrackPath._worker = new Worker(workerUrl);
+            
+            // Set up message handlers immediately
+            GroundtrackPath._setupWorkerHandlers();
+        } catch (error) {
+            console.error('[GroundtrackPath] Failed to create worker:', error);
+            throw error;
+        }
+    }
+    
+    static _setupWorkerHandlers() {
+        if (!GroundtrackPath._worker) return;
 
         GroundtrackPath._worker.onmessage = (e) => {
             const { type, id } = e.data;
+            
             // progress updates can be ignored or used for a loader
             if (type === 'GROUNDTRACK_PROGRESS') return;
             // chunk of points
@@ -34,6 +131,15 @@ export class GroundtrackPath {
             if (type === 'GROUNDTRACK_UPDATE') {
                 GroundtrackPath._handlers.get(id)?._onWorkerUpdate(e.data);
             }
+            // Handle errors
+            if (type === 'GROUNDTRACK_ERROR') {
+                console.error(`[GroundtrackPath] Worker error for satellite ${id}:`, e.data.error);
+                GroundtrackPath._handlers.get(id)?._onWorkerError(e.data);
+            }
+        };
+        
+        GroundtrackPath._worker.onerror = (error) => {
+            console.error('[GroundtrackPath] Worker error:', error);
         };
     }
 
@@ -61,7 +167,9 @@ export class GroundtrackPath {
 
     /* ───────────── constructor / fields ─────────── */
     constructor() {
-        if (!GroundtrackPath._worker) GroundtrackPath._initSharedWorker();
+        if (!GroundtrackPath._worker) {
+            GroundtrackPath._initSharedWorker();
+        }
 
         /** @type {{lat:number, lon:number}[]} */
         this.points = [];
@@ -96,6 +204,14 @@ export class GroundtrackPath {
         GroundtrackPath._handlers.set(id, this);
 
         const seq = ++this._seq;
+        
+        // Check if worker is ready
+        if (!this.worker) {
+            if (onUpdate) {
+                onUpdate({ id, points: [], error: 'Worker not initialized' });
+            }
+            return;
+        }
 
         const bodiesMsg = bodies.map(b => ({
             position: Array.isArray(b.position) 
@@ -194,6 +310,27 @@ export class GroundtrackPath {
                     points,
                     isProcessed: this.isProcessed
                 }
+            }));
+        }
+    }
+    
+    /** called on worker error */
+    _onWorkerError({ error }) {
+        console.error(`[GroundtrackPath] Error for satellite ${this._currentId}:`, error);
+        
+        // Use callback if provided, otherwise fallback to DOM event
+        if (this._onUpdateCallback) {
+            this._onUpdateCallback({
+                id: this._currentId,
+                points: [],
+                error: error
+            });
+        } else {
+            document.dispatchEvent(new CustomEvent('groundTrackError', {
+                detail: { 
+                    id: this._currentId, 
+                    error: error
+                },
             }));
         }
     }

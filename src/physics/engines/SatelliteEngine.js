@@ -14,20 +14,20 @@ import { OrbitalElementsConverter } from '../utils/OrbitalElementsConverter.js';
 export class SatelliteEngine {
     constructor() {
         // No reference to PhysicsEngine to avoid circular dependencies
-        
+
         // Satellite storage
         this.satellites = new Map();
-        
+
         // Maneuver node tracking
         this.maneuverNodes = new Map(); // Map<satelliteId, ManeuverNodeDTO[]>
-        
+
         // Performance optimization caches with size limits
         this._satelliteInfluenceCache = new Map(); // Cache significant bodies per satellite
         this._lastCacheUpdate = 0;
         this._cacheValidityPeriod = 5000; // 5 seconds
         this._maxCacheSize = 100; // Maximum entries per cache
         this._cacheCleanupThreshold = 150; // Clean up when size exceeds this
-        
+
         // Pre-allocated vectors for calculations to avoid GC pressure
         this._tempVectors = {
             satGlobalPos: new THREE.Vector3(),
@@ -55,23 +55,23 @@ export class SatelliteEngine {
         if (!satellite.centralBodyNaifId) {
             throw new Error('Satellite must specify centralBodyNaifId (NAIF ID of central body)');
         }
-        
+
         const id = String(satellite.id || Date.now());
-        
+
         // Debug: Check velocity magnitude before storing
-        const velArray = Array.isArray(satellite.velocity) ? satellite.velocity : 
-                        (satellite.velocity.toArray ? satellite.velocity.toArray() : [0, 0, 0]);
-        const velMag = Math.sqrt(velArray[0]**2 + velArray[1]**2 + velArray[2]**2);
-        
+        const velArray = Array.isArray(satellite.velocity) ? satellite.velocity :
+            (satellite.velocity.toArray ? satellite.velocity.toArray() : [0, 0, 0]);
+        const velMag = Math.sqrt(velArray[0] ** 2 + velArray[1] ** 2 + velArray[2] ** 2);
+
         if (velMag > PhysicsConstants.VELOCITY_LIMITS.PLANETARY_MAX) {
             console.warn(`[SatelliteEngine] Extreme velocity on satellite creation: ${velMag.toFixed(3)} km/s`);
         }
-        
-        
+
+
         // Convert position to array if it's an object
-        const posArray = Array.isArray(satellite.position) ? satellite.position : 
-                        (satellite.position.toArray ? satellite.position.toArray() : 
-                         [satellite.position.x, satellite.position.y, satellite.position.z]);
+        const posArray = Array.isArray(satellite.position) ? satellite.position :
+            (satellite.position.toArray ? satellite.position.toArray() :
+                [satellite.position.x, satellite.position.y, satellite.position.z]);
 
         const satData = {
             ...satellite,
@@ -97,16 +97,16 @@ export class SatelliteEngine {
                 context: 'creation'
             }]
         };
-        
+
         // SOI placement check moved to PhysicsEngine to maintain separation of concerns
-        
+
         // Validate initial state
         this._validateSatelliteState(satData, "on creation", bodies);
-        
+
         this.satellites.set(id, satData);
-        
+
         // Communication subsystem addition handled by PhysicsEngine
-        
+
         return id;
     }
 
@@ -118,7 +118,7 @@ export class SatelliteEngine {
         const satellite = this.satellites.get(strId);
         if (satellite) {
             // Subsystem removal handled by PhysicsEngine
-            
+
             this.satellites.delete(strId);
         }
     }
@@ -156,17 +156,17 @@ export class SatelliteEngine {
         // Get the current authoritative body data from physics engine
         const physicsBodies = getBodiesForOrbitPropagation();
         const planetData = physicsBodies.find(b => b.naifId === centralBodyNaifId);
-        
+
         if (!planetData) {
             throw new Error(`Planet data for NAIF ID ${centralBodyNaifId} not available for orbit propagation`);
         }
 
         // Use current simulation time for coordinate transformation
         const currentTime = simulationTime;
-        
+
         // Use CoordinateTransforms with authoritative physics data
         const { position, velocity } = CoordinateTransforms.createFromLatLon(params, planetData, currentTime);
-        
+
         // Create satellite object for physics engine
         const satelliteData = {
             ...params,
@@ -182,10 +182,10 @@ export class SatelliteEngine {
         };
 
         // Add to physics engine - use callback if provided to ensure subsystems are added
-        const id = addSatelliteCallback ? 
-            addSatelliteCallback(satelliteData) : 
+        const id = addSatelliteCallback ?
+            addSatelliteCallback(satelliteData) :
             this.addSatellite(satelliteData, bodies, simulationTime, null);
-        
+
         return {
             id,
             position,
@@ -209,14 +209,14 @@ export class SatelliteEngine {
         // Get the current authoritative body data from physics engine
         const physicsBodies = getBodiesForOrbitPropagation();
         const planetData = physicsBodies.find(b => b.naifId === centralBodyNaifId);
-        
+
         if (!planetData) {
             throw new Error(`Planet data for NAIF ID ${centralBodyNaifId} not available for orbit propagation`);
         }
-        
+
         // Use CoordinateTransforms with authoritative physics data
         const { position, velocity } = CoordinateTransforms.createFromOrbitalElements(params, planetData);
-        
+
         // Create satellite object for physics engine
         const satelliteData = {
             ...params,
@@ -233,7 +233,7 @@ export class SatelliteEngine {
 
         // Add to physics engine
         const id = this.addSatellite(satelliteData, bodies, null, null);
-        
+
         return {
             id,
             position,
@@ -259,18 +259,18 @@ export class SatelliteEngine {
     async integrateSatellites(deltaTime, bodies, hierarchy, simulationTime, _subsystemManager, timeWarp = 1) {
         // Clear caches periodically
         this._clearCacheIfNeeded();
-        
+
         for (const [, satellite] of this.satellites) {
             // Check for maneuvers before integration
             this._checkAndExecuteManeuvers(satellite, simulationTime);
-            
+
             // Use UnifiedSatellitePropagator for consistent physics across all systems
             this._computeSatelliteAccelerationUnified(satellite, bodies);
-            
+
             // Use unified integrator with automatic method selection
             const position = satellite.position.toArray();
             const velocity = satellite.velocity.toArray();
-            
+
             // Create acceleration function
             const accelerationFunc = (pos, vel) => {
                 const satState = {
@@ -283,12 +283,12 @@ export class SatelliteEngine {
                 const accel = UnifiedSatellitePropagator.computeAcceleration(satState, bodies);
                 return accel;
             };
-            
+
             // Integrate using unified method with user-selected integration method
             const result = UnifiedSatellitePropagator.integrate(
-                position, 
-                velocity, 
-                accelerationFunc, 
+                position,
+                velocity,
+                accelerationFunc,
                 deltaTime,
                 {
                     method: this._integrationMethod,
@@ -297,7 +297,7 @@ export class SatelliteEngine {
                     relTol: 1e-6 / this._sensitivityScale
                 }
             );
-            
+
             // Validate integration result before applying
             if (!result.position.every(v => isFinite(v)) || !result.velocity.every(v => isFinite(v))) {
                 console.error(`[SatelliteEngine] Integration produced non-finite values for satellite ${satellite.id}:`, {
@@ -309,11 +309,11 @@ export class SatelliteEngine {
                     timeWarp,
                     integrationMethod: this._integrationMethod
                 });
-                
+
                 // Don't update satellite state with invalid values
                 return;
             }
-            
+
             // Update satellite state
             satellite.position.fromArray(result.position);
             satellite.velocity.fromArray(result.velocity);
@@ -341,7 +341,7 @@ export class SatelliteEngine {
             let ground_velocity = undefined;
             let ground_track_velocity = undefined;
             let escape_velocity = undefined;
-            
+
             if (centralBody && centralBody.radius !== undefined) {
                 // Calculate orbital elements in ecliptic frame (default)
                 orbitalElements = OrbitalMechanics.calculateOrbitalElements(
@@ -350,7 +350,7 @@ export class SatelliteEngine {
                     centralBody,
                     centralBody.radius
                 );
-                
+
                 // Also calculate in equatorial frame if planet has orientation data
                 if (centralBody.tilt !== undefined || centralBody.obliquity !== undefined || centralBody.orientationGroup) {
                     try {
@@ -364,13 +364,13 @@ export class SatelliteEngine {
                         console.warn('[SatelliteEngine] Failed to calculate equatorial elements:', e);
                     }
                 }
-                
+
                 // Calculate escape velocity at current position
                 const altitude_radial = satellite.position.length();
                 if (centralBody.GM) {
                     escape_velocity = Math.sqrt(2 * centralBody.GM / altitude_radial);
                 }
-                
+
                 // Calculate lat/lon using coordinate transformation
                 try {
                     // Transform from planet-centered inertial to planet-fixed frame
@@ -379,25 +379,25 @@ export class SatelliteEngine {
                         satellite.velocity.toArray(),
                         'PCI', 'PF', centralBody, simulationTime
                     );
-                    
+
                     // Convert planet-fixed cartesian to lat/lon/alt
                     const [latitude, longitude] = CoordinateTransforms.planetFixedToLatLonAlt(
                         transformed.position, centralBody
                     );
-                    
+
                     lat = latitude;
                     lon = longitude;
-                    
+
                     // Calculate ground-relative velocity from planet-fixed velocity
                     const groundVel = new THREE.Vector3(...transformed.velocity);
                     ground_velocity = groundVel.length();
-                    
+
                     // Calculate ground track velocity (horizontal component)
                     const posNorm = new THREE.Vector3(...transformed.position).normalize();
                     const radialComponent = groundVel.dot(posNorm);
                     const tangentialVel = groundVel.clone().sub(posNorm.clone().multiplyScalar(radialComponent));
                     ground_track_velocity = tangentialVel.length();
-                    
+
                 } catch (_error) { // eslint-disable-line no-unused-vars
                     // Fallback to simple spherical coordinates
                     const pos = satellite.position;
@@ -405,7 +405,7 @@ export class SatelliteEngine {
                     lon = THREE.MathUtils.radToDeg(Math.atan2(pos.y, pos.x));
                 }
             }
-            
+
             // Track distance traveled
             if (!satellite.lastPosition) {
                 satellite.lastPosition = satellite.position.clone();
@@ -414,7 +414,7 @@ export class SatelliteEngine {
             const distanceStep = satellite.position.distanceTo(satellite.lastPosition);
             satellite.distanceTraveled = (satellite.distanceTraveled || 0) + distanceStep;
             satellite.lastPosition.copy(satellite.position);
-            
+
             states[id] = {
                 id: id,
                 position: satellite.position.toArray(),
@@ -446,7 +446,7 @@ export class SatelliteEngine {
                 a_bodies_direct: satellite.a_bodies_direct
             };
         }
-        
+
         return states;
     }
 
@@ -465,43 +465,43 @@ export class SatelliteEngine {
             console.error(`Satellite ${satelliteId} not found`);
             return null;
         }
-        
+
         // Validate and normalize maneuver node
         const normalizedNode = this._normalizeManeuverNode(maneuverNode);
         if (!normalizedNode) {
             console.error(`Invalid maneuver node provided for satellite ${satelliteId}`);
             return null;
         }
-        
+
         if (!this.maneuverNodes.has(satelliteId)) {
             this.maneuverNodes.set(satelliteId, []);
         }
-        
+
         const nodes = this.maneuverNodes.get(satelliteId);
         const nodeId = normalizedNode.id || `${satelliteId}_${Date.now()}`;
-        
+
         const nodeWithId = {
             ...normalizedNode,
             id: nodeId,
             satelliteId: satelliteId
         };
-        
+
         nodes.push(nodeWithId);
-        
+
         // Sort nodes by execution time
         nodes.sort((a, b) => {
             return a.executionTime.getTime() - b.executionTime.getTime();
         });
-        
+
         // Dispatch event for UI update
         this._dispatchSatelliteEvent('maneuverNodeAdded', {
             satelliteId,
             maneuverNode: nodeWithId
         });
-        
+
         return nodeId;
     }
-    
+
     /**
      * Remove a maneuver node
      * @param {string} satelliteId - Satellite ID
@@ -511,21 +511,21 @@ export class SatelliteEngine {
     removeManeuverNode(satelliteId, nodeId) {
         const nodes = this.maneuverNodes.get(satelliteId);
         if (!nodes) return false;
-        
+
         const index = nodes.findIndex(n => n.id === nodeId);
         if (index === -1) return false;
-        
+
         nodes.splice(index, 1);
-        
+
         // Dispatch event for UI update
         this._dispatchSatelliteEvent('maneuverNodeRemoved', {
             satelliteId,
             nodeId
         });
-        
+
         return true;
     }
-    
+
     /**
      * Get maneuver nodes for a satellite
      * @param {string} satelliteId - Satellite ID
@@ -535,7 +535,7 @@ export class SatelliteEngine {
         const nodes = this.maneuverNodes.get(satelliteId);
         return nodes ? [...nodes] : [];
     }
-    
+
     /**
      * Clear all maneuver nodes for a satellite
      * @param {string} satelliteId - Satellite ID
@@ -578,7 +578,7 @@ export class SatelliteEngine {
 
         // Use UnifiedSatellitePropagator for consistent physics with detailed components
         const accelResult = UnifiedSatellitePropagator.computeAcceleration(
-            satState, 
+            satState,
             bodiesArray,
             {
                 includeJ2: true,
@@ -596,7 +596,7 @@ export class SatelliteEngine {
                 accelResult,
                 bodiesAvailable: Object.keys(bodiesArray)
             });
-            
+
             // Use zero acceleration as fallback
             const acceleration = new THREE.Vector3(0, 0, 0);
             satellite.acceleration = acceleration;
@@ -667,9 +667,9 @@ export class SatelliteEngine {
         // Check if any maneuver nodes should be executed
         for (let i = nodes.length - 1; i >= 0; i--) {
             const node = nodes[i];
-            const executeTime = node.executionTime instanceof Date ? 
+            const executeTime = node.executionTime instanceof Date ?
                 node.executionTime : new Date(node.executionTime);
-            
+
             if (currentTime >= executeTime && !node.executed) {
                 // Convert local delta-V (prograde, normal, radial) to world coordinates
                 const localDV = new THREE.Vector3(
@@ -677,22 +677,22 @@ export class SatelliteEngine {
                     node.deltaV.normal || 0,
                     node.deltaV.radial || 0
                 );
-                
+
                 // Convert to world coordinates based on current velocity direction
                 const velDir = satellite.velocity.clone().normalize();
                 const radialDir = satellite.position.clone().normalize();
                 const normalDir = new THREE.Vector3().crossVectors(radialDir, velDir).normalize();
-                
+
                 // Build rotation matrix from local to world
                 const progradeDir = velDir;
                 const worldDeltaV = new THREE.Vector3()
                     .addScaledVector(progradeDir, localDV.x)
                     .addScaledVector(normalDir, localDV.y)
                     .addScaledVector(radialDir, localDV.z);
-                
+
                 // Apply delta-V to velocity
                 satellite.velocity.add(worldDeltaV);
-                
+
                 // Track velocity change for debugging
                 const newVelMag = satellite.velocity.length();
                 if (satellite.velocityHistory) {
@@ -707,15 +707,11 @@ export class SatelliteEngine {
                         satellite.velocityHistory.shift();
                     }
                 }
-                
-                console.log(`[SatelliteEngine] Executed maneuver ${node.id} for satellite ${satellite.id}:`,
-                    `DV=${worldDeltaV.length().toFixed(3)} km/s,`,
-                    `New velocity=${newVelMag.toFixed(3)} km/s`);
-                
+
                 // Mark as executed
                 node.executed = true;
                 node.actualExecuteTime = currentTime.toISOString();
-                
+
                 // Dispatch event for UI
                 this._dispatchSatelliteEvent('maneuverExecuted', {
                     satelliteId: satellite.id,
@@ -724,7 +720,7 @@ export class SatelliteEngine {
                     executeTime: executeTime,
                     actualExecuteTime: currentTime
                 });
-                
+
                 // Remove executed maneuver
                 nodes.splice(i, 1);
             }
@@ -753,10 +749,10 @@ export class SatelliteEngine {
         }
 
         // Velocity validation (more lenient for sun-centered)
-        const maxVelocity = isSunCentered ? 
-            PhysicsConstants.VELOCITY_LIMITS.INTERPLANETARY_MAX : 
+        const maxVelocity = isSunCentered ?
+            PhysicsConstants.VELOCITY_LIMITS.INTERPLANETARY_MAX :
             PhysicsConstants.VELOCITY_LIMITS.PLANETARY_MAX;
-        
+
         if (velocityMag > maxVelocity) {
             console.error(`[SatelliteEngine._validateSatelliteState] Velocity magnitude too large ${context} for satellite ${satellite.id}: ${velocityMag.toFixed(3)} km/s (max: ${maxVelocity} km/s)`);
             return false;
@@ -884,7 +880,7 @@ export class SatelliteEngine {
             const currentPos = satellite.position.length();
             const currentVel = satellite.velocity.length();
             const escapeVel = Math.sqrt(2 * centralBody.GM / currentPos);
-            
+
             if (currentVel + node.deltaMagnitude > escapeVel * 1.5) {
                 warnings.push('Maneuver may result in escape trajectory');
             }
@@ -896,19 +892,19 @@ export class SatelliteEngine {
             // Apply a rough approximation of the maneuver for validation
             const prograde = satellite.velocity.clone().normalize().multiplyScalar(node.deltaV.prograde);
             newVelocity.add(prograde);
-            
+
             // Simple periapsis check using vis-viva equation
             const r = satellite.position.length();
             const v = newVelocity.length();
             const mu = centralBody?.GM || 398600.4415;
             const energy = v * v / 2 - mu / r;
             const sma = -mu / (2 * energy);
-            
+
             if (sma > 0) { // Elliptical orbit
                 const eccentricity = Math.sqrt(1 + (2 * energy * (satellite.position.cross(newVelocity).lengthSq())) / (mu * mu));
                 const periapsis = sma * (1 - eccentricity);
                 const surfaceRadius = centralBody?.radius || 6371;
-                
+
                 if (periapsis < surfaceRadius + 100) { // 100km safety margin
                     warnings.push('Maneuver may result in surface collision');
                     valid = false;
@@ -933,7 +929,6 @@ export class SatelliteEngine {
     setIntegrationMethod(method) {
         if (['auto', 'rk4', 'rk45'].includes(method)) {
             this._integrationMethod = method;
-            console.log(`[SatelliteEngine] Integration method set to: ${method}`);
         } else {
             console.warn(`[SatelliteEngine] Invalid integration method: ${method}`);
         }
@@ -946,7 +941,6 @@ export class SatelliteEngine {
     setPhysicsTimeStep(timeStep) {
         if (typeof timeStep === 'number' && timeStep > 0 && timeStep <= 1) {
             this._physicsTimeStep = timeStep;
-            console.log(`[SatelliteEngine] Physics timestep set to: ${timeStep}s`);
         } else {
             console.warn(`[SatelliteEngine] Invalid physics timestep: ${timeStep}`);
         }
@@ -959,7 +953,6 @@ export class SatelliteEngine {
     setSensitivityScale(scale) {
         if (typeof scale === 'number' && scale >= 0 && scale <= 10) {
             this._sensitivityScale = scale;
-            console.log(`[SatelliteEngine] Sensitivity scale set to: ${scale}`);
         } else {
             console.warn(`[SatelliteEngine] Invalid sensitivity scale: ${scale}`);
         }

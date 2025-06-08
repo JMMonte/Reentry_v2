@@ -16,7 +16,8 @@ export default function GroundTrackCanvas({
     showCoverage,
     poiData,
     groundtracks = [],
-    planet = null
+    planet = null,
+    physicsBodies = []
 }) {
     const canvasRef = useRef(null);
     const tracksRef = useRef(tracks);
@@ -26,16 +27,17 @@ export default function GroundTrackCanvas({
     const lastRenderRef = useRef({});
     const needsRedrawRef = useRef(true);
     
-    // Helper function for viewport intersection - moved outside render loop
-    const isLineIntersectsViewport = useCallback((pt1, pt2, w, h) => {
-        // Simple bounding box check for line-viewport intersection
-        const minX = Math.min(pt1.x, pt2.x);
-        const maxX = Math.max(pt1.x, pt2.x);
-        const minY = Math.min(pt1.y, pt2.y);
-        const maxY = Math.max(pt1.y, pt2.y);
-        
-        return !(maxX < 0 || minX > w || maxY < 0 || minY > h);
-    }, []);
+    // Update refs when props change
+    useEffect(() => {
+        tracksRef.current = tracks;
+        needsRedrawRef.current = true;
+    }, [tracks]);
+    
+    useEffect(() => {
+        satsRef.current = satellites;
+        needsRedrawRef.current = true;
+    }, [satellites]);
+    
     
     // Check if render parameters have changed
     const checkNeedsRedraw = useCallback(() => {
@@ -151,30 +153,40 @@ export default function GroundTrackCanvas({
                 const lodStep = processedPts.length > 1000 ? Math.ceil(processedPts.length / 500) : 1;
                 
                 ctx.beginPath();
-                let lastDrawnPt = null;
-                let segmentStarted = false;
+                let lastX = null;
+                let pathStarted = false;
                 
                 for (let i = 0; i < processedPts.length; i += lodStep) {
                     const pt = processedPts[i];
                     
-                    // Viewport culling - check if point is visible
-                    const isVisible = pt.x >= -10 && pt.x <= width + 10 && 
-                                    pt.y >= -10 && pt.y <= height + 10;
-                    
-                    if (isVisible || (lastDrawnPt && isLineIntersectsViewport(lastDrawnPt, pt, width, height))) {
-                        if (!segmentStarted || pt.isDatelineCrossing) {
+                    // Check if we should break the path for date line crossing
+                    if (lastX !== null) {
+                        const xDiff = Math.abs(pt.x - lastX);
+                        // If x coordinate jumps more than half the map width, it's a date line crossing
+                        if (xDiff > width / 2) {
+                            // Don't draw this segment - start a new path
+                            if (pathStarted) {
+                                ctx.stroke(); // Finish current path
+                            }
+                            ctx.beginPath(); // Start new path
                             ctx.moveTo(pt.x, pt.y);
-                            segmentStarted = true;
+                            pathStarted = true;
                         } else {
+                            // Normal segment
                             ctx.lineTo(pt.x, pt.y);
                         }
-                        lastDrawnPt = pt;
-                    } else if (segmentStarted) {
-                        // End current segment when going out of viewport
-                        segmentStarted = false;
+                    } else {
+                        // First point
+                        ctx.moveTo(pt.x, pt.y);
+                        pathStarted = true;
                     }
+                    
+                    lastX = pt.x;
                 }
-                ctx.stroke();
+                
+                if (pathStarted) {
+                    ctx.stroke();
+                }
                 ctx.globalAlpha = 1.0; // Reset alpha
             });
 
@@ -202,19 +214,20 @@ export default function GroundTrackCanvas({
 
     // Process tracks - now handling pre-processed data from worker
     useEffect(() => {
-        if (!planetNaifId || !Object.keys(tracksRef.current).length) {
+        if (!planetNaifId || !Object.keys(tracks).length) {
             setProcessedTracks({});
             return;
         }
 
         const processAllTracks = async () => {
             const processed = {};
+            const currentPlanetState = physicsBodies?.find(b => b.naifId === planetNaifId);
             
-            for (const [id, rawPoints] of Object.entries(tracksRef.current)) {
+            for (const [id, rawPoints] of Object.entries(tracks)) {
                 if (rawPoints?.length) {
                     // Check if points are already processed (have lat/lon)
                     if (rawPoints[0].lat !== undefined && rawPoints[0].lon !== undefined) {
-                        // Points are pre-processed from worker
+                        // Points are pre-processed from worker with lat/lon
                         processed[id] = rawPoints.map(pt => {
                             // Use pre-computed coordinates if available, otherwise calculate
                             if (pt.x !== undefined && pt.y !== undefined) {
@@ -229,21 +242,20 @@ export default function GroundTrackCanvas({
                             }
                         });
                     } else {
-                        // Fallback: process ECI coordinates (legacy support)
+                        // Process ECI coordinates using the same transformation as satellite position
                         processed[id] = await groundTrackService.processGroundTrack(
-                            rawPoints, planetNaifId, width, height
+                            rawPoints, planetNaifId, width, height, currentPlanetState
                         );
                     }
                 }
             }
-            
             
             setProcessedTracks(processed);
             needsRedrawRef.current = true;
         };
 
         processAllTracks();
-    }, [tracks, planetNaifId, width, height]);
+    }, [tracks, planetNaifId, width, height, physicsBodies]);
 
     // Optimized render loop with dirty checking
     useEffect(() => {
@@ -316,6 +328,7 @@ GroundTrackCanvas.propTypes = {
         })
     ),
     planet: PropTypes.object,
+    physicsBodies: PropTypes.array,
     currentTime: PropTypes.number,
 };
 

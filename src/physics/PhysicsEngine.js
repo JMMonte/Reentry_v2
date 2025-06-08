@@ -30,18 +30,18 @@ export class PhysicsEngine {
 
         // Satellite engine - handles all satellite operations
         this.satelliteEngine = new SatelliteEngine();
-        
+
         // Celestial body engine - handles all celestial body operations
         this.celestialBodyEngine = new CelestialBodyEngine();
-        
+
         // Delegate storage to respective engines for backward compatibility
         this.satellites = this.satelliteEngine.satellites;
         this.maneuverNodes = this.satelliteEngine.maneuverNodes;
-        
+
         // Delegate body/barycenter storage to CelestialBodyEngine
         this.bodies = this.celestialBodyEngine.bodies;
         this.barycenters = this.celestialBodyEngine.barycenters;
-        
+
         // Subsystem manager for physics-based satellite subsystems
         this.subsystemManager = null;
     }
@@ -71,9 +71,7 @@ export class PhysicsEngine {
         const result = await this.celestialBodyEngine.updateAllBodies(this.simulationTime, solarSystemDataManager.naifToBody);
         this.bodies = result.bodies;
         this.barycenters = result.barycenters;
-        
-        console.log('[PhysicsEngine] Physics initialized successfully with', Object.keys(this.bodies).length, 'celestial bodies');
-        
+
         // Initialize subsystem manager after physics engine is ready
         this.subsystemManager = new SubsystemManager(this);
 
@@ -87,11 +85,11 @@ export class PhysicsEngine {
      */
     async step(deltaTime, timeWarp = 1) {
         const actualDeltaTime = deltaTime || this.timeStep;
-        
+
         // Only log if deltaTime exceeds 1 day (86400 seconds)
         // High timewarps are expected to have very large timesteps
         const warningThreshold = 86400.0; // 1 day
-        
+
         if (actualDeltaTime > warningThreshold) {
             console.warn(`[PhysicsEngine] Very large deltaTime in step(): ${actualDeltaTime} seconds (${(actualDeltaTime / 86400).toFixed(2)} days)`);
         }
@@ -108,14 +106,14 @@ export class PhysicsEngine {
 
         // Only integrate satellite dynamics - delegate to SatelliteEngine
         await this.satelliteEngine.integrateSatellites(
-            actualDeltaTime, 
-            this.bodies, 
-            this.hierarchy, 
-            this.simulationTime, 
+            actualDeltaTime,
+            this.bodies,
+            this.hierarchy,
+            this.simulationTime,
             this.subsystemManager,
             timeWarp
         );
-        
+
         // Update all satellite subsystems
         if (this.subsystemManager) {
             this.subsystemManager.update(actualDeltaTime);
@@ -156,6 +154,13 @@ export class PhysicsEngine {
         };
     }
 
+    /**
+     * Get current simulation time
+     */
+    getSimulatedTime() {
+        return this.simulationTime;
+    }
+
 
     /**
      * Add satellite (planet-centric version) - DELEGATED TO SatelliteEngine
@@ -163,15 +168,14 @@ export class PhysicsEngine {
      */
     addSatellite(satellite) {
         const id = this.satelliteEngine.addSatellite(
-            satellite, 
-            this.bodies, 
-            this.simulationTime, 
+            satellite,
+            this.bodies,
+            this.simulationTime,
             this._findAppropriateSOI.bind(this)
         );
-        
+
         // Add default communication subsystem to all satellites
         if (this.subsystemManager) {
-            console.log(`[PhysicsEngine] Adding communication subsystem for satellite ${id}`);
             this.subsystemManager.addSubsystem(id, 'communication', {
                 // Default communication configuration
                 antennaGain: 12.0,
@@ -183,7 +187,7 @@ export class PhysicsEngine {
         } else {
             console.warn(`[PhysicsEngine] No subsystemManager available when creating satellite ${id}`);
         }
-        
+
         return id;
     }
 
@@ -192,12 +196,12 @@ export class PhysicsEngine {
      */
     removeSatellite(id) {
         const strId = String(id);
-        
+
         // Remove all subsystems for this satellite
         if (this.subsystemManager) {
             this.subsystemManager.removeSatellite(strId);
         }
-        
+
         return this.satelliteEngine.removeSatellite(id);
     }
 
@@ -227,7 +231,7 @@ export class PhysicsEngine {
         return this.satelliteEngine.addManeuverNode(satelliteId, maneuverNode);
     }
 
-    
+
     /**
      * Remove a maneuver node
      * @param {string} satelliteId - Satellite ID
@@ -236,7 +240,7 @@ export class PhysicsEngine {
     removeManeuverNode(satelliteId, nodeId) {
         return this.satelliteEngine.removeManeuverNode(satelliteId, nodeId);
     }
-    
+
     /**
      * Get maneuver nodes for a satellite
      * @param {string} satelliteId - Satellite ID
@@ -245,7 +249,7 @@ export class PhysicsEngine {
     getManeuverNodes(satelliteId) {
         return this.satelliteEngine.getManeuverNodes(satelliteId);
     }
-    
+
 
     /**
      * Find the appropriate SOI for a given global position
@@ -280,14 +284,14 @@ export class PhysicsEngine {
         const sats = [];
         for (const [id, sat] of this.satellites) {
             if (!sat || typeof sat.position?.toArray !== 'function') continue;
-            
+
             // Get satellite's relative position
             const relativePos = sat.position.toArray();
-            
+
             // Get central body's absolute position to transform to absolute coordinates
             const centralBody = this.bodies[sat.centralBodyNaifId];
             let absolutePos = relativePos;
-            
+
             if (centralBody && centralBody.position) {
                 const centralBodyPos = centralBody.position.toArray();
                 absolutePos = [
@@ -296,7 +300,7 @@ export class PhysicsEngine {
                     relativePos[2] + centralBodyPos[2]
                 ];
             }
-            
+
             sats.push({
                 id,
                 position: absolutePos,
@@ -305,7 +309,7 @@ export class PhysicsEngine {
         }
         return sats;
     }
-    
+
     /**
      * Cleanup function to call on removal
      */
@@ -320,7 +324,7 @@ export class PhysicsEngine {
             this.celestialBodyEngine.cleanup?.();
         }
     }
-    
+
 
     /**
      * Create satellite from geographic coordinates using consistent physics engine data
@@ -331,10 +335,10 @@ export class PhysicsEngine {
      */
     createSatelliteFromGeographic(params, centralBodyNaifId = 399) {
         return this.satelliteEngine.createSatelliteFromGeographic(
-            params, 
-            centralBodyNaifId, 
-            this.bodies, 
-            this.simulationTime, 
+            params,
+            centralBodyNaifId,
+            this.bodies,
+            this.simulationTime,
             this.getBodiesForOrbitPropagation.bind(this),
             this.addSatellite.bind(this)
         );

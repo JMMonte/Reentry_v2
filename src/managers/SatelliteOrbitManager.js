@@ -413,7 +413,8 @@ export class SatelliteOrbitManager {
                         const nextApoapsis = apoapsisPoints[0];   // First one is the next
 
                         // Get central body position for coordinate transformation
-                        const centralBodyPosition = this.physicsEngine?.getBodyPosition?.(centralBodyId) || [0, 0, 0];
+                        const centralBodyObj = this.physicsEngine?.bodies?.[centralBodyId];
+                        const centralBodyPosition = centralBodyObj?.position?.toArray?.() || [0, 0, 0];
 
                         // Create apsis data for visualization (convert from absolute to planet-relative coordinates)
                         const apsisData = {

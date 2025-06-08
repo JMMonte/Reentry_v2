@@ -90,8 +90,7 @@ export class SatelliteCommsManager {
      * Create communication system for a satellite
      */
     createCommsSystem(satelliteId, config = {}) {
-        console.log(`[SatelliteCommsManager] Creating comms system for ${satelliteId} with config:`, config);
-        
+
         // Apply preset if specified
         let finalConfig = { ...config };
         if (config.preset && this.presets[config.preset]) {
@@ -101,13 +100,9 @@ export class SatelliteCommsManager {
 
         // Apply global settings
         finalConfig.updateInterval = finalConfig.updateInterval || this.globalSettings.updateInterval;
-        
-        console.log(`[SatelliteCommsManager] Final config for ${satelliteId}:`, finalConfig);
 
         const comms = new SatelliteComms(satelliteId, finalConfig);
         this.commsystems.set(satelliteId, comms);
-        
-        console.log(`[SatelliteCommsManager] Created and stored comms system for ${satelliteId}. Total systems:`, this.commsystems.size);
 
         return comms;
     }

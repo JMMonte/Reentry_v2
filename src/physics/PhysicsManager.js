@@ -30,14 +30,14 @@ export class PhysicsManager {
         this.orbitPathsCache = new Map();
         this.maxCacheSize = 50; // Maximum entries per cache
         this.cacheCleanupThreshold = 100; // Clean up when size exceeds this
-        
+
         // Track last orientations to detect flips
         this._lastOrientations = new Map(); // naifId -> last quaternion
-        
+
         // Timewarp configuration
         this._timeWarpOptions = [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 1000000, 10000000];
         this._currentTimeWarpIndex = 2; // Default to 1x (index 2)
-        
+
         // Frame counter for reduced frequency updates
         this._frameCount = 0;
     }
@@ -76,8 +76,6 @@ export class PhysicsManager {
 
             // Set up time sync with app's TimeUtils
             this._setupTimeSync();
-
-            console.log('[PhysicsManager] Initialized - physics driven by SimulationLoop');
 
             this.isInitialized = true;
 
@@ -227,7 +225,7 @@ export class PhysicsManager {
         );
 
         const mu = parent.mu || (parent.mass * PhysicsConstants.PHYSICS.G); // G in km³/kg/s²
-        
+
         return OrbitalMechanics.calculateOrbitalElements(relPos, relVel, mu, parent.radius || 0);
     }
 
@@ -303,7 +301,7 @@ export class PhysicsManager {
             this._updateOrbitVisualizations();
             return { stepsProcessed: 0, interpolationFactor: 0, physicsState: this.physicsEngine.getSimulationState() };
         }
-        
+
         // Optimized path for very high timewarps
         if (timeWarp >= 100000) {
             return this._stepPhysicsHighWarp(realDeltaTime, timeWarp);
@@ -317,35 +315,35 @@ export class PhysicsManager {
 
         // Add to accumulator for adaptive timestep integration
         this._accumulator += simulatedDeltaSeconds;
-        
+
         // Adaptive step limits based on time warp
         const { maxSteps, maxAccumulator } = this._getTimeWarpLimits(timeWarp);
-        
+
         // Clamp accumulator to prevent spiral of death
         if (this._accumulator > maxAccumulator) {
             this._accumulator = maxAccumulator;
         }
-        
+
         // Get current time once
         let currentTime = this.app.timeUtils.getSimulatedTime();
         let physicsState = null;
-        
+
         // Process accumulated time in adaptive timestep chunks
         let stepsProcessed = 0;
         let totalTimeToAdvance = 0;
-        
+
         // First, calculate total time we need to advance
         while (this._accumulator >= this._currentTimeStep && stepsProcessed < maxSteps) {
             totalTimeToAdvance += this._currentTimeStep;
             this._accumulator -= this._currentTimeStep;
             stepsProcessed++;
         }
-        
+
         // If we have time to advance, process it efficiently
         if (totalTimeToAdvance > 0) {
             // Dynamic timestep calculation based on timewarp
             let maxStepSize;
-            
+
             if (timeWarp >= 10000000) {
                 // Ultra-high warp: up to 1 hour steps
                 maxStepSize = 3600.0;
@@ -365,21 +363,21 @@ export class PhysicsManager {
                 // Low warp: up to 5 second steps
                 maxStepSize = 5.0;
             }
-            
+
             // For extreme timewarps, allow even larger steps if the total time is very large
             if (timeWarp >= 1000000 && totalTimeToAdvance > 3600) {
                 // Allow up to 1% of total time as step size, but cap at 1 day
                 maxStepSize = Math.min(totalTimeToAdvance * 0.01, 86400.0);
             }
-            
+
             // Calculate number of steps needed
             const numSteps = Math.max(1, Math.ceil(totalTimeToAdvance / maxStepSize));
             const stepSize = totalTimeToAdvance / numSteps;
-            
+
             // Update time first for celestial bodies (they use analytical ephemeris)
             const finalTime = new Date(currentTime.getTime() + totalTimeToAdvance * 1000);
             await this.physicsEngine.setTime(finalTime);
-            
+
             // Then propagate satellites with the calculated step size
             // For very large steps, we can do it in one go since orbits are stable
             if (stepSize > 60.0) {
@@ -391,40 +389,40 @@ export class PhysicsManager {
                     physicsState = await this.physicsEngine.step(stepSize, timeWarp);
                 }
             }
-            
+
             // Sync visuals with final state
             this._syncWithCelestialBodies(physicsState);
             this._syncSatelliteStates(physicsState);
-            
+
             // Update TimeUtils with final time (already declared above)
             this.app.timeUtils.updateFromPhysics(finalTime);
-            
+
             // Dispatch physics update for components
             this._dispatchPhysicsUpdate(physicsState);
         } else {
             // No physics steps, but get current state
             physicsState = this.physicsEngine.getSimulationState();
         }
-        
+
         // Calculate interpolation factor for smooth visuals
         const interpolationFactor = this._currentTimeStep > 0 ? this._accumulator / this._currentTimeStep : 0;
-        
+
         // Performance feedback for high time warps
         if (this._accumulator > this._currentTimeStep && stepsProcessed >= maxSteps) {
             if (this._accumulator > maxAccumulator * 0.5) {
                 document.dispatchEvent(new CustomEvent('timeWarpLagging', {
-                    detail: { 
-                        timeWarp, 
+                    detail: {
+                        timeWarp,
                         lag: this._accumulator,
-                        timestep: this._currentTimeStep 
+                        timestep: this._currentTimeStep
                     }
                 }));
             }
         }
-        
+
         // Always update orbit visualizations for smooth rendering
         this._updateOrbitVisualizations();
-        
+
         // Manage cache sizes periodically
         if (stepsProcessed > 0) {
             this._manageCaches();
@@ -453,29 +451,29 @@ export class PhysicsManager {
     async _stepPhysicsHighWarp(realDeltaTime, timeWarp) {
         // Direct calculation for high timewarps - no complex conditionals
         const timeToAdvance = realDeltaTime * timeWarp;
-        
+
         // Direct time advancement
         const currentTime = this.app.timeUtils.getSimulatedTime();
         const finalTime = new Date(currentTime.getTime() + timeToAdvance * 1000);
-        
+
         // Single physics update
         await this.physicsEngine.setTime(finalTime);
         const physicsState = await this.physicsEngine.step(timeToAdvance, this.getCurrentTimeWarp());
-        
+
         // Full syncing for satellites
         this._syncWithCelestialBodies(physicsState);
         this._syncSatelliteStates(physicsState);
         this.app.timeUtils.updateFromPhysics(finalTime);
-        
+
         // Always dispatch physics updates for satellites
         this._dispatchPhysicsUpdate(physicsState);
-        
+
         // Reduced frequency for orbit visualizations only
         this._frameCount++;
         if (this._frameCount % 10 === 0) {
             this._updateOrbitVisualizations();
         }
-        
+
         return {
             stepsProcessed: 1,
             interpolationFactor: 0,
@@ -491,10 +489,10 @@ export class PhysicsManager {
     _syncExistingSatellites() {
         // Check if the app has existing satellites to sync
         if (!this.app.satellites) return;
-        
+
         const satellitesMap = this.app.satellites.getSatellitesMap?.();
         if (!satellitesMap || satellitesMap.size === 0) return;
-        
+
         // Add each satellite to the physics engine
         for (const [satellite] of satellitesMap) {
             if (satellite.position && satellite.velocity) {
@@ -539,11 +537,11 @@ export class PhysicsManager {
      */
     _cleanupCache(cache, maxSize) {
         if (cache.size <= maxSize) return;
-        
+
         // Convert to array, sort by access time (if available), remove oldest
         const entries = Array.from(cache.entries());
         const entriesToRemove = entries.slice(0, cache.size - maxSize);
-        
+
         for (const [key] of entriesToRemove) {
             cache.delete(key);
         }
@@ -571,7 +569,7 @@ export class PhysicsManager {
     _updateAdaptiveTimestep(timeWarp) {
         // Aggressive timestep scaling for high timewarps
         // We want to actually advance time quickly at high warps
-        
+
         if (timeWarp <= 1) {
             // Real-time or slower: use base timestep
             this._currentTimeStep = this._baseTimeStep;
@@ -604,7 +602,7 @@ export class PhysicsManager {
             const t = Math.log10(timeWarp / 1000000);
             this._currentTimeStep = 3600.0 + t * 82800.0;
         }
-        
+
         // No artificial safety caps - we want full speed at high warps
     }
 
@@ -616,10 +614,10 @@ export class PhysicsManager {
     _getTimeWarpLimits(timeWarp) {
         // Aggressive limits for high timewarps
         // We want fewer frame subdivisions at high warps
-        
+
         let maxSteps;
         let maxAccumulatorMultiplier;
-        
+
         if (timeWarp <= 100) {
             // Low-medium warp: many steps for accuracy
             maxSteps = 20;
@@ -637,10 +635,10 @@ export class PhysicsManager {
             maxSteps = 1;
             maxAccumulatorMultiplier = 20.0;
         }
-        
+
         // Calculate max accumulator based on current timestep
         const maxAccumulator = maxSteps * this._currentTimeStep * maxAccumulatorMultiplier;
-        
+
         return { maxSteps, maxAccumulator };
     }
 
@@ -653,7 +651,7 @@ export class PhysicsManager {
         if (bodyConfig && bodyConfig.multiBodySystemComponent) {
             return true;
         }
-        
+
         return false;
     }
 
@@ -682,11 +680,11 @@ export class PhysicsManager {
                 if (Array.isArray(bodyState.position)) {
                     celestialBody.absolutePosition.set(
                         bodyState.position[0],
-                        bodyState.position[1], 
+                        bodyState.position[1],
                         bodyState.position[2]
                     );
                 }
-                
+
                 // Update target position (Planet class expects this)
                 if (celestialBody.targetPosition && Array.isArray(bodyState.position)) {
                     // Check if this body has a parent in the hierarchy
@@ -698,16 +696,16 @@ export class PhysicsManager {
                             parentNaifId = parentConfig.naifId;
                         }
                     }
-                    
+
                     // For single-planet systems (like dwarf planets), the planet position IS the absolute position
                     // For multi-body systems (like Earth-Moon, Pluto-Charon), calculate relative to parent
                     // const bodyConfig = this.physicsEngine.positionManager?.hierarchy?.getBodyInfo?.(naifId);
                     const isMultiBodySystem = this._isMultiBodySystem(naifId, parentNaifId);
-                    
+
                     // Check if this body is parented to another body in the Three.js scene
                     const orbitGroup = celestialBody.getOrbitGroup?.();
                     const hasSceneParent = orbitGroup && orbitGroup.parent && orbitGroup.parent !== this.app.scene;
-                    
+
                     if (hasSceneParent || isMultiBodySystem) {
                         // Body is parented to another body (barycenter) in the scene graph
                         // OR it's a multi-body system component
@@ -755,12 +753,12 @@ export class PhysicsManager {
                         bodyState.quaternion[2], // z
                         bodyState.quaternion[3]  // w
                     );
-                    
+
                     // Check for flips - especially for Earth
                     const lastQuat = this._lastOrientations.get(naifId);
                     if (lastQuat) {
                         const dot = lastQuat.dot(newQuat);
-                        
+
                         // If quaternions are pointing in opposite directions, negate to take shorter path
                         if (dot < 0) {
                             newQuat.x *= -1;
@@ -768,13 +766,13 @@ export class PhysicsManager {
                             newQuat.z *= -1;
                             newQuat.w *= -1;
                         }
-                        
+
                         // No special handling for Earth - treat all bodies the same
                     }
-                    
+
                     // Update the orientation
                     celestialBody.targetOrientation.copy(newQuat);
-                    
+
                     // Store for next comparison
                     if (!this._lastOrientations.has(naifId)) {
                         this._lastOrientations.set(naifId, new THREE.Quaternion());
@@ -917,10 +915,10 @@ export class PhysicsManager {
         );
 
         const mu = parent.mu || (parent.mass * PhysicsConstants.PHYSICS.G); // G in km³/kg/s²
-        
+
         // Calculate orbital elements
         const elements = OrbitalMechanics.calculateOrbitalElements(relPos, relVel, mu, parent.radius || 0);
-        
+
         if (!elements || !isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
             return [];
         }
@@ -931,11 +929,11 @@ export class PhysicsManager {
 
         for (let i = 0; i <= numPoints; i++) {
             const t = i * dt;
-            
+
             // Calculate mean anomaly at time t
             const meanMotion = 2 * Math.PI / period;
             const meanAnomaly = (elements.meanAnomaly * Math.PI / 180) + meanMotion * t;
-            
+
             // Create elements for this time
             const currentElements = {
                 a: elements.semiMajorAxis,
@@ -946,14 +944,14 @@ export class PhysicsManager {
                 M0: meanAnomaly * 180 / Math.PI,
                 epoch: 2451545.0 // J2000.0
             };
-            
+
             // Get state vector at this time
             const stateVector = OrbitalMechanics.orbitalElementsToStateVector(
                 currentElements,
                 2451545.0, // Current JD (simplified)
                 mu
             );
-            
+
             // Add parent position to get absolute position
             const absolutePos = stateVector.position.add(new THREE.Vector3().fromArray(parent.position));
             points.push(absolutePos);
