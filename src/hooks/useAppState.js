@@ -14,6 +14,7 @@ export function useModalState() {
   const [isSimulationOpen, setIsSimulationOpen] = useState(false);
   const [isGroundtrackOpen, setIsGroundtrackOpen] = useState(false);
   const [openPointModals, setOpenPointModals] = useState([]);
+  const [groundTrackData, setGroundTrackData] = useState({ poiData: {}, tracks: {}, planet: null, currentPositions: [] });
 
   const togglers = {
     onChatToggle: () => setIsChatVisible(!isChatVisible),
@@ -36,6 +37,7 @@ export function useModalState() {
     isSimulationOpen,
     isGroundtrackOpen,
     openPointModals,
+    groundTrackData,
     
     // Setters
     setIsChatVisible,
@@ -48,6 +50,7 @@ export function useModalState() {
     setIsSimulationOpen,
     setIsGroundtrackOpen,
     setOpenPointModals,
+    setGroundTrackData,
     
     // Togglers
     ...togglers

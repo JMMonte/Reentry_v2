@@ -70,21 +70,9 @@ export async function createSatellite(app, params = {}) {
         ballisticCoefficient,
         crossSectionalArea: crossSectionalArea(size, areaOverride),
         dragCoefficient,
-        color
+        color,
+        commsConfig: commsConfig // Pass comms config to physics engine
     });
-
-    // Communication subsystem is automatically created by PhysicsEngine when satellite is added
-    // Additional communication configuration can be applied via SatelliteCommsManager if needed
-    // Enable communications by default with cubesat preset
-    sat.commsConfig = {
-        preset: commsConfig.preset || 'cubesat',
-        enabled: commsConfig.enabled !== false,
-        antennaGain: commsConfig.antennaGain || 2.0,
-        transmitPower: commsConfig.transmitPower || 1.0,
-        dataRate: commsConfig.dataRate || 100,
-        minElevationAngle: commsConfig.minElevationAngle || 5.0,
-        ...commsConfig
-    };
 
     // Return the satellite object
     return sat;
@@ -108,14 +96,14 @@ export async function createSatelliteUnified(app, params = {}) {
     // Generate color once for both physics and UI satellites
     const satelliteColor = pickBrightColor(params.color);
 
-    // Step 1: Create the physics satellite with color
+    // Step 1: Create the physics satellite with color and comms config
     let physicsResult;
     if (params.latitude !== undefined && params.longitude !== undefined) {
         // Geodetic coordinates provided
-        physicsResult = physicsEngine.createSatelliteFromGeographic({...params, color: satelliteColor}, naifId);
+        physicsResult = physicsEngine.createSatelliteFromGeographic({...params, color: satelliteColor, commsConfig: params.commsConfig}, naifId);
     } else if (params.semiMajorAxis !== undefined) {
         // Orbital elements provided  
-        physicsResult = physicsEngine.createSatelliteFromOrbitalElements({...params, color: satelliteColor}, naifId);
+        physicsResult = physicsEngine.createSatelliteFromOrbitalElements({...params, color: satelliteColor, commsConfig: params.commsConfig}, naifId);
     } else {
         // Direct position/velocity provided
         const satelliteId = physicsEngine.addSatellite({
@@ -123,7 +111,8 @@ export async function createSatelliteUnified(app, params = {}) {
             color: satelliteColor,
             centralBodyNaifId: naifId,
             crossSectionalArea: crossSectionalArea(params.size ?? DEFAULT_SIZE, params.crossSectionalArea),
-            dragCoefficient: params.dragCoefficient ?? DEFAULT_CD
+            dragCoefficient: params.dragCoefficient ?? DEFAULT_CD,
+            commsConfig: params.commsConfig
         });
         physicsResult = { 
             id: satelliteId,

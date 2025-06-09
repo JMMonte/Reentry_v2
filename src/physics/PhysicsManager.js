@@ -1023,6 +1023,33 @@ export class PhysicsManager {
      */
     _setupTimeSync() {
         // Time sync is now handled by SimulationLoop calling stepPhysicsExternal
-        console.log('[PhysicsManager] Time sync handled by SimulationLoop');
+    }
+
+    // ================================================================
+    // PROPERTY GETTERS FOR EXTERNAL API COMPATIBILITY
+    // ================================================================
+
+    /**
+     * Get satellites map for external API compatibility
+     * @returns {Map} Map of satellites from physics engine
+     */
+    get satellites() {
+        return this.physicsEngine?.satellites || new Map();
+    }
+
+    /**
+     * Get satellite engine for external API compatibility
+     * @returns {SatelliteEngine} Satellite engine instance
+     */
+    get satelliteEngine() {
+        return this.physicsEngine?.satelliteEngine || null;
+    }
+
+    /**
+     * Get maneuver nodes for external API compatibility
+     * @returns {Map} Map of maneuver nodes from physics engine
+     */
+    get maneuverNodes() {
+        return this.physicsEngine?.maneuverNodes || new Map();
     }
 } 

@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { POIVisibilityService } from '../../../services/POIVisibilityService';
-import { Eye, MapPin, Radio, Satellite, ChevronDown, ChevronRight, Clock, Signal } from 'lucide-react';
+import { PassPredictionService } from '../../../services/PassPredictionService';
+import { Eye, MapPin, Radio, Satellite, ChevronDown, ChevronRight, Clock, Signal, Calendar } from 'lucide-react';
 import { ScrollArea } from '../scroll-area';
 import { Badge } from '../badge';
 import { Button } from '../button';
@@ -12,7 +13,9 @@ export function POIVisibilityPanel({
     currentPositions,
     showCoverage,
     planetData,
-    tracks 
+    tracks,
+    currentTime,
+    onSelectSchedule
 }) {
     const [expandedSatellites, setExpandedSatellites] = useState({});
     const [expandedCategories, setExpandedCategories] = useState({});
@@ -134,24 +137,32 @@ export function POIVisibilityPanel({
         const commsConfig = satData?.commsConfig;
         
         // Calculate slant range (distance from satellite to POI)
-        const earthRadius = planetData?.radius || 6371; // km
+        const planetRadius = planetData?.radius || 6371; // km - only use Earth as fallback
         const satAlt = satellite.alt;
         const angle = POIVisibilityService.greatCircleDistance(
             poi.lat, poi.lon,
             satellite.lat, satellite.lon
         ) * Math.PI / 180; // Convert to radians
         
-        // Law of cosines for slant range
-        const slantRange = Math.sqrt(
-            earthRadius * earthRadius + 
-            (earthRadius + satAlt) * (earthRadius + satAlt) - 
-            2 * earthRadius * (earthRadius + satAlt) * Math.cos(angle)
-        );
+        // Elevation angle calculation using simpler formula
+        const cosAngle = Math.cos(angle);
+        const radiusRatio = planetRadius / (planetRadius + satAlt);
         
-        // Elevation angle at ground station
-        const elevationAngle = Math.asin(
-            ((earthRadius + satAlt) * Math.sin(angle) - earthRadius) / slantRange
-        ) * 180 / Math.PI;
+        // Calculate sin of elevation angle
+        const sinEl = cosAngle - radiusRatio;
+        
+        // Check if satellite is below horizon
+        let elevationAngle = 0;
+        if (sinEl > 0) {
+            elevationAngle = Math.asin(sinEl) * 180 / Math.PI;
+        }
+        
+        // Law of cosines for slant range (still needed for distance)
+        const slantRange = Math.sqrt(
+            planetRadius * planetRadius + 
+            (planetRadius + satAlt) * (planetRadius + satAlt) - 
+            2 * planetRadius * (planetRadius + satAlt) * Math.cos(angle)
+        );
         
         // Communication quality factors
         const factors = {
@@ -212,18 +223,20 @@ export function POIVisibilityPanel({
     };
     
     return (
-        <div className="mt-2 border rounded p-2 bg-background/50">
-            <div className="flex items-center justify-between mb-2">
-                <h4 className="text-xs font-semibold flex items-center gap-1">
-                    <Eye className="h-3 w-3" />
-                    POI Visibility
-                </h4>
-                <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs">
-                        {totalSatellitesWithVisibility} satellites
-                    </Badge>
+        <>
+            <div className="mt-2 border rounded p-2 bg-background/50">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-semibold flex items-center gap-1">
+                        <Eye className="h-3 w-3" />
+                        POI Visibility
+                    </h4>
+                    <div className="flex items-center gap-2">
+                        {/* Browse All button removed for cleaner UX */}
+                        <Badge variant="secondary" className="text-xs">
+                            {totalSatellitesWithVisibility} satellites
+                        </Badge>
+                    </div>
                 </div>
-            </div>
             
             <ScrollArea className="h-48">
                 <div className="space-y-2 pr-3">
@@ -268,6 +281,24 @@ export function POIVisibilityPanel({
                                                         {pois.slice(0, displayLimit).map(poi => {
                                                             const duration = getVisibilityDuration(poi, data.satellite);
                                                             const commCap = getCommCapability(poi, data.satellite, satellites[satId]);
+                                                            
+                                                            // Calculate next pass if we have track data
+                                                            let nextPassInfo = null;
+                                                            if (tracks && tracks[satId]) {
+                                                                const passes = PassPredictionService.findPassesForPOI(
+                                                                    poi, 
+                                                                    tracks[satId], 
+                                                                    data.satellite.coverageRadius
+                                                                );
+                                                                const nextPass = PassPredictionService.findNextPass(passes, currentTime || Date.now());
+                                                                if (nextPass) {
+                                                                    const timeUntil = nextPass.timeToAOS;
+                                                                    const hours = Math.floor(timeUntil / 3600000);
+                                                                    const minutes = Math.floor((timeUntil % 3600000) / 60000);
+                                                                    nextPassInfo = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                                                                }
+                                                            }
+                                                            
                                                             return (
                                                                 <div 
                                                                     key={poi.id} 
@@ -294,11 +325,27 @@ export function POIVisibilityPanel({
                                                                             </Badge>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="ml-4 flex items-center gap-2 text-xs text-muted-foreground/70">
-                                                                        <span>Range: {commCap.distance}km</span>
-                                                                        <span>Elev: {commCap.elevation}°</span>
-                                                                        <span>Loss: {commCap.pathLoss}dB</span>
+                                                                    <div className="ml-4 flex items-center justify-between text-xs text-muted-foreground/70">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span>Range: {commCap.distance}km</span>
+                                                                            <span>Elev: {commCap.elevation}°</span>
+                                                                            <span>Loss: {commCap.pathLoss}dB</span>
+                                                                        </div>
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-5 px-2 text-xs"
+                                                                            onClick={() => onSelectSchedule(poi, data.satellite)}
+                                                                        >
+                                                                            <Calendar className="h-3 w-3 mr-1" />
+                                                                            Schedule
+                                                                        </Button>
                                                                     </div>
+                                                                    {nextPassInfo && (
+                                                                        <div className="ml-4 text-xs text-muted-foreground/50">
+                                                                            Next pass in {nextPassInfo}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             );
                                                         })}
@@ -332,6 +379,8 @@ export function POIVisibilityPanel({
                 </div>
             </ScrollArea>
         </div>
+        
+        </>
     );
 }
 
@@ -341,5 +390,7 @@ POIVisibilityPanel.propTypes = {
     currentPositions: PropTypes.array.isRequired,
     showCoverage: PropTypes.bool.isRequired,
     planetData: PropTypes.object,
-    tracks: PropTypes.object
+    tracks: PropTypes.object,
+    currentTime: PropTypes.number,
+    onSelectSchedule: PropTypes.func
 };

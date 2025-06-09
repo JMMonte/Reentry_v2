@@ -24,7 +24,9 @@ export class LineOfSightManager {
         this._enabled = false;
         this._connections = [];
         this._lastWorkerSync = 0;
-        this._workerSyncInterval = 500; // ms - sync every 500ms (2Hz) to prevent spam
+        this._workerSyncInterval = 2000; // ms - sync every 2 seconds for better performance
+        
+        // Only satellite-to-satellite connections (ground connections handled by ground track window)
 
         // Three.js objects
         this._satelliteLinks = new THREE.Group();
@@ -48,6 +50,10 @@ export class LineOfSightManager {
         // Connection persistence tracking
         this._persistentConnections = new Map(); // Track connections with timestamps
         this._fadingConnections = new Set(); // Track connections in fade-out state
+
+        // Initialize line management
+        this._linePool = [];
+        this._activeLines = new Map();
 
         this._initializeWorker();
     }
@@ -73,10 +79,11 @@ export class LineOfSightManager {
         return this._enabled;
     }
 
+
     /**
      * Update line of sight calculations with current satellite data
      */
-    updateConnections(satellites, bodies, groundStations = []) {
+    updateConnections(satellites, bodies) {
         if (!this._enabled || !this._workerInitialized) {
             return;
         }
@@ -100,11 +107,6 @@ export class LineOfSightManager {
             position: body.getPosition ? body.getPosition() : body.position,
             radius: body.radius
         }));
-        const groundData = groundStations.map(station => ({
-            id: station.id,
-            position: station.position,
-            elevation: station.elevation || 0
-        }));
         // Update configuration from display settings
         this._updateConfigFromSettings();
         // Send data to worker
@@ -112,7 +114,6 @@ export class LineOfSightManager {
             type: 'UPDATE_SCENE',
             satellites: satelliteData,
             bodies: bodyData,
-            groundStations: groundData,
             config: this._config
         });
         // Update physics state
@@ -244,11 +245,7 @@ export class LineOfSightManager {
         // Test line removed to prevent memory leak
         // Debug test lines should only be created once, not every frame
         
-        // Initialize line pool if needed
-        if (!this._linePool) {
-            this._linePool = [];
-            this._activeLines = new Map();
-        }
+        // Line pool is already initialized in constructor
         
         // Track current active connections and update persistent tracking
         const currentTime = Date.now();
@@ -256,6 +253,11 @@ export class LineOfSightManager {
         
         connections.forEach((connection) => {
             if (!connection.points || connection.points.length !== 2) {
+                return;
+            }
+            
+            // Only show satellite-to-satellite connections
+            if (connection.type !== 'satellite-satellite') {
                 return;
             }
             
@@ -460,6 +462,7 @@ export class LineOfSightManager {
             }
         });
     }
+
 
     /**
      * Dispose of resources and cleanup

@@ -27,9 +27,9 @@ const Input = React.forwardRef(
       unstyled: "border-none bg-transparent shadow-none",
     };
     const sizeStyles = {
-      sm: "h-7 text-xs",
-      md: "h-9 text-sm",
-      lg: "h-12 text-base",
+      sm: "h-6 text-xs",
+      md: "h-8 text-sm",
+      lg: "h-10 text-base",
     };
     const stateStyles = error
       ? "border-red-500 focus-visible:ring-red-500"

@@ -71,6 +71,12 @@ export class SimulationStateManager {
     importState(state) {
 
         this.satellites.dispose();
+        
+        // Clear orbit cache to prevent stale data during scene loading
+        if (this.app.satelliteOrbitManager) {
+            this.app.satelliteOrbitManager.orbitCacheManager.clearAll();
+        }
+        
         this._restoreTimeState(state);
         this._restoreDisplaySettings(state.displaySettings);
         this._restoreSatellitesArray(state.satellites);
@@ -81,6 +87,14 @@ export class SimulationStateManager {
         this._restoreCommunicationLinks(state.communicationLinks);
         this._restoreManeuverExecutions(state.maneuverExecutions);
         this._restoreUIState(state.uiState);
+        
+        // Dispatch event to notify that scene state has been restored
+        window.dispatchEvent(new CustomEvent('sceneStateRestored', {
+            detail: {
+                satelliteCount: state.satellites?.length || 0,
+                timestamp: Date.now()
+            }
+        }));
     }
 
     /**
@@ -171,11 +185,45 @@ export class SimulationStateManager {
                 // Enable satellite connections via display setting to trigger proper toggles
                 this.app.updateDisplaySetting('showSatConnections', true);
             }
+            
+            // Force orbit visibility update after settings are restored
+            if (this.app.satelliteOrbitManager && settings.showOrbits !== undefined) {
+                setTimeout(() => {
+                    this.app.satelliteOrbitManager._updateOrbitVisibility();
+                }, 100);
+            }
         }
     }
 
     _restoreSatellitesArray(satellites) {
         if (!Array.isArray(satellites)) return;
+        
+        // Check if physics is ready with bodies loaded
+        const physicsReady = this.app.physicsIntegration?.isInitialized;
+        const bodiesLoaded = this.app.physicsIntegration?.physicsEngine?.bodies && 
+                           Object.keys(this.app.physicsIntegration.physicsEngine.bodies).length > 0;
+        
+        if (!physicsReady || !bodiesLoaded) {
+            // Defer satellite creation until physics AND bodies are ready
+            const waitForPhysics = () => {
+                const isReady = this.app.physicsIntegration?.isInitialized;
+                const hasBodies = this.app.physicsIntegration?.physicsEngine?.bodies && 
+                                 Object.keys(this.app.physicsIntegration.physicsEngine.bodies).length > 0;
+                
+                if (isReady && hasBodies) {
+                    this._satelliteRestoreTimeout = null;
+                    this._restoreSatellitesArray(satellites);
+                } else {
+                    this._satelliteRestoreTimeout = setTimeout(waitForPhysics, 100);
+                }
+            };
+            this._satelliteRestoreTimeout = setTimeout(waitForPhysics, 100);
+            return;
+        }
+        
+        // Track created satellite IDs for orbit updates
+        const createdSatelliteIds = [];
+        
         satellites.forEach(params => {
             // Validate position and velocity values are finite numbers
             const positionValid = params.position?.x !== undefined && params.position?.y !== undefined && params.position?.z !== undefined &&
@@ -205,6 +253,9 @@ export class SimulationStateManager {
                     console.warn('[SimulationStateManager] Failed to create satellite:', params);
                     return;
                 }
+
+                // Track successfully created satellite
+                createdSatelliteIds.push(sat.id || params.id);
 
                 // Validate satellite was created with valid position/velocity
                 if (sat.position && Array.isArray(sat.position.toArray)) {
@@ -238,6 +289,34 @@ export class SimulationStateManager {
                 });
             }
         });
+
+        // Trigger orbit updates for all created satellites after ensuring physics is ready
+        if (createdSatelliteIds.length > 0) {
+            // Wait for orbit manager to be ready
+            const waitForOrbitManagerAndUpdate = () => {
+                const orbitManager = this.app.satelliteOrbitManager;
+                
+                if (orbitManager) {
+                    // Update workers first
+                    if (orbitManager.workerPoolManager && this.app.physicsIntegration) {
+                        orbitManager.workerPoolManager.updateWorkersPhysicsState(this.app.physicsIntegration);
+                    }
+                    
+                    // Then update orbits
+                    createdSatelliteIds.forEach(satelliteId => {
+                        orbitManager.updateSatelliteOrbit(String(satelliteId));
+                    });
+                    
+                    // Clear the timeout reference
+                    this._physicsWaitTimeout = null;
+                } else {
+                    this._physicsWaitTimeout = setTimeout(waitForOrbitManagerAndUpdate, 250);
+                }
+            };
+            
+            // Start the check - wait a bit longer for orbit manager initialization
+            this._physicsWaitTimeout = setTimeout(waitForOrbitManagerAndUpdate, 500);
+        }
     }
 
     _restoreCameraState(cameraState) {
@@ -438,19 +517,16 @@ export class SimulationStateManager {
 
         // Communication links will be rebuilt automatically based on satellite positions
         // But we could force a rebuild here if needed
-        if (this.app.satelliteCommsManager) {
-            // Force update of all connections after satellites are loaded
+        // Force update of all connections after satellites are loaded
+        if (this.app.lineOfSightManager) {
             this._commsUpdateTimeout = setTimeout(() => {
-                // Get current satellites and recalculate communication links
-                const satellites = Array.from(this.app.physicsIntegration?.physicsEngine?.satellites?.values() || []);
-                const bodies = this.app.physicsIntegration?.physicsEngine?.bodies || {};
-
-                if (satellites.length > 0) {
-                    this.app.satelliteCommsManager.calculateCommunicationLinks(satellites, bodies);
-                }
+                // Force update of line-of-sight calculations
+                this.app.lineOfSightManager.forceUpdate();
                 this._commsUpdateTimeout = null;
             }, 1000); // Delay to ensure satellites are loaded
         }
+
+        // Orbit updates are now handled in _restoreSatellitesArray to ensure proper timing
     }
 
     _restoreManeuverExecutions(executions) {
@@ -492,6 +568,23 @@ export class SimulationStateManager {
         if (this._uiRestoreTimeout) {
             clearTimeout(this._uiRestoreTimeout);
             this._uiRestoreTimeout = null;
+        }
+
+        if (this._orbitUpdateTimeout) {
+            clearTimeout(this._orbitUpdateTimeout);
+            this._orbitUpdateTimeout = null;
+        }
+
+        // Clear any pending physics wait timeouts
+        if (this._physicsWaitTimeout) {
+            clearTimeout(this._physicsWaitTimeout);
+            this._physicsWaitTimeout = null;
+        }
+
+        // Clear satellite restore timeout
+        if (this._satelliteRestoreTimeout) {
+            clearTimeout(this._satelliteRestoreTimeout);
+            this._satelliteRestoreTimeout = null;
         }
 
         // Clear references

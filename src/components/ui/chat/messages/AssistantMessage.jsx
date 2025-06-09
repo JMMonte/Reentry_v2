@@ -118,8 +118,10 @@ export function AssistantMessage({ message, onCopy, isStreaming = false }) {
       const tableData = tables.find(t => t.id === tableId);
       if (tableData) {
         elements.push(
-          <div key={tableId} className="my-4">
-            <DataTable data={tableData.data} />
+          <div key={tableId} className="my-4 w-0 min-w-full flex-shrink-0">
+            <div className="max-w-full overflow-hidden">
+              <DataTable data={tableData.data} />
+            </div>
           </div>
         );
       }

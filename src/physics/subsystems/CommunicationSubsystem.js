@@ -17,7 +17,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
         this.activeConnections = new Map(); // targetId -> connection info
         this.transmissionQueue = [];
         this.lastLinkCalculation = 0;
-        this.linkCalculationInterval = 5000; // 5 seconds between link updates
+        this.linkCalculationInterval = 2000; // 2 seconds between link updates (aligned with LineOfSightManager)
     }
 
     getDefaultConfig() {

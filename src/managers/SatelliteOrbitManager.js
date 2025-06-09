@@ -51,6 +51,45 @@ export class SatelliteOrbitManager {
 
         // Set up event listeners for satellite lifecycle
         this._setupEventListeners();
+
+        // Schedule a check for existing satellites after a delay to handle scene loading
+        this._scheduleInitialOrbitCheck();
+    }
+
+    /**
+     * Schedule initial orbit check for existing satellites
+     * This handles cases where satellites are loaded from a scene
+     */
+    _scheduleInitialOrbitCheck() {
+        // Clear any existing timeout
+        if (this._initialCheckTimeout) {
+            clearTimeout(this._initialCheckTimeout);
+        }
+
+        this._initialCheckTimeout = setTimeout(() => {
+            // Ensure workers have latest physics state before processing satellites
+            if (this.physicsEngine) {
+                this.workerPoolManager.updateWorkersPhysicsState(this.physicsEngine);
+            }
+
+            // Initialize orbits for any existing satellites (e.g., loaded from scene)
+            if (this.physicsEngine?.physicsEngine?.satellites) {
+                const satellites = this.physicsEngine.physicsEngine.satellites;
+                if (satellites.size > 0) {
+                    // Check if physics bodies are loaded
+                    const bodies = this.physicsEngine.physicsEngine?.bodies;
+                    if (!bodies || Object.keys(bodies).length === 0) {
+                        this._scheduleInitialOrbitCheck();
+                        return;
+                    }
+                    
+                    for (const [satelliteId] of satellites) {
+                        this.updateSatelliteOrbit(String(satelliteId));
+                    }
+                }
+            }
+            this._initialCheckTimeout = null;
+        }, 500); // Increased delay to ensure physics is fully initialized
     }
 
 
@@ -60,14 +99,13 @@ export class SatelliteOrbitManager {
     updateSatelliteOrbit(satelliteId) {
         this.updateQueue.add(satelliteId);
 
-        // Debounce updates
-        if (this.updateTimer) {
-            clearTimeout(this.updateTimer);
+        // Only set timer if one isn't already pending
+        if (!this.updateTimer) {
+            this.updateTimer = setTimeout(() => {
+                this.updateTimer = null; // Clear timer reference
+                this._processUpdateQueue();
+            }, 100);
         }
-
-        this.updateTimer = setTimeout(() => {
-            this._processUpdateQueue();
-        }, 100);
     }
 
     /**
@@ -92,14 +130,15 @@ export class SatelliteOrbitManager {
      */
     _processUpdateQueue() {
         if (!this.physicsEngine) {
-            console.warn('[SatelliteOrbitManager] Cannot process queue - physics not ready');
             return;
         }
-
+        
         for (const satelliteId of this.updateQueue) {
-            const satellite = this.physicsEngine.physicsEngine?.satellites?.get(satelliteId);
+            // Ensure we're using string IDs consistently
+            const strId = String(satelliteId);
+            
+            const satellite = this.physicsEngine.physicsEngine?.satellites?.get(strId);
             if (!satellite) {
-                console.warn(`[SatelliteOrbitManager] Satellite ${satelliteId} not found in physics engine`);
                 continue;
             }
 
@@ -150,7 +189,7 @@ export class SatelliteOrbitManager {
             }
 
             // Calculate orbit parameters and start propagation
-            this._calculateAndStartPropagation(satellite, satelliteId, cached, needsExtension, stateChanged);
+            this._calculateAndStartPropagation(satellite, strId, cached, needsExtension, stateChanged);
         }
 
         this.updateQueue.clear();
@@ -552,6 +591,12 @@ export class SatelliteOrbitManager {
         window.addEventListener('satellitePropertyUpdated', this._boundSatellitePropertyUpdated);
         document.addEventListener('satelliteSimPropertiesChanged', this._boundSatelliteSimPropertiesChanged);
 
+        // Listen for scene state restoration (loading saved scenes)
+        this._boundSceneStateRestored = () => {
+            this._scheduleInitialOrbitCheck();
+        };
+        window.addEventListener('sceneStateRestored', this._boundSceneStateRestored);
+
         // Store display setting callbacks
         this._boundShowOrbitsCallback = () => {
             this._updateOrbitVisibility();
@@ -638,6 +683,12 @@ export class SatelliteOrbitManager {
             this.updateTimer = null;
         }
 
+        // Clear initial check timeout
+        if (this._initialCheckTimeout) {
+            clearTimeout(this._initialCheckTimeout);
+            this._initialCheckTimeout = null;
+        }
+
         // Remove event listeners
         if (this._boundSatelliteAdded) {
             window.removeEventListener('satelliteAdded', this._boundSatelliteAdded);
@@ -646,6 +697,9 @@ export class SatelliteOrbitManager {
         }
         if (this._boundSatelliteSimPropertiesChanged) {
             document.removeEventListener('satelliteSimPropertiesChanged', this._boundSatelliteSimPropertiesChanged);
+        }
+        if (this._boundSceneStateRestored) {
+            window.removeEventListener('sceneStateRestored', this._boundSceneStateRestored);
         }
 
         // Remove display settings listeners

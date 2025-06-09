@@ -195,7 +195,8 @@ export function Layout({
     isLoadingInitialData,
     loadingProgress = 0,
     loadingStage = 'Initializing...',
-    satellitesPhysics = {}
+    satellitesPhysics = {},
+    groundTrackData
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {
@@ -283,6 +284,7 @@ export function Layout({
             setCurrentSlide(currentSlide - 1);
         }
     };
+
 
     // Open reset modal if URL contains type=recovery and access_token
     useEffect(() => {
@@ -529,5 +531,10 @@ Layout.propTypes = {
     isLoadingInitialData: PropTypes.bool.isRequired,
     loadingProgress: PropTypes.number,
     loadingStage: PropTypes.string,
-    satellitesPhysics: PropTypes.object
+    satellitesPhysics: PropTypes.object,
+    groundTrackData: PropTypes.shape({
+        poiData: PropTypes.object,
+        tracks: PropTypes.object,
+        planet: PropTypes.object
+    })
 }; 

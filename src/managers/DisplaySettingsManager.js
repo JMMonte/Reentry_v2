@@ -229,6 +229,12 @@ export class DisplaySettingsManager {
                 }
                 break;
             }
+            case 'showSatelliteConnections':
+                // Enable/disable satellite line-of-sight connections
+                if (app3d.lineOfSightManager) {
+                    app3d.lineOfSightManager.setEnabled(value);
+                }
+                break;
         }
     }
     

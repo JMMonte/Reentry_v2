@@ -54,6 +54,17 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
         findNextApoapsis
     } = useManeuverWindow(satellite, currentTime);
 
+    // Handle window close - discard uncommitted preview if still adding
+    const handleClose = () => {
+        const previewSystem = satellite?.app3d?.previewSystem?.current;
+        if (previewSystem && isAdding) {
+            // Clear uncommitted preview
+            previewSystem.clearActivePreview();
+        }
+        // Committed previews remain visible automatically
+        onClose();
+    };
+
     // Resizable mission plan state
     const [missionPlanHeight, setMissionPlanHeight] = useState(180); // px
     const draggingRef = useRef(false);
@@ -122,7 +133,7 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
                 </div>
             }
             isOpen={true}
-            onClose={onClose}
+            onClose={handleClose}
             defaultPosition={{ x: 20, y: 56 }}
             resizable={true}
             defaultWidth={500}
@@ -146,7 +157,15 @@ export function SatelliteManeuverWindow({ satellite, onClose }) {
                                         <Button variant="destructive" size="sm" onClick={handleDelete}>Delete</Button>
                                     )}
                                     <Button size="sm" onClick={handleSave}>{isAdding ? 'Add' : 'Update'}</Button>
-                                    <Button variant="secondary" size="sm" onClick={() => { setSelectedIndex(null); setIsAdding(false); }}>Clear</Button>
+                                    <Button variant="secondary" size="sm" onClick={() => { 
+                                        setSelectedIndex(null); 
+                                        setIsAdding(false);
+                                        // Clear only the active preview
+                                        const previewSystem = satellite?.app3d?.previewSystem?.current;
+                                        if (previewSystem) {
+                                            previewSystem.clearActivePreview();
+                                        }
+                                    }}>Clear</Button>
                                 </div>
                                 
                                 <ExecutionTimeSection

@@ -11,8 +11,8 @@ export const chatTheme = {
       bubble: "rounded-2xl rounded-br-md px-4 py-2 max-w-[min(420px,85%)] relative group bg-primary text-primary-foreground shadow-sm"
     },
     assistant: {
-      container: "mb-2 flex justify-start",
-      bubble: "w-full bg-transparent p-0 shadow-none border-none"
+      container: "mb-2 flex justify-start w-full max-w-full",
+      bubble: "w-full max-w-full bg-transparent p-0 shadow-none border-none overflow-hidden flex-shrink min-w-0"
     },
     tool: {
       container: "mb-2 flex justify-start", 
@@ -78,9 +78,9 @@ export const chatTheme = {
 
   // Animations
   animations: {
-    streaming: "animate-pulse",
-    fadeIn: "animate-in fade-in-0 duration-200",
-    slideIn: "animate-in slide-in-from-left-2 duration-200"
+    streaming: "", // Removed animate-pulse to prevent scaling
+    fadeIn: "", // Removed fade-in animation to prevent jumping
+    slideIn: ""
   },
 
   // File display

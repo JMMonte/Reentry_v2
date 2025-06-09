@@ -238,7 +238,11 @@ export class ManeuverOrbitHandler {
         const pointsPerPeriod = satelliteProps.pointsPerPeriod || this.app.displaySettingsManager?.getSetting('orbitPointsPerPeriod') || 180;
         
         // Calculate actual orbital period for the post-maneuver orbit
-        const centralBodyGM = centralBody?.GM || 398600.4415; // Earth default
+        const centralBodyGM = centralBody?.GM;
+        if (!centralBodyGM) {
+            console.error('[ManeuverOrbitHandler] No GM value found for central body');
+            return;
+        }
         const position = new THREE.Vector3(...planetRelativePosition); // Use planet-relative position
         const orbitalPeriod = Orbital.calculateOrbitalPeriod(position, postManeuverVelocity, centralBodyGM);
         

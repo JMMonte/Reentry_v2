@@ -1,17 +1,13 @@
 /**
  * SatelliteCommsManager.js
  * 
- * Physics-layer manager for satellite communications.
- * Handles communication logic separately from visualization.
- * Maintains separation of concerns: this is pure logic, no Three.js or React.
+ * Manager that provides communication presets and helper functions.
+ * Works with physics subsystem instead of maintaining duplicate state.
  */
 
-import { SatelliteComms } from '../components/Satellite/SatelliteComms.js';
-
 export class SatelliteCommsManager {
-    constructor() {
-        // Map of satelliteId -> SatelliteComms instance
-        this.commsystems = new Map();
+    constructor(physicsEngine = null) {
+        this.physicsEngine = physicsEngine;
 
         // Communication presets for different satellite types
         this.presets = {
@@ -87,9 +83,21 @@ export class SatelliteCommsManager {
     }
 
     /**
+     * Set physics engine reference
+     */
+    setPhysicsEngine(physicsEngine) {
+        this.physicsEngine = physicsEngine;
+    }
+
+    /**
      * Create communication system for a satellite
+     * Now delegates to physics subsystem instead of creating duplicate objects
      */
     createCommsSystem(satelliteId, config = {}) {
+        if (!this.physicsEngine?.subsystemManager) {
+            console.warn('No physics engine available for communications');
+            return null;
+        }
 
         // Apply preset if specified
         let finalConfig = { ...config };
@@ -101,120 +109,53 @@ export class SatelliteCommsManager {
         // Apply global settings
         finalConfig.updateInterval = finalConfig.updateInterval || this.globalSettings.updateInterval;
 
-        const comms = new SatelliteComms(satelliteId, finalConfig);
-        this.commsystems.set(satelliteId, comms);
+        // Update the physics subsystem
+        this.physicsEngine.subsystemManager.updateSubsystemConfig(satelliteId, 'communication', finalConfig);
 
-        return comms;
+        return this.getCommsSystem(satelliteId);
     }
 
     /**
      * Remove communication system for a satellite
      */
     removeCommsSystem(satelliteId) {
-        const comms = this.commsystems.get(satelliteId);
-        if (comms) {
-            comms.dispose();
-            this.commsystems.delete(satelliteId);
-        }
+        // Communications are managed by physics subsystem
+        // This method now just clears any local cache if needed
     }
 
     /**
      * Get communication system for a satellite
+     * Returns a proxy object that wraps the physics subsystem
      */
     getCommsSystem(satelliteId) {
-        return this.commsystems.get(satelliteId);
+        if (!this.physicsEngine?.subsystemManager) {
+            return null;
+        }
+
+        const subsystem = this.physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
+        if (!subsystem) {
+            return null;
+        }
+
+        // Return a proxy object with the expected interface
+        return {
+            id: satelliteId,
+            config: subsystem.config,
+            getStatus: () => subsystem.getStatus(),
+            getActiveConnections: () => subsystem.activeConnections,
+            calculateLinkBudget: (targetConfig, distance, frequency) => 
+                subsystem.calculateLinkBudget(targetConfig, distance, frequency)
+        };
     }
 
     /**
      * Calculate all possible communication links
+     * NOTE: This is now handled by LineOfSightManager and physics subsystems
+     * This method is kept for backward compatibility but should be deprecated
      */
     calculateCommunicationLinks(satellites, bodies, groundStations = []) {
-        const links = [];
-        const satelliteIds = Array.from(this.commsystems.keys());
-
-        // Satellite-to-satellite links
-        for (let i = 0; i < satelliteIds.length; i++) {
-            for (let j = i + 1; j < satelliteIds.length; j++) {
-                const satId1 = satelliteIds[i];
-                const satId2 = satelliteIds[j];
-
-                const sat1 = satellites.find(s => s.id === satId1);
-                const sat2 = satellites.find(s => s.id === satId2);
-
-                if (!sat1 || !sat2) continue;
-
-                const comms1 = this.commsystems.get(satId1);
-                const comms2 = this.commsystems.get(satId2);
-
-                if (!comms1 || !comms2) continue;
-
-                const distance = this._calculateDistance(sat1.position, sat2.position);
-                const relativeVelocity = this._calculateRelativeVelocity(sat1.velocity, sat2.velocity);
-
-                // Create a mock satellite object with comms for the calculation
-                const mockSat2 = { comms: comms2 };
-                const linkInfo = comms1.canCommunicateWith(mockSat2, distance, null, relativeVelocity);
-
-                if (linkInfo.possible) {
-                    links.push({
-                        type: 'satellite-satellite',
-                        from: satId1,
-                        to: satId2,
-                        fromPosition: sat1.position,
-                        toPosition: sat2.position,
-                        distance,
-                        linkInfo,
-                        color: comms1.getLinkColor(linkInfo.quality)
-                    });
-
-                    // Update both satellites' connection states
-                    comms1.establishLink(satId2, linkInfo);
-                    comms2.establishLink(satId1, linkInfo);
-                }
-            }
-        }
-
-        // Satellite-to-ground links
-        for (const satelliteId of satelliteIds) {
-            const satellite = satellites.find(s => s.id === satelliteId);
-            const comms = this.commsystems.get(satelliteId);
-
-            if (!satellite || !comms) continue;
-
-            for (const groundStation of groundStations) {
-                const distance = this._calculateDistance(satellite.position, groundStation.position);
-                const elevation = this._calculateElevationAngle(groundStation.position, satellite.position);
-
-                // Create a mock ground station with basic comms
-                const mockGroundStation = {
-                    comms: new SatelliteComms(`ground_${groundStation.id}`, {
-                        antennaGain: groundStation.antennaGain || 25.0,
-                        protocols: ['ground_station'],
-                        enabled: true
-                    })
-                };
-
-                const linkInfo = comms.canCommunicateWith(mockGroundStation, distance, elevation);
-
-                if (linkInfo.possible) {
-                    links.push({
-                        type: 'satellite-ground',
-                        from: satelliteId,
-                        to: groundStation.id,
-                        fromPosition: satellite.position,
-                        toPosition: groundStation.position,
-                        distance,
-                        elevation,
-                        linkInfo,
-                        color: comms.getLinkColor(linkInfo.quality)
-                    });
-
-                    comms.establishLink(`ground_${groundStation.id}`, linkInfo);
-                }
-            }
-        }
-
-        return links;
+        console.warn('SatelliteCommsManager.calculateCommunicationLinks is deprecated. Use LineOfSightManager instead.');
+        return [];
     }
 
     /**
@@ -222,37 +163,49 @@ export class SatelliteCommsManager {
      */
     updateGlobalSettings(newSettings) {
         Object.assign(this.globalSettings, newSettings);
-
-        // Update all existing comm systems if needed
-        if (newSettings.updateInterval !== undefined) {
-            for (const comms of this.commsystems.values()) {
-                comms.updateConfig({ updateInterval: newSettings.updateInterval });
-            }
-        }
-
+        // Global settings now managed at physics engine level
     }
 
     /**
      * Update communication configuration for a specific satellite
      */
     updateSatelliteComms(satelliteId, newConfig) {
-        const comms = this.commsystems.get(satelliteId);
-        if (comms) {
-            comms.updateConfig(newConfig);
+        if (!this.physicsEngine?.subsystemManager) {
+            console.warn('No physics engine available for communications');
+            return;
         }
+        
+        // Apply preset if specified
+        let finalConfig = { ...newConfig };
+        if (newConfig.preset && this.presets[newConfig.preset]) {
+            finalConfig = { ...this.presets[newConfig.preset], ...newConfig };
+            delete finalConfig.preset;
+        }
+        
+        this.physicsEngine.subsystemManager.updateSubsystemConfig(satelliteId, 'communication', finalConfig);
     }
 
     /**
      * Get all satellites with communication systems
      */
     getAllCommsSystems() {
+        if (!this.physicsEngine?.subsystemManager) {
+            return [];
+        }
+        
+        // Get all satellites from physics engine
+        const satellites = this.physicsEngine.satellites;
         const systems = [];
-        for (const [satelliteId, comms] of this.commsystems.entries()) {
-            systems.push({
-                satelliteId,
-                status: comms.getStatus(),
-                activeConnections: comms.getActiveConnections()
-            });
+        
+        for (const [satelliteId, satellite] of satellites) {
+            const subsystem = this.physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
+            if (subsystem) {
+                systems.push({
+                    satelliteId,
+                    status: subsystem.getStatus(),
+                    activeConnections: Array.from(subsystem.activeConnections)
+                });
+            }
         }
         return systems;
     }
@@ -306,12 +259,10 @@ export class SatelliteCommsManager {
     }
 
     /**
-     * Dispose of all communication systems
+     * Dispose of the manager
      */
     dispose() {
-        for (const comms of this.commsystems.values()) {
-            comms.dispose();
-        }
-        this.commsystems.clear();
+        // Communications are now managed by physics subsystem
+        // Nothing to dispose here
     }
 }

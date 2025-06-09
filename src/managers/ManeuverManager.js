@@ -17,7 +17,9 @@ export class ManeuverManager {
      * Rebuild array of UI node models sorted by execution time.
      */
     buildNodeModels() {
-        return this.sat.maneuverNodes
+        // Safely handle undefined or empty maneuverNodes
+        const nodes = this.sat.maneuverNodes || [];
+        return nodes
             .slice()
             .sort((a, b) => a.executionTime.getTime() - b.executionTime.getTime())
             .map(n => {

@@ -13,6 +13,8 @@ import { ArrowUtils } from '../../utils/ArrowUtils.js';
  */
 export class ManeuverNodeRenderer {
     constructor(params) {
+        console.log('[ManeuverNodeRenderer] Constructor called with params:', params);
+        
         const {
             scene,
             satellite,
@@ -35,21 +37,30 @@ export class ManeuverNodeRenderer {
         this.group = new THREE.Group();
         this.nodeMesh = null;
         this.arrow = null;
+        this.arrowDispose = null;
         this.orbitLine = null;
         this.label = null;
 
+        console.log('[ManeuverNodeRenderer] About to initialize with nodeData:', nodeData);
         this.initialize();
     }
 
     initialize() {
+        console.log('[ManeuverNodeRenderer] Initializing...');
+        
         // Create node sphere
         this.createNodeMesh();
+        console.log('[ManeuverNodeRenderer] Node mesh created:', this.nodeMesh);
         
         // Create delta-V arrow
         this.createDeltaVArrow();
+        console.log('[ManeuverNodeRenderer] Delta-V arrow created:', this.arrow);
         
-        // Create orbit line
-        this.createOrbitLine();
+        // Create orbit path if available
+        if (this.nodeData.orbitData) {
+            this.createOrbitPath();
+            console.log('[ManeuverNodeRenderer] Orbit path created:', this.orbitLine);
+        }
         
         // Add label if font is available
         if (this.font) {
@@ -57,11 +68,22 @@ export class ManeuverNodeRenderer {
         }
 
         // Add to scene
+        console.log('[ManeuverNodeRenderer] Adding group to scene. Scene:', this.scene);
         this.scene.add(this.group);
+        console.log('[ManeuverNodeRenderer] Group added to scene. Group children:', this.group.children.length);
+        
+        // Update position
+        if (this.nodeData.positionAtManeuver) {
+            console.log('[ManeuverNodeRenderer] Setting position:', this.nodeData.positionAtManeuver);
+            this.updatePosition(this.nodeData.positionAtManeuver);
+        }
+        
+        console.log('[ManeuverNodeRenderer] Initialization complete. Group position:', this.group.position);
     }
 
     createNodeMesh() {
-        const geometry = new THREE.SphereGeometry(5, 16, 16);
+        // Make the sphere much larger and more visible for testing
+        const geometry = new THREE.SphereGeometry(50, 16, 16); // Increased from 5 to 50
         const material = new THREE.MeshBasicMaterial({
             color: this.color,
             transparent: true,
@@ -73,17 +95,27 @@ export class ManeuverNodeRenderer {
         this.nodeMesh = new THREE.Mesh(geometry, material);
         this.nodeMesh.renderOrder = this.isPreview ? 1 : 0;
         this.group.add(this.nodeMesh);
+        console.log('[ManeuverNodeRenderer] Created node mesh with radius 50km, color:', this.color.toString(16));
     }
 
     createDeltaVArrow() {
-        // Use pre-calculated values from nodeData
-        const dvMagnitude = this.nodeData.deltaVMagnitude || (this.nodeData.worldDeltaV ? this.nodeData.worldDeltaV.length() : 0);
+        const dvMagnitude = this.nodeData.deltaMagnitude || 0;
         if (dvMagnitude < 0.001) return; // Skip tiny delta-Vs
 
-        // Get delta-V direction
-        const dvDirection = this.nodeData.deltaVDirection 
-            ? new THREE.Vector3(...this.nodeData.deltaVDirection)
-            : (this.nodeData.worldDeltaV ? this.nodeData.worldDeltaV.clone().normalize() : new THREE.Vector3(0, 1, 0));
+        // Calculate delta-V direction from local coordinates
+        const deltaV = this.nodeData.deltaV;
+        if (!deltaV) return;
+
+        // For visualization, use the local delta-V vector normalized
+        const dvVector = new THREE.Vector3(
+            deltaV.radial || 0,
+            deltaV.normal || 0,
+            deltaV.prograde || 0
+        );
+        
+        if (dvVector.length() < 0.001) return;
+        
+        const dvDirection = dvVector.normalize();
 
         // Create arrow using ArrowUtils - visual scaling only
         const shaftLength = Math.min(dvMagnitude * 50, 200); // Scale with dV magnitude
@@ -105,14 +137,21 @@ export class ManeuverNodeRenderer {
         this.group.add(this.arrow);
     }
 
-    createOrbitLine() {
-        if (!this.nodeData.orbitData || !this.nodeData.orbitData.states) return;
+    createOrbitPath() {
+        const orbitData = this.nodeData.orbitData;
+        if (!orbitData || !orbitData.points || orbitData.points.length < 2) return;
 
-        const points = this.nodeData.orbitData.states.map(state => 
-            new THREE.Vector3(state.position[0], state.position[1], state.position[2])
-        );
-
-        if (points.length < 2) return;
+        // Convert points to Vector3 array
+        const points = orbitData.points.map(point => {
+            if (point.position) {
+                return new THREE.Vector3(
+                    point.position[0],
+                    point.position[1],
+                    point.position[2]
+                );
+            }
+            return new THREE.Vector3(point.x || 0, point.y || 0, point.z || 0);
+        });
 
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({
@@ -136,9 +175,8 @@ export class ManeuverNodeRenderer {
     }
 
     createLabel() {
-        // Use pre-calculated magnitude
-        const dvMag = this.nodeData.deltaVMagnitude || (this.nodeData.worldDeltaV ? this.nodeData.worldDeltaV.length() : 0);
-        const labelText = `ΔV: ${dvMag.toFixed(1)} km/s`;
+        const dvMag = this.nodeData.deltaMagnitude || 0;
+        const labelText = `ΔV: ${(dvMag * 1000).toFixed(1)} m/s`; // Convert to m/s for display
         
         if (this.font) {
             // Use 3D text if font is available
@@ -146,63 +184,82 @@ export class ManeuverNodeRenderer {
                 text: labelText,
                 font: this.font,
                 size: 10,
-                height: 0.1,
-                curveSegments: 4,
                 color: this.color,
-                opacity: this.opacity * 0.9,
-                transparent: true,
-                position: new THREE.Vector3(10, 10, 0)
+                opacity: this.opacity
             });
             
-            this.label = labelResult.label;
-            this.labelDispose = labelResult.dispose;
-            if (this.label) {
+            if (labelResult.label) {
+                this.label = labelResult.label;
+                this.label.position.set(10, 10, 0); // Offset from node
                 this.group.add(this.label);
             }
         } else {
             // Fallback to sprite label
-            const labelResult = ArrowUtils.createTextSprite({
-                text: labelText,
-                color: `#${this.color.toString(16).padStart(6, '0')}`,
-                position: new THREE.Vector3(10, 10, 0),
-                fontSize: 32,
-                pixelScale: 0.0002
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+            
+            context.font = '48px Arial';
+            context.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+            context.textAlign = 'center';
+            context.fillText(labelText, 128, 48);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true,
+                opacity: this.opacity
             });
             
-            this.label = labelResult.sprite;
-            this.labelDispose = labelResult.dispose;
+            this.label = new THREE.Sprite(spriteMaterial);
+            this.label.scale.set(40, 10, 1);
+            this.label.position.set(0, 20, 0);
             this.group.add(this.label);
         }
     }
 
     /**
-     * Update visualization position
+     * Update node position
      */
     updatePosition(position) {
-        this.group.position.copy(position);
+        if (!position) return;
         
-        // Update label to face camera if exists
-        if (this.label && this.scene.camera) {
-            this.label.lookAt(this.scene.camera.position);
+        // Convert position array to Vector3 if needed
+        if (Array.isArray(position)) {
+            this.group.position.set(position[0], position[1], position[2]);
+        } else if (position.x !== undefined) {
+            this.group.position.copy(position);
         }
     }
 
     /**
-     * Update orbit path
+     * Update from new data
      */
-    updateOrbitPath(orbitData) {
-        if (!orbitData || !orbitData.states) return;
+    updateFromData(nodeData) {
+        this.nodeData = nodeData;
         
-        // Remove old orbit line
-        if (this.orbitLine) {
-            this.scene.remove(this.orbitLine);
-            this.orbitLine.geometry?.dispose();
-            this.orbitLine.material?.dispose();
+        // Update position
+        if (nodeData.positionAtManeuver) {
+            this.updatePosition(nodeData.positionAtManeuver);
         }
         
-        // Create new orbit line
-        this.nodeData.orbitData = orbitData;
-        this.createOrbitLine();
+        // Update orbit path if changed
+        if (nodeData.orbitData && this.orbitLine) {
+            this.orbitLine.parent.remove(this.orbitLine);
+            this.orbitLine.geometry.dispose();
+            this.orbitLine.material.dispose();
+            this.orbitLine = null;
+            this.createOrbitPath();
+        }
+        
+        // Update delta-V arrow if changed
+        if (this.arrow && nodeData.deltaMagnitude !== this.nodeData.deltaMagnitude) {
+            this.group.remove(this.arrow);
+            if (this.arrowDispose) this.arrowDispose();
+            this.arrow = null;
+            this.createDeltaVArrow();
+        }
     }
 
     /**
@@ -216,52 +273,22 @@ export class ManeuverNodeRenderer {
     }
 
     /**
-     * Update visual style
+     * Update visual scale based on camera distance
      */
-    updateStyle(params) {
-        const { color, opacity } = params;
+    updateScale(camera) {
+        if (!camera || !this.group.visible) return;
         
-        if (color !== undefined) {
-            this.color = color;
-            if (this.nodeMesh) this.nodeMesh.material.color.set(color);
-            if (this.arrow) {
-                this.arrow.children.forEach(child => {
-                    if (child.material) child.material.color.set(color);
-                });
-            }
-            if (this.orbitLine) this.orbitLine.material.color.set(color);
-            if (this.label) this.label.material.color.set(color);
-        }
+        const distance = camera.position.distanceTo(this.group.position);
+        const scale = Math.min(Math.max(distance * 0.0001, 0.5), 5);
+        this.nodeMesh.scale.setScalar(scale);
         
-        if (opacity !== undefined) {
-            this.opacity = opacity;
-            if (this.nodeMesh) this.nodeMesh.material.opacity = opacity;
-            if (this.arrow) {
-                this.arrow.children.forEach(child => {
-                    if (child.material) child.material.opacity = opacity * 0.9;
-                });
-            }
-            if (this.orbitLine) this.orbitLine.material.opacity = opacity * 0.7;
-            if (this.label) this.label.material.opacity = opacity * 0.9;
+        if (this.label) {
+            this.label.scale.setScalar(scale * 10);
         }
     }
 
     /**
-     * Highlight for selection
-     */
-    setHighlighted(highlighted) {
-        const scale = highlighted ? 1.5 : 1.0;
-        this.nodeMesh?.scale.setScalar(scale);
-        
-        if (highlighted) {
-            this.updateStyle({ opacity: 1.0 });
-        } else {
-            this.updateStyle({ opacity: this.isPreview ? 0.8 : 0.9 });
-        }
-    }
-
-    /**
-     * Clean up and dispose
+     * Dispose of all resources
      */
     dispose() {
         // Remove from scene
@@ -271,36 +298,34 @@ export class ManeuverNodeRenderer {
         if (this.orbitLine && this.orbitLine.parent) {
             this.orbitLine.parent.remove(this.orbitLine);
         }
-        
-        // Use ArrowUtils dispose functions where available
-        if (this.arrowDispose) {
-            this.arrowDispose();
-        }
-        if (this.labelDispose) {
-            this.labelDispose();
+
+        // Dispose geometries and materials
+        if (this.nodeMesh) {
+            this.nodeMesh.geometry.dispose();
+            this.nodeMesh.material.dispose();
         }
 
-        // Dispose geometries and materials for remaining objects
-        const disposeObject = (obj) => {
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-                if (Array.isArray(obj.material)) {
-                    obj.material.forEach(m => m.dispose());
-                } else {
-                    obj.material.dispose();
-                }
+        if (this.arrow && this.arrowDispose) {
+            this.arrowDispose();
+        }
+
+        if (this.orbitLine) {
+            this.orbitLine.geometry.dispose();
+            this.orbitLine.material.dispose();
+        }
+
+        if (this.label) {
+            if (this.label.material.map) {
+                this.label.material.map.dispose();
             }
-        };
-        
-        if (this.nodeMesh) disposeObject(this.nodeMesh);
-        if (this.orbitLine) disposeObject(this.orbitLine);
-        
-        // Fallback disposal for arrow and label if ArrowUtils dispose wasn't available
-        if (this.arrow && !this.arrowDispose) {
-            this.arrow.children.forEach(child => disposeObject(child));
+            this.label.material.dispose();
         }
-        if (this.label && !this.labelDispose) {
-            disposeObject(this.label);
-        }
+
+        // Clear references
+        this.group = null;
+        this.nodeMesh = null;
+        this.arrow = null;
+        this.orbitLine = null;
+        this.label = null;
     }
 }

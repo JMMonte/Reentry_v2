@@ -32,8 +32,27 @@ export default function MessageRouter({ message, onCopy, copiedStates = {} }) {
     return <ToolCallMessage message={message} isStreaming={isStreaming} />;
   }
   
-  if (eventType === 'code_interpreter_result' || eventType === 'tool_call_response') {
+  if (eventType === 'code_interpreter_result') {
     return <CodeExecutionMessage message={message} />;
+  }
+  
+  if (eventType === 'tool_call_response') {
+    // Check if this is actually a code interpreter result
+    const toolResponse = message.toolResponses?.[0];
+    const isCodeInterpreter = toolResponse?.name === 'runCodeInterpreter' || 
+                             toolResponse?.name === 'code_interpreter';
+    
+    if (isCodeInterpreter) {
+      // Route to CodeExecutionMessage for code interpreter results
+      return <CodeExecutionMessage message={message} />;
+    } else {
+      // For other tool responses, show as a regular tool message with result
+      return <ToolCallMessage message={{
+        ...message,
+        toolName: toolResponse?.name || 'Tool Result',
+        status: 'done'
+      }} />;
+    }
   }
   
   if (isAssistant || eventType === 'message') {

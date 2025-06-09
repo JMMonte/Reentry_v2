@@ -413,22 +413,20 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             y: (parseFloat(vy) || 0) / 1000, // Convert m/s to km/s
             z: (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
         };
+        
         // Replace existing node if editing
         if (selectedIndex != null) {
             const existing = nodes[selectedIndex].node3D;
             manager.deleteNode(existing);
         }
-        // Clear any preview before adding the actual node
-        if (manager.sat._isPreviewingManeuver && manager.sat._currentPreviewNode) {
-            if (manager.sat.maneuverNodeVisualizer) {
-                manager.sat.maneuverNodeVisualizer.removeNodeVisualization(manager.sat._currentPreviewNode.id);
-            }
-            delete manager.sat._currentPreviewNode;
-            delete manager.sat._isPreviewingManeuver;
-        }
-        
         // Add new maneuver node
         manager.sat.addManeuverNode(execTime, { ...dvLocal });
+        
+        // Clear the preview after adding the actual maneuver node
+        const previewSystem = satellite?.app3d?.previewSystem || window.app3d?.previewSystem;
+        if (previewSystem?.current?.clearActivePreview) {
+            previewSystem.current.clearActivePreview();
+        }
         // Reset selection and add-mode
         setSelectedIndex(null);
         setIsAdding(false);

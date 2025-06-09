@@ -158,8 +158,15 @@ function calculateLineOfSight() {
     const currentTime = physicsState?.currentTime || Date.now();
 
     // Satellite-to-satellite visibility
+    const MAX_COMM_RANGE = 100000; // 100,000 km max communication range
+    
     for (let i = 0; i < satellites.length; i++) {
         for (let j = i + 1; j < satellites.length; j++) {
+            // Quick distance check before expensive calculations
+            const quickDistance = calculateDistance(satellites[i].position, satellites[j].position);
+            if (quickDistance > MAX_COMM_RANGE) {
+                continue; // Skip satellites too far apart
+            }
 
             try {
                 // Calculate proper line-of-sight with planetary occlusion
@@ -190,8 +197,6 @@ function calculateLineOfSight() {
         }
     }
 
-    // Satellite-to-ground visibility (simplified for now)
-    // TODO: Implement ground station connections when needed
 
     self.postMessage({
         type: 'CONNECTIONS_UPDATED',
@@ -357,4 +362,3 @@ function getConnectionColor(visibility) {
     return 'red';
 }
 
-// Ray-sphere intersection removed - not needed for simplified implementation

@@ -30,6 +30,7 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
     const [timeWindow, setTimeWindow] = useState(3600); // 1 hour in seconds
     const [connectionHistory, setConnectionHistory] = useState([]);
     const [dataTransferEvents, setDataTransferEvents] = useState([]);
+    const [lastWindowChange, setLastWindowChange] = useState(null);
 
     // Initialize timeline tracking
     useEffect(() => {
@@ -180,9 +181,11 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
         // Initial load
         startTracking();
 
-        // Update every 2 seconds
-        const interval = setInterval(startTracking, 2000);
-        return () => clearInterval(interval);
+        // Update less frequently - every 5 seconds when recording
+        const interval = isRecording ? setInterval(startTracking, 5000) : null;
+        return () => {
+            if (interval) clearInterval(interval);
+        };
     }, [satelliteId, app, isRecording, timeWindow]);
 
     const clearHistory = () => {
@@ -282,7 +285,7 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
             <DataRow label="Data Transferred" value={(stats.totalDataTransferred / 1024).toFixed(1)} unit="KB" icon={BarChart3} />
             <DataRow label="Avg Duration" value={formatDuration(stats.averageConnectionDuration)} icon={Timer} />
             <DataRow label="Uptime" value={`${stats.uptimePercentage.toFixed(1)}%`} icon={TrendingUp} />
-            <DataRow label="Window" value={formatDuration(timeWindow)} icon={Clock} />
+            <DataRow label="Window" value={`${formatDuration(timeWindow)} (${timelineData.length} pts)`} icon={Clock} />
 
             {/* Recent Connection Events */}
             <div className="space-y-1">
@@ -357,36 +360,141 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
 
             {/* Status Timeline Visualization */}
             {timelineData.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-2 mt-3 pt-2 border-t border-border/50">
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Activity className="h-3 w-3" />
-                        Status Timeline ({formatDuration(timeWindow)}):
+                        Communication Timeline:
                     </span>
                     
-                    {/* Simple timeline visualization */}
-                    <div className="flex h-2 bg-muted/20 rounded overflow-hidden">
-                        {timelineData.slice(-20).map((data, idx) => (
-                            <div
-                                key={idx}
-                                className={`flex-1 ${getStatusColor(data.status)}`}
-                                title={`${formatTime(data.timestamp)}: ${data.status} (${data.connectionCount} connections)`}
-                            />
-                        ))}
-                    </div>
-                    
-                    {/* Timeline legend */}
-                    <div className="flex items-center gap-2 text-xs pl-4">
-                        <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded bg-green-500" />
-                            <span>OK</span>
+                    {/* Timeline container */}
+                    <div className="relative bg-muted/10 rounded p-2">
+                        {/* Time axis labels */}
+                        <div className="flex items-center gap-2 mb-2">
+                            <div className="w-12" /> {/* Spacer to align with track labels */}
+                            <div className="flex-1 flex justify-between text-xs text-muted-foreground">
+                                <span>{formatDuration(timeWindow)} ago</span>
+                                <span>{formatDuration(timeWindow/2)} ago</span>
+                                <span>Now</span>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded bg-yellow-500" />
-                            <span>Deg</span>
+                        
+                        {/* Connection timeline tracks */}
+                        <div className="space-y-2">
+                            {/* Status track */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono text-muted-foreground w-12">Status</span>
+                                <div className="relative h-4 flex-1">
+                                    <div className="absolute inset-0 bg-muted/20 rounded" />
+                                    {timelineData.map((data, idx) => {
+                                    // Use the actual time window for calculations
+                                    const windowStart = currentTime - timeWindow;
+                                    const windowEnd = currentTime;
+                                    const windowDuration = timeWindow;
+                                    const position = ((data.timestamp - windowStart) / windowDuration) * 100;
+                                    const width = Math.max(1, (1 / timelineData.length) * 100);
+                                    
+                                    // Only render if within the visible window
+                                    if (position < 0 || position > 100) return null;
+                                    
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className={`absolute h-full ${getStatusColor(data.status)} opacity-80`}
+                                            style={{
+                                                left: `${Math.max(0, position)}%`,
+                                                width: `${width}%`
+                                            }}
+                                            title={`${formatTime(data.timestamp)}: ${data.status}`}
+                                        />
+                                    );
+                                })}
+                                </div>
+                            </div>
+                            
+                            {/* Connection events track */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono text-muted-foreground w-12">Links</span>
+                                <div className="relative h-6 flex-1">
+                                    <div className="absolute inset-0 bg-muted/20 rounded" />
+                                    {connectionHistory.map((conn, idx) => {
+                                    // Use the actual time window for consistent calculations
+                                    const windowStart = currentTime - timeWindow;
+                                    const windowEnd = currentTime;
+                                    const windowDuration = timeWindow;
+                                    const connStart = ((conn.startTime - windowStart) / windowDuration) * 100;
+                                    const connEnd = conn.endTime 
+                                        ? ((conn.endTime - windowStart) / windowDuration) * 100
+                                        : 100;
+                                    const connWidth = connEnd - connStart;
+                                    
+                                    // Skip connections entirely outside the window
+                                    if (connEnd < 0 || connStart > 100) return null;
+                                    
+                                    return (
+                                        <div
+                                            key={conn.id || idx}
+                                            className={`absolute h-3 top-1.5 rounded ${
+                                                conn.quality > 70 ? 'bg-green-500' : 
+                                                conn.quality > 40 ? 'bg-yellow-500' : 
+                                                'bg-red-500'
+                                            } opacity-70`}
+                                            style={{
+                                                left: `${Math.max(0, connStart)}%`,
+                                                width: `${Math.min(connWidth, 100 - Math.max(0, connStart))}%`
+                                            }}
+                                            title={`${conn.targetId}: ${formatTime(conn.startTime)} - ${
+                                                conn.endTime ? formatTime(conn.endTime) : 'Active'
+                                            } (${Math.round(conn.quality)}%)`}
+                                        />
+                                    );
+                                })}
+                                </div>
+                            </div>
+                            
+                            {/* Data transfer events */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono text-muted-foreground w-12">Data</span>
+                                <div className="relative h-4 flex-1">
+                                    <div className="absolute inset-0 bg-muted/20 rounded" />
+                                    {dataTransferEvents.map((event, idx) => {
+                                    // Use the actual time window for consistent calculations
+                                    const windowStart = currentTime - timeWindow;
+                                    const windowDuration = timeWindow;
+                                    const position = ((event.timestamp - windowStart) / windowDuration) * 100;
+                                    
+                                    if (position < 0 || position > 100) return null;
+                                    
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className="absolute w-1 h-full bg-blue-500 opacity-80"
+                                            style={{ left: `${position}%` }}
+                                            title={`${formatTime(event.timestamp)}: ${(event.dataAmount / 1024).toFixed(1)}KB transferred`}
+                                        />
+                                    );
+                                })}
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded bg-red-500" />
-                            <span>Off</span>
+                        
+                        {/* Legend */}
+                        <div className="flex items-center gap-3 mt-2 text-xs">
+                            <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 rounded bg-green-500 opacity-80" />
+                                <span>Good Link</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 rounded bg-yellow-500 opacity-80" />
+                                <span>Degraded</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 rounded bg-red-500 opacity-80" />
+                                <span>Poor/Offline</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <div className="w-1 h-3 bg-blue-500 opacity-80" />
+                                <span>Data TX</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -402,7 +510,10 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                                 key={window}
                                 variant={timeWindow === window ? "default" : "outline"}
                                 size="sm"
-                                onClick={() => setTimeWindow(window)}
+                                onClick={() => {
+                                    setTimeWindow(window);
+                                    setLastWindowChange(Date.now());
+                                }}
                                 className="h-5 px-1 text-xs"
                             >
                                 {window < 3600 ? `${window/60}m` : `${window/3600}h`}

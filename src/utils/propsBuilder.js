@@ -221,7 +221,10 @@ export function buildModalProps({
       onClose: () => modalState.setIsGroundtrackOpen(false),
       satellites: satellitesPhysics,
       planets: window.app3d?.celestialBodies || [],
-      simulationTime: simTime
+      simulationTime: simTime,
+      onDataUpdate: (poiData, tracks, planet, currentPositions) => {
+        modalState.setGroundTrackData({ poiData, tracks, planet, currentPositions });
+      }
     },
 
     simulationWindow: {

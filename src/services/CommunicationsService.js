@@ -62,6 +62,11 @@ export class CommunicationsService extends EventEmitter {
         this._enabled = true;
         this._connections = new Map(); // satelliteId -> connections
         this._commsConfigs = new Map(); // satelliteId -> config
+        this._dataTransfers = new Map(); // satelliteId -> { transmitted: number, received: number }
+        
+        // Cache management
+        this._configCacheTime = new Map(); // satelliteId -> timestamp
+        this._cacheTimeout = 2000; // 2 second cache TTL
         
         // Event handlers
         this._boundHandlers = {
@@ -69,6 +74,9 @@ export class CommunicationsService extends EventEmitter {
             satelliteAdded: this._handleSatelliteAdded.bind(this),
             satelliteRemoved: this._handleSatelliteRemoved.bind(this)
         };
+        
+        // Start data transfer simulation
+        this._dataTransferInterval = null;
     }
     
     /**
@@ -89,6 +97,9 @@ export class CommunicationsService extends EventEmitter {
             // For now, we'll poll for changes
             this._setupConnectionPolling();
         }
+        
+        // Start simulating data transfers
+        this._startDataTransferSimulation();
     }
     
     /**
@@ -114,15 +125,26 @@ export class CommunicationsService extends EventEmitter {
     }
     
     /**
+     * Get data transfer stats for a satellite
+     */
+    getSatelliteDataTransfers(satelliteId) {
+        return this._dataTransfers.get(satelliteId) || { transmitted: 0, received: 0 };
+    }
+    
+    /**
      * Get communication configuration for a satellite
      */
     getSatelliteCommsConfig(satelliteId) {
         
         // Try multiple sources in order of preference
         
-        // 1. Check our cache
-        if (this._commsConfigs.has(satelliteId)) {
-            return this._commsConfigs.get(satelliteId);
+        // 1. Check our cache with TTL
+        const cachedTime = this._configCacheTime.get(satelliteId);
+        if (cachedTime && (Date.now() - cachedTime < this._cacheTimeout)) {
+            const cached = this._commsConfigs.get(satelliteId);
+            if (cached) {
+                return cached;
+            }
         }
         
         // 2. Check SatelliteCommsManager
@@ -130,6 +152,7 @@ export class CommunicationsService extends EventEmitter {
             const commsSystem = this.satelliteCommsManager.getCommsSystem(satelliteId);
             if (commsSystem) {
                 this._commsConfigs.set(satelliteId, commsSystem.config);
+                this._configCacheTime.set(satelliteId, Date.now());
                 return commsSystem.config;
             }
         }
@@ -145,6 +168,7 @@ export class CommunicationsService extends EventEmitter {
                     
                     if (config) {
                         this._commsConfigs.set(satelliteId, config);
+                        this._configCacheTime.set(satelliteId, Date.now());
                         return config;
                     }
                 }
@@ -393,10 +417,59 @@ export class CommunicationsService extends EventEmitter {
         }
     }
     
+    _startDataTransferSimulation() {
+        // Simulate data transfers every second
+        this._dataTransferInterval = setInterval(() => {
+            if (!this._enabled) return;
+            
+            const connections = this.getConnections();
+            
+            // Process each active connection
+            connections.forEach(conn => {
+                const fromConfig = this.getSatelliteCommsConfig(conn.from);
+                const toConfig = this.getSatelliteCommsConfig(conn.to);
+                
+                if (fromConfig?.enabled && toConfig?.enabled && conn.metadata?.linkQuality > 0) {
+                    // Calculate data transfer rate based on link quality and configured data rate
+                    const effectiveDataRate = Math.min(
+                        fromConfig.dataRate || 1000,
+                        toConfig.dataRate || 1000
+                    ) * (conn.metadata.linkQuality / 100);
+                    
+                    // Transfer data (bytes per second)
+                    const dataTransferred = effectiveDataRate * 125; // Convert kbps to bytes/s
+                    
+                    // Update transmitted data for sender
+                    if (!this._dataTransfers.has(conn.from)) {
+                        this._dataTransfers.set(conn.from, { transmitted: 0, received: 0 });
+                    }
+                    const fromStats = this._dataTransfers.get(conn.from);
+                    fromStats.transmitted += dataTransferred;
+                    
+                    // Update received data for receiver
+                    if (!this._dataTransfers.has(conn.to)) {
+                        this._dataTransfers.set(conn.to, { transmitted: 0, received: 0 });
+                    }
+                    const toStats = this._dataTransfers.get(conn.to);
+                    toStats.received += dataTransferred;
+                }
+            });
+            
+            // Emit update event
+            this.emit('dataTransfersUpdated');
+        }, 1000);
+    }
+    
     /**
      * Dispose of the service
      */
     dispose() {
+        // Stop data transfer simulation
+        if (this._dataTransferInterval) {
+            clearInterval(this._dataTransferInterval);
+            this._dataTransferInterval = null;
+        }
+        
         // Remove event listeners
         window.removeEventListener('satelliteAdded', this._boundHandlers.satelliteAdded);
         window.removeEventListener('satelliteRemoved', this._boundHandlers.satelliteRemoved);
@@ -408,6 +481,7 @@ export class CommunicationsService extends EventEmitter {
         // Clear state
         this._connections.clear();
         this._commsConfigs.clear();
+        this._dataTransfers.clear();
         
         // Remove all event listeners
         this.removeAllListeners();

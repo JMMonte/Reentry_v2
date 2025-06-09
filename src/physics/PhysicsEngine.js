@@ -174,18 +174,45 @@ export class PhysicsEngine {
             this._findAppropriateSOI.bind(this)
         );
 
-        // Add default communication subsystem to all satellites
+        // Add communication subsystem with user-provided or default configuration
+        let finalCommsConfig = null;
         if (this.subsystemManager) {
-            this.subsystemManager.addSubsystem(id, 'communication', {
-                // Default communication configuration
-                antennaGain: 12.0,
-                transmitPower: 10.0,
-                transmitFrequency: 2.4,
-                dataRate: 1000,
+            const commsConfig = satellite.commsConfig || {};
+            finalCommsConfig = {
+                // Use provided config or defaults
+                enabled: commsConfig.enabled ?? true,
+                antennaGain: commsConfig.antennaGain ?? 12.0,
+                transmitPower: commsConfig.transmitPower ?? 10.0,
+                transmitFrequency: commsConfig.transmitFrequency ?? 2.4,
+                dataRate: commsConfig.dataRate ?? 1000,
+                antennaType: commsConfig.antennaType ?? 'omnidirectional',
+                minElevationAngle: commsConfig.minElevationAngle ?? 5.0,
+                networkId: commsConfig.networkId ?? 'default',
+                encryption: commsConfig.encryption ?? true,
                 protocols: ['inter_satellite', 'ground_station']
-            });
+            };
+            this.subsystemManager.addSubsystem(id, 'communication', finalCommsConfig);
         } else {
             console.warn(`[PhysicsEngine] No subsystemManager available when creating satellite ${id}`);
+        }
+
+        // Get the created satellite data for the event
+        const createdSatellite = this.satellites.get(id);
+        if (createdSatellite) {
+            // Dispatch satelliteAdded event for UI synchronization
+            this._dispatchSatelliteEvent('satelliteAdded', {
+                id,
+                name: createdSatellite.name,
+                position: createdSatellite.position.toArray(),
+                velocity: createdSatellite.velocity.toArray(),
+                mass: createdSatellite.mass,
+                color: createdSatellite.color,
+                centralBodyNaifId: createdSatellite.centralBodyNaifId,
+                size: createdSatellite.size,
+                crossSectionalArea: createdSatellite.crossSectionalArea,
+                dragCoefficient: createdSatellite.dragCoefficient,
+                commsConfig: finalCommsConfig || satellite.commsConfig || { preset: 'cubesat', enabled: true }
+            });
         }
 
         return id;
@@ -197,19 +224,38 @@ export class PhysicsEngine {
     removeSatellite(id) {
         const strId = String(id);
 
+        // Get satellite data before removal for the event
+        const satellite = this.satellites.get(strId);
+
         // Remove all subsystems for this satellite
         if (this.subsystemManager) {
             this.subsystemManager.removeSatellite(strId);
         }
 
-        return this.satelliteEngine.removeSatellite(id);
+        const result = this.satelliteEngine.removeSatellite(id);
+
+        // Dispatch satelliteRemoved event for UI synchronization
+        if (satellite) {
+            this._dispatchSatelliteEvent('satelliteRemoved', { id: strId });
+        }
+
+        return result;
     }
 
     /**
      * Update satellite UI properties - DELEGATED TO SatelliteEngine
      */
     updateSatelliteProperty(id, property, value) {
-        return this.satelliteEngine.updateSatelliteProperty(id, property, value);
+        const result = this.satelliteEngine.updateSatelliteProperty(id, property, value);
+        
+        // Dispatch satellitePropertyUpdated event for UI synchronization
+        this._dispatchSatelliteEvent('satellitePropertyUpdated', {
+            id: String(id),
+            property,
+            value
+        });
+        
+        return result;
     }
 
     /**
@@ -339,6 +385,23 @@ export class PhysicsEngine {
             centralBodyNaifId,
             this.bodies,
             this.simulationTime,
+            this.getBodiesForOrbitPropagation.bind(this),
+            this.addSatellite.bind(this)
+        );
+    }
+
+    /**
+     * Create satellite from orbital elements using consistent physics engine data
+     * This is the centralized, authoritative method for satellite creation from orbital elements
+     * @param {Object} params - Orbital element parameters
+     * @param {number} centralBodyNaifId - NAIF ID of the central body
+     * @returns {Object} - { id, position, velocity } in planet-centric inertial coordinates
+     */
+    createSatelliteFromOrbitalElements(params, centralBodyNaifId = 399) {
+        return this.satelliteEngine.createSatelliteFromOrbitalElements(
+            params,
+            centralBodyNaifId,
+            this.bodies,
             this.getBodiesForOrbitPropagation.bind(this),
             this.addSatellite.bind(this)
         );

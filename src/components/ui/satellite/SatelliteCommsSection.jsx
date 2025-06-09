@@ -52,22 +52,64 @@ export function SatelliteCommsSection({ satelliteId, app }) {
             // Get connections for this satellite
             const activeConnections = commsService.getSatelliteConnections(satelliteId);
             
+            // Get data transfer stats
+            const dataTransfers = commsService.getSatelliteDataTransfers(satelliteId);
+            
             // Build status from config and connections
             if (config) {
+                // Transform connections to expected format
+                const formattedConnections = activeConnections.map(conn => {
+                    // Determine the target satellite ID (the other end of the connection)
+                    const targetSatelliteId = conn.from === satelliteId ? conn.to : conn.from;
+                    
+                    // Get the target satellite's comms config to estimate data rate
+                    const targetConfig = commsService.getSatelliteCommsConfig(targetSatelliteId);
+                    const dataRate = Math.min(config.dataRate || 1000, targetConfig?.dataRate || 1000);
+                    
+                    return {
+                        targetSatelliteId: targetSatelliteId,
+                        quality: conn.metadata?.linkQuality || 0,
+                        dataRate: dataRate,
+                        distance: conn.metadata?.distance || 0,
+                        signalStrength: conn.metadata?.signalStrength || 0,
+                        type: conn.type,
+                        color: conn.color
+                    };
+                });
+                
+                // Determine operational status based on enabled state and connections
+                let operationalStatus = 'offline';
+                if (config.enabled) {
+                    if (formattedConnections.length > 0) {
+                        const avgQuality = formattedConnections.reduce((sum, conn) => sum + conn.quality, 0) / formattedConnections.length;
+                        operationalStatus = avgQuality > 70 ? 'operational' : 'degraded';
+                    } else {
+                        operationalStatus = 'operational'; // Enabled but no connections
+                    }
+                }
+                
                 const status = {
                     enabled: config.enabled || false,
                     transmitPower: config.transmitPower,
                     antennaGain: config.antennaGain,
-                    activeConnectionsCount: activeConnections.length,
-                    signalQuality: activeConnections.length > 0 ? 
-                        activeConnections.reduce((sum, conn) => sum + (conn.metadata?.linkQuality || 0), 0) / activeConnections.length : 0,
+                    activeConnectionsCount: formattedConnections.length,
+                    signalQuality: formattedConnections.length > 0 ? 
+                        formattedConnections.reduce((sum, conn) => sum + conn.quality, 0) / formattedConnections.length : 0,
                     config: config, // Include the full config object
-                    state: { status: config.enabled ? 'operational' : 'offline' },
-                    metrics: { successfulConnections: 0, connectionAttempts: 1 }
+                    state: { 
+                        status: operationalStatus,
+                        totalDataTransmitted: dataTransfers.transmitted || 0,
+                        totalDataReceived: dataTransfers.received || 0,
+                        powerConsumption: config.enabled ? (config.transmitPower || 5) * (1 + formattedConnections.length * 0.2) : 0
+                    },
+                    metrics: { 
+                        successfulConnections: formattedConnections.length,
+                        connectionAttempts: formattedConnections.length + 1
+                    }
                 };
                 
                 setCommsStatus(status);
-                setConnections(activeConnections);
+                setConnections(formattedConnections);
             } else {
                 setCommsStatus(null);
                 setConnections([]);
@@ -88,16 +130,18 @@ export function SatelliteCommsSection({ satelliteId, app }) {
         if (app.communicationsService) {
             app.communicationsService.on('configUpdated', handleUpdate);
             app.communicationsService.on('connectionsUpdated', updateCommsStatus);
+            app.communicationsService.on('dataTransfersUpdated', updateCommsStatus);
         }
         
-        // Also update periodically as fallback
-        const interval = setInterval(updateCommsStatus, 2000);
+        // Only use event-driven updates, no polling
+        // const interval = setInterval(updateCommsStatus, 2000);
         
         return () => {
-            clearInterval(interval);
+            // clearInterval(interval);
             if (app.communicationsService) {
                 app.communicationsService.removeListener('configUpdated', handleUpdate);
                 app.communicationsService.removeListener('connectionsUpdated', updateCommsStatus);
+                app.communicationsService.removeListener('dataTransfersUpdated', updateCommsStatus);
             }
         };
     }, [satelliteId, app]);
@@ -277,18 +321,47 @@ export function SatelliteCommsSection({ satelliteId, app }) {
                 
                 {connections.length > 0 && (
                     <div className="space-y-1 pl-4">
-                        {connections.map((conn, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-1">
-                                    <div className={`w-2 h-2 rounded-full ${conn.quality > 70 ? 'bg-green-500' : conn.quality > 40 ? 'bg-yellow-500' : 'bg-red-500'}`} />
-                                    <span className="font-mono">→ {conn.targetSatelliteId}</span>
+                        {connections.map((conn, idx) => {
+                            const quality = Math.round(conn.quality);
+                            const distance = conn.distance < 1000 ? 
+                                `${conn.distance.toFixed(0)}km` : 
+                                `${(conn.distance / 1000).toFixed(1)}Mm`;
+                            
+                            return (
+                                <div key={idx} className="space-y-1 py-1 border-b border-border/30 last:border-0">
+                                    <div className="flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-1">
+                                            <div className={`w-2 h-2 rounded-full ${
+                                                conn.quality > 80 ? 'bg-green-500' : 
+                                                conn.quality > 60 ? 'bg-yellow-500' : 
+                                                conn.quality > 40 ? 'bg-orange-500' : 
+                                                'bg-red-500'
+                                            }`} />
+                                            <span className="font-mono truncate max-w-[120px]" title={conn.targetSatelliteId}>
+                                                → {conn.targetSatelliteId}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-muted-foreground">{distance}</span>
+                                            <span className={`font-mono ${
+                                                conn.quality > 80 ? 'text-green-500' : 
+                                                conn.quality > 60 ? 'text-yellow-500' : 
+                                                conn.quality > 40 ? 'text-orange-500' : 
+                                                'text-red-500'
+                                            }`}>{quality}%</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs pl-3">
+                                        <span className="text-muted-foreground">
+                                            {conn.signalStrength.toFixed(1)}dBm
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            {conn.dataRate.toFixed(0)} kbps
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <span className="text-muted-foreground">{conn.dataRate}k</span>
-                                    <span className="font-mono">{Math.round(conn.quality)}%</span>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

@@ -1,11 +1,13 @@
 import React, { useRef, useEffect } from 'react';
-import { ScrollArea } from '../scroll-area';
+import { ScrollArea, ScrollBar } from '../scroll-area';
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { Loader2 } from 'lucide-react';
 import MessageRouter from './MessageRouter';
 import ConversationStarters from './ConversationStarters';
 import { ConnectionIndicator } from './ConnectionIndicator';
 import PropTypes from 'prop-types';
 import Prism from 'prismjs';
+import { cn } from '../../../lib/utils';
 
 export function MessageArea({ 
   messages, 
@@ -48,8 +50,12 @@ export function MessageArea({
   }, [messages]);
 
   return (
-    <ScrollArea ref={scrollRef} className="flex-1 px-3 py-2">
-      <div className="space-y-2 pr-2">
+    <ScrollAreaPrimitive.Root
+      ref={scrollRef}
+      className={cn("relative overflow-hidden flex-1 px-3 py-2")}
+    >
+      <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] overflow-x-hidden">
+        <div className="space-y-2 pr-2 max-w-full overflow-x-hidden">
         <ConnectionIndicator 
           socket={socket} 
           isConnected={isConnected} 
@@ -89,8 +95,11 @@ export function MessageArea({
             </div>
           </div>
         )}
-      </div>
-    </ScrollArea>
+        </div>
+      </ScrollAreaPrimitive.Viewport>
+      <ScrollBar orientation="vertical" />
+      <ScrollAreaPrimitive.Corner />
+    </ScrollAreaPrimitive.Root>
   );
 }
 

@@ -178,7 +178,8 @@ export class SatelliteEngine {
             crossSectionalArea: params.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
             dragCoefficient: params.dragCoefficient || PhysicsConstants.SATELLITE_DEFAULTS.DRAG_COEFFICIENT,
             color: params.color || 0xffff00,
-            name: params.name || `Satellite ${Date.now()}`
+            name: params.name || `Satellite ${Date.now()}`,
+            commsConfig: params.commsConfig // Pass through comms config
         };
 
         // Add to physics engine - use callback if provided to ensure subsystems are added
@@ -198,9 +199,12 @@ export class SatelliteEngine {
      * Create satellite from orbital elements
      * @param {Object} params - Orbital element parameters
      * @param {number} centralBodyNaifId - NAIF ID of the central body
+     * @param {Object} bodies - Physics bodies for calculations
+     * @param {Function} getBodiesForOrbitPropagation - Function to get orbital propagation data
+     * @param {Function} addSatelliteCallback - Optional callback to PhysicsEngine.addSatellite for subsystem management
      * @returns {Object} - { id, position, velocity } in planet-centric inertial coordinates
      */
-    createSatelliteFromOrbitalElements(params, centralBodyNaifId = 399, bodies, getBodiesForOrbitPropagation) {
+    createSatelliteFromOrbitalElements(params, centralBodyNaifId = 399, bodies, getBodiesForOrbitPropagation, addSatelliteCallback = null) {
         const centralBody = bodies[centralBodyNaifId];
         if (!centralBody) {
             throw new Error(`Central body with NAIF ID ${centralBodyNaifId} not found in physics engine`);
@@ -231,8 +235,10 @@ export class SatelliteEngine {
             name: params.name || `Satellite ${Date.now()}`
         };
 
-        // Add to physics engine
-        const id = this.addSatellite(satelliteData, bodies, null, null);
+        // Add to physics engine - use callback if provided to ensure subsystems are added
+        const id = addSatelliteCallback ?
+            addSatelliteCallback(satelliteData) :
+            this.addSatellite(satelliteData, bodies, null, null);
 
         return {
             id,

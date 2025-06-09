@@ -276,7 +276,18 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined,
                     planetNaifId: selectedBody?.naifId,
-                    commsConfig: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig || { preset: 'cubesat' }
+                    commsConfig: {
+                        preset: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig?.preset || 'cubesat',
+                        enabled: params.commsEnabled,
+                        antennaType: params.antennaType,
+                        antennaGain: params.antennaGain,
+                        transmitPower: params.transmitPower,
+                        transmitFrequency: params.transmitFrequency,
+                        dataRate: params.dataRate,
+                        minElevationAngle: params.minElevationAngle,
+                        networkId: params.networkId,
+                        encryption: params.encryption
+                    }
                 };
                 await onCreateSatellite(outParams);
             } else if (mode === 'orbital') {
@@ -294,7 +305,18 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     ballisticCoefficient: params.ballisticCoefficient,
                     name: params.name || undefined,
                     planetNaifId: selectedBody?.naifId,
-                    commsConfig: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig || { preset: 'cubesat' }
+                    commsConfig: {
+                        preset: SATELLITE_TEMPLATES[selectedTemplate]?.commsConfig?.preset || 'cubesat',
+                        enabled: params.commsEnabled,
+                        antennaType: params.antennaType,
+                        antennaGain: params.antennaGain,
+                        transmitPower: params.transmitPower,
+                        transmitFrequency: params.transmitFrequency,
+                        dataRate: params.dataRate,
+                        minElevationAngle: params.minElevationAngle,
+                        networkId: params.networkId,
+                        encryption: params.encryption
+                    }
                 };
                 await onCreateSatellite(outParams);
             }

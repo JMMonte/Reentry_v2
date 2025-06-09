@@ -16,6 +16,11 @@ export class TimeUtils {
         this.simulatedTime = new Date(settings.simulatedTime);
         this.timeWarp = 1;
         this._lastUpdateTime = performance.now();
+        
+        // Track last dispatched values to prevent redundant events
+        this._lastDispatchedTimeMs = 0;
+        this._lastDispatchedWarp = 1;
+        this._dispatchThreshold = 100; // Only dispatch if time changed by >100ms
     }
 
     /**
@@ -79,9 +84,20 @@ export class TimeUtils {
     }
 
     /**
-     * Dispatch time update event
+     * Dispatch time update event - optimized to reduce redundant events
      */
     _dispatchTimeUpdate() {
+        const currentTimeMs = this.simulatedTime.getTime();
+        const timeDiff = Math.abs(currentTimeMs - this._lastDispatchedTimeMs);
+        
+        // Only dispatch if time changed significantly or warp changed
+        if (timeDiff < this._dispatchThreshold && this.timeWarp === this._lastDispatchedWarp) {
+            return; // Skip redundant dispatch
+        }
+        
+        this._lastDispatchedTimeMs = currentTimeMs;
+        this._lastDispatchedWarp = this.timeWarp;
+        
         document.dispatchEvent(new CustomEvent('timeUpdate', {
             detail: {
                 simulatedTime: this.simulatedTime.toISOString(),

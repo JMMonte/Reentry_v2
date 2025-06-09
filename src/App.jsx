@@ -227,6 +227,7 @@ function App3DMain() {
               loadingProgress={appState.loadingProgress}
               loadingStage={appState.loadingStage}
               satellitesPhysics={satellitesPhysics}
+              groundTrackData={appState.modalState.groundTrackData}
             >
               <canvas id="three-canvas" className="absolute inset-0 z-0" />
             </Layout>

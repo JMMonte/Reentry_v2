@@ -79,6 +79,7 @@ import { PhysicsManager } from './physics/PhysicsManager.js';
 import { LineOfSightManager } from './managers/LineOfSightManager.js';
 import { SatelliteCommsManager } from './managers/SatelliteCommsManager.js';
 import { CommunicationsService } from './services/CommunicationsService.js';
+import { geojsonDataGroundStations } from './config/geojsonData.js';
 import Physics from './physics/PhysicsAPI.js';
 
 // Controls
@@ -142,6 +143,7 @@ class App3D extends EventTarget {
 
         // — Managers & engines — ----------------------------------------------
         this._textureManager = new TextureManager();
+        
         this._displaySettingsManager = new DisplaySettingsManager(
             this,
             getDefaultDisplaySettings(defaultSettings)
@@ -153,7 +155,7 @@ class App3D extends EventTarget {
         this._satellites = new SatelliteManager(this);
         
         // Initialize satellite communications manager
-        this.satelliteCommsManager = new SatelliteCommsManager();
+        this.satelliteCommsManager = new SatelliteCommsManager(this.physicsIntegration.physicsEngine);
         
         // Initialize unified communications service
         this.communicationsService = new CommunicationsService();
@@ -163,6 +165,10 @@ class App3D extends EventTarget {
         
         // LineOfSightManager will be initialized after scene is ready
         this.lineOfSightManager = null;
+        
+        // Ground stations data
+        this._groundStations = [];
+        this._processGroundStations();
 
         // — Misc util — --------------------------------------------------------
         // Always use UTC time - new Date().toISOString() gives us UTC
@@ -301,19 +307,20 @@ class App3D extends EventTarget {
             // Initialize new physics system
             try {
                 await this.physicsIntegration.initialize(this.timeUtils.getSimulatedTime());
-                console.log('[App3D] Physics integration initialized successfully');
                 
                 // Initialize satellite orbit manager after physics is ready
                 const { SatelliteOrbitManager } = await import('./managers/SatelliteOrbitManager.js');
                 this.satelliteOrbitManager = new SatelliteOrbitManager(this);
                 this.satelliteOrbitManager.initialize();
-                console.log('[App3D] Satellite orbit manager initialized');
+                
+                // Initialize maneuver preview system
+                const { getManeuverPreviewSystem } = await import('./managers/ManeuverPreviewSystem.js');
+                this.maneuverPreviewSystem = getManeuverPreviewSystem(this);
                 
                 // Set up satellite communication system integration
                 this._setupSatelliteCommsIntegration();
                 
                 // Physics API is always ready (static functions)
-                console.log('[App3D] Physics API ready - using unified PhysicsAPI');
             } catch (physicsError) {
                 console.warn('[App3D] Physics integration failed to initialize:', physicsError);
                 // Continue without physics integration - fallback to existing systems
@@ -627,7 +634,7 @@ class App3D extends EventTarget {
         
 
         if (this.lineOfSightManager) {
-            this.lineOfSightManager.updateConnections(sats, bodies, []);
+            this.lineOfSightManager.updateConnections(sats, bodies);
         } else {
             console.log('[App3D] LineOfSightManager not initialized');
         }
@@ -985,20 +992,16 @@ class App3D extends EventTarget {
         // Create bound event handlers for proper cleanup
         this._handleSatelliteAdded = (event) => {
             const satellite = event.detail;
-            console.log(`[App3D] Setting up communications for satellite ${satellite.id}`);
             
             // Get communication config from satellite if available
             const commsConfig = satellite.commsConfig || { preset: 'cubesat', enabled: true };
-            console.log(`[App3D] Comms config for ${satellite.id}:`, commsConfig);
             
             // Create communication system in SatelliteCommsManager
             this.satelliteCommsManager.createCommsSystem(satellite.id, commsConfig);
-            console.log(`[App3D] Created comms system for ${satellite.id}`);
         };
         
         this._handleSatelliteRemoved = (event) => {
             const satelliteId = event.detail.id;
-            console.log(`[App3D] Removing communications for satellite ${satelliteId}`);
             
             // Remove communication system from SatelliteCommsManager
             this.satelliteCommsManager.removeCommsSystem(satelliteId);
@@ -1008,7 +1011,33 @@ class App3D extends EventTarget {
         window.addEventListener('satelliteAdded', this._handleSatelliteAdded);
         window.addEventListener('satelliteRemoved', this._handleSatelliteRemoved);
         
-        console.log('[App3D] Satellite communications integration set up successfully');
+    }
+
+    /**
+     * Process ground stations data from GeoJSON
+     */
+    _processGroundStations() {
+        this._groundStations = geojsonDataGroundStations.features.map(feature => {
+            const [lon, lat] = feature.geometry.coordinates;
+            const altitude = feature.properties.altitude || 0; // km above sea level
+            
+            // Convert lat/lon/alt to Cartesian coordinates (simplified)
+            const R = 6371; // Earth radius in km
+            const latRad = lat * Math.PI / 180;
+            const lonRad = lon * Math.PI / 180;
+            const r = R + altitude;
+            
+            return {
+                id: feature.properties.gps_code || feature.properties.name,
+                name: feature.properties.name,
+                position: [
+                    r * Math.cos(latRad) * Math.cos(lonRad),
+                    r * Math.cos(latRad) * Math.sin(lonRad),  
+                    r * Math.sin(latRad)
+                ],
+                elevation: 0 // Minimum elevation angle (will be configurable)
+            };
+        });
     }
 }
 

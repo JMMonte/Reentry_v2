@@ -145,6 +145,7 @@ export class OrbitVisualizationManager {
             // Get the planet mesh group to add orbit to
             const planet = this.app.celestialBodies?.find(b => b.naifId === parseInt(segment.centralBodyId));
             
+            
             // Try multiple fallback methods to find parent group
             let parentGroup = null;
             if (planet) {
@@ -183,7 +184,7 @@ export class OrbitVisualizationManager {
                 const satellite = physicsEngine.satellites.get(satelliteId);
                 
                 // Get color with preference order: UI satellite > physics satellite > default
-                const uiSatellite = this.app3d?.satellites?.getSatellitesMap?.()?.get(satelliteId);
+                const uiSatellite = this.app?.satellites?.getSatellitesMap?.()?.get(satelliteId);
                 let color = 0xffff00; // Default yellow
                 
                 if (uiSatellite?.color !== undefined) {
@@ -214,8 +215,12 @@ export class OrbitVisualizationManager {
                 line.name = `orbit_${satelliteId}_segment_${segmentIndex}`;
                 
                 // Add to parent body's mesh group
-                parentGroup.add(line);
-                this.orbitLines.set(lineKey, line);
+                if (parentGroup) {
+                    parentGroup.add(line);
+                    this.orbitLines.set(lineKey, line);
+                } else {
+                    console.error(`[OrbitVisualizationManager] No parent group found for orbit line!`);
+                }
             }
 
             // Update geometry with positions relative to parent body

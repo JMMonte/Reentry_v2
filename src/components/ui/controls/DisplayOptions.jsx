@@ -51,8 +51,8 @@ export const defaultSettings = {
   showSatVectors: { value: false, name: 'Satellite Vectors', icon: Circle },
   showOrbits: { value: true, name: 'Satellite Orbits', icon: Circle },
   showApsis: { value: true, name: 'Apsis Markers', icon: Circle, description: 'Show periapsis and apoapsis markers on satellite orbits.' },
-  showSatConnections: { value: false, name: 'Satellite Connections', icon: Link,
-    description: 'Show lines connecting satellites with other satellites.'
+  showSatelliteConnections: { value: false, name: 'Satellite Connections', icon: Link,
+    description: 'Show line-of-sight connections between satellites.'
   },
   losUpdateInterval: { value: 500, name: 'LOS Update Interval (ms)', icon: Link, type: 'number', min: 100, max: 5000, step: 100,
     description: 'How often to update line-of-sight calculations (milliseconds). Higher values reduce jittering.'
@@ -132,7 +132,7 @@ const categories = [
   },
   {
     name: 'Satellites',
-    keys: ['showOrbits', 'showApsis', 'showSatVectors', 'showSatConnections', 'losUpdateInterval', 'losMinElevation', 'losAtmosphericRefraction'],
+    keys: ['showOrbits', 'showApsis', 'showSatVectors', 'showSatelliteConnections', 'losUpdateInterval', 'losMinElevation', 'losAtmosphericRefraction'],
   },
   {
     name: 'Simulation',

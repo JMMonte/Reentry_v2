@@ -2,10 +2,11 @@ import React, { useState, useId } from 'react';
 import { Download, Copy, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DraggableModal } from '../modal/DraggableModal';
+import { ModalPortal } from '../modal/ModalPortal';
 import PropTypes from 'prop-types';
 
 const TableContent = ({ data }) => (
-  <table className="w-full table-auto border-collapse text-xs border border-white/20">
+  <table className="table-auto border-collapse text-xs border border-white/20" style={{ width: 'max-content', minWidth: '100%' }}>
     <thead>
       <tr className="border-b border-white/20">
         {Object.keys(data[0]).map((header, i) => (
@@ -97,8 +98,8 @@ export const DataTable = ({ data, className }) => {
 
   return (
     <>
-      <div className={cn("relative group rounded-md bg-secondary/30", className)}>
-        <div className="overflow-x-auto rounded-md">
+      <div className={cn("relative group rounded-md bg-secondary/30 w-full max-w-full flex-shrink", className)} style={{ width: '100%', maxWidth: '100%' }}>
+        <div className="overflow-x-auto rounded-md" style={{ width: '100%', maxWidth: '100%' }}>
           <TableContent data={data} />
         </div>
         <div className="mt-2 ml-auto flex items-center gap-2 justify-end">
@@ -127,20 +128,42 @@ export const DataTable = ({ data, className }) => {
       </div>
 
       {fullscreenInstances.has(tableId) && (
-        <DraggableModal
-          title="Table View"
-          onClose={closeFullscreen}
-          defaultPosition={{ x: 40, y: 40 }}
-          resizable={true}
-          defaultWidth={500}
-          defaultHeight={400}
-          minWidth={300}
-          minHeight={200}
-        >
-          <div className="overflow-auto h-full">
-            <TableContent data={data} />
-          </div>
-        </DraggableModal>
+        <ModalPortal>
+          <DraggableModal
+            title="Table View"
+            onClose={closeFullscreen}
+            defaultPosition={{ x: 100, y: 100 }}
+            resizable={true}
+            defaultWidth={800}
+            defaultHeight={500}
+            minWidth={400}
+            minHeight={300}
+            rightElement={
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleCopy}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/20 text-white/80 text-xs hover:bg-white/5 transition-colors"
+                  title="Copy table data"
+                >
+                  <Copy className="h-3 w-3" />
+                  <span>Copy</span>
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/20 text-white/80 text-xs hover:bg-white/5 transition-colors"
+                  title="Download as CSV"
+                >
+                  <Download className="h-3 w-3" />
+                  <span>CSV</span>
+                </button>
+              </div>
+            }
+          >
+            <div className="overflow-auto h-full">
+              <TableContent data={data} />
+            </div>
+          </DraggableModal>
+        </ModalPortal>
       )}
     </>
   );
