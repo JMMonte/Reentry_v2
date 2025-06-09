@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { PassPredictionService } from '../../../services/PassPredictionService';
 import { 
-    Calendar, Clock, TrendingUp, Signal, BarChart3, 
+    TrendingUp, Signal, BarChart3, 
     ChevronRight, ChevronDown, AlertCircle, CheckCircle2,
     Timer, Zap, Radio
 } from 'lucide-react';
@@ -14,7 +14,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../tabs';
 export function POIPassSchedule({
     poi,
     satellite,
-    satData,
     tracks,
     currentTime,
     planetData,
@@ -187,7 +186,7 @@ export function POIPassSchedule({
                         <div className="grid grid-cols-2 gap-2">
                             <div className="flex items-center gap-1">
                                 <TrendingUp className="h-3 w-3" />
-                                <span>Max Elevation: {pass.maxElevation.toFixed(1)}°</span>
+                                <span>Max Elevation: {pass.maxElevation?.toFixed(1) || 'N/A'}°</span>
                             </div>
                             <div className="flex items-center gap-1">
                                 <Signal className="h-3 w-3" />
@@ -216,6 +215,21 @@ export function POIPassSchedule({
                 )}
             </div>
         );
+    };
+    
+    PassCard.propTypes = {
+        pass: PropTypes.shape({
+            los: PropTypes.number.isRequired,
+            duration: PropTypes.number.isRequired,
+            aos: PropTypes.number.isRequired,
+            quality: PropTypes.shape({
+                rating: PropTypes.string.isRequired
+            }).isRequired,
+            maxElevation: PropTypes.number,
+            minDistance: PropTypes.number
+        }).isRequired,
+        isExpanded: PropTypes.bool,
+        onToggle: PropTypes.func
     };
     
     return (
@@ -412,7 +426,6 @@ export function POIPassSchedule({
 POIPassSchedule.propTypes = {
     poi: PropTypes.object.isRequired,
     satellite: PropTypes.object.isRequired,
-    satData: PropTypes.object,
     tracks: PropTypes.object.isRequired,
     currentTime: PropTypes.number.isRequired,
     planetData: PropTypes.object.isRequired,

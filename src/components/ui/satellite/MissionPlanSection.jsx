@@ -60,6 +60,17 @@ function OrbitalElementsRow({ elements, centralBodyRadius = 6378 }) {
     );
 }
 
+OrbitalElementsRow.propTypes = {
+    elements: PropTypes.shape({
+        semiMajorAxis: PropTypes.number,
+        eccentricity: PropTypes.number,
+        inclination: PropTypes.number,
+        periapsis: PropTypes.number,
+        apoapsis: PropTypes.number
+    }),
+    centralBodyRadius: PropTypes.number
+};
+
 export function MissionPlanSection({
     nodes,
     previewNodes,

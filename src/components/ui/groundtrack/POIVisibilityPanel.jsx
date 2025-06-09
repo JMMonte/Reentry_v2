@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { PassPredictionService } from '../../../services/PassPredictionService';
 import { POIVisibilityService } from '../../../services/POIVisibilityService';
-import { Eye, MapPin, Radio, Satellite, ChevronDown, ChevronRight, Clock, Signal, Calendar } from 'lucide-react';
+import { Eye, MapPin, Radio, Satellite, ChevronDown, ChevronRight, Clock, Calendar } from 'lucide-react';
 import { Badge } from '../badge';
 import { Button } from '../button';
 
@@ -10,7 +10,6 @@ export function POIVisibilityPanel({
     poiData, // Legacy prop - now handled by usePOIVisibility
     satellites, 
     currentPositions,
-    showCoverage,
     planetData,
     tracks,
     currentTime,
@@ -111,6 +110,15 @@ export function POIVisibilityPanel({
                 )}
             </div>
         );
+    };
+    Section.propTypes = {
+        title: PropTypes.oneOfType([
+            PropTypes.string,
+            PropTypes.node
+        ]),
+        isOpen: PropTypes.bool.isRequired,
+        onToggle: PropTypes.func.isRequired,
+        children: PropTypes.node
     };
     
     // Section visibility state
@@ -435,7 +443,6 @@ POIVisibilityPanel.propTypes = {
     poiData: PropTypes.object,
     satellites: PropTypes.object.isRequired,
     currentPositions: PropTypes.array.isRequired,
-    showCoverage: PropTypes.bool.isRequired,
     planetData: PropTypes.object,
     tracks: PropTypes.object,
     currentTime: PropTypes.number,

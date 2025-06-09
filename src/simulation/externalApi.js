@@ -32,6 +32,19 @@ export function setupExternalApi(app3d) {
         return commonBodies[parseInt(naifId)] || `Body ${naifId}`;
     }
 
+    /**
+     * Extract satellite ID from various input formats
+     * @param {string|number|object} input - Input that might contain a satellite ID
+     * @returns {string} The extracted satellite ID as a string
+     */
+    function extractSatelliteId(input) {
+        if (typeof input === 'object' && input !== null) {
+            // Try multiple possible property names
+            return String(input.id || input.satelliteId || input.name || input);
+        }
+        return String(input);
+    }
+
     function getAllAvailableBodies() {
         const bodies = [];
         
@@ -467,17 +480,19 @@ export function setupExternalApi(app3d) {
          */
         getSatellite: (id) => {
             try {
+                const satelliteId = extractSatelliteId(id);
+                
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(id));
+                const satellite = satellites.get(satelliteId);
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${id} not found` };
+                    return { success: false, error: `Satellite ${satelliteId} not found` };
                 }
                 
                 // Use the same logic as getSatellites but for single satellite
                 const allSats = window.api.getSatellites();
                 if (!allSats.success) return allSats;
                 
-                const satData = allSats.satellites.find(s => s.id === String(id));
+                const satData = allSats.satellites.find(s => s.id === satelliteId);
                 return { success: true, satellite: satData };
             } catch (error) {
                 return { success: false, error: error.message };
@@ -543,14 +558,15 @@ export function setupExternalApi(app3d) {
          */
         deleteSatellite: (id) => {
             try {
+                const satelliteId = extractSatelliteId(id);
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(id));
+                const satellite = satellites.get(satelliteId);
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${id} not found` };
+                    return { success: false, error: `Satellite ${satelliteId} not found` };
                 }
                 
                 satellite.delete();
-                return { success: true, message: `Satellite ${id} deleted` };
+                return { success: true, message: `Satellite ${satelliteId} deleted` };
             } catch (error) {
                 return { success: false, error: error.message };
             }
@@ -1007,10 +1023,11 @@ export function setupExternalApi(app3d) {
          */
         addManeuverNode: (satelliteId, params) => {
             try {
+                const id = extractSatelliteId(satelliteId);
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(satelliteId));
+                const satellite = satellites.get(id);
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                    return { success: false, error: `Satellite ${id} not found` };
                 }
 
                 const { executionTime, deltaV } = params;
@@ -1049,10 +1066,11 @@ export function setupExternalApi(app3d) {
          */
         getManeuverNodes: (satelliteId) => {
             try {
+                const id = extractSatelliteId(satelliteId);
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(satelliteId));
+                const satellite = satellites.get(id);
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                    return { success: false, error: `Satellite ${id} not found` };
                 }
 
                 const nodes = satellite.maneuverNodes.map(node => ({
@@ -1080,10 +1098,11 @@ export function setupExternalApi(app3d) {
          */
         deleteManeuverNode: (satelliteId, nodeId) => {
             try {
+                const id = extractSatelliteId(satelliteId);
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(satelliteId));
+                const satellite = satellites.get(id);
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                    return { success: false, error: `Satellite ${id} not found` };
                 }
 
                 const node = satellite.maneuverNodes.find(n => n.id === nodeId);
@@ -1153,15 +1172,18 @@ export function setupExternalApi(app3d) {
          */
         getSatelliteComms: (satelliteId) => {
             try {
+                const id = extractSatelliteId(satelliteId);
+                
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(satelliteId));
+                const satellite = satellites.get(id);
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                    return { success: false, error: `Satellite ${id} not found` };
                 }
 
                 // Get communication subsystem data from physics engine
-                const physicsEngine = app3d?.physicsIntegration;
-                if (!physicsEngine?.subsystemManager) {
+                const physicsIntegration = app3d?.physicsIntegration;
+                const subsystemManager = physicsIntegration?.physicsEngine?.subsystemManager;
+                if (!subsystemManager) {
                     // Return basic comm data if subsystem manager not available
                     return {
                         success: true,
@@ -1182,7 +1204,7 @@ export function setupExternalApi(app3d) {
                     };
                 }
 
-                const commSubsystem = physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
+                const commSubsystem = subsystemManager.getSubsystem(id, 'communication');
                 if (!commSubsystem) {
                     // Return basic comm data if subsystem not found
                     return {
@@ -1204,9 +1226,10 @@ export function setupExternalApi(app3d) {
                     };
                 }
 
-                const state = commSubsystem.getState();
-                const metrics = commSubsystem.getMetrics();
-                const activeConnections = commSubsystem.getActiveConnections();
+                // Access state and metrics directly as properties
+                const state = commSubsystem.state || {};
+                const metrics = commSubsystem.metrics || {};
+                const activeConnections = commSubsystem.getActiveConnections ? commSubsystem.getActiveConnections() : [];
 
                 return {
                     success: true,
@@ -1234,8 +1257,9 @@ export function setupExternalApi(app3d) {
          */
         getCommunicationLinks: () => {
             try {
-                const physicsEngine = app3d?.physicsIntegration;
-                if (!physicsEngine?.subsystemManager) {
+                const physicsIntegration = app3d?.physicsIntegration;
+                const subsystemManager = physicsIntegration?.physicsEngine?.subsystemManager;
+                if (!subsystemManager) {
                     return { 
                         success: true, 
                         links: [],
@@ -1248,7 +1272,7 @@ export function setupExternalApi(app3d) {
                 
                 satellites.forEach((satellite, satelliteId) => {
                     try {
-                        const commSubsystem = physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
+                        const commSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
                         if (commSubsystem) {
                             const connections = commSubsystem.getActiveConnections();
                             if (Array.isArray(connections)) {
@@ -1284,11 +1308,9 @@ export function setupExternalApi(app3d) {
          */
         updateCommsConfig: (satelliteId, config) => {
             try {
-                // Handle case where satelliteId might be an object with an id property
-                const id = typeof satelliteId === 'object' && satelliteId !== null ? 
-                    (satelliteId.id || satelliteId.satelliteId) : satelliteId;
+                const id = extractSatelliteId(satelliteId);
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(id));
+                const satellite = satellites.get(id);
                 if (!satellite) {
                     return { success: false, error: `Satellite ${id} not found` };
                 }
@@ -1378,11 +1400,9 @@ export function setupExternalApi(app3d) {
          */
         applyCommsPreset: (satelliteId, presetName) => {
             try {
-                // Handle case where satelliteId might be an object with an id property
-                const id = typeof satelliteId === 'object' && satelliteId !== null ? 
-                    (satelliteId.id || satelliteId.satelliteId) : satelliteId;
+                const id = extractSatelliteId(satelliteId);
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(id));
+                const satellite = satellites.get(id);
                 if (!satellite) {
                     return { success: false, error: `Satellite ${id} not found` };
                 }

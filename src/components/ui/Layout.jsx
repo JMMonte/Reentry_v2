@@ -195,8 +195,7 @@ export function Layout({
     isLoadingInitialData,
     loadingProgress = 0,
     loadingStage = 'Initializing...',
-    satellitesPhysics = {},
-    groundTrackData
+    satellitesPhysics = {}
 }) {
     const toastRef = useRef();
     const showToast = (msg) => {

@@ -138,8 +138,6 @@ function drawLineString(ctx, coordinates, w, h) {
     }
 }
 
-
-
 /** 
  * Efficient scanline-based coverage rendering with dateline handling
  * Much faster than pixel-by-pixel approach - only processes affected scanlines
@@ -196,34 +194,6 @@ export function renderCoverageEfficient(ctx, w, h, { lat, lon, altitude }, color
     }
     
     ctx.restore();
-}
-
-/** Render coverage circle using efficient scanline algorithm */
-function renderCoverageCircle(ctx, centerX, centerY, radiusX, radiusY, w, h) {
-    // Calculate Y bounds
-    const minY = Math.max(0, Math.floor(centerY - radiusY));
-    const maxY = Math.min(h - 1, Math.ceil(centerY + radiusY));
-    
-    ctx.beginPath();
-    
-    // Scanline algorithm - only process rows that intersect the ellipse
-    for (let y = minY; y <= maxY; y++) {
-        const dy = (y - centerY) / radiusY;
-        if (Math.abs(dy) > 1) continue;
-        
-        // Calculate horizontal span at this scanline
-        const dx = Math.sqrt(1 - dy * dy);
-        const xSpan = dx * radiusX;
-        
-        const x1 = Math.max(0, Math.floor(centerX - xSpan));
-        const x2 = Math.min(w - 1, Math.ceil(centerX + xSpan));
-        
-        // Draw horizontal line for this scanline
-        ctx.moveTo(x1, y);
-        ctx.lineTo(x2, y);
-    }
-    
-    ctx.fill();
 }
 
 /** Handle coverage that wraps around map edges */

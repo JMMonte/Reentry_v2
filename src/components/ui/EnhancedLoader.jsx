@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 
 const EnhancedLoader = ({ loadingProgress, loadingStage }) => {
   const [currentCapability, setCurrentCapability] = useState(0);
@@ -44,7 +45,8 @@ const EnhancedLoader = ({ loadingProgress, loadingStage }) => {
     "/assets/images/space_nasa.jpg", 
     "/assets/images/mars_nasa.jpg",
     "/assets/images/tethys_nasa.jpg",
-    "/assets/images/saturn_cassini.jpg"
+    "/assets/images/saturn_cassini.jpg",
+    "/assets/images/earth_NASA.jpg"
   ];
 
   // Select random background image on component mount
@@ -81,6 +83,15 @@ const EnhancedLoader = ({ loadingProgress, loadingStage }) => {
       </span>
     </div>
   );
+
+  DataRow.propTypes = {
+    label: PropTypes.string.isRequired,
+    value: PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.number
+    ]).isRequired,
+    unit: PropTypes.string
+  };
 
   return (
     <div 
@@ -211,6 +222,11 @@ const EnhancedLoader = ({ loadingProgress, loadingStage }) => {
       </div>
     </div>
   );
+};
+
+EnhancedLoader.propTypes = {
+  loadingProgress: PropTypes.number.isRequired,
+  loadingStage: PropTypes.string.isRequired
 };
 
 export default EnhancedLoader;
