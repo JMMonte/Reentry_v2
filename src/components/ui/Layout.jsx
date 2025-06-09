@@ -312,8 +312,8 @@ export function Layout({
             
             {/* Darkmatter credit */}
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
-                <div className="text-sm font-mono mix-blend-difference text-white pointer-events-auto flex items-center gap-1">
-                    made with <Brain size={16} /> by{' '}
+                <div className="text-xs font-mono mix-blend-difference text-white/50 pointer-events-auto flex items-center gap-1">
+                    made with <Brain size={12} /> by{' '}
                     <a 
                         href="https://darkmatter.is" 
                         target="_blank" 

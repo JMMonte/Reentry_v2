@@ -8,7 +8,7 @@ export function DeltaVSection({ vx, vy, vz, setVx, setVy, setVz, multP, multA, m
     return (
         <div>
             <div className="text-[10px] font-semibold mb-1">Delta-V (m/s)</div>
-            {['Prograde', 'Antiradial', 'Normal'].map((axis, idx) => {
+            {['Prograde', 'Normal', 'Radial'].map((axis, idx) => {
                 const val = idx === 0 ? vx : idx === 1 ? vy : vz;
                 const setter = idx === 0 ? setVx : idx === 1 ? setVy : setVz;
                 const mult = idx === 0 ? multP : idx === 1 ? multA : multN;

@@ -117,21 +117,19 @@ export function GroundTrackWindow({
         );
     }, [satellites, planet]);
 
-    // Prepare POI data from the planet's surface for canvas rendering
-    const poiData = useMemo(() => {
+    // Get POI data for canvas rendering (keeps 3D rendering separate from POI visibility calculations)
+    const poiDataForCanvas = useMemo(() => {
         if (!planet?.surface?.points) {
             return {};
         }
         
         const processedData = {};
         
-        // Handle different possible data structures
+        // Simplified processing for canvas rendering only
         Object.entries(planet.surface.points).forEach(([key, data]) => {
             if (Array.isArray(data)) {
-                // Direct array of features/meshes
                 processedData[key] = data.map(item => {
                     if (item.userData?.feature) {
-                        // Three.js mesh with userData
                         const feat = item.userData.feature;
                         const [lon, lat] = feat.geometry.coordinates;
                         return { 
@@ -139,34 +137,9 @@ export function GroundTrackWindow({
                             lat,
                             name: feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank
                         };
-                    } else if (item.geometry?.coordinates) {
-                        // Direct GeoJSON feature
-                        const [lon, lat] = item.geometry.coordinates;
-                        return { 
-                            lon, 
-                            lat,
-                            name: item.properties?.name || item.properties?.NAME || item.properties?.scalerank
-                        };
-                    } else if (item.lon !== undefined && item.lat !== undefined) {
-                        // Direct coordinate object
-                        return { 
-                            lon: item.lon, 
-                            lat: item.lat,
-                            name: item.name || item.properties?.name
-                        };
                     }
                     return null;
                 }).filter(Boolean);
-            } else if (data?.features) {
-                // GeoJSON FeatureCollection
-                processedData[key] = data.features.map(feat => {
-                    const [lon, lat] = feat.geometry.coordinates;
-                    return { 
-                        lon, 
-                        lat,
-                        name: feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank
-                    };
-                });
             }
         });
         
@@ -292,10 +265,10 @@ export function GroundTrackWindow({
 
     // Notify parent component when data changes
     useEffect(() => {
-        if (onDataUpdate && poiData && trackPoints && planet) {
-            onDataUpdate(poiData, trackPoints, planet, currentPositions);
+        if (onDataUpdate && poiDataForCanvas && trackPoints && planet) {
+            onDataUpdate(poiDataForCanvas, trackPoints, planet, currentPositions);
         }
-    }, [poiData, trackPoints, planet, currentPositions, onDataUpdate]);
+    }, [poiDataForCanvas, trackPoints, planet, currentPositions, onDataUpdate]);
 
     // UI: planet selector (DropdownMenu)
     const planetSelector = (
@@ -417,7 +390,7 @@ export function GroundTrackWindow({
                                 tracks={trackPoints}
                                 layers={activeLayers}
                                 showCoverage={showCoverage}
-                                poiData={poiData}
+                                poiData={poiDataForCanvas}
                                 groundtracks={currentPositions}
                                 planet={planet}
                                 physicsBodies={physicsBodies}
@@ -430,9 +403,9 @@ export function GroundTrackWindow({
                         >
                             <GripHorizontal className="h-3 w-3 text-muted-foreground group-hover:text-foreground" />
                         </div>
-                        <div className="flex-1 overflow-hidden">
+                        <div className="flex-1 overflow-auto">
                             <POIVisibilityPanel
-                                poiData={poiData}
+                                poiData={poiDataForCanvas}
                                 satellites={filteredSatellites}
                                 currentPositions={currentPositions}
                                 showCoverage={showCoverage}

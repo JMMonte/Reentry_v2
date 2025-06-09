@@ -9,7 +9,6 @@ import { Constants } from '../physics/PhysicsAPI.js';
 import { WorkerPoolManager } from './WorkerPoolManager.js';
 import { OrbitCacheManager } from './OrbitCacheManager.js';
 import { OrbitVisualizationManager } from './OrbitVisualizationManager.js';
-import { ManeuverOrbitHandler } from './ManeuverOrbitHandler.js';
 import { GhostPlanetManager } from './GhostPlanetManager.js';
 import { ApsisService } from '../services/ApsisService.js';
 import { ApsisDetection } from '../services/ApsisDetection.js';
@@ -24,7 +23,6 @@ export class SatelliteOrbitManager {
         this.workerPoolManager = new WorkerPoolManager();
         this.orbitCacheManager = new OrbitCacheManager();
         this.orbitVisualizationManager = new OrbitVisualizationManager(app);
-        this.maneuverOrbitHandler = new ManeuverOrbitHandler(app, this.workerPoolManager, this.orbitCacheManager);
         this.ghostPlanetManager = new GhostPlanetManager(app);
         this.apsisDetector = new ApsisDetection({
             minSeparation: 300, // 5 minutes minimum between apsis points
@@ -111,17 +109,10 @@ export class SatelliteOrbitManager {
     /**
      * Request visualization for a maneuver node
      */
-    requestManeuverNodeVisualization(satelliteId, maneuverNode) {
-        const needsOrbitCalculation = !this.maneuverOrbitHandler.requestManeuverNodeVisualization(
-            satelliteId,
-            maneuverNode,
-            this.physicsEngine?.physicsEngine
-        );
-
-        if (needsOrbitCalculation) {
-            // Request orbit calculation first
-            this.updateSatelliteOrbit(satelliteId);
-        }
+    requestManeuverNodeVisualization(satelliteId) {
+        // Maneuver visualization now handled by UnifiedManeuverVisualizer
+        // This method can be removed or simplified
+        this.updateSatelliteOrbit(satelliteId);
     }
 
 
@@ -334,12 +325,8 @@ export class SatelliteOrbitManager {
 
         if (isComplete) {
             if (params.isManeuverPrediction) {
-                // Handle maneuver predictions
-                this.maneuverOrbitHandler.updateManeuverPredictionVisualization(
-                    params.parentSatelliteId,
-                    params.maneuverNodeId,
-                    points
-                );
+                // Maneuver predictions now handled by UnifiedManeuverVisualizer
+                // This branch can be simplified or removed
             } else {
                 // Cache the complete orbit
                 const satellite = this.physicsEngine.physicsEngine?.satellites?.get(satelliteId);
@@ -361,8 +348,7 @@ export class SatelliteOrbitManager {
                     }
                 }));
 
-                // Process any queued maneuver visualizations
-                this.maneuverOrbitHandler.processQueuedManeuvers(satelliteId, this.physicsEngine.physicsEngine);
+                // Maneuver visualizations now handled by UnifiedManeuverVisualizer
             }
         }
     }
@@ -720,7 +706,6 @@ export class SatelliteOrbitManager {
         this.workerPoolManager?.dispose();
         this.orbitCacheManager?.dispose();
         this.orbitVisualizationManager?.dispose();
-        this.maneuverOrbitHandler?.dispose();
         this.ghostPlanetManager?.dispose();
 
         // Clear update queue

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { DraggableModal } from "../modal/DraggableModal";
 import { Button } from "../button";
@@ -8,11 +8,14 @@ import { formatBodySelection } from '../../../utils/BodySelectionUtils';
 import PropTypes from 'prop-types';
 
 export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect, debugWindows, app3d, onOpenManeuver, availableBodies = [{ name: 'Earth', naifId: 399 }] }) {
-    // Open automatically when first satellite is created
+    const previousSatelliteCount = useRef(0);
+    
+    // Auto-open only when transitioning from 0 to 1 satellite (first satellite created)
     useEffect(() => {
-        if (satellites.length > 0 && !isOpen) {
+        if (previousSatelliteCount.current === 0 && satellites.length === 1 && !isOpen) {
             setIsOpen(true);
         }
+        previousSatelliteCount.current = satellites.length;
     }, [satellites.length, isOpen, setIsOpen]);
 
     const handleFocus = (satellite) => {

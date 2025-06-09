@@ -127,8 +127,83 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     const [multA, setMultA] = useState('1');
     const [multN, setMultN] = useState('1');
 
-    // Maneuver nodes (sorted by time) and selection
-    const nodes = useMemo(() => manager.buildNodeModels(currentSimTime), [manager, currentSimTime]);
+    // Force refresh trigger for maneuver nodes
+    const [maneuverRefreshTrigger, setManeuverRefreshTrigger] = useState(0);
+    
+    // Listen for maneuver events to refresh the node list
+    useEffect(() => {
+        const handleManeuverAdded = (event) => {
+            if (event.detail.satelliteId === satellite.id) {
+                setManeuverRefreshTrigger(prev => prev + 1);
+            }
+        };
+        
+        const handleManeuverRemoved = (event) => {
+            if (event.detail.satelliteId === satellite.id) {
+                setManeuverRefreshTrigger(prev => prev + 1);
+            }
+        };
+        
+        window.addEventListener('maneuverNodeAdded', handleManeuverAdded);
+        window.addEventListener('maneuverNodeRemoved', handleManeuverRemoved);
+        
+        return () => {
+            window.removeEventListener('maneuverNodeAdded', handleManeuverAdded);
+            window.removeEventListener('maneuverNodeRemoved', handleManeuverRemoved);
+        };
+    }, [satellite.id]);
+
+    // Build nodes from physics engine instead of satellite's local array
+    const nodes = useMemo(() => {
+        // Trigger dependency on refresh
+        maneuverRefreshTrigger; // eslint-disable-line no-unused-expressions
+        
+        // Get nodes directly from physics engine
+        const physicsEngine = satellite.app3d?.physicsIntegration?.physicsEngine;
+        const physicsNodes = physicsEngine?.satelliteEngine?.getManeuverNodes?.(satellite.id) || [];
+        
+        // Convert physics nodes to UI node models
+        return physicsNodes
+            .slice()
+            .sort((a, b) => a.executionTime.getTime() - b.executionTime.getTime())
+            .map(n => {
+                const localDV = { x: n.deltaV.prograde, y: n.deltaV.normal, z: n.deltaV.radial };
+                const worldDV = { x: n.deltaV.prograde, y: n.deltaV.normal, z: n.deltaV.radial }; // Simplified
+                
+                // Get orbit data from physics engine if available
+                let orbitData = {
+                    _orbitPeriod: 0,
+                    _currentVelocity: { length: () => 0 },
+                    elements: null
+                };
+                
+                // Check if the physics node already has computed orbital data
+                if (n.orbitData) {
+                    orbitData = n.orbitData;
+                } else {
+                    // For now, use placeholder data - physics engine should compute this
+                    // TODO: Add orbital data computation to physics engine maneuver node creation
+                    orbitData = {
+                        _orbitPeriod: 0,
+                        _currentVelocity: { length: () => 0 },
+                        elements: null
+                    };
+                }
+                
+                return {
+                    node3D: {
+                        ...n,
+                        predictedOrbit: orbitData
+                    },
+                    time: n.executionTime,
+                    localDV,
+                    worldDV,
+                    id: n.id,
+                    // Add orbital elements for display
+                    orbitalElements: orbitData.elements
+                };
+            });
+    }, [satellite, currentSimTime, maneuverRefreshTrigger]);
     const [selectedIndex, setSelectedIndex] = useState(null);
     const [isAdding, setIsAdding] = useState(false);
 
@@ -232,13 +307,8 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         vx,
         vy,
         vz,
-        getHohmannPreviewData,
         currentTime: simulationTime,
-        computeNextPeriapsis,
-        computeNextApoapsis,
-        isAdding,
-        selectedIndex,
-        nodes
+        isAdding
     });
 
     // Now manualDetails should reference first preview node
@@ -414,25 +484,45 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             z: (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
         };
         
+        // Check if deltaV is zero (don't allow adding maneuvers with zero deltaV)
+        const dvMagnitude = Math.sqrt(dvLocal.x * dvLocal.x + dvLocal.y * dvLocal.y + dvLocal.z * dvLocal.z);
+        if (dvMagnitude < 0.001) { // Less than 1 m/s
+            console.warn('[useManeuverWindow] Cannot add maneuver with zero delta-V');
+            return; // Don't add the maneuver
+        }
+        
         // Reset add-mode and selection IMMEDIATELY to stop preview system
         setIsAdding(false);
         setSelectedIndex(null);
         
         // Clear the preview IMMEDIATELY before adding permanent node
-        const previewSystem = satellite?.app3d?.previewSystem || window.app3d?.previewSystem;
-        if (previewSystem?.current?.clearActivePreview) {
-            previewSystem.current.clearActivePreview();
+        const visualizer = satellite?.app3d?.maneuverVisualizer;
+        if (visualizer) {
+            visualizer.clearPreview(satellite.id);
         }
         
         // Replace existing node if editing
         if (selectedIndex != null) {
-            const existing = nodes[selectedIndex].node3D;
-            manager.deleteNode(existing);
+            const existing = nodes[selectedIndex];
+            // Remove via physics engine directly
+            const physicsEngine = satellite.app3d?.physicsIntegration?.physicsEngine;
+            physicsEngine?.satelliteEngine?.removeManeuverNode(satellite.id, existing.id);
         }
         
-        // Add new maneuver node
-        manager.sat.addManeuverNode(execTime, { ...dvLocal });
-    }, [manager, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, selectedIndex, nodes, computeNextPeriapsis, computeNextApoapsis, timeUtils]);
+        // Add new maneuver node via physics engine directly
+        const physicsEngine = satellite.app3d?.physicsIntegration?.physicsEngine;
+        if (physicsEngine?.satelliteEngine) {
+            const maneuverNode = {
+                executionTime: execTime,
+                deltaV: {
+                    prograde: dvLocal.x,
+                    normal: dvLocal.y,
+                    radial: dvLocal.z
+                }
+            };
+            physicsEngine.satelliteEngine.addManeuverNode(satellite.id, maneuverNode);
+        }
+    }, [satellite.id, satellite.app3d, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, selectedIndex, nodes, computeNextPeriapsis, computeNextApoapsis, simulationTime]);
 
     // Delete a maneuver node (by index or selectedIndex)
     const handleDelete = useCallback((idx) => {
@@ -442,13 +532,13 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
         }
         if (indexToDelete != null && nodes[indexToDelete]) {
             const modelToDelete = nodes[indexToDelete];
-            manager.deleteNode(modelToDelete.node3D);
+            // Remove via physics engine directly
+            const physicsEngine = satellite.app3d?.physicsIntegration?.physicsEngine;
+            physicsEngine?.satelliteEngine?.removeManeuverNode(satellite.id, modelToDelete.id);
             setSelectedIndex(null);
             setIsAdding(false);
-            // Trigger nodes rebuild by updating simulation time
-            setCurrentSimTime(prev => new Date(prev.getTime()));
         }
-    }, [manager, selectedIndex, nodes, setSelectedIndex, setIsAdding, setCurrentSimTime]);
+    }, [satellite.id, selectedIndex, nodes, satellite.app3d]);
 
     return {
         isAdding, setIsAdding,

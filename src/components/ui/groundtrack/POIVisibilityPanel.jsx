@@ -1,14 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { POIVisibilityService } from '../../../services/POIVisibilityService';
 import { PassPredictionService } from '../../../services/PassPredictionService';
+import { POIVisibilityService } from '../../../services/POIVisibilityService';
 import { Eye, MapPin, Radio, Satellite, ChevronDown, ChevronRight, Clock, Signal, Calendar } from 'lucide-react';
-import { ScrollArea } from '../scroll-area';
 import { Badge } from '../badge';
 import { Button } from '../button';
 
 export function POIVisibilityPanel({ 
-    poiData, 
+    poiData, // Legacy prop - now handled by usePOIVisibility
     satellites, 
     currentPositions,
     showCoverage,
@@ -19,75 +18,72 @@ export function POIVisibilityPanel({
 }) {
     const [expandedSatellites, setExpandedSatellites] = useState({});
     const [expandedCategories, setExpandedCategories] = useState({});
-    const [selectedView, setSelectedView] = useState('satellite'); // 'satellite' or 'poi'
     
-    // Calculate visibility per satellite
+    // Calculate POI visibility directly using the working logic
     const visibilityBySatellite = useMemo(() => {
-        if (!poiData || currentPositions.length === 0) {
-            return null;
+        if (!poiData || !currentPositions || currentPositions.length === 0) {
+            return {};
         }
-        
-        // Flatten all POIs
-        const allPOIs = [];
-        Object.entries(poiData).forEach(([category, pois]) => {
-            if (Array.isArray(pois)) {
-                pois.forEach(poi => {
-                    if (poi.lat !== undefined && poi.lon !== undefined) {
-                        // Use index to ensure unique keys even for POIs with same coordinates
-                        const poiIndex = allPOIs.length;
-                        allPOIs.push({
-                            ...poi,
-                            category,
-                            id: `${category}_${poiIndex}_${poi.lat}_${poi.lon}`
-                        });
-                    }
-                });
-            }
-        });
-        
-        // Calculate visibility for each satellite
+
         const result = {};
         
-        currentPositions.forEach(pos => {
-            const sat = satellites[pos.id];
-            if (!sat || !planetData) return;
-            
+        for (const pos of currentPositions) {
+            const satellite = satellites?.[pos.id];
+            if (!satellite || !pos.lat || !pos.lon || pos.alt === undefined) continue;
+
             // Calculate coverage radius
-            const planetRadius = planetData.radius;
             const altitude = pos.alt;
+            const planetRadius = planetData?.radius || 6371;
             const centralAngle = Math.acos(planetRadius / (planetRadius + altitude));
             const coverageRadius = centralAngle * (180 / Math.PI);
-            
+
             const satelliteData = {
-                ...pos,
+                lat: pos.lat,
+                lon: pos.lon,
+                alt: altitude,
                 coverageRadius,
-                name: sat.name,
-                color: sat.color
+                name: satellite.name,
+                id: pos.id,
+                color: satellite.color || 0xffffff
             };
-            
-            // Find visible POIs for this satellite
+
+            // Flatten all POIs
+            const allPOIs = [];
+            Object.entries(poiData).forEach(([category, pois]) => {
+                if (Array.isArray(pois)) {
+                    pois.forEach(poi => {
+                        if (poi.lat !== undefined && poi.lon !== undefined) {
+                            allPOIs.push({
+                                ...poi,
+                                category
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Find visible POIs
             const visiblePOIs = POIVisibilityService.getVisiblePOIs(allPOIs, satelliteData);
             
             if (visiblePOIs.length > 0) {
-                // Group by category
-                const grouped = {};
-                visiblePOIs.forEach(poi => {
-                    if (!grouped[poi.category]) {
-                        grouped[poi.category] = [];
-                    }
-                    grouped[poi.category].push(poi);
-                });
-                
                 result[pos.id] = {
                     satellite: satelliteData,
-                    visiblePOIs: grouped,
+                    visiblePOIs: visiblePOIs.reduce((acc, poi) => {
+                        if (!acc[poi.category]) acc[poi.category] = [];
+                        acc[poi.category].push(poi);
+                        return acc;
+                    }, {}),
                     totalCount: visiblePOIs.length
                 };
             }
-        });
-        
+        }
+
         return result;
-    }, [poiData, satellites, currentPositions, planetData]);
+    }, [poiData, currentPositions, satellites, planetData]);
+
+    const totalSatellitesWithVisibility = Object.keys(visibilityBySatellite).length;
+    const isCalculating = false;
+    
     
     // Section component for collapsible sections (same pattern as SatelliteDebugWindow)
     const Section = ({ title, isOpen, onToggle, children }) => {
@@ -144,7 +140,6 @@ export function POIVisibilityPanel({
         missions: '#FFFF00'
     };
     
-    const totalSatellitesWithVisibility = visibilityBySatellite ? Object.keys(visibilityBySatellite).length : 0;
     
     const toggleSatelliteExpanded = (satId) => {
         setExpandedSatellites(prev => ({
@@ -170,7 +165,11 @@ export function POIVisibilityPanel({
         const commsConfig = satData?.commsConfig;
         
         // Calculate slant range (distance from satellite to POI)
-        const planetRadius = planetData?.radius || 6371; // km - only use Earth as fallback
+        const planetRadius = planetData?.radius;
+        if (!planetRadius) {
+            console.warn('No planet radius available for communication calculations');
+            return { quality: 'Unknown', color: '#666666', distance: 'Unknown', elevation: 'Unknown' };
+        }
         const satAlt = satellite.alt;
         const angle = POIVisibilityService.greatCircleDistance(
             poi.lat, poi.lon,
@@ -262,8 +261,9 @@ export function POIVisibilityPanel({
                     <div className="flex items-center gap-1">
                         <Eye className="h-3 w-3" />
                         POI Visibility
+                        {isCalculating && <span className="text-xs text-muted-foreground ml-1">calculating...</span>}
                     </div>
-                    {visibilityBySatellite && (
+                    {totalSatellitesWithVisibility > 0 && (
                         <Badge variant="secondary" className="text-xs">
                             {totalSatellitesWithVisibility} satellites
                         </Badge>
@@ -273,10 +273,10 @@ export function POIVisibilityPanel({
             isOpen={sectionVisibility.poiVisibility}
             onToggle={() => toggleSection('poiVisibility')}
         >
-            {!visibilityBySatellite ? (
+            {!visibilityBySatellite || Object.keys(visibilityBySatellite).length === 0 ? (
                 <div className="text-xs text-muted-foreground py-2">
-                    {!showCoverage ? 'Enable satellite coverage to view POI visibility' : 
-                     (currentPositions.length === 0 ? 'No satellites available' : 'No satellite data available')}
+                    {currentPositions.length === 0 ? 'No satellites available' : 
+                     (isCalculating ? 'Calculating POI visibility...' : 'No POI visibility data')}
                 </div>
             ) : (
                 <div className="space-y-2 pr-3">
@@ -318,7 +318,7 @@ export function POIVisibilityPanel({
                                                             <span className="text-muted-foreground/70">({pois.length})</span>
                                                         </div>
                                                         <div className="ml-4 space-y-0.5">
-                                                            {pois.slice(0, displayLimit).map(poi => {
+                                                            {pois.slice(0, displayLimit).map((poi, idx) => {
                                                                 const duration = getVisibilityDuration(poi, data.satellite);
                                                                 const commCap = getCommCapability(poi, data.satellite, satellites[satId]);
                                                                 
@@ -341,7 +341,7 @@ export function POIVisibilityPanel({
                                                                 
                                                                 return (
                                                                     <div 
-                                                                        key={poi.id} 
+                                                                        key={poi.id || `${satId}_${category}_${idx}`} 
                                                                         className="space-y-0.5"
                                                                     >
                                                                         <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -365,7 +365,7 @@ export function POIVisibilityPanel({
                                                                                 </Badge>
                                                                             </div>
                                                                         </div>
-                                                                        <div className="ml-4 flex items-center justify-between text-xs text-muted-foreground/70">
+                                                                        <div className="ml-4 flex items-center justify-between text-xs text-muted-foreground/70 relative z-50">
                                                                             <div className="flex items-center gap-2">
                                                                                 <span>Range: {commCap.distance}km</span>
                                                                                 <span>Elev: {commCap.elevation}°</span>
@@ -375,7 +375,16 @@ export function POIVisibilityPanel({
                                                                                 variant="ghost"
                                                                                 size="sm"
                                                                                 className="h-5 px-2 text-xs"
-                                                                                onClick={() => onSelectSchedule(poi, data.satellite)}
+                                                                                onMouseDown={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    e.preventDefault();
+                                                                                    // Create satellite object with altitude from position data
+                                                                                    const satelliteWithAlt = {
+                                                                                        ...satellites[satId],
+                                                                                        alt: data.satellite.alt
+                                                                                    };
+                                                                                    onSelectSchedule(poi, satelliteWithAlt);
+                                                                                }}
                                                                             >
                                                                                 <Calendar className="h-3 w-3 mr-1" />
                                                                                 Schedule
@@ -416,7 +425,7 @@ export function POIVisibilityPanel({
                                 No satellites with POI visibility
                             </div>
                         )}
-                    </div>
+                </div>
             )}
         </Section>
     );

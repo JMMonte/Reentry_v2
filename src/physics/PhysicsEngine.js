@@ -6,6 +6,7 @@ import { PhysicsConstants } from './core/PhysicsConstants.js';
 import { SubsystemManager } from './subsystems/SubsystemManager.js';
 import { SatelliteEngine } from './engines/SatelliteEngine.js';
 import { CelestialBodyEngine } from './engines/CelestialBodyEngine.js';
+import * as PhysicsAPI from './PhysicsAPI.js';
 
 
 /**
@@ -30,6 +31,10 @@ export class PhysicsEngine {
 
         // Satellite engine - handles all satellite operations
         this.satelliteEngine = new SatelliteEngine();
+        
+        // Set up references for satellite engine
+        this.satelliteEngine.physicsAPI = { PhysicsAPI };
+        this.satelliteEngine.physicsEngineRef = this;
 
         // Celestial body engine - handles all celestial body operations
         this.celestialBodyEngine = new CelestialBodyEngine();

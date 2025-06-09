@@ -486,10 +486,14 @@ export class SatelliteEngine {
         const nodes = this.maneuverNodes.get(satelliteId);
         const nodeId = normalizedNode.id || `${satelliteId}_${Date.now()}`;
 
+        // Calculate orbital data for the maneuver node
+        const orbitData = this._calculateManeuverOrbitData(satelliteId, normalizedNode);
+
         const nodeWithId = {
             ...normalizedNode,
             id: nodeId,
-            satelliteId: satelliteId
+            satelliteId: satelliteId,
+            orbitData: orbitData
         };
 
         nodes.push(nodeWithId);
@@ -970,5 +974,118 @@ export class SatelliteEngine {
      */
     getIntegrationMethod() {
         return this._integrationMethod;
+    }
+
+    /**
+     * Calculate orbital data for a maneuver node
+     * @private
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} maneuverNode - Maneuver node data
+     * @returns {Object} Orbital data including period, velocity, and elements
+     */
+    _calculateManeuverOrbitData(satelliteId, maneuverNode) {
+        try {
+            const satellite = this.satellites.get(satelliteId);
+            if (!satellite) {
+                return { _orbitPeriod: 0, _currentVelocity: { length: () => 0 }, elements: null };
+            }
+
+            // Use physics API to calculate post-maneuver state
+            const { PhysicsAPI } = this._getPhysicsAPI();
+            if (!PhysicsAPI) {
+                return { _orbitPeriod: 0, _currentVelocity: { length: () => 0 }, elements: null };
+            }
+
+            // Calculate the maneuver result with proper nested node handling
+            // Convert Three.js vectors to arrays for physics API
+            const satPosition = satellite.position.toArray ? satellite.position.toArray() : satellite.position;
+            const satVelocity = satellite.velocity.toArray ? satellite.velocity.toArray() : satellite.velocity;
+
+            const maneuverResult = PhysicsAPI.Orbital.previewManeuver({
+                satellite: {
+                    id: satelliteId,
+                    position: satPosition,
+                    velocity: satVelocity,
+                    centralBodyNaifId: satellite.centralBodyNaifId,
+                    mass: satellite.mass,
+                    crossSectionalArea: satellite.crossSectionalArea,
+                    dragCoefficient: satellite.dragCoefficient
+                },
+                deltaV: maneuverNode.deltaV,
+                executionTime: maneuverNode.executionTime,
+                physicsEngine: this._getPhysicsEngineRef(),
+                isPreview: true // Include existing nodes
+            });
+
+            if (maneuverResult?.error || !maneuverResult?.maneuverPosition || !maneuverResult?.postManeuverVelocity) {
+                console.warn('[SatelliteEngine] maneuverResult missing data:', maneuverResult);
+                return { _orbitPeriod: 0, _currentVelocity: { length: () => 0 }, elements: null };
+            }
+
+            const position = maneuverResult.maneuverPosition;
+            const velocity = maneuverResult.postManeuverVelocity;
+            
+            // Get central body data directly from physics engine
+            const physicsEngine = this._getPhysicsEngineRef();
+            const centralBodyData = physicsEngine?.bodies?.[satellite.centralBodyNaifId];
+
+            if (!centralBodyData || !position || !velocity) {
+                console.warn(`[SatelliteEngine] Missing data for orbital calculation: centralBody=${!!centralBodyData}, position=${!!position}, velocity=${!!velocity}`);
+                return { _orbitPeriod: 0, _currentVelocity: { length: () => 0 }, elements: null };
+            }
+
+            console.log(`[SatelliteEngine] Input data:`, {
+                position: position,
+                velocity: velocity,
+                centralBodyData: centralBodyData,
+                centralBodyGM: centralBodyData.GM,
+                centralBodyMass: centralBodyData.mass,
+                centralBodyRadius: centralBodyData.radius
+            });
+
+            // Convert arrays to Vector3 format for orbital calculations
+            const posVec3 = new THREE.Vector3(position[0], position[1], position[2]);
+            const velVec3 = new THREE.Vector3(velocity[0], velocity[1], velocity[2]);
+
+            // Calculate orbital elements using physics engine data
+            const elements = PhysicsAPI.Orbital.calculateElements(
+                posVec3,
+                velVec3,
+                centralBodyData
+            );
+            
+            console.log(`[SatelliteEngine] Calculated orbital elements:`, elements);
+
+            // Calculate velocity magnitude
+            const velocityMag = Math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2);
+
+            return {
+                _orbitPeriod: elements.period || 0,
+                _currentVelocity: { length: () => velocityMag },
+                elements: elements
+            };
+
+        } catch (error) {
+            console.warn('[SatelliteEngine] Error calculating maneuver orbit data:', error);
+            return { _orbitPeriod: 0, _currentVelocity: { length: () => 0 }, elements: null };
+        }
+    }
+
+    /**
+     * Get reference to PhysicsAPI (to be implemented by parent)
+     * @private
+     */
+    _getPhysicsAPI() {
+        // This should be set by the parent PhysicsEngine
+        return this.physicsAPI || null;
+    }
+
+    /**
+     * Get reference to PhysicsEngine (to be implemented by parent)
+     * @private
+     */
+    _getPhysicsEngineRef() {
+        // This should be set by the parent PhysicsEngine
+        return this.physicsEngineRef || null;
     }
 }

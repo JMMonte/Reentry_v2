@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { ApsisVisualizer } from '../planet/ApsisVisualizer.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
 import { GroundtrackPath } from '../../services/GroundtrackPath.js';
-import { ManeuverVisualizationManager } from './ManeuverNodeVisualizer.js';
+// ManeuverVisualizationManager removed - now using UnifiedManeuverVisualizer
 import { createManeuverNodeDTO } from '../../types/DataTransferObjects.js';
 
 /**
@@ -64,10 +64,8 @@ export class Satellite {
         
         this.maneuverNodes = [];
         
-        // Use the same parent for maneuver nodes as we do for apsis visualizer
-        const orbitGroup = this.planetConfig?.getOrbitGroup?.() || this.planetConfig?.orbitGroup;
-        const maneuverParent = orbitGroup || scene;
-        this.maneuverNodeVisualizer = new ManeuverVisualizationManager(maneuverParent, this);
+        // Maneuver visualization now handled by UnifiedManeuverVisualizer
+        // No need to create a separate visualizer per satellite
         
         // Listen for maneuver events from physics engine
         this._setupManeuverEventListeners();
@@ -255,8 +253,11 @@ export class Satellite {
         // Remove apsis visualizer
         this.apsisVisualizer?.dispose();
         
-        // Clean up maneuver visualizations
-        this.maneuverNodeVisualizer?.dispose();
+        // Maneuver visualizations cleaned up by UnifiedManeuverVisualizer
+        const visualizer = this.app3d?.maneuverVisualizer;
+        if (visualizer) {
+            visualizer.clearSatellite(this.id);
+        }
         
         // Remove event listeners
         this._removeManeuverEventListeners();
@@ -299,12 +300,18 @@ export class Satellite {
     _setupManeuverEventListeners() {
         this._onManeuverAdded = (event) => {
             if (event.detail.satelliteId !== this.id) return;
-            this._updateManeuverVisualization(event.detail.maneuverNode);
+            // Use unified visualizer for permanent nodes and handle cascade recalculation
+            if (this.app3d?.maneuverVisualizer) {
+                this.app3d.maneuverVisualizer.handleManeuverNodeAdded(this, event.detail.maneuverNode);
+            }
         };
         
         this._onManeuverRemoved = (event) => {
             if (event.detail.satelliteId !== this.id) return;
-            this.maneuverNodeVisualizer.removeNodeVisualization(event.detail.nodeId);
+            // Use unified visualizer for removal and handle cascade recalculation
+            if (this.app3d?.maneuverVisualizer) {
+                this.app3d.maneuverVisualizer.handleManeuverNodeRemoved(this, event.detail.nodeId);
+            }
         };
         
         this._onManeuverExecuted = (event) => {
@@ -332,24 +339,7 @@ export class Satellite {
     /**
      * Update visualization for a maneuver node
      */
-    _updateManeuverVisualization(maneuverNode) {
-        
-        if (!this.position || !this.velocity) {
-            console.warn(`[Satellite] No position or velocity for satellite ${this.id}`);
-            return;
-        }
-        
-        // Request maneuver node visualization from orbit manager
-        // This will calculate position at maneuver time and post-maneuver orbit
-        if (this.app3d?.satelliteOrbitManager) {
-            this.app3d.satelliteOrbitManager.requestManeuverNodeVisualization(
-                this.id,
-                maneuverNode
-            );
-        } else {
-            console.warn('[Satellite] Orbit manager not available for maneuver node visualization');
-        }
-    }
+    // _updateManeuverVisualization removed - now handled by UnifiedManeuverVisualizer
     
     /**
      * Add a maneuver node (delegates to physics engine)
