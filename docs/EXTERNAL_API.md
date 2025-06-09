@@ -161,29 +161,151 @@ Update communication configuration for a satellite.
 
 ## GROUND TRACKING
 
-### `getGroundTrack(satelliteId, duration)`
+### `getGroundTrack(satelliteId, options)`
 
-Get ground track projection for a satellite.
+Get ground track projection for a satellite with full orbit propagation.
 
 - **Parameters:**
   - `satelliteId` (string|number) - Satellite ID
-  - `duration` (number, optional) - Duration in seconds (default: one orbit)
-- **Returns:** `{ success: true, groundTrack: [track_points] }`
-- **Track Point:** Contains time, latitude, longitude, altitude
+  - `options` (object, optional):
+    - `duration` (number) - Duration in seconds (default: orbital period)
+    - `numPoints` (number) - Number of points to calculate (default: 100)
+    - `includeCanvas` (boolean) - Include canvas coordinates (default: false)
+    - `canvasWidth` (number) - Canvas width in pixels (default: 1200)
+    - `canvasHeight` (number) - Canvas height in pixels (default: 600)
+- **Returns:** 
+  ```js
+  {
+    success: true,
+    groundTrack: [{
+      time: "2024-01-01T12:00:00.000Z",
+      latitude: 0.0,
+      longitude: -75.2,
+      altitude: 400.5,
+      x: 300,  // if includeCanvas: true
+      y: 200   // if includeCanvas: true
+    }, ...],
+    centralBody: "Earth",
+    centralBodyNaifId: 399,
+    duration: 5400,
+    numPoints: 100
+  }
+  ```
 
-### `getCurrentPositions(planetNaifId)`
+### `getMultipleGroundTracks(satelliteIds, options)`
+
+Get ground tracks for multiple satellites simultaneously.
+
+- **Parameters:**
+  - `satelliteIds` (Array<string|number>) - Array of satellite IDs
+  - `options` (object, optional) - Same options as `getGroundTrack`
+- **Returns:**
+  ```js
+  {
+    success: true,
+    groundTracks: [{
+      satelliteId: "sat1",
+      groundTrack: [...],
+      centralBody: "Earth",
+      // ... other fields
+    }, ...],
+    failures: [{
+      satelliteId: "invalid_sat",
+      error: "Satellite not found"
+    }]
+  }
+  ```
+
+### `getGroundTrackCoverage(satelliteId, options)`
+
+Calculate ground track with coverage analysis including footprint radius.
+
+- **Parameters:**
+  - `satelliteId` (string|number) - Satellite ID
+  - `options` (object, optional):
+    - `duration` (number) - Duration in seconds
+    - `numPoints` (number) - Number of points
+    - `minElevation` (number) - Minimum elevation angle in degrees
+- **Returns:**
+  ```js
+  {
+    success: true,
+    groundTrack: [{
+      // ... standard ground track fields
+      coverageRadius: 15.2,        // degrees
+      coverageRadiusKm: 1689.5     // kilometers
+    }, ...],
+    statistics: {
+      averageCoverageRadiusKm: 1700,
+      approximateCoverageArea: 9079202,  // km²
+      bodyTotalArea: 510072000,          // km²
+      instantCoveragePercentage: 1.78,
+      satelliteId: "sat1",
+      centralBody: "Earth",
+      duration: 5400
+    }
+  }
+  ```
+
+### `getGroundStationVisibility(satelliteId, groundStation, options)`
+
+Calculate visibility windows between a satellite and ground station.
+
+- **Parameters:**
+  - `satelliteId` (string|number) - Satellite ID
+  - `groundStation` (object):
+    - `latitude` (number, required) - Latitude in degrees
+    - `longitude` (number, required) - Longitude in degrees
+    - `elevation` (number, optional) - Elevation in meters
+    - `name` (string, optional) - Station name
+  - `options` (object, optional):
+    - `duration` (number) - Analysis duration in seconds
+    - `minElevation` (number) - Minimum elevation angle (default: 5°)
+    - `numPoints` (number) - Resolution (default: 200)
+- **Returns:**
+  ```js
+  {
+    success: true,
+    groundStation: {
+      name: "DSN Madrid",
+      latitude: 40.4,
+      longitude: -4.25,
+      elevation: 834
+    },
+    satelliteId: "sat1",
+    centralBody: "Earth",
+    visibilityWindows: [{
+      startTime: "2024-01-01T12:00:00Z",
+      endTime: "2024-01-01T12:08:00Z",
+      duration: 480,  // seconds
+      maxElevation: 45.2,
+      points: [...]   // track points during visibility
+    }, ...],
+    totalWindows: 3,
+    totalVisibilityTime: 1440,  // seconds
+    analysisOptions: {
+      duration: 7200,
+      minElevation: 5,
+      numPoints: 200
+    }
+  }
+  ```
+
+### `getCurrentPositions(planetNaifId)` *(deprecated)*
 
 Get current surface positions of all satellites for a planet.
 
 - **Parameters:** `planetNaifId` (number, optional) - Planet NAIF ID (default: 399=Earth)
 - **Returns:** `{ success: true, positions: [position_objects] }`
+- **Note:** Consider using `getGroundTrack` with `numPoints: 1` for single position
 
-### `calculateCoverage(satelliteId)`
+### `calculateCoverage(satelliteId)` *(deprecated)*
 
 Calculate satellite coverage footprint.
 
 - **Parameters:** `satelliteId` (string|number) - Satellite ID
 - **Returns:** `{ success: true, coverage: coverage_details }`
+- **Note:** Use `getGroundTrackCoverage` for more comprehensive analysis
 
 ---
 
@@ -288,8 +410,38 @@ window.api.createSatelliteFromOrbitalElements({
 const satInfo = window.api.getSatellite("satellite_id");
 const commsStatus = window.api.getSatelliteComms("satellite_id");
 
-// Get ground track
-const groundTrack = window.api.getGroundTrack("satellite_id", 5400); // 1.5 hours
+// Get ground track with canvas coordinates
+const groundTrack = await window.api.getGroundTrack("satellite_id", {
+  duration: 5400,     // 1.5 hours
+  numPoints: 100,
+  includeCanvas: true,
+  canvasWidth: 1200,
+  canvasHeight: 600
+});
+
+// Get ground track with coverage analysis
+const coverage = await window.api.getGroundTrackCoverage("satellite_id", {
+  duration: 86400,    // 24 hours
+  numPoints: 200
+});
+console.log(`Coverage: ${coverage.statistics.instantCoveragePercentage}%`);
+
+// Check ground station visibility
+const visibility = await window.api.getGroundStationVisibility("satellite_id", {
+  name: "DSN Goldstone",
+  latitude: 35.4,
+  longitude: -116.9
+}, {
+  duration: 86400,    // 24 hours
+  minElevation: 10    // 10 degrees above horizon
+});
+console.log(`${visibility.totalWindows} passes, total ${visibility.totalVisibilityTime}s`);
+
+// Get multiple satellite ground tracks
+const multiTracks = await window.api.getMultipleGroundTracks(
+  ["sat1", "sat2", "sat3"],
+  { duration: 3600, numPoints: 50 }
+);
 
 // Add maneuver node
 window.api.addManeuverNode("satellite_id", {

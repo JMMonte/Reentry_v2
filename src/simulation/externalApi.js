@@ -695,8 +695,9 @@ export function setupExternalApi(app3d) {
         /**
          * Get ground track projection for a satellite
          * @param {string|number} id - Satellite ID
+         * @param {Object} options - { duration?: number, numPoints?: number, includeCanvas?: boolean, canvasWidth?: number, canvasHeight?: number }
          */
-        getGroundTrack: (id) => {
+        getGroundTrack: async (id, options = {}) => {
             try {
                 const satResult = window.api.getSatellite(id);
                 if (!satResult.success) return satResult;
@@ -706,21 +707,204 @@ export function setupExternalApi(app3d) {
                     return { success: false, error: 'Satellite position data not available' };
                 }
                 
-                // For now, return the current position as a point
-                // TODO: Implement actual ground track propagation
-                const groundTrack = [{
-                    time: new Date().toISOString(),
-                    latitude: satellite.latitude || 0,
-                    longitude: satellite.longitude || 0,
-                    altitude: satellite.surfaceAltitude || satellite.radialAltitude || 0
-                }];
+                // Default options
+                const {
+                    duration = satellite.orbitalElements?.period || 5400, // Use orbital period or default 90 min
+                    numPoints = 100,
+                    includeCanvas = false,
+                    canvasWidth = 1200,
+                    canvasHeight = 600
+                } = options;
+                
+                // Import required modules dynamically
+                const { UnifiedSatellitePropagator } = await import('../physics/core/UnifiedSatellitePropagator.js');
+                const { GroundTrackService } = await import('../services/GroundTrackService.js');
+                
+                // Get central body data
+                const bodies = getAllAvailableBodies();
+                const centralBody = bodies.find(b => b.naifId === satellite.centralBodyNaifId);
+                if (!centralBody) {
+                    return { success: false, error: `Central body ${satellite.centralBodyNaifId} not found` };
+                }
+                
+                // Prepare satellite state for propagation
+                const satState = {
+                    position: [satellite.position.x, satellite.position.y, satellite.position.z],
+                    velocity: [satellite.velocity.x, satellite.velocity.y, satellite.velocity.z],
+                    centralBodyNaifId: satellite.centralBodyNaifId,
+                    mass: satellite.mass || 1000,
+                    crossSectionalArea: satellite.crossSectionalArea || 10,
+                    dragCoefficient: satellite.dragCoefficient || 2.2
+                };
+                
+                // Propagate orbit
+                const propagatedPoints = UnifiedSatellitePropagator.propagateOrbit({
+                    satellite: satState,
+                    bodies: { [centralBody.naifId]: centralBody },
+                    duration,
+                    timeStep: duration / numPoints,
+                    includeJ2: true,
+                    includeDrag: false, // Typically disabled for ground track visualization
+                    includeThirdBody: false
+                });
+                
+                // Create ground track service instance
+                const groundTrackService = new GroundTrackService();
+                const currentTime = app3d?.timeUtils?.getSimulatedTime() || Date.now();
+                
+                // Convert propagated points to ground track format
+                const groundTrack = [];
+                for (const point of propagatedPoints) {
+                    const pointTime = currentTime + point.time * 1000; // Convert seconds to ms
+                    
+                    // Transform ECI to surface coordinates
+                    const surface = await groundTrackService.transformECIToSurface(
+                        point.position,
+                        satellite.centralBodyNaifId,
+                        pointTime,
+                        centralBody
+                    );
+                    
+                    const trackPoint = {
+                        time: new Date(pointTime).toISOString(),
+                        latitude: surface.lat,
+                        longitude: surface.lon,
+                        altitude: surface.alt
+                    };
+                    
+                    // Add canvas coordinates if requested
+                    if (includeCanvas) {
+                        const canvas = groundTrackService.projectToCanvas(
+                            surface.lat, 
+                            surface.lon, 
+                            canvasWidth, 
+                            canvasHeight
+                        );
+                        trackPoint.x = canvas.x;
+                        trackPoint.y = canvas.y;
+                    }
+                    
+                    groundTrack.push(trackPoint);
+                }
                 
                 return { 
                     success: true, 
                     groundTrack,
                     centralBody: satellite.centralBody,
                     centralBodyNaifId: satellite.centralBodyNaifId,
-                    note: 'Ground track propagation is simplified - shows current position only'
+                    duration,
+                    numPoints: groundTrack.length
+                };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Get ground tracks for multiple satellites
+         * @param {Array<string|number>} satelliteIds - Array of satellite IDs
+         * @param {Object} options - Same options as getGroundTrack
+         */
+        getMultipleGroundTracks: async (satelliteIds, options = {}) => {
+            try {
+                if (!Array.isArray(satelliteIds)) {
+                    return { success: false, error: 'satelliteIds must be an array' };
+                }
+                
+                const results = await Promise.all(
+                    satelliteIds.map(id => window.api.getGroundTrack(id, options))
+                );
+                
+                const successful = results.filter(r => r.success);
+                const failed = results.filter(r => !r.success);
+                
+                return {
+                    success: true,
+                    groundTracks: successful.map((r, i) => ({
+                        satelliteId: satelliteIds[results.indexOf(r)],
+                        ...r
+                    })),
+                    failures: failed.map((r, i) => ({
+                        satelliteId: satelliteIds[results.indexOf(r)],
+                        error: r.error
+                    }))
+                };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Get ground track coverage analysis for a satellite
+         * @param {string|number} id - Satellite ID
+         * @param {Object} options - { duration, numPoints, minElevation }
+         */
+        getGroundTrackCoverage: async (id, options = {}) => {
+            try {
+                const satResult = window.api.getSatellite(id);
+                if (!satResult.success) return satResult;
+                
+                const satellite = satResult.satellite;
+                if (!satellite.position || !satellite.centralBodyNaifId) {
+                    return { success: false, error: 'Satellite position data not available' };
+                }
+                
+                const {
+                    duration = satellite.orbitalElements?.period || 5400,
+                    numPoints = 100,
+                    minElevation = 5 // degrees
+                } = options;
+                
+                // Get ground track first
+                const trackResult = await window.api.getGroundTrack(id, { duration, numPoints });
+                if (!trackResult.success) return trackResult;
+                
+                // Import required modules
+                const { GroundTrackService } = await import('../services/GroundTrackService.js');
+                const groundTrackService = new GroundTrackService();
+                
+                // Get central body data
+                const bodies = getAllAvailableBodies();
+                const centralBody = bodies.find(b => b.naifId === satellite.centralBodyNaifId);
+                if (!centralBody) {
+                    return { success: false, error: `Central body ${satellite.centralBodyNaifId} not found` };
+                }
+                
+                // Calculate coverage for each point
+                const coverageData = await Promise.all(
+                    trackResult.groundTrack.map(async (point) => {
+                        const radius = await groundTrackService.calculateCoverageRadius(
+                            { lat: point.latitude, lon: point.longitude, alt: point.altitude },
+                            satellite.centralBodyNaifId,
+                            centralBody
+                        );
+                        
+                        return {
+                            ...point,
+                            coverageRadius: radius,
+                            coverageRadiusKm: radius * (Math.PI / 180) * centralBody.radius
+                        };
+                    })
+                );
+                
+                // Calculate total coverage area (simplified)
+                const avgCoverageRadiusKm = coverageData.reduce((sum, p) => sum + p.coverageRadiusKm, 0) / coverageData.length;
+                const coverageArea = Math.PI * Math.pow(avgCoverageRadiusKm, 2);
+                const bodyArea = 4 * Math.PI * Math.pow(centralBody.radius, 2);
+                const coveragePercentage = (coverageArea / bodyArea) * 100;
+                
+                return {
+                    success: true,
+                    groundTrack: coverageData,
+                    statistics: {
+                        averageCoverageRadiusKm: avgCoverageRadiusKm,
+                        approximateCoverageArea: coverageArea,
+                        bodyTotalArea: bodyArea,
+                        instantCoveragePercentage: coveragePercentage,
+                        satelliteId: id,
+                        centralBody: satellite.centralBody,
+                        duration
+                    }
                 };
             } catch (error) {
                 return { success: false, error: error.message };
@@ -782,6 +966,124 @@ export function setupExternalApi(app3d) {
                     soiRadiusKm: body.soiRadius,
                     hasAtmosphere: body.hasAtmosphere,
                     atmosphereHeight: body.atmosphereHeight || null
+                };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Get ground station visibility windows along a ground track
+         * @param {string|number} satelliteId - Satellite ID
+         * @param {Object} groundStation - { latitude, longitude, elevation?, name? }
+         * @param {Object} options - { duration?, minElevation?, numPoints? }
+         */
+        getGroundStationVisibility: async (satelliteId, groundStation, options = {}) => {
+            try {
+                if (!groundStation || groundStation.latitude === undefined || groundStation.longitude === undefined) {
+                    return { success: false, error: 'Ground station must have latitude and longitude' };
+                }
+                
+                const {
+                    duration,
+                    minElevation = 5, // degrees above horizon
+                    numPoints = 200 // Higher resolution for visibility detection
+                } = options;
+                
+                // Get ground track with higher resolution
+                const trackResult = await window.api.getGroundTrack(satelliteId, { duration, numPoints });
+                if (!trackResult.success) return trackResult;
+                
+                // Get central body data
+                const bodies = getAllAvailableBodies();
+                const centralBody = bodies.find(b => b.naifId === trackResult.centralBodyNaifId);
+                if (!centralBody) {
+                    return { success: false, error: `Central body ${trackResult.centralBodyNaifId} not found` };
+                }
+                
+                const visibilityWindows = [];
+                let currentWindow = null;
+                
+                // Check visibility for each point
+                for (const point of trackResult.groundTrack) {
+                    // Calculate great circle distance between satellite and ground station
+                    const satLat = point.latitude * Math.PI / 180;
+                    const satLon = point.longitude * Math.PI / 180;
+                    const gsLat = groundStation.latitude * Math.PI / 180;
+                    const gsLon = groundStation.longitude * Math.PI / 180;
+                    
+                    // Haversine formula
+                    const dLat = gsLat - satLat;
+                    const dLon = gsLon - satLon;
+                    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                              Math.cos(satLat) * Math.cos(gsLat) *
+                              Math.sin(dLon/2) * Math.sin(dLon/2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                    const distanceKm = centralBody.radius * c;
+                    
+                    // Calculate elevation angle (simplified)
+                    const horizonDistance = Math.sqrt(Math.pow(centralBody.radius + point.altitude, 2) - 
+                                                    Math.pow(centralBody.radius, 2));
+                    const isVisible = distanceKm < horizonDistance;
+                    
+                    // Approximate elevation angle
+                    let elevationAngle = 0;
+                    if (isVisible) {
+                        const cosAngle = (Math.pow(distanceKm, 2) + Math.pow(centralBody.radius, 2) - 
+                                        Math.pow(centralBody.radius + point.altitude, 2)) / 
+                                        (2 * distanceKm * centralBody.radius);
+                        elevationAngle = 90 - Math.acos(Math.max(-1, Math.min(1, cosAngle))) * 180 / Math.PI;
+                    }
+                    
+                    const meetsElevation = elevationAngle >= minElevation;
+                    
+                    if (meetsElevation && !currentWindow) {
+                        // Start new visibility window
+                        currentWindow = {
+                            startTime: point.time,
+                            startLat: point.latitude,
+                            startLon: point.longitude,
+                            maxElevation: elevationAngle,
+                            points: [point]
+                        };
+                    } else if (meetsElevation && currentWindow) {
+                        // Continue current window
+                        currentWindow.maxElevation = Math.max(currentWindow.maxElevation, elevationAngle);
+                        currentWindow.points.push(point);
+                    } else if (!meetsElevation && currentWindow) {
+                        // End current window
+                        currentWindow.endTime = trackResult.groundTrack[trackResult.groundTrack.indexOf(point) - 1]?.time || point.time;
+                        currentWindow.duration = (new Date(currentWindow.endTime) - new Date(currentWindow.startTime)) / 1000; // seconds
+                        visibilityWindows.push(currentWindow);
+                        currentWindow = null;
+                    }
+                }
+                
+                // Close any open window
+                if (currentWindow) {
+                    currentWindow.endTime = trackResult.groundTrack[trackResult.groundTrack.length - 1].time;
+                    currentWindow.duration = (new Date(currentWindow.endTime) - new Date(currentWindow.startTime)) / 1000;
+                    visibilityWindows.push(currentWindow);
+                }
+                
+                return {
+                    success: true,
+                    groundStation: {
+                        name: groundStation.name || 'Ground Station',
+                        latitude: groundStation.latitude,
+                        longitude: groundStation.longitude,
+                        elevation: groundStation.elevation || 0
+                    },
+                    satelliteId,
+                    centralBody: trackResult.centralBody,
+                    visibilityWindows,
+                    totalWindows: visibilityWindows.length,
+                    totalVisibilityTime: visibilityWindows.reduce((sum, w) => sum + w.duration, 0),
+                    analysisOptions: {
+                        duration: trackResult.duration,
+                        minElevation,
+                        numPoints: trackResult.numPoints
+                    }
                 };
             } catch (error) {
                 return { success: false, error: error.message };
