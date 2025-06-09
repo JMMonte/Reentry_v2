@@ -23,7 +23,7 @@ export function POIVisibilityPanel({
     
     // Calculate visibility per satellite
     const visibilityBySatellite = useMemo(() => {
-        if (!showCoverage || !poiData || currentPositions.length === 0) {
+        if (!poiData || currentPositions.length === 0) {
             return null;
         }
         
@@ -87,11 +87,44 @@ export function POIVisibilityPanel({
         });
         
         return result;
-    }, [poiData, satellites, currentPositions, showCoverage, planetData]);
+    }, [poiData, satellites, currentPositions, planetData]);
     
-    if (!showCoverage || !visibilityBySatellite) {
-        return null;
-    }
+    // Section component for collapsible sections (same pattern as SatelliteDebugWindow)
+    const Section = ({ title, isOpen, onToggle, children }) => {
+        return (
+            <div className="border-b border-border/50 last:border-0">
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggle();
+                    }}
+                    className="w-full flex items-center justify-between py-2 px-1 hover:bg-accent/5 transition-colors cursor-pointer text-left"
+                >
+                    {typeof title === 'string' ? (
+                        <span className="text-xs font-semibold text-foreground/90">{title}</span>
+                    ) : (
+                        <div className="text-xs font-semibold text-foreground/90 flex-1">{title}</div>
+                    )}
+                    <span className="text-xs text-muted-foreground">{isOpen ? '−' : '+'}</span>
+                </button>
+                {isOpen && (
+                    <div className="pb-2 px-1 space-y-1">
+                        {children}
+                    </div>
+                )}
+            </div>
+        );
+    };
+    
+    // Section visibility state
+    const [sectionVisibility, setSectionVisibility] = useState({
+        poiVisibility: true
+    });
+    
+    const toggleSection = (section) => {
+        setSectionVisibility(prev => ({ ...prev, [section]: !prev[section] }));
+    };
     
     const categoryIcons = {
         cities: MapPin,
@@ -111,7 +144,7 @@ export function POIVisibilityPanel({
         missions: '#FFFF00'
     };
     
-    const totalSatellitesWithVisibility = Object.keys(visibilityBySatellite).length;
+    const totalSatellitesWithVisibility = visibilityBySatellite ? Object.keys(visibilityBySatellite).length : 0;
     
     const toggleSatelliteExpanded = (satId) => {
         setExpandedSatellites(prev => ({
@@ -223,164 +256,169 @@ export function POIVisibilityPanel({
     };
     
     return (
-        <>
-            <div className="mt-2 border rounded p-2 bg-background/50">
-                <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-semibold flex items-center gap-1">
+        <Section 
+            title={
+                <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-1">
                         <Eye className="h-3 w-3" />
                         POI Visibility
-                    </h4>
-                    <div className="flex items-center gap-2">
-                        {/* Browse All button removed for cleaner UX */}
+                    </div>
+                    {visibilityBySatellite && (
                         <Badge variant="secondary" className="text-xs">
                             {totalSatellitesWithVisibility} satellites
                         </Badge>
-                    </div>
-                </div>
-            
-            <ScrollArea className="h-48">
-                <div className="space-y-2 pr-3">
-                    {Object.entries(visibilityBySatellite).map(([satId, data]) => {
-                        const satColor = `#${data.satellite.color.toString(16).padStart(6, '0')}`;
-                        const isExpanded = expandedSatellites[satId];
-                        
-                        return (
-                            <div key={satId} className="border rounded p-1.5">
-                                <button
-                                    onClick={() => toggleSatelliteExpanded(satId)}
-                                    className="w-full flex items-center gap-1 text-xs font-medium hover:bg-accent/50 rounded p-0.5"
-                                >
-                                    {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                    <Satellite 
-                                        className="h-3 w-3" 
-                                        style={{ color: satColor }} 
-                                    />
-                                    <span className="flex-1 text-left">{data.satellite.name}</span>
-                                    <Badge variant="outline" className="text-xs">
-                                        {data.totalCount} POIs
-                                    </Badge>
-                                </button>
-                                
-                                {isExpanded && (
-                                    <div className="mt-1 ml-5 space-y-1">
-                                        {Object.entries(data.visiblePOIs).map(([category, pois]) => {
-                                            const Icon = categoryIcons[category] || MapPin;
-                                            const color = categoryColors[category];
-                                            const categoryKey = `${satId}_${category}`;
-                                            const isCategoryExpanded = expandedCategories[categoryKey];
-                                            const displayLimit = isCategoryExpanded ? pois.length : 3;
-                                            
-                                            return (
-                                                <div key={category} className="space-y-0.5">
-                                                    <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                                                        <Icon className="h-2.5 w-2.5" style={{ color }} />
-                                                        <span className="capitalize">{category}</span>
-                                                        <span className="text-muted-foreground/70">({pois.length})</span>
-                                                    </div>
-                                                    <div className="ml-4 space-y-0.5">
-                                                        {pois.slice(0, displayLimit).map(poi => {
-                                                            const duration = getVisibilityDuration(poi, data.satellite);
-                                                            const commCap = getCommCapability(poi, data.satellite, satellites[satId]);
-                                                            
-                                                            // Calculate next pass if we have track data
-                                                            let nextPassInfo = null;
-                                                            if (tracks && tracks[satId]) {
-                                                                const passes = PassPredictionService.findPassesForPOI(
-                                                                    poi, 
-                                                                    tracks[satId], 
-                                                                    data.satellite.coverageRadius
-                                                                );
-                                                                const nextPass = PassPredictionService.findNextPass(passes, currentTime || Date.now());
-                                                                if (nextPass) {
-                                                                    const timeUntil = nextPass.timeToAOS;
-                                                                    const hours = Math.floor(timeUntil / 3600000);
-                                                                    const minutes = Math.floor((timeUntil % 3600000) / 60000);
-                                                                    nextPassInfo = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-                                                                }
-                                                            }
-                                                            
-                                                            return (
-                                                                <div 
-                                                                    key={poi.id} 
-                                                                    className="space-y-0.5"
-                                                                >
-                                                                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                                                        <span className="truncate flex-1" title={poi.name || `${poi.lat.toFixed(3)}°, ${poi.lon.toFixed(3)}°`}>
-                                                                            {poi.name || `${poi.lat.toFixed(1)}°, ${poi.lon.toFixed(1)}°`}
-                                                                        </span>
-                                                                        <div className="flex items-center gap-2 text-xs">
-                                                                            <div className="flex items-center gap-1">
-                                                                                <Clock className="h-2.5 w-2.5" />
-                                                                                <span>~{duration}m</span>
-                                                                            </div>
-                                                                            <Badge 
-                                                                                variant="outline" 
-                                                                                className="text-xs h-4 px-1"
-                                                                                style={{ 
-                                                                                    borderColor: commCap.color,
-                                                                                    color: commCap.color 
-                                                                                }}
-                                                                            >
-                                                                                {commCap.quality}
-                                                                            </Badge>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="ml-4 flex items-center justify-between text-xs text-muted-foreground/70">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span>Range: {commCap.distance}km</span>
-                                                                            <span>Elev: {commCap.elevation}°</span>
-                                                                            <span>Loss: {commCap.pathLoss}dB</span>
-                                                                        </div>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-5 px-2 text-xs"
-                                                                            onClick={() => onSelectSchedule(poi, data.satellite)}
-                                                                        >
-                                                                            <Calendar className="h-3 w-3 mr-1" />
-                                                                            Schedule
-                                                                        </Button>
-                                                                    </div>
-                                                                    {nextPassInfo && (
-                                                                        <div className="ml-4 text-xs text-muted-foreground/50">
-                                                                            Next pass in {nextPassInfo}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                        {pois.length > 3 && (
-                                                            <button
-                                                                onClick={() => toggleCategoryExpanded(satId, category)}
-                                                                className="text-xs text-muted-foreground/70 hover:text-muted-foreground flex items-center gap-1"
-                                                            >
-                                                                {isCategoryExpanded ? (
-                                                                    <>Show less</>
-                                                                ) : (
-                                                                    <>+{pois.length - 3} more</>
-                                                                )}
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                    
-                    {Object.keys(visibilityBySatellite).length === 0 && (
-                        <div className="text-xs text-muted-foreground text-center py-4">
-                            No satellites with POI visibility
-                        </div>
                     )}
                 </div>
-            </ScrollArea>
-        </div>
-        
-        </>
+            }
+            isOpen={sectionVisibility.poiVisibility}
+            onToggle={() => toggleSection('poiVisibility')}
+        >
+            {!visibilityBySatellite ? (
+                <div className="text-xs text-muted-foreground py-2">
+                    {!showCoverage ? 'Enable satellite coverage to view POI visibility' : 
+                     (currentPositions.length === 0 ? 'No satellites available' : 'No satellite data available')}
+                </div>
+            ) : (
+                <div className="space-y-2 pr-3">
+                        {Object.entries(visibilityBySatellite).map(([satId, data]) => {
+                            const satColor = `#${data.satellite.color.toString(16).padStart(6, '0')}`;
+                            const isExpanded = !!expandedSatellites[satId];
+                            
+                            return (
+                                <div key={satId} className="border rounded p-1.5">
+                                    <div
+                                        onMouseDown={() => toggleSatelliteExpanded(satId)}
+                                        className="w-full flex items-center gap-1 text-xs font-medium hover:bg-accent/50 rounded p-0.5 cursor-pointer"
+                                    >
+                                        {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                        <Satellite 
+                                            className="h-3 w-3" 
+                                            style={{ color: satColor }} 
+                                        />
+                                        <span className="flex-1 text-left">{data.satellite.name}</span>
+                                        <Badge variant="outline" className="text-xs">
+                                            {data.totalCount} POIs
+                                        </Badge>
+                                    </div>
+                                    
+                                    {isExpanded && (
+                                        <div className="mt-1 ml-5 space-y-1">
+                                            {Object.entries(data.visiblePOIs).map(([category, pois]) => {
+                                                const Icon = categoryIcons[category] || MapPin;
+                                                const color = categoryColors[category];
+                                                const categoryKey = `${satId}_${category}`;
+                                                const isCategoryExpanded = expandedCategories[categoryKey];
+                                                const displayLimit = isCategoryExpanded ? pois.length : 3;
+                                                
+                                                return (
+                                                    <div key={category} className="space-y-0.5">
+                                                        <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                                                            <Icon className="h-2.5 w-2.5" style={{ color }} />
+                                                            <span className="capitalize">{category}</span>
+                                                            <span className="text-muted-foreground/70">({pois.length})</span>
+                                                        </div>
+                                                        <div className="ml-4 space-y-0.5">
+                                                            {pois.slice(0, displayLimit).map(poi => {
+                                                                const duration = getVisibilityDuration(poi, data.satellite);
+                                                                const commCap = getCommCapability(poi, data.satellite, satellites[satId]);
+                                                                
+                                                                // Calculate next pass if we have track data
+                                                                let nextPassInfo = null;
+                                                                if (tracks && tracks[satId]) {
+                                                                    const passes = PassPredictionService.findPassesForPOI(
+                                                                        poi, 
+                                                                        tracks[satId], 
+                                                                        data.satellite.coverageRadius
+                                                                    );
+                                                                    const nextPass = PassPredictionService.findNextPass(passes, currentTime || Date.now());
+                                                                    if (nextPass) {
+                                                                        const timeUntil = nextPass.timeToAOS;
+                                                                        const hours = Math.floor(timeUntil / 3600000);
+                                                                        const minutes = Math.floor((timeUntil % 3600000) / 60000);
+                                                                        nextPassInfo = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                                                                    }
+                                                                }
+                                                                
+                                                                return (
+                                                                    <div 
+                                                                        key={poi.id} 
+                                                                        className="space-y-0.5"
+                                                                    >
+                                                                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                                                            <span className="truncate flex-1" title={poi.name || `${poi.lat.toFixed(3)}°, ${poi.lon.toFixed(3)}°`}>
+                                                                                {poi.name || `${poi.lat.toFixed(1)}°, ${poi.lon.toFixed(1)}°`}
+                                                                            </span>
+                                                                            <div className="flex items-center gap-2 text-xs">
+                                                                                <div className="flex items-center gap-1">
+                                                                                    <Clock className="h-2.5 w-2.5" />
+                                                                                    <span>~{duration}m</span>
+                                                                                </div>
+                                                                                <Badge 
+                                                                                    variant="outline" 
+                                                                                    className="text-xs h-4 px-1"
+                                                                                    style={{ 
+                                                                                        borderColor: commCap.color,
+                                                                                        color: commCap.color 
+                                                                                    }}
+                                                                                >
+                                                                                    {commCap.quality}
+                                                                                </Badge>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="ml-4 flex items-center justify-between text-xs text-muted-foreground/70">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span>Range: {commCap.distance}km</span>
+                                                                                <span>Elev: {commCap.elevation}°</span>
+                                                                                <span>Loss: {commCap.pathLoss}dB</span>
+                                                                            </div>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-5 px-2 text-xs"
+                                                                                onClick={() => onSelectSchedule(poi, data.satellite)}
+                                                                            >
+                                                                                <Calendar className="h-3 w-3 mr-1" />
+                                                                                Schedule
+                                                                            </Button>
+                                                                        </div>
+                                                                        {nextPassInfo && (
+                                                                            <div className="ml-4 text-xs text-muted-foreground/50">
+                                                                                Next pass in {nextPassInfo}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {pois.length > 3 && (
+                                                                <button
+                                                                    onClick={() => toggleCategoryExpanded(satId, category)}
+                                                                    className="text-xs text-muted-foreground/70 hover:text-muted-foreground flex items-center gap-1"
+                                                                >
+                                                                    {isCategoryExpanded ? (
+                                                                        <>Show less</>
+                                                                    ) : (
+                                                                        <>+{pois.length - 3} more</>
+                                                                    )}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                        
+                        {Object.keys(visibilityBySatellite).length === 0 && (
+                            <div className="text-xs text-muted-foreground text-center py-4">
+                                No satellites with POI visibility
+                            </div>
+                        )}
+                    </div>
+            )}
+        </Section>
     );
 }
 

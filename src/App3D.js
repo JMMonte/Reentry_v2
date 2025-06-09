@@ -314,8 +314,9 @@ class App3D extends EventTarget {
                 this.satelliteOrbitManager.initialize();
                 
                 // Initialize maneuver preview system
-                const { getManeuverPreviewSystem } = await import('./managers/ManeuverPreviewSystem.js');
-                this.maneuverPreviewSystem = getManeuverPreviewSystem(this);
+                // DISABLED: Using SimpleManeuverPreview instead
+                // const { getManeuverPreviewSystem } = await import('./managers/ManeuverPreviewSystem.js');
+                // this.maneuverPreviewSystem = getManeuverPreviewSystem(this);
                 
                 // Set up satellite communication system integration
                 this._setupSatelliteCommsIntegration();

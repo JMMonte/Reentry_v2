@@ -11,8 +11,7 @@
  * Similar to ApsisVisualizer pattern but supports multiple permanent previews.
  */
 import * as THREE from 'three';
-import { UnifiedSatellitePropagator } from '../physics/core/UnifiedSatellitePropagator.js';
-import { Constants } from '../physics/PhysicsAPI.js';
+import { Orbital } from '../physics/PhysicsAPI.js';
 
 export class SimpleManeuverPreview {
     /** Shared sphere geometry for maneuver nodes */
@@ -147,7 +146,7 @@ export class SimpleManeuverPreview {
     }
 
     /**
-     * Create preview orbit visualization
+     * Create preview orbit visualization using centralized physics
      * @private
      */
     async _createPreviewOrbit(satellite, deltaV, executionTime, parent) {
@@ -158,210 +157,37 @@ export class SimpleManeuverPreview {
                 return;
             }
 
-            // Get central body (no default - must match actual satellite)
-            const centralBodyId = satellite.centralBodyNaifId;
-            if (!centralBodyId) {
-                console.error('[SimpleManeuverPreview] No central body ID found for satellite');
-                return;
-            }
-            const centralBody = physicsEngine.bodies?.[centralBodyId];
-            if (!centralBody) {
-                console.warn('[SimpleManeuverPreview] No central body found for ID:', centralBodyId);
-                return;
-            }
-
-            // Calculate position at maneuver time
-            const currentTime = physicsEngine.getSimulatedTime();
-            const timeToManeuver = (executionTime.getTime() - currentTime) / 1000; // Convert to seconds
-            
-
-            let stateAtManeuver;
-            
-            // Get existing maneuver nodes from physics engine
-            const existingNodes = physicsEngine.satelliteEngine?.getManeuverNodes?.(satellite.id) || [];
-            
-            // Sort nodes by execution time
-            const sortedNodes = [...existingNodes].sort((a, b) => {
-                const timeA = a.executionTime instanceof Date ? a.executionTime.getTime() : new Date(a.executionTime).getTime();
-                const timeB = b.executionTime instanceof Date ? b.executionTime.getTime() : new Date(b.executionTime).getTime();
-                return timeA - timeB;
+            // Use PhysicsAPI.previewManeuver for consistent physics calculations
+            const previewResult = Orbital.previewManeuver({
+                satellite,
+                deltaV,
+                executionTime,
+                physicsEngine,
+                isPreview: true // This is a temporary preview, include existing nodes
             });
             
-            // Find nodes that execute before our preview time
-            const nodesBeforePreview = sortedNodes.filter(node => {
-                const nodeTime = node.executionTime instanceof Date ? node.executionTime : new Date(node.executionTime);
-                return nodeTime.getTime() < executionTime.getTime();
-            });
+            if (previewResult.error) {
+                console.error('[SimpleManeuverPreview] Physics API error:', previewResult.error);
+                return;
+            }
             
-            // Get satellite state safely
-            let satPosition = satellite.position?.toArray ? satellite.position.toArray() : [0, 0, 0];
-            let satVelocity = satellite.velocity?.toArray ? satellite.velocity.toArray() : [0, 0, 0];
-            
-            // If we have nodes before this preview, we need to propagate through them
-            if (nodesBeforePreview.length > 0) {
-                
-                // Start from current satellite state
-                let currentPos = [...satPosition];
-                let currentVel = [...satVelocity];
-                let lastTime = currentTime;
-                
-                // Propagate through each maneuver
-                for (const node of nodesBeforePreview) {
-                    const nodeTime = node.executionTime instanceof Date ? node.executionTime : new Date(node.executionTime);
-                    const timeDiff = (nodeTime.getTime() - lastTime) / 1000; // seconds
-                    
-                    if (timeDiff > 0) {
-                        // Propagate to this maneuver
-                        const propagation = UnifiedSatellitePropagator.propagateOrbit({
-                            satellite: {
-                                position: currentPos,
-                                velocity: currentVel,
-                                centralBodyNaifId: centralBodyId,
-                                mass: satellite.mass,
-                                crossSectionalArea: satellite.crossSectionalArea,
-                                dragCoefficient: satellite.dragCoefficient
-                            },
-                            bodies: physicsEngine.bodies,
-                            duration: timeDiff,
-                            timeStep: Math.min(60, Math.max(1, timeDiff / 100)),
-                            includeJ2: true,
-                            includeDrag: true,
-                            includeThirdBody: false
-                        });
-                        
-                        if (propagation && propagation.length > 0) {
-                            const stateAtNode = propagation[propagation.length - 1];
-                            currentPos = stateAtNode.position;
-                            currentVel = stateAtNode.velocity;
-                            
-                            // Apply the maneuver
-                            const appliedVel = this._applyDeltaV(currentVel, node.deltaV, currentPos);
-                            currentVel = appliedVel;
-                        }
-                    }
-                    
-                    lastTime = nodeTime.getTime();
-                }
-                
-                // Update starting position/velocity to post-maneuver state
-                satPosition = currentPos;
-                satVelocity = currentVel;
-                
-                // Now propagate from last maneuver to preview time
-                const finalTimeDiff = (executionTime.getTime() - lastTime) / 1000;
-                
-                if (finalTimeDiff < 1) {
-                    stateAtManeuver = {
-                        position: satPosition,
-                        velocity: satVelocity,
-                        centralBodyId: centralBodyId
-                    };
-                } else {
-                    const finalProp = UnifiedSatellitePropagator.propagateOrbit({
-                        satellite: {
-                            position: satPosition,
-                            velocity: satVelocity,
-                            centralBodyNaifId: centralBodyId,
-                            mass: satellite.mass,
-                            crossSectionalArea: satellite.crossSectionalArea,
-                            dragCoefficient: satellite.dragCoefficient
-                        },
-                        bodies: physicsEngine.bodies,
-                        duration: finalTimeDiff,
-                        timeStep: Math.min(60, Math.max(1, finalTimeDiff / 100)),
-                        includeJ2: true,
-                        includeDrag: true,
-                        includeThirdBody: false
-                    });
-                    
-                    if (finalProp && finalProp.length > 0) {
-                        stateAtManeuver = finalProp[finalProp.length - 1];
-                    } else {
-                        stateAtManeuver = {
-                            position: satPosition,
-                            velocity: satVelocity,
-                            centralBodyId: centralBodyId
-                        };
-                    }
-                }
-            } else {
-                // No existing maneuvers, proceed as before
-                const timeToManeuver = (executionTime.getTime() - currentTime) / 1000;
-                
-                // If maneuver is immediate or very close, use current state
-                if (Math.abs(timeToManeuver) < 1) {
-                    stateAtManeuver = {
-                        position: satPosition,
-                        velocity: satVelocity,
-                        centralBodyId: centralBodyId
-                    };
-                } else {
-                    // Propagate to maneuver time
-                    try {
-                        const orbitPoints = UnifiedSatellitePropagator.propagateOrbit({
-                            satellite: {
-                                position: satPosition,
-                                velocity: satVelocity,
-                                centralBodyNaifId: centralBodyId,
-                                mass: satellite.mass,
-                                crossSectionalArea: satellite.crossSectionalArea,
-                                dragCoefficient: satellite.dragCoefficient
-                            },
-                            bodies: physicsEngine.bodies,
-                            duration: timeToManeuver,
-                            timeStep: Math.min(60, Math.max(1, timeToManeuver / 100)), // Adaptive time step
-                            includeJ2: true,
-                            includeDrag: true,
-                            includeThirdBody: false
-                        });
-
-                        if (!orbitPoints || orbitPoints.length === 0) {
-                            console.error('[SimpleManeuverPreview] Failed to propagate to maneuver time');
-                            return;
-                        }
-
-                        // Get the state at maneuver time (last point in the array)
-                        stateAtManeuver = orbitPoints[orbitPoints.length - 1];
-                    } catch (propError) {
-                        console.error('[SimpleManeuverPreview] Error during propagation:', propError);
-                        return;
-                    }
-                }
+            if (!previewResult.maneuverPosition || !previewResult.orbitPoints) {
+                console.warn('[SimpleManeuverPreview] No preview data returned from PhysicsAPI');
+                return;
             }
             
             // Update maneuver node position to the actual maneuver location
             if (this.activePreview && this.activePreview.nodeMesh) {
                 this.activePreview.nodeMesh.position.set(
-                    stateAtManeuver.position[0],
-                    stateAtManeuver.position[1],
-                    stateAtManeuver.position[2]
+                    previewResult.maneuverPosition[0],
+                    previewResult.maneuverPosition[1],
+                    previewResult.maneuverPosition[2]
                 );
             }
 
-            // Apply deltaV at maneuver position
-            const maneuverVelocity = this._applyDeltaV(stateAtManeuver.velocity, deltaV, stateAtManeuver.position);
-            
-            // Find any maneuvers that come after this preview
-            const nodesAfterPreview = sortedNodes.filter(node => {
-                const nodeTime = node.executionTime instanceof Date ? node.executionTime : new Date(node.executionTime);
-                return nodeTime.getTime() > executionTime.getTime();
-            });
-            
-            // Create post-burn orbit points
-            const postBurnOrbitPoints = await this._propagatePostBurnOrbit(
-                stateAtManeuver.position,
-                maneuverVelocity,
-                centralBody,
-                satellite.centralBodyNaifId,
-                physicsEngine,
-                executionTime,
-                nodesAfterPreview,
-                satellite
-            );
-
-            if (postBurnOrbitPoints && postBurnOrbitPoints.length > 2) {
+            if (previewResult.orbitPoints && previewResult.orbitPoints.length > 2) {
                 // Create orbit line visualization
-                const orbitObjects = this._createOrbitLine(postBurnOrbitPoints, parent);
+                const orbitObjects = this._createOrbitLine(previewResult.orbitPoints, parent);
                 
                 // Store orbit references in the active preview
                 if (this.activePreview && orbitObjects) {
@@ -376,105 +202,6 @@ export class SimpleManeuverPreview {
         }
     }
 
-    /**
-     * Apply deltaV in local orbital frame
-     * @private
-     */
-    _applyDeltaV(velocity, deltaV, position) {
-        // Calculate local orbital frame (prograde, normal, radial)
-        const r = new THREE.Vector3(...position);
-        const v = new THREE.Vector3(...velocity);
-        
-        // Prograde: along velocity vector
-        const prograde = v.clone().normalize();
-        
-        // Normal: perpendicular to orbital plane
-        const normal = r.clone().cross(v).normalize();
-        
-        // Radial: from central body to satellite
-        const radial = r.clone().normalize();
-        
-        // Apply deltaV components
-        const deltaVVector = new THREE.Vector3()
-            .addScaledVector(prograde, deltaV.prograde)
-            .addScaledVector(normal, deltaV.normal)
-            .addScaledVector(radial, deltaV.radial);
-        
-        // Return new velocity
-        return [
-            velocity[0] + deltaVVector.x,
-            velocity[1] + deltaVVector.y,
-            velocity[2] + deltaVVector.z
-        ];
-    }
-
-    /**
-     * Propagate post-burn orbit for visualization
-     * @private
-     */
-    async _propagatePostBurnOrbit(position, velocity, centralBody, centralBodyId, physicsEngine, startTime, futureNodes = [], satellite) {
-        try {
-            // First, determine the orbital characteristics to adapt preview length
-            const r = Math.sqrt(position[0]**2 + position[1]**2 + position[2]**2);
-            const v = Math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2);
-            const mu = centralBody.GM || (Constants.PHYSICS.G * centralBody.mass);
-            
-            // Calculate specific orbital energy to determine orbit type
-            const energy = (v * v) / 2 - mu / r;
-            const isHyperbolic = energy >= 0;
-            
-            // Calculate semi-major axis
-            const a = -mu / (2 * energy);
-            
-            // Estimate orbital period for elliptical orbits
-            let duration, timeStep;
-            if (!isHyperbolic && a > 0) {
-                // Elliptical orbit - show at least one full orbit
-                const period = 2 * Math.PI * Math.sqrt(a * a * a / mu);
-                duration = Math.min(period * 1.5, 86400); // Show 1.5 orbits or max 24 hours
-                timeStep = Math.max(period / 200, 30); // 200 points per orbit, min 30 seconds
-                
-            } else {
-                // Hyperbolic or parabolic - show escape trajectory
-                duration = 3600 * 4; // 4 hours for escape trajectories
-                timeStep = 60; // 1 minute steps
-            }
-            
-            // If we have future nodes, limit duration to the next node
-            if (futureNodes.length > 0) {
-                const nextNode = futureNodes[0];
-                const nextNodeTime = nextNode.executionTime instanceof Date ? nextNode.executionTime : new Date(nextNode.executionTime);
-                const timeToNextNode = (nextNodeTime.getTime() - startTime.getTime()) / 1000; // seconds
-                
-                if (timeToNextNode > 0 && timeToNextNode < duration) {
-                    duration = timeToNextNode;
-                }
-            }
-            
-            // Use UnifiedSatellitePropagator with correct params format
-            const orbitPoints = UnifiedSatellitePropagator.propagateOrbit({
-                satellite: {
-                    position: position,
-                    velocity: velocity,
-                    centralBodyNaifId: centralBodyId,
-                    mass: satellite.mass,
-                    crossSectionalArea: satellite.crossSectionalArea,
-                    dragCoefficient: satellite.dragCoefficient
-                },
-                bodies: physicsEngine.bodies,
-                duration: duration,
-                timeStep: timeStep,
-                includeJ2: true,
-                includeDrag: false, // No drag for preview clarity
-                includeThirdBody: false
-            });
-            
-            return orbitPoints || [];
-        } catch (error) {
-            console.error('[SimpleManeuverPreview] Error propagating post-burn orbit:', error);
-            return [];
-        }
-    }
 
     /**
      * Create orbit line visualization

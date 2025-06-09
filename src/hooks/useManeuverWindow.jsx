@@ -414,22 +414,24 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
             z: (parseFloat(vz) || 0) / 1000  // Convert m/s to km/s
         };
         
+        // Reset add-mode and selection IMMEDIATELY to stop preview system
+        setIsAdding(false);
+        setSelectedIndex(null);
+        
+        // Clear the preview IMMEDIATELY before adding permanent node
+        const previewSystem = satellite?.app3d?.previewSystem || window.app3d?.previewSystem;
+        if (previewSystem?.current?.clearActivePreview) {
+            previewSystem.current.clearActivePreview();
+        }
+        
         // Replace existing node if editing
         if (selectedIndex != null) {
             const existing = nodes[selectedIndex].node3D;
             manager.deleteNode(existing);
         }
+        
         // Add new maneuver node
         manager.sat.addManeuverNode(execTime, { ...dvLocal });
-        
-        // Clear the preview after adding the actual maneuver node
-        const previewSystem = satellite?.app3d?.previewSystem || window.app3d?.previewSystem;
-        if (previewSystem?.current?.clearActivePreview) {
-            previewSystem.current.clearActivePreview();
-        }
-        // Reset selection and add-mode
-        setSelectedIndex(null);
-        setIsAdding(false);
     }, [manager, timeMode, offsetSec, hours, minutes, seconds, milliseconds, vx, vy, vz, selectedIndex, nodes, computeNextPeriapsis, computeNextApoapsis, timeUtils]);
 
     // Delete a maneuver node (by index or selectedIndex)

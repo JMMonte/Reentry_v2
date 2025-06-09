@@ -47,9 +47,9 @@ export function usePreviewNodes({
             }
         }
         
-        if (!previewSystemRef.current || !satellite || maneuverMode !== 'manual') {
-            // Only clear active preview if not in manual mode and we're adding
-            if (previewSystemRef.current && maneuverMode !== 'manual' && isAdding) {
+        if (!previewSystemRef.current || !satellite || maneuverMode !== 'manual' || !isAdding) {
+            // Only clear active preview if not in manual mode or not adding
+            if (previewSystemRef.current && (maneuverMode !== 'manual' || !isAdding)) {
                 previewSystemRef.current.clearActivePreview();
             }
             return;

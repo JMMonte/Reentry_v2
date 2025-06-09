@@ -40,153 +40,22 @@ export class ManeuverOrbitHandler {
             return false;
         }
         
-        // Get the orbit data to use for this maneuver node
-        // For nested maneuver nodes, we need to use the post-maneuver orbit from the previous node
-        let orbitData = null;
-        let baseOrbitId = satelliteId; // Default to original satellite orbit
-        
-        // Check if there are previous maneuver nodes for this satellite
-        const allManeuverNodes = physicsEngine?.maneuverNodes?.get(satelliteId) || [];
-        if (allManeuverNodes.length > 0) {
-            // Sort by execution time to find the correct sequence
-            const sortedNodes = [...allManeuverNodes].sort((a, b) => 
-                a.executionTime.getTime() - b.executionTime.getTime()
-            );
-            
-            // Find the current maneuver node in the sorted list
-            const currentNodeIndex = sortedNodes.findIndex(node => node.id === maneuverNode.id);
-            
-            // If there's a previous maneuver node, use its post-maneuver orbit
-            if (currentNodeIndex > 0) {
-                const previousNode = sortedNodes[currentNodeIndex - 1];
-                const previousManeuverOrbitId = `${satelliteId}_maneuver_${previousNode.id}`;
-                
-                // Try to get the cached orbit from the previous maneuver
-                orbitData = this.orbitCacheManager.getCachedOrbit(previousManeuverOrbitId);
-                if (orbitData) {
-                    baseOrbitId = previousManeuverOrbitId;
-                    console.log(`[ManeuverOrbitHandler] Using orbit from previous maneuver ${previousNode.id} for node ${maneuverNode.id}`);
-                } else {
-                    // Cache not available yet - request immediate calculation and queue this maneuver
-                    console.log(`[ManeuverOrbitHandler] Previous maneuver orbit not cached, queuing current maneuver for later processing`);
-                    this._requestPreviousManeuverCalculation(satelliteId, previousNode, maneuverNode, physicsEngine);
-                    return false; // Indicate that orbit calculation is needed first
-                }
-            }
-        }
-        
-        // If we didn't get orbit data from a previous maneuver, use the original satellite orbit
-        if (!orbitData) {
-            orbitData = this.orbitCacheManager.getCachedOrbit(satelliteId);
-        }
-        
-        if (!orbitData || !orbitData.points || orbitData.points.length === 0) {
-            console.warn(`[ManeuverOrbitHandler] No orbit data available for satellite ${satelliteId} (base orbit: ${baseOrbitId})`);
-            // Queue maneuver visualization for after orbit is calculated
-            if (!this.maneuverQueue.has(satelliteId)) {
-                this.maneuverQueue.set(satelliteId, []);
-            }
-            this.maneuverQueue.get(satelliteId).push(maneuverNode);
-            
-            // Request orbit calculation if needed
-            if (this.app.satelliteOrbitManager) {
-                console.log(`[ManeuverOrbitHandler] Requesting orbit calculation for ${satelliteId}`);
-                this.app.satelliteOrbitManager.updateSatelliteOrbit(satelliteId);
-            }
-            
-            return false; // Indicate that orbit calculation is needed first
-        }
-        
-        // Find the point in the orbit closest to maneuver execution time
-        const currentTime = physicsEngine.simulationTime || new Date();
-        const maneuverTime = maneuverNode.executionTime;
-        
-        // Get the calculation time of the orbit data to compute correct time delta
-        const orbitCalculationTime = orbitData.calculationTime ? new Date(orbitData.calculationTime) : currentTime;
-        
-        // Calculate time delta based on when the orbit was calculated
-        let timeDelta;
-        if (baseOrbitId === satelliteId) {
-            // Using original satellite orbit - time is relative to when orbit was calculated
-            timeDelta = (maneuverTime.getTime() - orbitCalculationTime.getTime()) / 1000; // seconds
-        } else {
-            // Using previous maneuver's orbit - time is relative to that maneuver's execution time
-            const allManeuverNodes = physicsEngine?.maneuverNodes?.get(satelliteId) || [];
-            const sortedNodes = [...allManeuverNodes].sort((a, b) => 
-                a.executionTime.getTime() - b.executionTime.getTime()
-            );
-            const currentNodeIndex = sortedNodes.findIndex(node => node.id === maneuverNode.id);
-            const previousNode = sortedNodes[currentNodeIndex - 1];
-            
-            // Time delta from the previous maneuver's execution time
-            timeDelta = (maneuverTime.getTime() - previousNode.executionTime.getTime()) / 1000; // seconds
-        }
-        
-        
-        // Find the orbit point at or near the maneuver time
-        let nodePoint = null;
-        let nodeIndex = -1;
-        
-        for (let i = 0; i < orbitData.points.length; i++) {
-            const point = orbitData.points[i];
-            if (point.time >= timeDelta) {
-                nodePoint = point;
-                nodeIndex = i;
-                break;
-            }
-        }
-        
-        if (!nodePoint) {
-            console.warn(`[ManeuverOrbitHandler] Maneuver time ${timeDelta}s is beyond orbit prediction range`);
-            nodePoint = orbitData.points[orbitData.points.length - 1]; // Use last point
-            nodeIndex = orbitData.points.length - 1;
-        }
-        
-        // Calculate world delta-V at the maneuver point
-        const position = new THREE.Vector3(...nodePoint.position);
-        const velocity = new THREE.Vector3(...(nodePoint.velocity || satellite.velocity.toArray()));
-        
-        const localDeltaV = new THREE.Vector3(
-            maneuverNode.deltaV.prograde,
-            maneuverNode.deltaV.normal,
-            maneuverNode.deltaV.radial
-        );
-        
-        const worldDeltaV = Utils.vector.localToWorldDeltaV(localDeltaV, position, velocity);
-        
-        // Calculate post-maneuver velocity for proper reference frame
-        const postManeuverVelocity = velocity.clone().add(worldDeltaV);
-        
-        // Convert position from absolute SSB coordinates to planet-relative coordinates
-        // (same transformation we use for apsis visualization)
-        const centralBodyId = nodePoint.centralBodyId || satellite.centralBodyNaifId;
-        const centralBody = physicsEngine?.bodies?.[centralBodyId];
-        const centralBodyPosition = centralBody?.position?.toArray?.() || [0, 0, 0];
-        const planetRelativePosition = [
-            nodePoint.position[0] - centralBodyPosition[0],
-            nodePoint.position[1] - centralBodyPosition[1],
-            nodePoint.position[2] - centralBodyPosition[2]
-        ];
-        
-        // Create visualization data with correct reference frame
+        // Simplified approach - let PhysicsAPI handle all the nested maneuver logic
+        // Just create basic visualization data for the maneuver node
         const visualData = {
             nodeId: maneuverNode.id,
-            position: planetRelativePosition,
-            deltaVDirection: worldDeltaV.clone().normalize().toArray(),
-            deltaVMagnitude: maneuverNode.deltaMagnitude,
+            position: satellite.position?.toArray?.() || [0, 0, 0], // Temporary position, will be updated by orbit calculation
+            deltaVDirection: [1, 0, 0], // Temporary direction, will be updated
+            deltaVMagnitude: maneuverNode.deltaMagnitude || 0,
             color: satellite.color || 0xffffff,
             scale: 1,
             showPredictedOrbit: true,
             predictedOrbitPoints: [],
-            timeIndex: nodeIndex,
+            timeIndex: 0,
             referenceFrame: {
-                centralBodyId: centralBodyId,
-                position: position.toArray(),
-                velocity: postManeuverVelocity.toArray(), // Use POST-maneuver velocity for reference frame
-                // Store both pre and post velocities for debugging/analysis
-                preManeuverVelocity: velocity.toArray(),
-                deltaV: worldDeltaV.toArray(),
-                orbitContext: baseOrbitId // Track which orbit this node is based on
+                centralBodyId: satellite.centralBodyNaifId,
+                position: satellite.position?.toArray?.() || [0, 0, 0],
+                velocity: satellite.velocity?.toArray?.() || [0, 0, 0]
             }
         };
         
@@ -202,81 +71,45 @@ export class ManeuverOrbitHandler {
             console.warn(`[ManeuverOrbitHandler] Could not find satellite visualizer for ${satelliteId}`);
         }
         
-        // Request post-maneuver orbit propagation
-        this._requestPostManeuverOrbit(satelliteId, nodePoint, worldDeltaV, maneuverNode, satellite);
+        // Request post-maneuver orbit propagation using centralized physics
+        this._requestPostManeuverOrbit(satelliteId, maneuverNode, satellite, physicsEngine);
         
         return true;
     }
     
     /**
-     * Request orbit propagation after a maneuver
+     * Request orbit propagation after a maneuver using centralized physics
      */
-    _requestPostManeuverOrbit(satelliteId, maneuverPoint, worldDeltaV, maneuverNode, satellite) {
-        // Apply delta-V to velocity
-        const preManeuverVel = new THREE.Vector3(...maneuverPoint.velocity);
-        const postManeuverVelocity = preManeuverVel.clone().add(worldDeltaV);
-        
-        // Start a new propagation job for post-maneuver orbit
-        const centralBody = this.app.physicsIntegration?.physicsEngine?.bodies[maneuverPoint.centralBodyId];
-        if (!centralBody) {
-            console.error(`[ManeuverOrbitHandler] Central body ${maneuverPoint.centralBodyId} not found`);
-            return;
-        }
-        
-        // CRITICAL: Convert from SSB coordinates to planet-relative coordinates
-        // The maneuverPoint.position is in SSB frame, but orbit propagator needs planet-relative
-        const centralBodyPosition = centralBody?.position?.toArray?.() || [0, 0, 0];
-        const planetRelativePosition = [
-            maneuverPoint.position[0] - centralBodyPosition[0],
-            maneuverPoint.position[1] - centralBodyPosition[1],
-            maneuverPoint.position[2] - centralBodyPosition[2]
-        ];
-        
-        // Use per-satellite simulation properties if available, otherwise fall back to global settings
-        const satelliteProps = satellite.orbitSimProperties || {};
-        const orbitPeriods = satelliteProps.periods || this.app.displaySettingsManager?.getSetting('orbitPredictionInterval') || 1;
-        const pointsPerPeriod = satelliteProps.pointsPerPeriod || this.app.displaySettingsManager?.getSetting('orbitPointsPerPeriod') || 180;
-        
-        // Calculate actual orbital period for the post-maneuver orbit
-        const centralBodyGM = centralBody?.GM;
-        if (!centralBodyGM) {
-            console.error('[ManeuverOrbitHandler] No GM value found for central body');
-            return;
-        }
-        const position = new THREE.Vector3(...planetRelativePosition); // Use planet-relative position
-        const orbitalPeriod = Orbital.calculateOrbitalPeriod(position, postManeuverVelocity, centralBodyGM);
-        
-        // Calculate duration based on actual orbital period
-        // For non-elliptical orbits (period = 0), fall back to 1 day per "period"
-        const duration = orbitalPeriod > 0 ? 
-            orbitPeriods * orbitalPeriod : 
-            orbitPeriods * 86400;
-        const timeStep = duration / (pointsPerPeriod * orbitPeriods);
-        
-        // Create a unique ID for this maneuver prediction
-        const predictionId = `${satelliteId}_maneuver_${maneuverNode.id}`;
-        
-        // Start propagation for post-maneuver orbit
-        const success = this.workerPoolManager.startPropagationJob({
-            satelliteId: predictionId,
-            satellite: {
-                position: planetRelativePosition, // Use planet-relative position for propagation
-                velocity: postManeuverVelocity.toArray(),
-                centralBodyNaifId: maneuverPoint.centralBodyId,
-                mass: satellite.mass || 1000,
-                crossSectionalArea: satellite.crossSectionalArea || 10,
-                dragCoefficient: satellite.dragCoefficient || 2.2
-            },
-            duration,
-            timeStep,
-            hash: `maneuver_${maneuverNode.id}`,
-            isManeuverPrediction: true,
-            parentSatelliteId: satelliteId,
-            maneuverNodeId: maneuverNode.id
-        }, this._handleManeuverWorkerMessage.bind(this));
-        
-        if (!success) {
-            console.warn(`[ManeuverOrbitHandler] No worker available for maneuver prediction ${predictionId}`);
+    _requestPostManeuverOrbit(satelliteId, maneuverNode, satellite, physicsEngine) {
+        try {
+            // Use PhysicsAPI.previewManeuver for consistent physics calculations
+            const previewResult = Orbital.previewManeuver({
+                satellite,
+                deltaV: maneuverNode.deltaV, // Already in the correct format { prograde, normal, radial }
+                executionTime: maneuverNode.executionTime,
+                physicsEngine,
+                isPreview: false // This is a permanent node, don't include existing nodes
+            });
+            
+            if (previewResult.error) {
+                console.error(`[ManeuverOrbitHandler] Physics API error for ${maneuverNode.id}:`, previewResult.error);
+                return;
+            }
+            
+            if (!previewResult.orbitPoints || previewResult.orbitPoints.length === 0) {
+                console.warn(`[ManeuverOrbitHandler] No orbit points returned for ${maneuverNode.id}`);
+                return;
+            }
+            
+            // Send the predicted orbit to the maneuver node visualizer
+            this.updateManeuverPredictionVisualization(
+                satelliteId,
+                maneuverNode.id,
+                previewResult.orbitPoints
+            );
+            
+        } catch (error) {
+            console.error(`[ManeuverOrbitHandler] Error requesting post-maneuver orbit for ${maneuverNode.id}:`, error);
         }
     }
 
@@ -430,15 +263,11 @@ export class ManeuverOrbitHandler {
 
     /**
      * Process queued maneuver visualizations
+     * DISABLED - PhysicsAPI now handles nested maneuvers internally
      */
     processQueuedManeuvers(satelliteId, physicsEngine) {
-        const queuedManeuvers = this.maneuverQueue.get(satelliteId);
-        if (queuedManeuvers && queuedManeuvers.length > 0) {
-            queuedManeuvers.forEach(maneuverNode => {
-                this.requestManeuverNodeVisualization(satelliteId, maneuverNode, physicsEngine);
-            });
-            this.maneuverQueue.delete(satelliteId);
-        }
+        // No-op: PhysicsAPI.previewManeuver handles nested maneuvers internally
+        return;
     }
 
     /**
@@ -450,24 +279,11 @@ export class ManeuverOrbitHandler {
 
     /**
      * Request calculation of a previous maneuver's orbit to enable chaining
-     * This delegates to existing systems rather than reimplementing physics
+     * DISABLED - PhysicsAPI now handles nested maneuvers internally
      */
     _requestPreviousManeuverCalculation(satelliteId, previousNode, currentManeuverNode, physicsEngine) {
-        // Queue the current maneuver for processing after the previous one completes
-        if (!this.maneuverQueue.has(satelliteId)) {
-            this.maneuverQueue.set(satelliteId, []);
-        }
-        
-        // Add current maneuver to queue
-        this.maneuverQueue.get(satelliteId).push(currentManeuverNode);
-        
-        // Check if the previous maneuver visualization is already in progress
-        // If not, trigger its calculation by re-requesting it
-        console.log(`[ManeuverOrbitHandler] Requesting calculation for previous maneuver ${previousNode.id}`);
-        
-        // Use the existing system to calculate the previous maneuver
-        // This will eventually populate the cache and then process the queue
-        this.requestManeuverNodeVisualization(satelliteId, previousNode, physicsEngine);
+        // No-op: PhysicsAPI.previewManeuver handles nested maneuvers internally
+        return;
     }
 
     /**
