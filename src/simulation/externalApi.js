@@ -1284,19 +1284,22 @@ export function setupExternalApi(app3d) {
          */
         updateCommsConfig: (satelliteId, config) => {
             try {
+                // Handle case where satelliteId might be an object with an id property
+                const id = typeof satelliteId === 'object' && satelliteId !== null ? 
+                    (satelliteId.id || satelliteId.satelliteId) : satelliteId;
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(satelliteId));
+                const satellite = satellites.get(String(id));
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                    return { success: false, error: `Satellite ${id} not found` };
                 }
 
                 // Method 1: Use unified communications service (preferred)
                 if (app3d?.communicationsService) {
                     try {
-                        app3d.communicationsService.updateSatelliteCommsConfig(satelliteId, config);
+                        app3d.communicationsService.updateSatelliteCommsConfig(id, config);
                         return { 
                             success: true, 
-                            config: app3d.communicationsService.getSatelliteCommsConfig(satelliteId),
+                            config: app3d.communicationsService.getSatelliteCommsConfig(id),
                             method: 'communicationsService'
                         };
                     } catch (serviceError) {
@@ -1307,7 +1310,7 @@ export function setupExternalApi(app3d) {
                 // Method 2: Try PhysicsAPI
                 if (app3d?.physicsAPI?.isReady()) {
                     try {
-                        const success = app3d.physicsAPI.updateSatelliteCommsConfig(satelliteId, config);
+                        const success = app3d.physicsAPI.updateSatelliteCommsConfig(id, config);
                         if (success) {
                             return { 
                                 success: true, 
@@ -1325,9 +1328,9 @@ export function setupExternalApi(app3d) {
                 if (physicsEngine?.subsystemManager) {
                     try {
                         const subsystemManager = physicsEngine.subsystemManager;
-                        const success = subsystemManager.updateSubsystemConfig(satelliteId, 'communication', config);
+                        const success = subsystemManager.updateSubsystemConfig(id, 'communication', config);
                         if (success) {
-                            const commSubsystem = subsystemManager.getSubsystem(satelliteId, 'communication');
+                            const commSubsystem = subsystemManager.getSubsystem(id, 'communication');
                             return { 
                                 success: true, 
                                 config: commSubsystem?.config || config,
@@ -1342,7 +1345,7 @@ export function setupExternalApi(app3d) {
                 // Method 4: Fallback to SatelliteCommsManager
                 if (app3d?.satelliteCommsManager) {
                     try {
-                        app3d.satelliteCommsManager.updateSatelliteComms(satelliteId, config);
+                        app3d.satelliteCommsManager.updateSatelliteComms(id, config);
                         
                         // Force update line-of-sight calculations when communications are changed
                         if (app3d?.lineOfSightManager?.isEnabled()) {
@@ -1375,10 +1378,13 @@ export function setupExternalApi(app3d) {
          */
         applyCommsPreset: (satelliteId, presetName) => {
             try {
+                // Handle case where satelliteId might be an object with an id property
+                const id = typeof satelliteId === 'object' && satelliteId !== null ? 
+                    (satelliteId.id || satelliteId.satelliteId) : satelliteId;
                 const satellites = app3d?.satellites?.getSatellitesMap() || new Map();
-                const satellite = satellites.get(String(satelliteId));
+                const satellite = satellites.get(String(id));
                 if (!satellite) {
-                    return { success: false, error: `Satellite ${satelliteId} not found` };
+                    return { success: false, error: `Satellite ${id} not found` };
                 }
 
                 // Get presets from communications service if available
@@ -1440,7 +1446,7 @@ export function setupExternalApi(app3d) {
                 }
 
                 // Apply the preset using the updateCommsConfig method
-                return window.api.updateCommsConfig(satelliteId, preset);
+                return window.api.updateCommsConfig(id, preset);
             } catch (error) {
                 return { success: false, error: error.message };
             }

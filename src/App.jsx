@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { ThemeProvider } from './components/ui/theme-provider';
 import { Layout } from './components/ui/Layout';
 import { useApp3D } from './hooks/useApp3D';
@@ -273,6 +274,7 @@ function AppWithCanvas() {
             <App3DMain />
           </ToastProvider>
         )}
+        <Analytics />
       </div>
     </ThemeProvider>
   );

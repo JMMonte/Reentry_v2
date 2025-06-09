@@ -392,7 +392,7 @@ export class SatelliteManager {
     }
 
     createSatelliteFromOrbitalElements(app3d, p) {
-        const naifId = p.planet?.naifId ?? p.selectedBody?.naifId ?? 399;
+        const naifId = p.planetNaifId ?? p.planet?.naifId ?? p.selectedBody?.naifId ?? 399;
         return createSatFromOEInternal(app3d, { ...p, planetNaifId: naifId });
     }
 

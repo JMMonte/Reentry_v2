@@ -756,20 +756,22 @@ class App3D extends EventTarget {
 
     // Satellite creation helpers
     createSatelliteFromLatLon(p) {
-        // Use planetNaifId from p if present, otherwise fallback
+        // Use centralBodyNaifId or planetNaifId from p if present, otherwise fallback
+        const naifId = p.centralBodyNaifId || p.planetNaifId || this.selectedBody?.naifId || 399;
+        const naifIdKey = String(naifId);
         let selectedBody = this.selectedBody || { naifId: 399 };
-        const naifIdKey = String(p.planetNaifId);
-        if (p.planetNaifId && this.bodiesByNaifId?.[naifIdKey]) {
+        if (this.bodiesByNaifId?.[naifIdKey]) {
             selectedBody = this.bodiesByNaifId[naifIdKey];
         }
         // Step 2: Call SatelliteManager
         return this.satellites.createSatelliteFromLatLon(this, p, selectedBody);
     }
     createSatelliteFromOrbitalElements(p) {
-        // Step 1: Use selectedBody or fallback
-        const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
-        // Step 2: Call SatelliteManager
-        return this.satellites.createSatelliteFromOrbitalElements(this, { ...p, selectedBody });
+        // Step 1: Use centralBodyNaifId if provided, otherwise selectedBody or fallback
+        const naifId = p.centralBodyNaifId || p.planetNaifId || p.selectedBody?.naifId || this.selectedBody?.naifId || 399;
+        const selectedBody = p.selectedBody || this.bodiesByNaifId?.[naifId] || { naifId };
+        // Step 2: Call SatelliteManager with proper planet info
+        return this.satellites.createSatelliteFromOrbitalElements(this, { ...p, selectedBody, planetNaifId: naifId });
     }
     createSatelliteFromLatLonCircular(p) {
         // Step 1: Use selectedBody or fallback

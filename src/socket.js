@@ -30,8 +30,9 @@ export function getSocket() {
             
             socket.on('connect_error', (error) => {
                 if (error.message.includes('CORS') || error.message.includes('cors')) {
-                    console.warn('AI chat failed: CORS error. Backend needs to allow origin http://localhost:4000');
-                    console.info('See README.md for backend CORS configuration');
+                    const currentOrigin = window.location.origin;
+                    console.warn(`AI chat failed: CORS error. Backend needs to allow origin ${currentOrigin}`);
+                    console.info('The backend server must configure CORS to allow:', currentOrigin);
                 } else {
                     console.warn('AI chat connection failed:', error.message);
                 }
