@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { PassPredictionService } from '../../../services/PassPredictionService';
+import { PassPredictionService } from '@/services/PassPredictionService';
 import { 
     TrendingUp, Signal, BarChart3, 
     ChevronRight, ChevronDown, AlertCircle, CheckCircle2,

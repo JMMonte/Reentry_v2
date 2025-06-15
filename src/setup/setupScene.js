@@ -26,6 +26,7 @@ import { textureDefinitions } from '../config/textureRegistry.js';
 import { CelestialOrbitManager } from '../components/orbit/CelestialOrbitManager.js';
 import { solarSystemDataManager } from '../physics/PlanetaryDataManager.js';
 import { SolarSystemHierarchy } from '../physics/SolarSystemHierarchy.js';
+import GroundStationService from '../services/GroundStationService.js';
 
 // Scene-wide rendering settings (moved from celestialBodiesConfig.js)
 export const ambientLightConfig = { color: 0xffffff, intensity: 0.1 };
@@ -312,7 +313,11 @@ export async function createSceneObjects(app) {
         }
     }
 
-    // 7. Display tuning
+    // 7. Initialize GroundStationService with planet data
+    const planetsData = Array.from(solarSystemDataManager.naifToBody.values());
+    GroundStationService.initializeFromPlanetsData(planetsData);
+
+    // 8. Display tuning
     if (app.displaySettingsManager) app.displaySettingsManager.applyAll();
 }
 

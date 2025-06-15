@@ -1,6 +1,5 @@
-import * as THREE from 'three';
 import {PhysicsConstants} from '../../core/PhysicsConstants.js';
-import { geojsonDataMarsMissions } from '../../../config/geojsonData.js';
+import { geojsonDataMarsMissions } from '@/config/geojsonData.js';
 
 const marsMass = 6.417e23; // kg
 const marsRadius = 3389.5; // km
@@ -51,17 +50,17 @@ export default {
 
     // Atmospheric properties for visual rendering
     atmosphere: {
-        thickness: 40, // km - more visible haze
-        densityScaleHeight: 5, // km - more extended haze
-        hazeIntensity: 0.9, // much more visible haze
-        scaleHeightMultiplier: 1.0, // more exaggerated for visual effect
-        rayleighScaleHeight: 5, // km
-        mieScaleHeight: 1.5,   // km (dust)
-        rayleighScatteringCoeff: [0.1, 0.04, 0.02], // Reddish, but more visible
-        mieScatteringCoeff: 0.0001, // More dust scattering
-        mieAnisotropy: 10.85, // Strong forward scattering
+        thickness: 20, // km - reduced from 40 for more realistic appearance
+        densityScaleHeight: 8, // km - slightly increased for better falloff
+        hazeIntensity: 0.3, // reduced from 0.9 - much more subtle haze
+        scaleHeightMultiplier: 1.0, // keep for visual effect
+        rayleighScaleHeight: 8, // km - increased for smoother falloff
+        mieScaleHeight: 2.0,   // km (dust) - increased slightly
+        rayleighScatteringCoeff: [0.02, 0.01, 0.005], // Much more subtle reddish scattering
+        mieScatteringCoeff: 0.005, // Reduced dust scattering
+        mieAnisotropy: 88.5, // Reduced forward scattering
         numLightSteps: 1,
-        sunIntensity: 4, // Brighter for visual effect
+        sunIntensity: 1.5, // Reduced from 4 - more realistic intensity
         equatorialRadius: 3396.2,
         polarRadius: 3376.2,
         composition: { // Predominantly CO2
@@ -81,12 +80,10 @@ export default {
             textureKey: 'marsTexture',
             normalMapKey: 'marsNormalTexture',
             params: {
-                normalScale: new THREE.Vector2(0.3, 0.3),
-                roughness: 0.8,
-                metalness: 0.1,
+                roughness: 0.9,
+                metalness: 0.05,
             }
-        },
-        // No clouds usually, but dust storms can occur
+        }
     },
 
     // Lighting

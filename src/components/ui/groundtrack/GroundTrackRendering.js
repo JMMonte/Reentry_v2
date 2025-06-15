@@ -1,4 +1,7 @@
-import { groundTrackService } from '../../../services/GroundTrackService.js';
+import { GroundTrackService } from '@/services/GroundTrackService.js';
+
+// Create a singleton instance
+const groundTrackService = new GroundTrackService();
 const GRID_MAJOR = 10;
 const GRID_MINOR = 5;
 
@@ -101,36 +104,20 @@ function drawLineString(ctx, coordinates, w, h) {
     if (!coordinates || coordinates.length < 2) return;
     
     ctx.beginPath();
-    let lastX = null;
-    let lastY = null;
     let pathStarted = false;
     
     for (let i = 0; i < coordinates.length; i++) {
         const [lon, lat] = coordinates[i];
         const { x, y } = groundTrackService.projectToCanvas(lat, lon, w, h);
         
-        // Check if we should break the path
-        if (lastX !== null) {
-            const xDiff = Math.abs(x - lastX);
-            // If x coordinate jumps more than half the map width, it's a date line crossing
-            if (xDiff > w / 2) {
-                // Don't draw this segment - start a new path
-                ctx.stroke(); // Finish current path
-                ctx.beginPath(); // Start new path
-                ctx.moveTo(x, y);
-                pathStarted = true;
-            } else {
-                // Normal segment
-                ctx.lineTo(x, y);
-            }
+        // Calculate last point to finish line properly
+        if (i > 0) {
+            ctx.lineTo(x, y);
         } else {
             // First point
             ctx.moveTo(x, y);
             pathStarted = true;
         }
-        
-        lastX = x;
-        lastY = y;
     }
     
     if (pathStarted) {
@@ -163,17 +150,10 @@ export function renderCoverageEfficient(ctx, w, h, { lat, lon, altitude }, color
     
     // Calculate pixel radius (approximate - accurate enough for visualization)
     // At equator: 360 degrees = w pixels, so radiusPixels = (coverageRadiusDeg / 360) * w
-    // Adjust for latitude distortion
-    const latRadians = deg2rad(lat);
     const radiusPixelsX = (coverageRadiusDeg / 360) * w;
     const radiusPixelsY = (coverageRadiusDeg / 180) * h;
     
     ctx.save();
-    
-    // Check if coverage crosses dateline
-    const westBound = lon - coverageRadiusDeg;
-    const eastBound = lon + coverageRadiusDeg;
-    const crossesDateline = westBound < -180 || eastBound > 180;
     
     // Always use gradient rendering which now handles edge wrapping
     if (elevationAngles) {
@@ -289,7 +269,8 @@ function renderCoverageGradient(ctx, centerX, centerY, radiusX, radiusY, color, 
 }
 
 /** Render multiple elevation angle rings */
-async function renderElevationRings(ctx, centerX, centerY, maxRadiusX, maxRadiusY, color, elevationAngles, altitude, planetNaifId) {
+async function renderElevationRings(ctx, centerX, centerY, maxRadiusX, maxRadiusY, color, elevationAngles, altitude, planetNaifId) { // eslint-disable-line no-unused-vars
+    // Note: altitude and planetNaifId parameters kept for API compatibility but not currently used
     // Sort elevation angles from largest to smallest
     const angles = [...elevationAngles].sort((a, b) => b - a);
     

@@ -4,81 +4,87 @@
  * Manages ghost planet visualization for SOI transitions
  */
 import * as THREE from 'three';
+import { WebGLLabels } from '../utils/WebGLLabels.js';
 
 export class GhostPlanetManager {
     constructor(app) {
         this.app = app;
-        this.ghostPlanets = new Map(); // satelliteId -> Map<key, ghost>
+        this.ghostPlanets = new Map(); // Map<satelliteId, Map<time, ghostData>>
     }
 
     /**
-     * Find SOI transitions in orbit points
+     * Find SOI transition events in satellite trajectory points
      */
     findSOITransitions(points) {
+        if (!points || points.length < 2) return [];
+        
         const transitions = [];
-        let lastBodyId = null;
+        let previousCentralBody = null;
         
         for (let i = 0; i < points.length; i++) {
             const point = points[i];
-            if (lastBodyId !== null && point.centralBodyId !== lastBodyId) {
-                // Found a transition
+            const currentCentralBody = point.centralBody;
+            
+            if (previousCentralBody !== null && currentCentralBody !== previousCentralBody) {
+                // SOI transition detected
                 transitions.push({
-                    index: i,
                     time: point.time,
-                    fromBody: lastBodyId,
-                    toBody: point.centralBodyId,
-                    position: point.position,
-                    velocity: point.velocity,
+                    fromBody: previousCentralBody,
+                    toBody: currentCentralBody,
+                    position: [point.x, point.y, point.z],
                     centralBodyPosition: point.centralBodyPosition,
-                    // Target body position might be included if this came from a worker transition
                     targetBodyPosition: point.targetBodyPosition
                 });
             }
-            lastBodyId = point.centralBodyId;
+            
+            previousCentralBody = currentCentralBody;
         }
         
         return transitions;
     }
     
     /**
-     * Create or update ghost planets for SOI transitions
+     * Update ghost planets for a satellite
      */
     updateGhostPlanets(satelliteId, transitions) {
-        let satelliteGhosts = this.ghostPlanets.get(satelliteId);
-        if (!satelliteGhosts) {
-            satelliteGhosts = new Map();
-            this.ghostPlanets.set(satelliteId, satelliteGhosts);
-        }
+        // Remove existing ghost planets for this satellite
+        this.removeGhostPlanets(satelliteId);
         
-        // Remove old ghost planets not in current transitions
-        const currentTransitionKeys = new Set(transitions.map(t => `${t.fromBody}_${t.toBody}_${t.time}`));
-        for (const [key, ghost] of satelliteGhosts) {
-            if (!currentTransitionKeys.has(key)) {
-                // Remove ghost planet
-                if (ghost.group) {
-                    this.app.scene.remove(ghost.group);
-                    this._disposeGhostGroup(ghost.group);
-                }
-                satelliteGhosts.delete(key);
+        if (!transitions || transitions.length === 0) return;
+        
+        const ghosts = new Map();
+        
+        // Create ghost planets for each transition
+        transitions.forEach(transition => {
+            const ghost = this._createGhostPlanet(transition);
+            if (ghost) {
+                ghosts.set(transition.time, ghost);
             }
+        });
+        
+        this.ghostPlanets.set(satelliteId, ghosts);
         }
         
-        // Create new ghost planets for transitions
-        for (const transition of transitions) {
-            const key = `${transition.fromBody}_${transition.toBody}_${transition.time}`;
-            
-            if (!satelliteGhosts.has(key)) {
-                const ghostData = this._createGhostPlanet(transition);
-                if (ghostData) {
-                    satelliteGhosts.set(key, ghostData);
+    /**
+     * Update all ghost planets (called each frame)
+     */
+    update() {
+        // Get all satellites' ghost planets  
+        const satelliteGhosts = Array.from(this.ghostPlanets.values());
+        
+        for (const ghosts of satelliteGhosts) {
+            // Update label orientations to face camera
+            for (const [ghost] of ghosts) {
+                if (ghost.labelSprite && this.app.camera) {
+                    ghost.labelSprite.lookAt(this.app.camera.position);
                 }
             }
         }
         
         // Update label orientations to face camera
         for (const [ghost] of satelliteGhosts) {
-            if (ghost.labelMesh && this.app.camera) {
-                ghost.labelMesh.lookAt(this.app.camera.position);
+            if (ghost.labelSprite && this.app.camera) {
+                ghost.labelSprite.lookAt(this.app.camera.position);
             }
         }
     }
@@ -136,9 +142,9 @@ export class GhostPlanetManager {
         }
         
         // Add label to show time until SOI entry
-        const labelMesh = this._createGhostLabel(targetPlanet, transition, radius);
-        if (labelMesh) {
-            ghostGroup.add(labelMesh);
+        const labelSprite = this._createGhostLabel(targetPlanet, transition, radius);
+        if (labelSprite) {
+            ghostGroup.add(labelSprite);
         }
         
         // Position at the future position
@@ -156,47 +162,34 @@ export class GhostPlanetManager {
             group: ghostGroup,
             transition: transition,
             planet: targetPlanet,
-            labelMesh: labelMesh
+            labelSprite: labelSprite
         };
     }
 
     /**
-     * Create label for ghost planet
+     * Create label for ghost planet using WebGLLabels
      */
     _createGhostLabel(targetPlanet, transition, radius) {
         const timeToSOI = transition.time; // seconds
         const hoursToSOI = (timeToSOI / 3600).toFixed(1);
+        const labelText = `${targetPlanet.name} in ${hoursToSOI}h`;
         
-        const labelGeometry = new THREE.PlaneGeometry(radius * 2, radius * 0.5);
-        const labelCanvas = document.createElement('canvas');
-        labelCanvas.width = 512;
-        labelCanvas.height = 128;
+        // Use WebGLLabels for consistent styling
+        const labelConfig = {
+            fontSize: 32,
+            fontFamily: 'Arial',
+            color: '#ffffff',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)', // Semi-transparent background
+            padding: 8,
+            pixelScale: 0.0003,
+            sizeAttenuation: false,
+            renderOrder: 998
+        };
         
-        const ctx = labelCanvas.getContext('2d');
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(0, 0, 512, 128);
-        ctx.fillStyle = 'white';
-        ctx.font = '48px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`${targetPlanet.name} in ${hoursToSOI}h`, 256, 64);
+        const sprite = WebGLLabels.createLabel(labelText, labelConfig);
+        sprite.position.y = radius * 1.5;
         
-        const labelTexture = new THREE.CanvasTexture(labelCanvas);
-        const labelMaterial = new THREE.MeshBasicMaterial({
-            map: labelTexture,
-            transparent: true,
-            opacity: 0.8,
-            side: THREE.DoubleSide
-        });
-        
-        const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
-        labelMesh.position.y = radius * 1.5;
-        
-        if (this.app.camera) {
-            labelMesh.lookAt(this.app.camera.position);
-        }
-        
-        return labelMesh;
+        return sprite;
     }
 
     /**
@@ -225,6 +218,10 @@ export class GhostPlanetManager {
                 if (child.material.map) child.material.map.dispose();
                 child.material.dispose();
             }
+            // Dispose WebGL labels properly
+            if (child instanceof THREE.Sprite) {
+                WebGLLabels.disposeLabel(child);
+            }
         });
     }
 
@@ -251,8 +248,8 @@ export class GhostPlanetManager {
         
         for (const [ghosts] of this.ghostPlanets) {
             for (const [ghost] of ghosts) {
-                if (ghost.labelMesh) {
-                    ghost.labelMesh.lookAt(this.app.camera.position);
+                if (ghost.labelSprite) {
+                    ghost.labelSprite.lookAt(this.app.camera.position);
                 }
             }
         }

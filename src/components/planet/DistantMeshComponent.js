@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { Planet } from './Planet.js';
 
 export class DistantMeshComponent {
     constructor(planet) {
         this.planet = planet;
+        this.camera = null; // Will be set by the planet
         const geo = new THREE.SphereGeometry(1, 8, 8);
         const mat = new THREE.MeshBasicMaterial({ color: planet.dotColor, transparent: true, opacity: 0.7 });
         this.mesh = new THREE.Mesh(geo, mat);
@@ -11,14 +11,22 @@ export class DistantMeshComponent {
         planet.orbitGroup.add(this.mesh);
     }
 
+    /**
+     * Set the camera reference for LOD calculations
+     * @param {THREE.Camera} camera - The camera to use for distance calculations
+     */
+    setCamera(camera) {
+        this.camera = camera;
+    }
+
     update() {
-        if (!Planet.camera || !this.planet.planetMesh) return;
+        if (!this.camera || !this.planet.planetMesh) return;
         
         const planetPos = new THREE.Vector3();
         this.planet.planetMesh.getWorldPosition(planetPos);
-        const camPos = Planet.camera.position;
+        const camPos = this.camera.position;
         const dist = planetPos.distanceTo(camPos);
-        const fovY = THREE.MathUtils.degToRad(Planet.camera.fov);
+        const fovY = THREE.MathUtils.degToRad(this.camera.fov);
         const scrH = window.innerHeight;
         
         // For irregular bodies (with dimensions), use the maximum dimension
@@ -38,7 +46,7 @@ export class DistantMeshComponent {
         } else {
             this.mesh.visible = false;
             this.planet.planetMesh.visible = true;
-            this.planet.planetLOD && this.planet.planetLOD.update(Planet.camera);
+            this.planet.planetLOD && this.planet.planetLOD.update(this.camera);
         }
     }
 

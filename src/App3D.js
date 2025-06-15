@@ -79,8 +79,8 @@ import { PhysicsManager } from './physics/PhysicsManager.js';
 import { LineOfSightManager } from './managers/LineOfSightManager.js';
 import { SatelliteCommsManager } from './managers/SatelliteCommsManager.js';
 import { CommunicationsService } from './services/CommunicationsService.js';
-import { geojsonDataGroundStations } from './config/geojsonData.js';
 import Physics from './physics/PhysicsAPI.js';
+import GroundStationService from './services/GroundStationService.js';
 
 // Controls
 import { CameraControls } from './controls/CameraControls.js';
@@ -134,16 +134,11 @@ class App3D extends EventTarget {
         // — Internal state — ---------------------------------------------------
         /** @type {boolean} */        this._isInitialized = false;
 
-        // active pick-state
-        this._poiIndicator = null;
-        this._highlightedPOI = null;
-        this._hoveredPOI = null;
-        this._hoverSnapshot = { scale: new THREE.Vector3(), color: new THREE.Color() };
-        this._poiWindowOpen = false;
+
 
         // — Managers & engines — ----------------------------------------------
         this._textureManager = new TextureManager();
-        
+
         this._displaySettingsManager = new DisplaySettingsManager(
             this,
             getDefaultDisplaySettings(defaultSettings)
@@ -153,22 +148,20 @@ class App3D extends EventTarget {
         this.physicsIntegration = new PhysicsManager(this);
         // Only use SatelliteManager, no provider
         this._satellites = new SatelliteManager(this);
-        
+
         // Initialize satellite communications manager
         this.satelliteCommsManager = new SatelliteCommsManager(this.physicsIntegration.physicsEngine);
-        
+
         // Initialize unified communications service
         this.communicationsService = new CommunicationsService();
 
         this.sceneManager = new SceneManager(this);
         this.simulationStateManager = new SimulationStateManager(this);
-        
+
         // LineOfSightManager will be initialized after scene is ready
         this.lineOfSightManager = null;
-        
-        // Ground stations data
-        this._groundStations = [];
-        this._processGroundStations();
+
+        // Ground stations data - now managed by GroundStationService (accessed via getter)
 
         // — Misc util — --------------------------------------------------------
         // Always use UTC time - new Date().toISOString() gives us UTC
@@ -195,11 +188,11 @@ class App3D extends EventTarget {
         this._projScreenMatrix = new THREE.Matrix4();
         // Frame counter for throttling UI updates
         this._frameCount = 0;
-        
+
         // Pre-allocated vectors for tick() to avoid GC pressure
         this._tempWorldPos = new THREE.Vector3();
         this._tempSunPos = new THREE.Vector3();
-        
+
         // Caching for performance
         this._lastFrustumUpdateFrame = -1;
         this._visibleBodies = new Set();
@@ -247,28 +240,28 @@ class App3D extends EventTarget {
                 this._displaySettingsManager,
                 this.physicsIntegration
             );
-            
+
             // Initialize communications service with managers
             this.communicationsService.initialize(
                 this.lineOfSightManager,
                 this.satelliteCommsManager,
                 this.physicsIntegration.physicsEngine
             );
-            
+
             // Create physics API for React components - direct access to unified API
             this.physicsAPI = {
                 ...Physics,
                 isReady: () => this.physicsIntegration?.isInitialized || false,
                 waitForReady: () => Promise.resolve(true), // Always ready (static API)
-                markReady: () => {}, // No-op since Physics API is always ready
-                dispose: () => {}, // No cleanup needed for static API
+                markReady: () => { }, // No-op since Physics API is always ready
+                dispose: () => { }, // No cleanup needed for static API
                 // Provide access to physics engine for advanced operations
                 getPhysicsEngine: () => this.physicsIntegration.physicsEngine,
                 // Legacy compatibility methods
                 getAllBodies: () => {
                     const engine = this.physicsIntegration.physicsEngine;
                     if (!engine || !engine.bodies) return [];
-                    
+
                     // Convert bodies object to array format expected by components
                     return Object.values(engine.bodies).map(body => ({
                         id: body.naifId || body.id,
@@ -281,7 +274,7 @@ class App3D extends EventTarget {
                 getAllSatelliteUIData: () => {
                     const engine = this.physicsIntegration.physicsEngine;
                     if (!engine || !engine.satellites) return [];
-                    
+
                     return Array.from(engine.satellites.values()).map(sat => ({
                         id: sat.id,
                         position: sat.position,
@@ -290,13 +283,14 @@ class App3D extends EventTarget {
                     }));
                 }
             };
-            
+
             // Expose on window for components that expect it
             if (window.app3d === this) {
                 window.app3d.physicsAPI = this.physicsAPI;
             }
 
-            this._initPOIPicking();
+            // DISABLED: POI picking system
+            // this._initPOIPicking();
             this._setupControls();
 
             // Initialize simulation controller for centralized time/state management
@@ -307,20 +301,20 @@ class App3D extends EventTarget {
             // Initialize new physics system
             try {
                 await this.physicsIntegration.initialize(this.timeUtils.getSimulatedTime());
-                
+
                 // Initialize satellite orbit manager after physics is ready
                 const { SatelliteOrbitManager } = await import('./managers/SatelliteOrbitManager.js');
                 this.satelliteOrbitManager = new SatelliteOrbitManager(this);
                 this.satelliteOrbitManager.initialize();
-                
+
                 // Initialize maneuver preview system
                 // DISABLED: Using SimpleManeuverPreview instead
                 // const { getManeuverPreviewSystem } = await import('./managers/ManeuverPreviewSystem.js');
                 // this.maneuverPreviewSystem = getManeuverPreviewSystem(this);
-                
+
                 // Set up satellite communication system integration
                 this._setupSatelliteCommsIntegration();
-                
+
                 // Physics API is always ready (static functions)
             } catch (physicsError) {
                 console.warn('[App3D] Physics integration failed to initialize:', physicsError);
@@ -334,10 +328,10 @@ class App3D extends EventTarget {
 
             this._injectStatsPanel();
             this._wireResizeListener();
-            
+
             // Only initialize scene objects locally (no backend connection)
             await this._initializeLocalScene();
-            
+
             // Atmospheres now use simplified depth handling in PlanetMaterials.js
 
             // Enable axis and vector visualization for all planets
@@ -400,11 +394,11 @@ class App3D extends EventTarget {
             const { createSceneObjects } = await import('./setup/setupScene.js');
             await createSceneObjects(this);
             this.sceneObjectsInitialized = true;
-            
+
             if (this.cameraControls && typeof this.cameraControls.follow === 'function') {
                 this.cameraControls.follow('Earth', this, true);
             }
-            
+
             // Dispatch scene ready event
             window.dispatchEvent(new CustomEvent('sceneReadyFromBackend'));
         } catch (sceneError) {
@@ -429,15 +423,15 @@ class App3D extends EventTarget {
         // Satellites & loops
         this._satellites?.dispose?.();
         this.simulationLoop?.dispose?.();
-        
+
         // Satellite orbit manager
         this.satelliteOrbitManager?.dispose?.();
-        
+
         // Communications cleanup
         this.communicationsService?.dispose?.();
         this.satelliteCommsManager?.dispose?.();
         this.physicsAPI?.dispose?.();
-        
+
         // Remove satellite event listeners to prevent memory leaks
         if (this._handleSatelliteAdded) {
             window.removeEventListener('satelliteAdded', this._handleSatelliteAdded);
@@ -447,16 +441,16 @@ class App3D extends EventTarget {
             window.removeEventListener('satelliteRemoved', this._handleSatelliteRemoved);
             this._handleSatelliteRemoved = null;
         }
-        
+
         // Simulation controller
         this.simulationController?.dispose?.();
-        
+
         // Display settings manager
         this._displaySettingsManager?.dispose?.();
-        
+
         // Texture manager
         this._textureManager?.dispose?.();
-        
+
         // Planet vectors
         if (Array.isArray(this.planetVectors)) {
             this.planetVectors.forEach(vec => vec.dispose?.());
@@ -465,7 +459,7 @@ class App3D extends EventTarget {
 
         // Scene graph
         this.sceneManager?.dispose?.();
-        
+
         // Socket cleanup
         import('./socket.js').then(module => {
             if (module.closeSocket) {
@@ -474,7 +468,7 @@ class App3D extends EventTarget {
         }).catch(() => {
             // Socket module might not be loaded, that's ok
         });
-        
+
         // Cleanup shared GroundtrackPath worker
         import('./services/GroundtrackPath.js').then(module => {
             if (module.GroundtrackPath && module.GroundtrackPath.forceCleanup) {
@@ -483,7 +477,7 @@ class App3D extends EventTarget {
         }).catch(() => {
             // Module might not be loaded, that's ok
         });
-        
+
         // Simulation state manager
         this.simulationStateManager?.dispose?.();
 
@@ -494,28 +488,15 @@ class App3D extends EventTarget {
 
         // Listeners
         this._removeWindowResizeListener();
-        
-        // Clean up pointer event listeners and animation frames
-        if (this._pointerMoveHandler && this.canvas) {
-            this.canvas.removeEventListener('pointermove', this._pointerMoveHandler);
-        }
-        if (this._pointerDownHandler && this.canvas) {
-            this.canvas.removeEventListener('pointerdown', this._pointerDownHandler);
-        }
-        // Cancel pending animation frame
-        if (this._pendingRAF) {
-            const rafId = this._pendingRAF();
-            if (rafId) {
-                cancelAnimationFrame(rafId);
-            }
-        }
-        
+
+
+
         // Clean up global event listeners
         if (this._cleanupGlobalListeners) {
             this._cleanupGlobalListeners();
             this._cleanupGlobalListeners = null;
         }
-        
+
         // Clear all references to help GC
         this.celestialBodies = null;
         this.bodiesByNaifId = null;
@@ -525,12 +506,12 @@ class App3D extends EventTarget {
         this._renderer = null;
         this._controls = null;
         this.cameraControls = null;
-        
+
         // Clear performance caches
         this._bodyWorldPositions.clear();
         this._lastUpdateFrame.clear();
         this._visibleBodies.clear();
-        
+
         // Stop memory monitoring
         this.memoryMonitor?.stop();
     }
@@ -549,38 +530,7 @@ class App3D extends EventTarget {
         this.cameraControls = new CameraControls(this._camera, this._controls);
     }
 
-    _initPOIPicking() {
-        // collect every pickable point once planets exist
-        this.pickablePoints = [];
-        Planet.instances?.forEach(p => {
-            const pts = p.surface?.points;
-            if (pts) Object.values(pts).flat().forEach(m => this.pickablePoints.push(m));
-        });
 
-        this.raycaster = new THREE.Raycaster();
-        this.raycaster.params.Points.threshold = 1;
-
-        // event throttling
-        let pending = false;
-        let rafId = null;
-        const onMove = evt => {
-            if (pending) return;
-            pending = true;
-            rafId = requestAnimationFrame(() => {
-                this._handlePointerMove(evt);
-                pending = false;
-                rafId = null;
-            });
-        };
-        
-        // Store references for cleanup
-        this._pointerMoveHandler = onMove;
-        this._pointerDownHandler = this._handlePointerDown.bind(this);
-        this._pendingRAF = () => rafId;
-        
-        this.canvas.addEventListener('pointermove', this._pointerMoveHandler);
-        this.canvas.addEventListener('pointerdown', this._pointerDownHandler);
-    }
 
     _injectStatsPanel() {
         if (!this.stats?.dom) return;
@@ -628,11 +578,11 @@ class App3D extends EventTarget {
             console.log('[App3D] No physics engine available');
             return;
         }
-        
+
         this.physicsIntegration.physicsEngine;
         const sats = this.physicsIntegration.getSatellitesForLineOfSight();
         const bodies = this.physicsIntegration.getBodiesForLineOfSight();
-        
+
 
         if (this.lineOfSightManager) {
             this.lineOfSightManager.updateConnections(sats, bodies);
@@ -641,54 +591,39 @@ class App3D extends EventTarget {
         }
     }
 
+
+
+
+
+
+
     // ──────────────────────────────────────────────────────────────────────────
-    // 9. POINTER INTERACTION WITH POIs
+    // 11. MISC
     // ──────────────────────────────────────────────────────────────────────────
-    _handlePointerMove(evt) {
-        if (this._poiWindowOpen) { document.body.style.cursor = ''; return; }
-
-        const mouse = this._getMouseNDC(evt);
-        this.raycaster.setFromCamera(mouse, this.camera);
-
-        const hit = this.pickablePoints.find(m => m.visible &&
-            this.raycaster.intersectObject(m, false).length);
-
-        // restore previous
-        if (this._hoveredPOI && this._hoveredPOI !== hit) {
-            this._hoveredPOI.scale.copy(this._hoverSnapshot.scale);
-            this._hoveredPOI.material.color.copy(this._hoverSnapshot.color);
-        }
-
-        // apply new hover
-        if (hit && this._hoveredPOI !== hit) {
-            this._hoverSnapshot = { scale: hit.scale.clone(), color: hit.material.color.clone() };
-            hit.scale.multiplyScalar(1.2);
-            hit.material.color.offsetHSL(0, 0, 0.3);
-        }
-        this._hoveredPOI = hit;
-        document.body.style.cursor = hit ? 'pointer' : '';
+    _dispatchSceneReady() {
+        const evt = new Event('sceneReady');
+        this.dispatchEvent(evt);
+        document.dispatchEvent(evt);
+        this.onSceneReady?.();
     }
 
-    _handlePointerDown(evt) {
-        const mouse = this._getMouseNDC(evt);
-        this.raycaster.setFromCamera(mouse, this.camera);
+    _onWindowResize() {
+        if (!this._camera || !this._renderer) return;
+        this._camera.aspect = window.innerWidth / window.innerHeight;
+        this._camera.updateProjectionMatrix();
+        this._renderer.setSize(window.innerWidth, window.innerHeight);
 
-        for (const mesh of this.pickablePoints) {
-            if (!mesh.visible) continue;
-            if (this.raycaster.intersectObject(mesh, false).length) {
-                const { feature, category } = mesh.userData;
-                window.dispatchEvent(new CustomEvent('earthPointClick', { detail: { feature, category } }));
-                break;
-            }
-        }
-    }
+        this.sceneManager.composers.bloom?.setSize(window.innerWidth, window.innerHeight);
+        this.sceneManager.composers.final?.setSize(window.innerWidth, window.innerHeight);
+        this.labelRenderer?.setSize(window.innerWidth, window.innerHeight);
 
-    _getMouseNDC(evt) {
-        const { left, top, width, height } = this.canvas.getBoundingClientRect();
-        return new THREE.Vector2(
-            ((evt.clientX - left) / width) * 2 - 1,
-            -((evt.clientY - top) / height) * 2 + 1
-        );
+        // Update orbit lines resolution
+        this.sceneManager.orbitManager?.onResize();
+
+        // Update line of sight rendering resolution for Line2 materials
+        this.lineOfSightManager?.updateResolution?.(window.innerWidth, window.innerHeight);
+
+        this._resizePOIs();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -719,65 +654,58 @@ class App3D extends EventTarget {
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // 11. MISC
-    // ──────────────────────────────────────────────────────────────────────────
-    _dispatchSceneReady() {
-        const evt = new Event('sceneReady');
-        this.dispatchEvent(evt);
-        document.dispatchEvent(evt);
-        this.onSceneReady?.();
-    }
-
-    _onWindowResize() {
-        if (!this._camera || !this._renderer) return;
-        this._camera.aspect = window.innerWidth / window.innerHeight;
-        this._camera.updateProjectionMatrix();
-        this._renderer.setSize(window.innerWidth, window.innerHeight);
-
-        this.sceneManager.composers.bloom?.setSize(window.innerWidth, window.innerHeight);
-        this.sceneManager.composers.final?.setSize(window.innerWidth, window.innerHeight);
-        this.labelRenderer?.setSize(window.innerWidth, window.innerHeight);
-
-        // Update orbit lines resolution
-        this.sceneManager.orbitManager?.onResize();
-        
-        // Update line of sight rendering resolution for Line2 materials
-        this.lineOfSightManager?.updateResolution?.(window.innerWidth, window.innerHeight);
-
-        this._resizePOIs();
-    }
-
     // ───────── SATELLITE/STATE API (delegates to SimulationStateManager) ─────
     createSatellite(p) { return this.simulationStateManager.createSatellite(p); }
     removeSatellite(i) { return this.simulationStateManager.removeSatellite(i); }
     importSimulationState(s) { return this.simulationStateManager.importState(s); }
     exportSimulationState() { return this.simulationStateManager.exportState(); }
 
-    // Satellite creation helpers
-    createSatelliteFromLatLon(p) {
-        // Use centralBodyNaifId or planetNaifId from p if present, otherwise fallback
+    // Satellite creation helpers - now call physics engine directly
+    async createSatelliteFromLatLon(p) {
         const naifId = p.centralBodyNaifId || p.planetNaifId || this.selectedBody?.naifId || 399;
-        const naifIdKey = String(naifId);
-        let selectedBody = this.selectedBody || { naifId: 399 };
-        if (this.bodiesByNaifId?.[naifIdKey]) {
-            selectedBody = this.bodiesByNaifId[naifIdKey];
+        const planetConfig = this.bodiesByNaifId?.[naifId] || { naifId };
+
+        if (!this.physicsIntegration?.physicsEngine) {
+            throw new Error('Physics engine not available');
         }
-        // Step 2: Call SatelliteManager
-        return this.satellites.createSatelliteFromLatLon(this, p, selectedBody);
+
+        // Create physics satellite
+        const physicsResult = this.physicsIntegration.physicsEngine.createSatelliteFromGeographic(p, naifId);
+
+        // Create UI satellite
+        const uiSatellite = await this.satellites.createUISatellite(physicsResult.id, {
+            planetConfig,
+            color: p.color,
+            name: p.name
+        });
+
+        return { satellite: uiSatellite, ...physicsResult };
     }
-    createSatelliteFromOrbitalElements(p) {
-        // Step 1: Use centralBodyNaifId if provided, otherwise selectedBody or fallback
-        const naifId = p.centralBodyNaifId || p.planetNaifId || p.selectedBody?.naifId || this.selectedBody?.naifId || 399;
-        const selectedBody = p.selectedBody || this.bodiesByNaifId?.[naifId] || { naifId };
-        // Step 2: Call SatelliteManager with proper planet info
-        return this.satellites.createSatelliteFromOrbitalElements(this, { ...p, selectedBody, planetNaifId: naifId });
+
+    async createSatelliteFromOrbitalElements(p) {
+        const naifId = p.centralBodyNaifId || p.planetNaifId || this.selectedBody?.naifId || 399;
+        const planetConfig = this.bodiesByNaifId?.[naifId] || { naifId };
+
+        if (!this.physicsIntegration?.physicsEngine) {
+            throw new Error('Physics engine not available');
+        }
+
+        // Create physics satellite
+        const physicsResult = this.physicsIntegration.physicsEngine.createSatelliteFromOrbitalElements(p, naifId);
+
+        // Create UI satellite
+        const uiSatellite = await this.satellites.createUISatellite(physicsResult.id, {
+            planetConfig,
+            color: p.color,
+            name: p.name
+        });
+
+        return { satellite: uiSatellite, ...physicsResult };
     }
-    createSatelliteFromLatLonCircular(p) {
-        // Step 1: Use selectedBody or fallback
-        const selectedBody = p.selectedBody || this.selectedBody || { naifId: 399 };
-        // Step 2: Call SatelliteManager
-        return this.satellites.createSatelliteFromLatLonCircular(this, p, selectedBody);
+
+    async createSatelliteFromLatLonCircular(p) {
+        // Circular orbit is just a special case of lat/lon with circular=true
+        return this.createSatelliteFromLatLon({ ...p, circular: true });
     }
 
     // Display-linked getters / setters
@@ -805,184 +733,184 @@ class App3D extends EventTarget {
         try {
             // Physics state is now updated by SimulationLoop, so we just need to handle visuals
             // The physics state update events are already dispatched by PhysicsManager
-            
-            
+
+
             this.stats?.begin();
-        
-        this.sceneManager.updateFrame?.(delta);
 
-        if (Array.isArray(this.celestialBodies)) {
-            this.celestialBodies.forEach(planet => planet.update?.(delta, interpolationFactor));
-        }
+            this.sceneManager.updateFrame?.(delta);
 
-        if (this.previewNode) this.previewNode.update?.(delta);
-        if (Array.isArray(this.previewNodes)) {
-            this.previewNodes.forEach(node => node.update?.(delta));
-        }
-
-        this.cameraControls?.updateCameraPosition?.(delta);
-
-        // --- Optimized per-frame updates ---
-        // Track camera and sun movement with threshold
-        const cameraMoved = this.camera && 
-            this._lastCameraPos.distanceTo(this.camera.position) > this._updateThreshold;
-        if (cameraMoved) {
-            this._lastCameraPos.copy(this.camera.position);
-        }
-        
-        let sunMoved = false;
-        if (this.sun && typeof this.sun.getWorldPosition === 'function') {
-            this.sun.getWorldPosition(this._tempSunPos);
-            sunMoved = this._lastSunPos.distanceTo(this._tempSunPos) > this._updateThreshold;
-            if (sunMoved) {
-                this._lastSunPos.copy(this._tempSunPos);
+            if (Array.isArray(this.celestialBodies)) {
+                this.celestialBodies.forEach(planet => planet.update?.(delta, interpolationFactor));
             }
-        }
 
-        // Update frustum only when camera moves (not every frame)
-        if (cameraMoved && this.camera && this.camera.projectionMatrix && this.camera.matrixWorldInverse) {
-            this._projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
-            this._frustum.setFromProjectionMatrix(this._projScreenMatrix);
-            this._lastFrustumUpdateFrame = this._frameCount;
-        }
-
-        // Helper to check if a mesh is visible in the frustum
-        const isVisible = mesh => {
-            if (!mesh) return false;
-            mesh.updateWorldMatrix?.(true, false);
-            // Only check frustum for Meshes with geometry
-            if (mesh.isMesh && mesh.geometry) {
-                const pos = mesh.geometry.attributes.position;
-                if (!pos || !pos.count || isNaN(pos.array[0])) {
-                    // Skip invalid geometry silently in production
-                    return false;
-                }
-                if (!mesh.geometry.boundingSphere) {
-                    mesh.geometry.computeBoundingSphere();
-                }
-                return this._frustum.intersectsObject(mesh);
+            if (this.previewNode) this.previewNode.update?.(delta);
+            if (Array.isArray(this.previewNodes)) {
+                this.previewNodes.forEach(node => node.update?.(delta));
             }
-            // For Groups or objects without geometry, assume visible
-            return true;
-        };
 
-        // Throttle UI-only updates to every 3rd frame
-        this._frameCount = (this._frameCount + 1) % 3;
-        const shouldUpdateUI = this._frameCount === 0;
+            this.cameraControls?.updateCameraPosition?.(delta);
 
-        // Only update visible bodies when camera, sun, or planet moved
-        if (Array.isArray(this.celestialBodies)) {
-            // Pre-filter visible bodies to avoid checking every frame
-            if (cameraMoved || this._visibleBodies.size === 0) {
-                this._visibleBodies.clear();
-                this.celestialBodies.forEach(body => {
-                    if (body.getMesh) {
-                        const mesh = body.getMesh();
-                        if (mesh && isVisible(mesh)) {
-                            this._visibleBodies.add(body);
+            // --- Optimized per-frame updates ---
+            // Track camera and sun movement with threshold
+            const cameraMoved = this.camera &&
+                this._lastCameraPos.distanceTo(this.camera.position) > this._updateThreshold;
+            if (cameraMoved) {
+                this._lastCameraPos.copy(this.camera.position);
+            }
+
+            let sunMoved = false;
+            if (this.sun && typeof this.sun.getWorldPosition === 'function') {
+                this.sun.getWorldPosition(this._tempSunPos);
+                sunMoved = this._lastSunPos.distanceTo(this._tempSunPos) > this._updateThreshold;
+                if (sunMoved) {
+                    this._lastSunPos.copy(this._tempSunPos);
+                }
+            }
+
+            // Update frustum only when camera moves (not every frame)
+            if (cameraMoved && this.camera && this.camera.projectionMatrix && this.camera.matrixWorldInverse) {
+                this._projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+                this._frustum.setFromProjectionMatrix(this._projScreenMatrix);
+                this._lastFrustumUpdateFrame = this._frameCount;
+            }
+
+            // Helper to check if a mesh is visible in the frustum
+            const isVisible = mesh => {
+                if (!mesh) return false;
+                mesh.updateWorldMatrix?.(true, false);
+                // Only check frustum for Meshes with geometry
+                if (mesh.isMesh && mesh.geometry) {
+                    const pos = mesh.geometry.attributes.position;
+                    if (!pos || !pos.count || isNaN(pos.array[0])) {
+                        // Skip invalid geometry silently in production
+                        return false;
+                    }
+                    if (!mesh.geometry.boundingSphere) {
+                        mesh.geometry.computeBoundingSphere();
+                    }
+                    return this._frustum.intersectsObject(mesh);
+                }
+                // For Groups or objects without geometry, assume visible
+                return true;
+            };
+
+            // Throttle UI-only updates to every 3rd frame
+            this._frameCount = (this._frameCount + 1) % 3;
+            const shouldUpdateUI = this._frameCount === 0;
+
+            // Only update visible bodies when camera, sun, or planet moved
+            if (Array.isArray(this.celestialBodies)) {
+                // Pre-filter visible bodies to avoid checking every frame
+                if (cameraMoved || this._visibleBodies.size === 0) {
+                    this._visibleBodies.clear();
+                    this.celestialBodies.forEach(body => {
+                        if (body.getMesh) {
+                            const mesh = body.getMesh();
+                            if (mesh && isVisible(mesh)) {
+                                this._visibleBodies.add(body);
+                            }
+                        }
+                    });
+                }
+
+                // Only process visible bodies
+                for (const body of this._visibleBodies) {
+                    const mesh = body.getMesh();
+                    if (!mesh) continue;
+
+                    // Cache world position with smart update
+                    const bodyId = body.name || body.id;
+                    let cachedPos = this._bodyWorldPositions.get(bodyId);
+                    if (!cachedPos) {
+                        // Check cache size limit before adding new entries
+                        if (this._bodyWorldPositions.size >= this._maxCacheEntries) {
+                            // Remove oldest entry (first one in Map)
+                            const firstKey = this._bodyWorldPositions.keys().next().value;
+                            this._bodyWorldPositions.delete(firstKey);
+                        }
+                        cachedPos = new THREE.Vector3();
+                        this._bodyWorldPositions.set(bodyId, cachedPos);
+                    }
+
+                    mesh.getWorldPosition(this._tempWorldPos);
+                    const planetMoved = cachedPos.distanceTo(this._tempWorldPos) > this._updateThreshold;
+                    if (planetMoved) {
+                        cachedPos.copy(this._tempWorldPos);
+                    }
+
+                    // Only update uniforms if something changed
+                    if (typeof body.updateAtmosphereUniforms === 'function') {
+                        if (cameraMoved || sunMoved || planetMoved) {
+                            body.updateAtmosphereUniforms(this.camera, this.sun);
                         }
                     }
-                });
-            }
-            
-            // Only process visible bodies
-            for (const body of this._visibleBodies) {
-                const mesh = body.getMesh();
-                if (!mesh) continue;
-                
-                // Cache world position with smart update
-                const bodyId = body.name || body.id;
-                let cachedPos = this._bodyWorldPositions.get(bodyId);
-                if (!cachedPos) {
-                    // Check cache size limit before adding new entries
-                    if (this._bodyWorldPositions.size >= this._maxCacheEntries) {
-                        // Remove oldest entry (first one in Map)
-                        const firstKey = this._bodyWorldPositions.keys().next().value;
-                        this._bodyWorldPositions.delete(firstKey);
+
+                    // UI updates remain throttled
+                    if (shouldUpdateUI) {
+                        if (typeof body.updateRadialGridFading === 'function' && (cameraMoved || planetMoved)) {
+                            body.updateRadialGridFading(this.camera);
+                        }
+                        if (typeof body.updateSurfaceFading === 'function' && (cameraMoved || planetMoved)) {
+                            body.updateSurfaceFading(this.camera);
+                        }
                     }
-                    cachedPos = new THREE.Vector3();
-                    this._bodyWorldPositions.set(bodyId, cachedPos);
                 }
-                
+            }
+            // Preview node(s)
+            const previewNodes = [this.previewNode, ...(Array.isArray(this.previewNodes) ? this.previewNodes : [])].filter(Boolean);
+            previewNodes.forEach(node => {
+                if (!node.getMesh) return;
+                const mesh = node.getMesh();
+                if (!mesh) return;
+                if (!isVisible(mesh)) return;
+                if (!mesh._lastWorldPos) mesh._lastWorldPos = new THREE.Vector3();
                 mesh.getWorldPosition(this._tempWorldPos);
-                const planetMoved = cachedPos.distanceTo(this._tempWorldPos) > this._updateThreshold;
-                if (planetMoved) {
-                    cachedPos.copy(this._tempWorldPos);
+                const nodeMoved = !mesh._lastWorldPos.equals(this._tempWorldPos);
+                mesh._lastWorldPos.copy(this._tempWorldPos);
+                if (typeof node.updateAtmosphereUniforms === 'function') {
+                    if (cameraMoved || sunMoved || nodeMoved) {
+                        node.updateAtmosphereUniforms(this.camera, this.sun);
+                    }
                 }
+                if (shouldUpdateUI && typeof node.updateRadialGridFading === 'function') {
+                    if (cameraMoved || nodeMoved) {
+                        node.updateRadialGridFading(this.camera);
+                    }
+                }
+                if (shouldUpdateUI && typeof node.updateSurfaceFading === 'function') {
+                    if (cameraMoved || nodeMoved) {
+                        node.updateSurfaceFading(this.camera);
+                    }
+                }
+            });
 
-                // Only update uniforms if something changed
-                if (typeof body.updateAtmosphereUniforms === 'function') {
-                    if (cameraMoved || sunMoved || planetMoved) {
-                        body.updateAtmosphereUniforms(this.camera, this.sun);
-                    }
-                }
-                
-                // UI updates remain throttled
-                if (shouldUpdateUI) {
-                    if (typeof body.updateRadialGridFading === 'function' && (cameraMoved || planetMoved)) {
-                        body.updateRadialGridFading(this.camera);
-                    }
-                    if (typeof body.updateSurfaceFading === 'function' && (cameraMoved || planetMoved)) {
-                        body.updateSurfaceFading(this.camera);
-                    }
-                }
+            // Update satellite vectors if visible and using new implementation
+            if (this.satelliteVectors?.update && this.displaySettingsManager?.getSetting('showSatVectors')) {
+                this.satelliteVectors.update();
             }
-        }
-        // Preview node(s)
-        const previewNodes = [this.previewNode, ...(Array.isArray(this.previewNodes) ? this.previewNodes : [])].filter(Boolean);
-        previewNodes.forEach(node => {
-            if (!node.getMesh) return;
-            const mesh = node.getMesh();
-            if (!mesh) return;
-            if (!isVisible(mesh)) return;
-            if (!mesh._lastWorldPos) mesh._lastWorldPos = new THREE.Vector3();
-            mesh.getWorldPosition(this._tempWorldPos);
-            const nodeMoved = !mesh._lastWorldPos.equals(this._tempWorldPos);
-            mesh._lastWorldPos.copy(this._tempWorldPos);
-            if (typeof node.updateAtmosphereUniforms === 'function') {
-                if (cameraMoved || sunMoved || nodeMoved) {
-                    node.updateAtmosphereUniforms(this.camera, this.sun);
-                }
-            }
-            if (shouldUpdateUI && typeof node.updateRadialGridFading === 'function') {
-                if (cameraMoved || nodeMoved) {
-                    node.updateRadialGridFading(this.camera);
-                }
-            }
-            if (shouldUpdateUI && typeof node.updateSurfaceFading === 'function') {
-                if (cameraMoved || nodeMoved) {
-                    node.updateSurfaceFading(this.camera);
-                }
-            }
-        });
 
-        // Update satellite vectors if visible and using new implementation
-        if (this.satelliteVectors?.update && this.displaySettingsManager?.getSetting('showSatVectors')) {
-            this.satelliteVectors.update();
-        }
-        
-        // Update satellite communications connections if enabled (throttled)
-        if (this.lineOfSightManager?.isEnabled()) {
-            // Only update every 10 frames (about 6 times per second at 60fps)
-            if (this._frameCount % 10 === 0) {
-                this._syncConnectionsWorker();
+            // Update satellite communications connections if enabled (throttled)
+            if (this.lineOfSightManager?.isEnabled()) {
+                // Only update every 10 frames (about 6 times per second at 60fps)
+                if (this._frameCount % 10 === 0) {
+                    this._syncConnectionsWorker();
+                }
             }
-        }
-        
-        // Update background stars to handle FOV changes
-        if (this.backgroundStars?.update) {
-            this.backgroundStars.update();
-        }
-        
-        this.labelRenderer?.render?.(this.scene, this.camera);
-        this.stats?.end();
+
+            // Update background stars to handle FOV changes
+            if (this.backgroundStars?.update) {
+                this.backgroundStars.update();
+            }
+
+            this.labelRenderer?.render?.(this.scene, this.camera);
+            this.stats?.end();
         } catch (error) {
             console.error('[App3D] tick() error:', error);
             this.stats?.end();
             // Don't re-throw to prevent animation loop from stopping
         }
     }
-    
+
     /**
      * Set up integration between PhysicsEngine satellite events and SatelliteCommsManager
      */
@@ -991,56 +919,37 @@ class App3D extends EventTarget {
             console.warn('[App3D] Cannot set up comms integration - missing physics or comms manager');
             return;
         }
-        
+
         // Create bound event handlers for proper cleanup
         this._handleSatelliteAdded = (event) => {
             const satellite = event.detail;
-            
+
             // Get communication config from satellite if available
             const commsConfig = satellite.commsConfig || { preset: 'cubesat', enabled: true };
-            
+
             // Create communication system in SatelliteCommsManager
             this.satelliteCommsManager.createCommsSystem(satellite.id, commsConfig);
         };
-        
+
         this._handleSatelliteRemoved = (event) => {
             const satelliteId = event.detail.id;
-            
+
             // Remove communication system from SatelliteCommsManager
             this.satelliteCommsManager.removeCommsSystem(satelliteId);
         };
-        
+
         // Listen for satellite added/removed events from PhysicsEngine
         window.addEventListener('satelliteAdded', this._handleSatelliteAdded);
         window.addEventListener('satelliteRemoved', this._handleSatelliteRemoved);
-        
+
     }
 
     /**
-     * Process ground stations data from GeoJSON
+     * Get ground stations (delegated to GroundStationService)
+     * @returns {Array} Array of ground station objects
      */
-    _processGroundStations() {
-        this._groundStations = geojsonDataGroundStations.features.map(feature => {
-            const [lon, lat] = feature.geometry.coordinates;
-            const altitude = feature.properties.altitude || 0; // km above sea level
-            
-            // Convert lat/lon/alt to Cartesian coordinates (simplified)
-            const R = 6371; // Earth radius in km
-            const latRad = lat * Math.PI / 180;
-            const lonRad = lon * Math.PI / 180;
-            const r = R + altitude;
-            
-            return {
-                id: feature.properties.gps_code || feature.properties.name,
-                name: feature.properties.name,
-                position: [
-                    r * Math.cos(latRad) * Math.cos(lonRad),
-                    r * Math.cos(latRad) * Math.sin(lonRad),  
-                    r * Math.sin(latRad)
-                ],
-                elevation: 0 // Minimum elevation angle (will be configurable)
-            };
-        });
+    get groundStations() {
+        return GroundStationService.getAllGroundStations();
     }
 }
 

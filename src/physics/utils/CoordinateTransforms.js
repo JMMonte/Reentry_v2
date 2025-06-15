@@ -1,8 +1,8 @@
-import * as THREE from 'three';
-import * as Astronomy from 'astronomy-engine';
-import { PhysicsUtils } from './PhysicsUtils.js';
-// Removed Bodies import to avoid circular dependency
+import { PhysicsVector3 } from './PhysicsVector3.js';
+import { PhysicsQuaternion } from './PhysicsQuaternion.js';
+import { GeodeticUtils } from './GeodeticUtils.js';
 import { OrbitalMechanics } from '../core/OrbitalMechanics.js';
+import { MathUtils } from './MathUtils.js';
 
 /**
  * CoordinateTransforms.js — Advanced Multi-Planet Coordinate System Management
@@ -34,10 +34,10 @@ import { OrbitalMechanics } from '../core/OrbitalMechanics.js';
  * • Physics engine integration requiring accurate transformations
  * • Multi-body system coordinate calculations
  * 
- * USE PhysicsUtils.js FOR:
- * • Low-level mathematical orbital calculations
- * • Earth-specific ECEF/ECI transformations
- * • Classical orbital mechanics without physics engine integration
+ * USE GeodeticUtils.js FOR:
+ * • Low-level geodetic coordinate conversions
+ * • Ellipsoidal mathematics for non-spherical planets
+ * • Orbital element to state vector transformations
  * 
  * Reference Frames:
  * - Planet-Fixed (PF): Rotating with the planet surface (like ECEF for Earth)
@@ -59,25 +59,22 @@ export class CoordinateTransforms {
      * @param {Date} time - Current simulation time
      * @returns {Object} - { position: [x,y,z], velocity: [vx,vy,vz] } in planet-centric inertial coordinates
      */
-    static createFromLatLon(params, planet) {
+    static createFromLatLon(params, planet, time = new Date()) {
         const {
             latitude, longitude, altitude = 400,
-            velocity, azimuth = 0, angleOfAttack = 0
+            velocity, azimuth = 90, angleOfAttack = 0  // Default to eastward for orbital motion
         } = params;
-
 
         // Calculate appropriate orbital velocity if not provided
         let finalVelocity = velocity;
         if (velocity === undefined) {
             // Calculate circular orbital velocity accounting for planet rotation and launch direction
-
             // For circular orbit, we need the surface-relative velocity that results in circular orbital velocity
             // after accounting for planet rotation
             finalVelocity = CoordinateTransforms._calculateCircularLaunchVelocity(
                 latitude, longitude, altitude, azimuth, angleOfAttack, planet
             );
         }
-
 
         // 1. Calculate position in Planet-Fixed frame (rotating with surface)
         const positionPF = CoordinateTransforms._latLonAltToPlanetFixed(
@@ -89,12 +86,11 @@ export class CoordinateTransforms {
             latitude, longitude, finalVelocity, azimuth, angleOfAttack
         );
 
-        // 3. Transform from Planet-Fixed to Planet-Centered Inertial frame
+        // 3. Transform from Planet-Fixed to Planet-Centered Inertial frame using current time
         const { position: positionPCI, velocity: velocityPCI } =
             CoordinateTransforms._transformPlanetFixedToPlanetInertial(
-                positionPF, velocityPF, planet
+                positionPF, velocityPF, planet, time
             );
-
 
         return {
             position: positionPCI,
@@ -135,7 +131,7 @@ export class CoordinateTransforms {
         }
 
         // 1. Calculate orbital state vectors in the requested reference frame
-        const { positionECI, velocityECI } = PhysicsUtils.calculatePositionAndVelocityFromOrbitalElements(
+        const { positionECI, velocityECI } = GeodeticUtils.calculatePositionAndVelocityFromOrbitalElements(
             semiMajorAxis, eccentricity, inclination,
             argumentOfPeriapsis, raan, trueAnomaly, GM
         );
@@ -188,153 +184,158 @@ export class CoordinateTransforms {
         // First priority: Use physics engine quaternion if available
         if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
             const [x, y, z, w] = planet.quaternion;
-            return new THREE.Quaternion(x, y, z, w);
+            return new PhysicsQuaternion(x, y, z, w);
         }
-        
+
         // Second priority: Use planet's orientation data if available
         if (planet.orientationGroup?.quaternion) {
-            return planet.orientationGroup.quaternion.clone();
+            const q = planet.orientationGroup.quaternion;
+            return new PhysicsQuaternion(q.x, q.y, q.z, q.w);
         }
 
         // Third priority: Calculate from tilt/obliquity if available
         if (planet.obliquity !== undefined) {
-            const obliquityRad = THREE.MathUtils.degToRad(planet.obliquity);
-            return new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(1, 0, 0),
-                obliquityRad
-            );
-        }
-        
-        if (planet.tilt !== undefined) {
-            const tiltRad = THREE.MathUtils.degToRad(planet.tilt);
-            return new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(1, 0, 0),
-                tiltRad
-            );
+            const obliquityRad = MathUtils.degToRad(planet.obliquity);
+            return PhysicsQuaternion.fromAxisAngle(new PhysicsVector3(1, 0, 0), obliquityRad);
         }
 
-        // No transformation available - return identity
-        return new THREE.Quaternion();
+        // Fourth priority: Calculate from pole coordinates if available
+        if (planet.poleRA !== undefined && planet.poleDec !== undefined) {
+            const poleRArad = MathUtils.degToRad(planet.poleRA);
+            const poleDecRad = MathUtils.degToRad(planet.poleDec);
+
+            // Convert pole coordinates to vector
+            const poleVector = new PhysicsVector3(
+                Math.cos(poleDecRad) * Math.cos(poleRArad),
+                Math.cos(poleDecRad) * Math.sin(poleRArad),
+                Math.sin(poleDecRad)
+            );
+
+            return CoordinateTransforms._calculateQuaternionFromPole(poleVector, 0);
+        }
+
+        // Default: No transformation (identity quaternion)
+        return new PhysicsQuaternion();
     }
 
     /**
      * Convert geographic coordinates to Planet-Fixed cartesian coordinates
-     * Uses PhysicsUtils for proper ellipsoid mathematics
+     * Uses GeodeticUtils for proper ellipsoid mathematics
      */
     static _latLonAltToPlanetFixed(latitude, longitude, altitude, planet) {
-        // Planet physical parameters
-        const equatorialRadius = planet.radius || planet.equatorialRadius || 6378.137; // km
-        const polarRadius = planet.polarRadius || equatorialRadius; // km, fallback to spherical
-        
-        // Use PhysicsUtils for the actual conversion to avoid code duplication
-        const positionVector = PhysicsUtils.latLonAltToEllipsoid(
-            latitude, longitude, altitude, equatorialRadius, polarRadius
-        );
-        
-        return [positionVector.x, positionVector.y, positionVector.z];
+        let result;
+        // Use ellipsoidal calculation if planet has polar radius
+        if (planet.polarRadius && planet.polarRadius !== planet.radius) {
+            result = GeodeticUtils.latLonAltToEllipsoid(
+                latitude, longitude, altitude,
+                planet.radius, planet.polarRadius
+            ).toArray();
+        } else {
+            // Use spherical calculation
+            result = GeodeticUtils.latLonAltToECEF(
+                latitude, longitude, altitude, planet.radius
+            ).toArray();
+        }
+
+
+        return result;
     }
 
+
+
     /**
-     * Calculate velocity in Planet-Fixed frame using proper ENU transformation
+     * Calculate velocity in Planet-Fixed frame using ENU (East-North-Up) convention
      */
     static _calculatePlanetFixedVelocity(latitude, longitude, speed, azimuth, angleOfAttack) {
-        const lat = THREE.MathUtils.degToRad(latitude);
-        const lon = THREE.MathUtils.degToRad(longitude);
-        const az = THREE.MathUtils.degToRad(azimuth);
-        const aoa = THREE.MathUtils.degToRad(angleOfAttack);
+        const azRad = MathUtils.degToRad(azimuth);
+        const aoaRad = MathUtils.degToRad(angleOfAttack);
 
-        // Calculate local ENU (East-North-Up) basis vectors in Planet-Fixed coordinates
-        const up = new THREE.Vector3(
-            Math.cos(lat) * Math.cos(lon),
-            Math.cos(lat) * Math.sin(lon),
-            Math.sin(lat)
-        ).normalize();
+        // Velocity components in ENU frame
+        const velEast = speed * Math.cos(aoaRad) * Math.sin(azRad);
+        const velNorth = speed * Math.cos(aoaRad) * Math.cos(azRad);
+        const velUp = speed * Math.sin(aoaRad);
 
-        const north = new THREE.Vector3(
-            -Math.sin(lat) * Math.cos(lon),
-            -Math.sin(lat) * Math.sin(lon),
-            Math.cos(lat)
-        ).normalize();
-
-        const east = new THREE.Vector3().crossVectors(north, up).normalize();
-
-        // Decompose velocity: horizontal (in local horizon) and vertical components
-        const horizontalSpeed = speed * Math.cos(aoa);
-        const verticalSpeed = speed * Math.sin(aoa);
-
-        // Azimuth: 0° = North, 90° = East, 180° = South, 270° = West
-        const northVel = horizontalSpeed * Math.cos(az);
-        const eastVel = horizontalSpeed * Math.sin(az);
-
-        // Combine velocity components in Planet-Fixed frame
-        const velocity = new THREE.Vector3()
-            .addScaledVector(north, northVel)
-            .addScaledVector(east, eastVel)
-            .addScaledVector(up, verticalSpeed);
-
-        return [velocity.x, velocity.y, velocity.z];
+        // Convert to ECEF coordinates using GeodeticUtils
+        return GeodeticUtils.enuVelocityToECEF(latitude, longitude, velEast, velNorth, velUp);
     }
 
     /**
-     * Transform from Planet-Fixed (rotating) to Planet-Centered Inertial frame
-     * This is the core transformation that accounts for planet rotation
+     * Transform from Planet-Fixed to Planet-Centered Inertial frame using planet's quaternion
      */
     static _transformPlanetFixedToPlanetInertial(positionPF, velocityPF, planet, time = new Date()) {
-        // Get planet's current orientation from physics engine quaternion
-        // For velocity transformation, we need to exclude the equatorial rotation that converts Y-up to Z-up
-        const planetQuaternion = CoordinateTransforms._getPlanetQuaternionForVelocity(planet, time);
+        // The physics engine has calculated the proper orientation including axial tilt and rotation
 
-        // Get planet's rotation rate (rad/s)
-        const rotationRate = planet.rotationRate || CoordinateTransforms._calculateRotationRate(planet);
+        // Get planet's rotation rate
+        const rotationRate = CoordinateTransforms._calculateRotationRate(planet);
 
-        // Calculate rotation velocity at this location for reference
-        // const lat = Math.atan2(positionPF[2], Math.sqrt(positionPF[0]**2 + positionPF[1]**2));
+        // Use the physics engine's quaternion - it's the authoritative orientation
+        if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
+            const [x, y, z, w] = planet.quaternion;
+            const planetQuaternion = new PhysicsQuaternion(x, y, z, w);
 
-        // 1. Transform position: Planet-Fixed to Planet-Centered Inertial
-        // PCI = Q * PF (where Q is the rotation from PF to PCI)
-        const positionPCI_vec = new THREE.Vector3(...positionPF).applyQuaternion(planetQuaternion);
-        const positionPCI = [positionPCI_vec.x, positionPCI_vec.y, positionPCI_vec.z];
+            // The physics quaternion transforms FROM planet-fixed TO inertial
+            // Planet-fixed coordinates are already in the correct body-fixed system
+            const positionPF_vec = PhysicsVector3.fromArray(positionPF);
+            const positionPCI_vec = positionPF_vec.clone().applyQuaternion(planetQuaternion);
 
-        // 2. Transform velocity: Account for planet rotation
-        // v_PCI = Q * v_PF + ω × (Q * r_PF)
-        // where ω is the angular velocity vector of the planet
+            // Transform velocity: PF to PCI
+            const velocityPF_vec = PhysicsVector3.fromArray(velocityPF);
 
-        // Planet's angular velocity vector (along rotation axis)
-        const omegaVector = CoordinateTransforms._getPlanetAngularVelocity(planet, rotationRate, planetQuaternion);
+            // Get planet's angular velocity vector in inertial frame
+            // The angular velocity is along the planet's rotation axis (north pole direction)
+            const omegaPF = new PhysicsVector3(0, 0, rotationRate); // Z-axis in planet-fixed frame
+            const omegaPCI = omegaPF.clone().applyQuaternion(planetQuaternion); // Transform to inertial frame
 
-        // Transform velocity to inertial frame
-        const velocityPF_vec = new THREE.Vector3(...velocityPF);
-        const velocityPCI_rotated = velocityPF_vec.clone().applyQuaternion(planetQuaternion);
+            // Calculate rotation velocity: v_rotation = ω × r (in inertial frame)
+            const rotationVelocityPCI = new PhysicsVector3().crossVectors(omegaPCI, positionPCI_vec);
 
-        // Add rotation velocity: ω × r
-        const rotationVelocity = new THREE.Vector3().crossVectors(omegaVector, positionPCI_vec);
-        const velocityPCI_vec = velocityPCI_rotated.add(rotationVelocity);
+            // Transform surface-relative velocity to inertial frame
+            const velocityPCI_vec = velocityPF_vec.clone().applyQuaternion(planetQuaternion);
 
-        const velocityPCI = [velocityPCI_vec.x, velocityPCI_vec.y, velocityPCI_vec.z];
+            // Add rotation velocity to get total inertial velocity
+            // v_inertial = v_surface_relative + v_rotation
+            velocityPCI_vec.add(rotationVelocityPCI);
+
+            return {
+                position: positionPCI_vec.toArray(),
+                velocity: velocityPCI_vec.toArray()
+            };
+        }
+
+        // Fallback: Use simple Z-axis rotation if no physics quaternion available
 
 
-        return { position: positionPCI, velocity: velocityPCI };
+        // Calculate current rotation angle from time (rotation around Z-axis only)
+        const rotationAngle = rotationRate * (time.getTime() / 1000);
+        const rotationQuaternion = PhysicsQuaternion.fromAxisAngle(new PhysicsVector3(0, 0, 1), rotationAngle);
+
+        // Transform position: PF to PCI (apply rotation)
+        const positionPF_vec = PhysicsVector3.fromArray(positionPF);
+        const positionPCI_vec = positionPF_vec.clone().applyQuaternion(rotationQuaternion);
+
+
+
+        // Transform velocity: PF to PCI
+        const velocityPF_vec = PhysicsVector3.fromArray(velocityPF);
+        const angularVelocity = new PhysicsVector3(0, 0, rotationRate);
+
+        // Velocity transformation: v_inertial = v_rotating + ω × r
+        const crossProduct = new PhysicsVector3().crossVectors(angularVelocity, positionPF_vec);
+        const velocityPCI_vec = velocityPF_vec.clone().applyQuaternion(rotationQuaternion).add(crossProduct);
+
+
+
+        return {
+            position: positionPCI_vec.toArray(),
+            velocity: velocityPCI_vec.toArray()
+        };
     }
-
-
 
     /**
      * Get planet's quaternion for velocity transformation (excludes Y-up to Z-up conversion)
      */
     static _getPlanetQuaternionForVelocity(planet, time = new Date()) {
-        // For velocity calculations, we want orientation and rotation but NOT the equatorial Y->Z conversion
-        if (planet.orientationGroup && planet.rotationGroup) {
-            // Only compose orientation and rotation, skip equatorial
-            const orientationQ = planet.orientationGroup.quaternion.clone();
-            const rotationQ = planet.rotationGroup.quaternion.clone();
-
-            const composedQ = new THREE.Quaternion()
-                .multiplyQuaternions(orientationQ, rotationQ);
-
-            return composedQ;
-        }
-
-        // Fall back to full quaternion if groups not available
+        // For most cases, velocity and position use the same quaternion
         return CoordinateTransforms._getPlanetQuaternion(planet, time);
     }
 
@@ -342,142 +343,99 @@ export class CoordinateTransforms {
      * Get planet's current quaternion calculated from rotation data
      */
     static _getPlanetQuaternion(planet, time = new Date()) {
-        // First priority: Calculate from pole and spin data if available
-        // This is most accurate for groundtrack calculations at arbitrary times
-        if (planet.poleRA !== undefined && planet.poleDec !== undefined && 
-            planet.spin !== undefined && planet.rotationPeriod) {
-            
-            // The planet.spin value represents the spin angle at a reference time
-            // If spinReferenceTime is provided, use it; otherwise assume current time
-            const referenceTime = planet.spinReferenceTime 
-                ? new Date(planet.spinReferenceTime) 
-                : new Date();
-            
-            // Calculate time difference from reference to requested time
-            const timeDeltaMs = time.getTime() - referenceTime.getTime();
-            const timeDeltaDays = timeDeltaMs / (24 * 3600 * 1000);
-            
-            // Spin rate in degrees per day
-            // Prefer explicit spinRate if available, otherwise calculate from rotation period
-            const spinRate = planet.spinRate || (planet.rotationPeriod ? 360.0 / (planet.rotationPeriod / 86400) : 0);
-            
-            // Calculate spin angle at requested time
-            const spinAtTime = planet.spin + spinRate * timeDeltaDays;
-            const spinRad = THREE.MathUtils.degToRad(spinAtTime);
-            
-            // Convert pole RA/Dec to radians
-            const raRad = THREE.MathUtils.degToRad(planet.poleRA * 15); // RA is in hours, convert to degrees then radians
-            const decRad = THREE.MathUtils.degToRad(planet.poleDec);
-            
-            // Create pole vector in J2000 equatorial coordinates
-            let poleVector = new THREE.Vector3(
-                Math.cos(decRad) * Math.cos(raRad),
-                Math.cos(decRad) * Math.sin(raRad),
-                Math.sin(decRad)
-            );
-            
-            // Convert from equatorial to ecliptic frame (J2000)
-            const obliquity = THREE.MathUtils.degToRad(23.43928);
-            const eqToEclQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -obliquity);
-            poleVector.applyQuaternion(eqToEclQ);
-            
-            // Calculate quaternion from pole and spin using the same method as physics engine
-            return CoordinateTransforms._calculateQuaternionFromPole(poleVector, spinRad);
-        }
-        
-        // Fallback: For pure physics calculations, compute quaternion from rotation data
-        if (planet.rotationPeriod && planet.tilt !== undefined) {
-            // Calculate current rotation angle
-            const rotationPeriod = planet.rotationPeriod; // seconds
-            const currentTime = time.getTime() / 1000; // seconds since epoch
-            const rotationAngle = (2 * Math.PI * currentTime / rotationPeriod) % (2 * Math.PI);
-            
-            // Create quaternion from axial tilt and rotation
-            const tiltRad = THREE.MathUtils.degToRad(planet.tilt || 0);
-            const tiltQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), tiltRad);
-            const rotationQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rotationAngle);
-            
-            // Combine tilt and rotation
-            return new THREE.Quaternion().multiplyQuaternions(tiltQ, rotationQ);
-        }
-
-        // Fallback: Try to get from Three.js scene objects (for UI integration)
-        if (planet.orientationGroup && planet.equatorialGroup && planet.rotationGroup) {
-            // Compose the complete transformation
-            const orientationQ = planet.orientationGroup.quaternion.clone();
-            const equatorialQ = planet.equatorialGroup.quaternion.clone();
-            const rotationQ = planet.rotationGroup.quaternion.clone();
-
-            return new THREE.Quaternion()
-                .multiplyQuaternions(orientationQ, equatorialQ)
-                .multiply(rotationQ);
-        }
-
-        // Fallback: Try to get quaternion from physics engine
-        // NOTE: This quaternion is only valid for the physics engine's current simulation time
+        // Priority 1: Use physics engine quaternion if available
         if (planet.quaternion && Array.isArray(planet.quaternion) && planet.quaternion.length === 4) {
             const [x, y, z, w] = planet.quaternion;
-            return new THREE.Quaternion(x, y, z, w);
+            return new PhysicsQuaternion(x, y, z, w);
         }
 
-        // Ultimate fallback: identity quaternion (no rotation)
-        console.warn(`[CoordinateTransforms] No rotation data available for planet ${planet.name || 'unknown'}, using identity`);
-        return new THREE.Quaternion(); // Identity quaternion
-    }
+        // Priority 2: Use Three.js orientation group quaternion if available
+        if (planet.orientationGroup?.quaternion) {
+            const q = planet.orientationGroup.quaternion;
+            return new PhysicsQuaternion(q.x, q.y, q.z, q.w);
+        }
 
+        // Priority 3: Calculate from rotation period and time
+        if (planet.rotationPeriod) {
+            const rotationRate = CoordinateTransforms._calculateRotationRate(planet);
+            const rotationAngle = rotationRate * (time.getTime() / 1000); // Convert to seconds
+
+            // Create rotation quaternion around Z-axis (assuming standard orientation)
+            return PhysicsQuaternion.fromAxisAngle(new PhysicsVector3(0, 0, 1), rotationAngle);
+        }
+
+        // Priority 4: Calculate from pole coordinates if available
+        if (planet.poleRA !== undefined && planet.poleDec !== undefined) {
+            const poleRArad = MathUtils.degToRad(planet.poleRA);
+            const poleDecRad = MathUtils.degToRad(planet.poleDec);
+
+            // Convert pole coordinates to vector
+            const poleVector = new PhysicsVector3(
+                Math.cos(poleDecRad) * Math.cos(poleRArad),
+                Math.cos(poleDecRad) * Math.sin(poleRArad),
+                Math.sin(poleDecRad)
+            );
+
+            // Calculate spin angle if available
+            let spinRad = 0;
+            if (planet.spin !== undefined) {
+                spinRad = MathUtils.degToRad(planet.spin);
+            } else if (planet.rotationPeriod) {
+                const rotationRate = CoordinateTransforms._calculateRotationRate(planet);
+                spinRad = rotationRate * (time.getTime() / 1000);
+            }
+
+            return CoordinateTransforms._calculateQuaternionFromPole(poleVector, spinRad);
+        }
+
+        // Default: Identity quaternion (no rotation)
+        return new PhysicsQuaternion();
+    }
 
     /**
      * Calculate quaternion from pole vector and spin angle
      * This method mirrors the physics engine's orientation calculation
      */
     static _calculateQuaternionFromPole(poleVector, spinRad) {
-        // Start with the vernal equinox direction (ECLIPJ2000 X-axis)
-        const vernalEquinox = new THREE.Vector3(1, 0, 0);
+        // Normalize pole vector
+        const pole = poleVector.clone().normalize();
 
-        // Project the vernal equinox onto the planet's equatorial plane
-        const poleComponent = vernalEquinox.clone().projectOnVector(poleVector);
-        const primeReference = vernalEquinox.clone().sub(poleComponent).normalize();
+        // Calculate the rotation needed to align Z-axis with pole
+        const zAxis = new PhysicsVector3(0, 0, 1);
+        const rotationAxis = new PhysicsVector3().crossVectors(zAxis, pole);
+        const rotationAngle = Math.acos(MathUtils.clamp(zAxis.dot(pole), -1, 1));
 
-        // If the result is too small (pole nearly parallel to vernal equinox), use Y-axis
-        if (primeReference.length() < 0.1) {
-            const yAxis = new THREE.Vector3(0, 1, 0);
-            const poleComponentY = yAxis.clone().projectOnVector(poleVector);
-            primeReference.copy(yAxis).sub(poleComponentY).normalize();
+        let poleQuaternion;
+        if (rotationAxis.length() < 1e-10) {
+            // Pole is already aligned with Z-axis or opposite
+            if (pole.z > 0) {
+                poleQuaternion = new PhysicsQuaternion(); // Identity
+            } else {
+                poleQuaternion = PhysicsQuaternion.fromAxisAngle(new PhysicsVector3(1, 0, 0), Math.PI);
+            }
+        } else {
+            rotationAxis.normalize();
+            poleQuaternion = PhysicsQuaternion.fromAxisAngle(rotationAxis, rotationAngle);
         }
 
-        // Apply the spin rotation to get the actual prime meridian direction
-        const spinQuaternion = new THREE.Quaternion().setFromAxisAngle(poleVector, spinRad);
-        const primeMeridianDirection = primeReference.clone().applyQuaternion(spinQuaternion);
+        // Apply spin rotation around the pole
+        const spinQuaternion = PhysicsQuaternion.fromAxisAngle(pole, spinRad);
 
-        // Construct the planet's coordinate system
-        const planetZ = poleVector.clone().normalize();
-        const planetX = primeMeridianDirection.clone().normalize();
-        const planetY = new THREE.Vector3().crossVectors(planetX, planetZ).normalize();
-
-        // Ensure right-handed system
-        if (planetX.dot(new THREE.Vector3().crossVectors(planetY, planetZ)) < 0) {
-            planetY.negate();
-        }
-
-        // Create rotation matrix and convert to quaternion
-        const rotMatrix = new THREE.Matrix3().set(
-            planetX.x, planetY.x, planetZ.x,
-            planetX.y, planetY.y, planetZ.y,
-            planetX.z, planetY.z, planetZ.z
-        );
-
-        return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().setFromMatrix3(rotMatrix));
+        // Combine rotations: first align pole, then apply spin
+        return PhysicsQuaternion.multiply(spinQuaternion, poleQuaternion);
     }
 
     /**
      * Calculate planet's rotation rate if not provided
      */
     static _calculateRotationRate(planet) {
-        // Calculate rotation rate directly from rotationPeriod to avoid circular dependency
-        if (planet.rotationPeriod && planet.rotationPeriod > 0) {
-            return 2 * Math.PI / planet.rotationPeriod; // rad/s
+        if (planet.rotationPeriod) {
+            return (2 * Math.PI) / Math.abs(planet.rotationPeriod); // rad/s
         }
-        return 0; // No rotation if period not specified
+
+        // Default to Earth's rotation rate if not specified
+        const earthRotationPeriod = 86164.1; // seconds (sidereal day)
+        return (2 * Math.PI) / earthRotationPeriod;
     }
 
     /**
@@ -486,7 +444,7 @@ export class CoordinateTransforms {
     static _getPlanetAngularVelocity(planet, rotationRate, planetQuaternion) {
         // Angular velocity is along the planet's rotation axis (north pole)
         // In planet-fixed frame, this is typically the Z-axis
-        const omegaPF = new THREE.Vector3(0, 0, rotationRate);
+        const omegaPF = new PhysicsVector3(0, 0, rotationRate);
 
         // Transform to inertial frame using planet's quaternion
         const omegaPCI = omegaPF.clone().applyQuaternion(planetQuaternion);
@@ -498,10 +456,9 @@ export class CoordinateTransforms {
      * Calculate circular orbital velocity for given altitude and planet
      */
     static _calculateCircularOrbitalVelocity(altitude, planet) {
-        const r = planet.radius + altitude; // Total distance from center in km
-        const orbitalVel = OrbitalMechanics.calculateCircularVelocity(planet, r); // km/s
-
-        return orbitalVel;
+        const GM = OrbitalMechanics.getGravitationalParameter(planet);
+        const radius = planet.radius + altitude;
+        return Math.sqrt(GM / radius); // km/s
     }
 
     /**
@@ -509,79 +466,8 @@ export class CoordinateTransforms {
      * accounting for planet rotation and launch direction
      */
     static _calculateCircularLaunchVelocity(latitude, longitude, altitude, azimuth, angleOfAttack, planet) {
-        // Get the required inertial velocity for circular orbit
-        const vCircularInertial = CoordinateTransforms._calculateCircularOrbitalVelocity(altitude, planet);
-
-        // Get planet rotation rate at this altitude
-        const rotationRate = planet.rotationRate || CoordinateTransforms._calculateRotationRate(planet);
-        const lat = THREE.MathUtils.degToRad(latitude);
-        const az = THREE.MathUtils.degToRad(azimuth);
-        const aoa = THREE.MathUtils.degToRad(angleOfAttack);
-
-        // For circular orbit at given altitude, we need velocity tangent to the surface
-        // The angle of attack should be 0 for circular orbit
-        if (Math.abs(angleOfAttack) > 1) {
-            console.warn(`[CoordinateTransforms] Non-zero angle of attack (${angleOfAttack}°) for circular orbit - orbit won't be perfectly circular`);
-        }
-
-        // Calculate the planet's rotation velocity vector at this location
-        // In planet-fixed coordinates, the rotation velocity is ω × r
-        // where ω = [0, 0, rotationRate] (assuming Z-up rotation axis)
-        // and r is the position vector
-        const positionPF = CoordinateTransforms._latLonAltToPlanetFixed(latitude, longitude, altitude, planet);
-        const omega = new THREE.Vector3(0, 0, rotationRate);
-        const posVec = new THREE.Vector3(...positionPF);
-        const rotationVelocityVec = new THREE.Vector3().crossVectors(omega, posVec);
-
-
-        // Get the local ENU basis vectors
-        const up = new THREE.Vector3(
-            Math.cos(lat) * Math.cos(THREE.MathUtils.degToRad(longitude)),
-            Math.cos(lat) * Math.sin(THREE.MathUtils.degToRad(longitude)),
-            Math.sin(lat)
-        ).normalize();
-
-        const north = new THREE.Vector3(
-            -Math.sin(lat) * Math.cos(THREE.MathUtils.degToRad(longitude)),
-            -Math.sin(lat) * Math.sin(THREE.MathUtils.degToRad(longitude)),
-            Math.cos(lat)
-        ).normalize();
-
-        const east = new THREE.Vector3().crossVectors(north, up).normalize();
-
-        // The rotation velocity in ENU coordinates
-        // At the equator pointing east, at poles it's zero
-        // const rotVelEast = rotationVelocityVec.dot(east);
-        // const rotVelNorth = rotationVelocityVec.dot(north);
-
-        // For a circular orbit, we need the velocity vector to have magnitude vCircularInertial
-        // in the inertial frame after accounting for rotation
-        // 
-        // v_inertial = v_surface + v_rotation
-        // |v_inertial| = vCircularInertial
-        //
-        // The launch direction affects how much rotation helps:
-        // - Due East (90°): maximum benefit from rotation
-        // - Due West (270°): maximum penalty from rotation  
-        // - Due North/South (0°/180°): rotation perpendicular to motion
-
-        // Decompose the desired inertial velocity direction based on azimuth
-        const inertialDir = new THREE.Vector3()
-            .addScaledVector(north, Math.cos(az) * Math.cos(aoa))
-            .addScaledVector(east, Math.sin(az) * Math.cos(aoa))
-            .addScaledVector(up, Math.sin(aoa));
-
-        // Project rotation velocity onto launch direction
-        const rotationProjection = rotationVelocityVec.dot(inertialDir);
-
-        // The surface-relative speed needed
-        // For the simplified case with AoA ≈ 0, this reduces to:
-        // v_surface = v_inertial - rotation_contribution
-        const vSurfaceRelative = vCircularInertial - rotationProjection;
-
-
-        // Ensure we return a positive velocity
-        return Math.max(vSurfaceRelative, 0.1);
+        // Use the proven OrbitalMechanics implementation
+        return OrbitalMechanics.calculateLaunchVelocity(planet, latitude, altitude, azimuth);
     }
 
     /**
@@ -606,64 +492,26 @@ export class CoordinateTransforms {
      * @returns {Object} - { position: [x,y,z], velocity: [vx,vy,vz] } in target frame
      */
     static transformCoordinates(position, velocity, fromFrame, toFrame, planet, time = new Date()) {
+        // Convert input to arrays if needed
+        const pos = Array.isArray(position) ? position : [position.x, position.y, position.z];
+        const vel = Array.isArray(velocity) ? velocity : [velocity.x, velocity.y, velocity.z];
+
         // If same frame, return as-is
         if (fromFrame === toFrame) {
-            return { position: [...position], velocity: [...velocity] };
+            return { position: pos, velocity: vel };
         }
 
-
-        // Define transformation paths
-        switch (`${fromFrame}→${toFrame}`) {
-            // Planet-Fixed ↔ Planet-Centered Inertial
-            case 'PF→PCI':
-                return CoordinateTransforms._transformPlanetFixedToPlanetInertial(position, velocity, planet, time);
-
-            case 'PCI→PF':
-                return CoordinateTransforms._transformPlanetInertialToPlanetFixed(position, velocity, planet, time);
-
-            // Geographic ↔ Planet-Fixed (Geographic is just lat/lon/alt representation of PF)
-            case 'GEO→PF': {
-                // Assumes position = [latitude°, longitude°, altitude km]
-                const posPF = CoordinateTransforms._latLonAltToPlanetFixed(
-                    position[0], position[1], position[2], planet
-                );
-                // For velocity, we need azimuth and angle of attack
-                const speed = Math.sqrt(velocity[0] ** 2 + velocity[1] ** 2 + velocity[2] ** 2);
-                const velPF = CoordinateTransforms._calculatePlanetFixedVelocity(
-                    position[0], position[1], speed, 0, 0 // Default azimuth=0, AoA=0
-                );
-                return { position: posPF, velocity: velPF };
-            }
-
-            case 'PF→GEO': {
-                // Convert cartesian to geographic
-                const geo = CoordinateTransforms.planetFixedToLatLonAlt(position, planet);
-                // Velocity would need to be converted to speed/azimuth/AoA
-                return { position: geo, velocity: [...velocity] };
-            }
-
-            // Planet-Centered Inertial ↔ Solar System Barycentric
-            case 'PCI→SSB':
-                return CoordinateTransforms._transformPlanetInertialToSSB(position, velocity, planet);
-
-            case 'SSB→PCI':
-                return CoordinateTransforms._transformSSBToPlanetInertial(position, velocity, planet);
-
-            // Compound transformations
-            case 'PF→SSB': {
-                // PF → PCI → SSB
-                const pci1 = CoordinateTransforms.transformCoordinates(position, velocity, 'PF', 'PCI', planet, time);
-                return CoordinateTransforms.transformCoordinates(pci1.position, pci1.velocity, 'PCI', 'SSB', planet, time);
-            }
-
-            case 'SSB→PF': {
-                // SSB → PCI → PF
-                const pci2 = CoordinateTransforms.transformCoordinates(position, velocity, 'SSB', 'PCI', planet, time);
-                return CoordinateTransforms.transformCoordinates(pci2.position, pci2.velocity, 'PCI', 'PF', planet, time);
-            }
-
-            default:
-                return { position: [...position], velocity: [...velocity] };
+        // Handle different transformation paths
+        if (fromFrame === 'planet-fixed' && toFrame === 'planet-inertial') {
+            return CoordinateTransforms._transformPlanetFixedToPlanetInertial(pos, vel, planet, time);
+        } else if (fromFrame === 'planet-inertial' && toFrame === 'planet-fixed') {
+            return CoordinateTransforms._transformPlanetInertialToPlanetFixed(pos, vel, planet, time);
+        } else if (fromFrame === 'planet-inertial' && toFrame === 'ssb') {
+            return CoordinateTransforms._transformPlanetInertialToSSB(pos, vel, planet);
+        } else if (fromFrame === 'ssb' && toFrame === 'planet-inertial') {
+            return CoordinateTransforms._transformSSBToPlanetInertial(pos, vel, planet);
+        } else {
+            throw new Error(`Unsupported coordinate transformation: ${fromFrame} -> ${toFrame}`);
         }
     }
 
@@ -671,76 +519,68 @@ export class CoordinateTransforms {
      * Transform from Planet-Centered Inertial to Planet-Fixed frame (inverse of existing method)
      */
     static _transformPlanetInertialToPlanetFixed(positionPCI, velocityPCI, planet, time) {
-        // Get planet's current orientation
+        // Get planet's current quaternion (orientation)
         const planetQuaternion = CoordinateTransforms._getPlanetQuaternion(planet, time);
-        const rotationRate = planet.rotationRate || CoordinateTransforms._calculateRotationRate(planet);
 
-        // Inverse quaternion for reverse transformation
-        const inverseQuaternion = planetQuaternion.clone().invert();
+        // Get planet's angular velocity
+        const rotationRate = CoordinateTransforms._calculateRotationRate(planet);
+        const angularVelocity = CoordinateTransforms._getPlanetAngularVelocity(planet, rotationRate, planetQuaternion);
 
-        // Transform position: PF = Q^-1 * PCI
-        const positionPCI_vec = new THREE.Vector3(...positionPCI);
-        const positionPF_vec = positionPCI_vec.clone().applyQuaternion(inverseQuaternion);
+        // Transform position: PCI to PF (apply inverse rotation)
+        const positionPCI_vec = PhysicsVector3.fromArray(positionPCI);
+        const positionPF_vec = positionPCI_vec.clone().applyQuaternion(planetQuaternion.getConjugate());
 
-        // Transform velocity: v_PF = Q^-1 * (v_PCI - ω × r_PCI)
-        const omegaVector = CoordinateTransforms._getPlanetAngularVelocity(planet, rotationRate, planetQuaternion);
-        const rotationVelocity = new THREE.Vector3().crossVectors(omegaVector, positionPCI_vec);
-
-        const velocityPCI_vec = new THREE.Vector3(...velocityPCI);
-        const velocityPF_vec = velocityPCI_vec.sub(rotationVelocity).applyQuaternion(inverseQuaternion);
+        // Transform velocity: PCI to PF (subtract rotation effect)
+        const velocityPCI_vec = PhysicsVector3.fromArray(velocityPCI);
+        const crossProduct = new PhysicsVector3().crossVectors(angularVelocity, positionPCI_vec);
+        const velocityPF_vec = velocityPCI_vec.clone().sub(crossProduct).applyQuaternion(planetQuaternion.getConjugate());
 
         return {
-            position: [positionPF_vec.x, positionPF_vec.y, positionPF_vec.z],
-            velocity: [velocityPF_vec.x, velocityPF_vec.y, velocityPF_vec.z]
+            position: positionPF_vec.toArray(),
+            velocity: velocityPF_vec.toArray()
         };
     }
 
     /**
      * Convert Planet-Fixed cartesian to geographic coordinates
-     * Uses PhysicsUtils for proper ellipsoid mathematics
+     * Uses GeodeticUtils for proper ellipsoid mathematics
      * @param {Array} positionPF - [x, y, z] in planet-fixed frame (km)
      * @param {Object} planet - Planet object with radius and polarRadius
      * @returns {Array} [latitude, longitude, altitude] in degrees and km
      */
     static planetFixedToLatLonAlt(positionPF, planet) {
-        const [X, Y, Z] = positionPF;
+        const pos = Array.isArray(positionPF) ? positionPF : [positionPF.x, positionPF.y, positionPF.z];
 
-        // Planet parameters
-        const equatorialRadius = planet.radius || planet.equatorialRadius || 6378.137;
-        const polarRadius = planet.polarRadius || equatorialRadius;
-        
-        // Use PhysicsUtils for the conversion to avoid code duplication
-        const geodetic = PhysicsUtils.ecefToGeodetic(X, Y, Z, equatorialRadius, polarRadius);
-        
-        return [geodetic.latitude, geodetic.longitude, geodetic.altitude];
+        // Use ellipsoidal calculation if planet has polar radius
+        if (planet.polarRadius && planet.polarRadius !== planet.radius) {
+            return GeodeticUtils.ecefToGeodetic(pos[0], pos[1], pos[2], planet.radius, planet.polarRadius);
+        } else {
+            // Use spherical calculation
+            return GeodeticUtils.cartesianToGeodetic(pos[0], pos[1], pos[2]);
+        }
     }
 
     /**
      * Transform from Planet-Centered Inertial to Solar System Barycentric
      */
     static _transformPlanetInertialToSSB(positionPCI, velocityPCI, planet) {
-        // Need planet's position and velocity in SSB frame
-        if (!planet.position || !planet.velocity) {
-            console.warn('[CoordinateTransforms] Planet SSB state not available, returning PCI coordinates');
-            return { position: [...positionPCI], velocity: [...velocityPCI] };
-        }
+        // Add planet's position and velocity to get SSB coordinates
+        const planetPos = planet.position || [0, 0, 0];
+        const planetVel = planet.velocity || [0, 0, 0];
 
-        // Simple addition: r_SSB = r_planet + r_PCI
-        const planetPos = Array.isArray(planet.position) ? planet.position :
-            [planet.position.x, planet.position.y, planet.position.z];
-        const planetVel = Array.isArray(planet.velocity) ? planet.velocity :
-            [planet.velocity.x, planet.velocity.y, planet.velocity.z];
+        const pos = Array.isArray(positionPCI) ? positionPCI : [positionPCI.x, positionPCI.y, positionPCI.z];
+        const vel = Array.isArray(velocityPCI) ? velocityPCI : [velocityPCI.x, velocityPCI.y, velocityPCI.z];
 
         return {
             position: [
-                positionPCI[0] + planetPos[0],
-                positionPCI[1] + planetPos[1],
-                positionPCI[2] + planetPos[2]
+                pos[0] + planetPos[0],
+                pos[1] + planetPos[1],
+                pos[2] + planetPos[2]
             ],
             velocity: [
-                velocityPCI[0] + planetVel[0],
-                velocityPCI[1] + planetVel[1],
-                velocityPCI[2] + planetVel[2]
+                vel[0] + planetVel[0],
+                vel[1] + planetVel[1],
+                vel[2] + planetVel[2]
             ]
         };
     }
@@ -749,41 +589,36 @@ export class CoordinateTransforms {
      * Transform from Solar System Barycentric to Planet-Centered Inertial
      */
     static _transformSSBToPlanetInertial(positionSSB, velocitySSB, planet) {
-        // Need planet's position and velocity in SSB frame
-        if (!planet.position || !planet.velocity) {
-            console.warn('[CoordinateTransforms] Planet SSB state not available, returning SSB coordinates');
-            return { position: [...positionSSB], velocity: [...velocitySSB] };
-        }
+        // Subtract planet's position and velocity to get PCI coordinates
+        const planetPos = planet.position || [0, 0, 0];
+        const planetVel = planet.velocity || [0, 0, 0];
 
-        // Simple subtraction: r_PCI = r_SSB - r_planet
-        const planetPos = Array.isArray(planet.position) ? planet.position :
-            [planet.position.x, planet.position.y, planet.position.z];
-        const planetVel = Array.isArray(planet.velocity) ? planet.velocity :
-            [planet.velocity.x, planet.velocity.y, planet.velocity.z];
+        const pos = Array.isArray(positionSSB) ? positionSSB : [positionSSB.x, positionSSB.y, positionSSB.z];
+        const vel = Array.isArray(velocitySSB) ? velocitySSB : [velocitySSB.x, velocitySSB.y, velocitySSB.z];
 
         return {
             position: [
-                positionSSB[0] - planetPos[0],
-                positionSSB[1] - planetPos[1],
-                positionSSB[2] - planetPos[2]
+                pos[0] - planetPos[0],
+                pos[1] - planetPos[1],
+                pos[2] - planetPos[2]
             ],
             velocity: [
-                velocitySSB[0] - planetVel[0],
-                velocitySSB[1] - planetVel[1],
-                velocitySSB[2] - planetVel[2]
+                vel[0] - planetVel[0],
+                vel[1] - planetVel[1],
+                vel[2] - planetVel[2]
             ]
         };
     }
 
     /**
-     * Utility: Convert position/velocity arrays to Three.js vectors
+     * Utility: Convert position/velocity arrays to PhysicsVector3 (utility function)
      */
     static toVector3(array) {
-        return new THREE.Vector3(...(array || [0, 0, 0]));
+        return new PhysicsVector3(array[0], array[1], array[2]);
     }
 
     /**
-     * Utility: Convert Three.js vectors to position/velocity arrays  
+     * Utility: Convert PhysicsVector3 to array (utility function)
      */
     static toArray(vector) {
         return [vector.x, vector.y, vector.z];

@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { Terminal, Copy } from 'lucide-react';
 import { Button } from '../../button';
 import { MessageBadge } from '../MessageBadge';
-import { getMessageClasses, chatTheme } from '../theme';
+import { getMessageClasses } from '../theme';
 
 export function CodeExecutionMessage({ message }) {
   const classes = getMessageClasses('codeInterpreter');

@@ -1,7 +1,5 @@
 // Utility functions for handling body selection across the application
 
-import { Planet } from '../components/planet/Planet.js';
-
 /**
  * Format a value into the standard body selection format
  * @param {string|object} value - The value to format (can be a satellite object, name, or id)
@@ -56,7 +54,7 @@ export const getBodyDisplayName = (value, satellites, celestialBodies) => {
   }
   
   // Handle dynamic planets (including Sun)
-  const planetOption = getPlanetOptions(celestialBodies || (window.app3d && window.app3d.celestialBodies)).find(opt => opt.value === value);
+  const planetOption = getPlanetOptions(celestialBodies || []).find(opt => opt.value === value);
   if (planetOption) {
     return planetOption.text;
   }
@@ -68,9 +66,10 @@ export const getBodyDisplayName = (value, satellites, celestialBodies) => {
  * Update camera target based on body selection
  * @param {string} value - The body selection value
  * @param {Object} app3d - The App3D instance
+ * @param {Array} celestialBodies - Array of celestial body instances
  * @param {boolean} [dispatchEvent=true] - Whether to dispatch the bodySelected event
  */
-export const updateCameraTarget = (value, app3d, dispatchEvent = true) => {
+export const updateCameraTarget = (value, app3d, celestialBodies = [], dispatchEvent = true) => {
   if (!app3d?.cameraControls) return;
 
   const formattedValue = formatBodySelection(value);
@@ -78,8 +77,8 @@ export const updateCameraTarget = (value, app3d, dispatchEvent = true) => {
   if (!formattedValue || formattedValue === 'none') {
     app3d.cameraControls.clearCameraTarget();
   } else {
-    // Handle dynamic planets
-    const planetInstance = Planet.instances.find(p => p.name === formattedValue);
+    // Handle dynamic planets using passed celestialBodies array instead of Planet.instances
+    const planetInstance = celestialBodies.find(p => p.name === formattedValue);
     if (planetInstance) {
       app3d.cameraControls.updateCameraTarget(planetInstance);
     } else if (formattedValue.startsWith('satellite-')) {

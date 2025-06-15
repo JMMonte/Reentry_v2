@@ -4,7 +4,7 @@ import { DraggableModal } from "../modal/DraggableModal";
 import { Button } from "../button";
 import { Focus, MonitorX, MonitorCheck, Trash2 } from "lucide-react";
 import { ColorPicker } from "./ColorPicker";
-import { formatBodySelection } from '../../../utils/BodySelectionUtils';
+import { formatBodySelection } from '@/utils/BodySelectionUtils';
 import PropTypes from 'prop-types';
 
 export function SatelliteListWindow({ satellites, isOpen, setIsOpen, onBodySelect, debugWindows, app3d, onOpenManeuver, availableBodies = [{ name: 'Earth', naifId: 399 }] }) {

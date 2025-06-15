@@ -1,80 +1,45 @@
 /**
- * POI Visibility Worker
- * 
- * Handles computationally intensive POI visibility calculations in a Web Worker
- * to keep the main thread responsive.
+ * POI Visibility Worker (refactored)
+ * ----------------------------------
+ * Performs heavy POI-satellite visibility work in a background thread.
+ * All math comes from POIVisibilityService; this file only orchestrates
+ * the per-satellite loop and message passing.
  */
 
+import { POIVisibilityService as Vis } from '../../services/POIVisibilityService.js';
+
 /**
- * Calculate great circle distance between two points
- * @param {number} lat1 - Latitude 1 in degrees
- * @param {number} lon1 - Longitude 1 in degrees
- * @param {number} lat2 - Latitude 2 in degrees
- * @param {number} lon2 - Longitude 2 in degrees
- * @returns {number} Distance in degrees
+ * Group visible POIs by category for a single satellite.
+ * @param {Array} visiblePOIs
  */
-function greatCircleDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Earth radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c) / 111.32; // Convert km to degrees (approximate)
+function groupByCategory(visiblePOIs) {
+    const grouped = {};
+    visiblePOIs.forEach(poi => {
+        if (!grouped[poi.category]) grouped[poi.category] = [];
+        grouped[poi.category].push(poi);
+    });
+    return grouped;
 }
 
 /**
- * Check if a POI is visible from satellite position
- * @param {Object} poi - POI object with lat, lon
- * @param {Object} satellite - Satellite object with lat, lon, coverageRadius
- * @returns {boolean} True if POI is visible
+ * Calculate visibility for all satellites.
+ * Minimal logic here – loops & grouping only; distance test is delegated.
+ * @param {Array} pois Canonical POI objects (contain lat, lon, category).
+ * @param {Array} sats Satellite objects with lat, lon, alt, coverageRadius, id.
  */
-function isPOIVisible(poi, satellite) {
-    const distance = greatCircleDistance(
-        poi.lat, poi.lon,
-        satellite.lat, satellite.lon
-    );
-    return distance <= satellite.coverageRadius;
-}
-
-/**
- * Calculate visibility for all POI-satellite combinations
- * @param {Array} pois - Array of POI objects
- * @param {Array} satellites - Array of satellite objects
- * @returns {Object} Visibility results grouped by satellite
- */
-function calculateVisibility(pois, satellites) {
-    const result = {};
-    
-    satellites.forEach(satellite => {
-        const visiblePOIs = [];
-        
-        pois.forEach(poi => {
-            if (isPOIVisible(poi, satellite)) {
-                visiblePOIs.push(poi);
-            }
-        });
-        
-        if (visiblePOIs.length > 0) {
-            // Group by category
-            const grouped = {};
-            visiblePOIs.forEach(poi => {
-                if (!grouped[poi.category]) {
-                    grouped[poi.category] = [];
-                }
-                grouped[poi.category].push(poi);
-            });
-            
-            result[satellite.id] = {
-                satellite,
-                visiblePOIs: grouped,
-                totalCount: visiblePOIs.length
+function calcVisibility(pois, sats) {
+    const out = {};
+    sats.forEach(sat => {
+        const visible = Vis.getVisiblePOIs(pois, sat);
+        if (visible.length) {
+            out[sat.id] = {
+                satellite: sat,
+                visiblePOIs: groupByCategory(visible),
+                totalCount: visible.length
             };
         }
     });
-    
-    return result;
+    return out;
 }
 
 // Worker message handler
@@ -83,28 +48,17 @@ self.onmessage = function(e) {
     
     switch (type) {
         case 'CALCULATE_VISIBILITY': {
+            const { pois, satellites, requestId } = data;
             try {
-                const { pois, satellites, requestId } = data;
-                
-                // Perform the calculation
-                const result = calculateVisibility(pois, satellites);
-                
-                // Send result back to main thread
+                const result = calcVisibility(pois, satellites);
                 self.postMessage({
                     type: 'VISIBILITY_RESULT',
-                    data: {
-                        result,
-                        requestId,
-                        timestamp: Date.now()
-                    }
+                    data: { result, requestId, timestamp: Date.now() }
                 });
-            } catch (error) {
+            } catch (err) {
                 self.postMessage({
                     type: 'VISIBILITY_ERROR',
-                    data: {
-                        error: error.message,
-                        requestId: data.requestId
-                    }
+                    data: { error: err.message, requestId }
                 });
             }
             break;

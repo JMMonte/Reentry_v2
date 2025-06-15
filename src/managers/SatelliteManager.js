@@ -1,26 +1,21 @@
 // SatelliteManager.js
 //
-// Responsibilities
-// • CRUD for Satellite instances
-// • Delegation of physics updates to a provider (stubbed for now)
+// Responsibilities (UI-ONLY - Physics handled by SatelliteEngine)
+// • CRUD for Satellite UI instances
 // • Visual upkeep: orbits, ground tracks, etc.
+// • Syncing UI state with physics engine state (read-only)
 // • Keeps all distances in kilometres and velocities in km s-1
 //
-// External deps: THREE, Satellite, OrbitPath, Constants
-// Public API: addSatellite, removeSatellite, updateSatelliteFromBackend,
-//             updateAll, getSatellitesMap, getSatellites, setTimeWarp,
-//             refreshOrbitPaths, plus createSatelliteFrom* helpers.
+// External deps: Satellite, OrbitPath, Constants
+// Public API: createUISatellite, updateAllFromPhysicsState,
+//             removeSatellite, updateSatelliteColor, getSatellitesMap, getSatellites
+//
+// NOTE: Satellite creation now happens in physics layer via PhysicsEngine
+//       SatelliteManager only creates UI representations of existing physics satellites
 
-import * as THREE from 'three';
 import { Satellite } from '../components/Satellite/Satellite.js';
-// import { OrbitPath } from '../components/Satellite/OrbitPath.js'; // Removed - using SatelliteOrbitManager
 import { Constants } from '../physics/PhysicsAPI.js';
-import {
-    createSatelliteFromLatLon as createSatFromLatLonInternal,
-    createSatelliteFromOrbitalElements as createSatFromOEInternal,
-    createSatelliteFromLatLonCircular as createSatFromLatLonCircularInternal
-} from '../components/Satellite/createSatellite.js';
-import { objectPool, withVector3, withVector3s } from '../utils/ObjectPool.js';
+import { objectPool } from '../utils/ObjectPool.js';
 
 /* ────────────── small helpers ────────────── */
 
@@ -85,50 +80,8 @@ export class SatelliteManager {
         return sat;
     }
 
-    /**
-     * Legacy method for backwards compatibility
-     * Delegates to physics engine then creates UI
-     */
-    async addSatellite(params) {
-        const centralBodyNaifId =
-            params.centralBodyNaifId ??
-            params.planetNaifId ??
-            params.planetConfig?.naifId ??
-            399; // Earth fallback
-        
-        const satData = {
-            ...params,
-            id: params.id ?? this._nextId++,
-            centralBodyNaifId
-        };
-        
-        
-        
-        
-        // Create physics satellite
-        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
-        if (!physicsEngine) {
-            console.warn('[SatelliteManager] Physics engine not available');
-            return null;
-        }
-        
-        const physicsId = physicsEngine.addSatellite(satData);
-        
-        // Create UI satellite
-        return this.createUISatellite(physicsId, {
-            planetConfig: params.planetConfig,
-            color: params.color,
-            name: params.name
-        });
-    }
-
-    /** Integrate backend-provided state (pos [m], vel [m s-1]). */
-    updateSatelliteFromBackend(id, pos, vel, debug) {
-        const sat = this._satellites.get(String(id));
-        if (sat) {
-            sat.updateVisualsFromState({ position: pos, velocity: vel, ...debug });
-        }
-    }
+    /* ───── addSatellite method removed ───── */
+    /* Satellite creation now handled by physics engine via App3D.createSatelliteFrom*() methods */
 
     /** Remove satellite from both UI and physics */
     removeSatellite(id) {
@@ -192,8 +145,6 @@ export class SatelliteManager {
         const thirdBodies = this._collectThirdBodyPositions();
 
         try {
-            // physicsProvider?.update(…)  ← stub
-
             this._updateVisualsAndPaths(
                 simTimeMs, realDtS, warpDtS, perfNow, timeWarp, thirdBodies
             );
@@ -354,52 +305,10 @@ export class SatelliteManager {
         });
     }
 
-    /* ───── public helpers ───── */
-
-    setTimeWarp(v) {
-        for (const sat of this._satellites.values()) sat.timeWarp = v;
-        // physicsProvider?.setTimeWarp(v)  ← stub
-    }
-
-    setIntegrationMethod(method) {
-        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
-        if (physicsEngine && physicsEngine.satelliteEngine) {
-            physicsEngine.satelliteEngine.setIntegrationMethod(method);
-        }
-    }
-
-    setPhysicsTimeStep(timeStep) {
-        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
-        if (physicsEngine && physicsEngine.satelliteEngine) {
-            physicsEngine.satelliteEngine.setPhysicsTimeStep(timeStep);
-        }
-    }
-
-    setSensitivityScale(scale) {
-        const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
-        if (physicsEngine && physicsEngine.satelliteEngine) {
-            physicsEngine.satelliteEngine.setSensitivityScale(scale);
-        }
-    }
+    /* ───── Legacy methods removed ───── */
+    /* Physics methods moved to SimulationController/PhysicsEngine where they belong */
 
     refreshOrbitPaths() { this._lastOrbitUpdate = 0; }
-
-    /* ───── factory wrappers ───── */
-
-    createSatelliteFromLatLon(app3d, p, selectedBody) {
-        const naifId = selectedBody?.naifId ?? p.planetNaifId ?? 10;
-        return createSatFromLatLonInternal(app3d, { ...p, planetNaifId: naifId });
-    }
-
-    createSatelliteFromOrbitalElements(app3d, p) {
-        const naifId = p.planetNaifId ?? p.planet?.naifId ?? p.selectedBody?.naifId ?? 399;
-        return createSatFromOEInternal(app3d, { ...p, planetNaifId: naifId });
-    }
-
-    createSatelliteFromLatLonCircular(app3d, p, selectedBody) {
-        const naifId = selectedBody?.naifId ?? 399;
-        return createSatFromLatLonCircularInternal(app3d, { ...p, planetNaifId: naifId });
-    }
 
     /**
      * Update all Satellite UI objects from the latest physics state.

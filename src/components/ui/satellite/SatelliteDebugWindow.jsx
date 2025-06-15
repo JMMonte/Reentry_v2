@@ -6,13 +6,13 @@ import { DraggableModal } from "../modal/DraggableModal";
 import { ColorPicker } from "./ColorPicker";
 import { Focus, Trash2, Plus } from "lucide-react";
 import PropTypes from 'prop-types';
-import { formatBodySelection } from '../../../utils/BodySelectionUtils';
-import { useCelestialBodies } from '../../../providers/CelestialBodiesContext';
+import { formatBodySelection } from '@/utils/BodySelectionUtils';
+import { useCelestialBodies } from '@/providers/CelestialBodiesContext';
 import { SatelliteCommsSection } from './SatelliteCommsSection.jsx';
 import { SatelliteCommsTimeline } from './SatelliteCommsTimeline.jsx';
 import { OrbitalElementsSection } from './OrbitalElementsSection.jsx';
-import { useOrbitalElements } from '../../../hooks/useOrbitalElements';
-import { usePropagationData } from '../../../hooks/usePropagationData';
+import { useOrbitalElements } from '@/hooks/useOrbitalElements';
+import { usePropagationData } from '@/hooks/usePropagationData';
 
 // Section component for collapsible sections
 const Section = ({ title, isOpen, onToggle, children }) => {
@@ -64,6 +64,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
   const [lat, setLat] = useState(null);
   const [lon, setLon] = useState(null);
   const [derivedPhysics, setDerivedPhysics] = useState({});
+  const [performanceMetrics, setPerformanceMetrics] = useState(null);
+  const [workerMetrics, setWorkerMetrics] = useState(null);
   
   // Use custom hooks
   const { orbitalElements, apsisData } = useOrbitalElements(physics, celestialBodies, orbitalReferenceFrame);
@@ -79,7 +81,8 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     forces: false,
     orbit: true,
     simProperties: false,
-    propagation: false
+    propagation: false,
+    performance: false
   });
   
   const toggleSection = (section) => {
@@ -195,6 +198,31 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
     
     setDerivedPhysics(derived);
   }, [physics, celestialBodies]);
+
+  // Update performance metrics periodically
+  useEffect(() => {
+    if (!satellite?.id) return;
+    
+    const updateMetrics = () => {
+      // Access PropagationMetrics from physics engine
+      if (window.physicsAPI?.getSatellitePerformanceMetrics) {
+        const metrics = window.physicsAPI.getSatellitePerformanceMetrics(satellite.id);
+        setPerformanceMetrics(metrics);
+      }
+      
+      // Access worker pool metrics
+      if (window.physicsAPI?.getWorkerPoolMetrics) {
+        const workerStats = window.physicsAPI.getWorkerPoolMetrics();
+        setWorkerMetrics(workerStats);
+      }
+    };
+    
+    // Update immediately and then every 2 seconds
+    updateMetrics();
+    const interval = setInterval(updateMetrics, 2000);
+    
+    return () => clearInterval(interval);
+  }, [satellite?.id]);
 
 
   const handleFocus = () => {
@@ -466,7 +494,7 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
               {physics?.escape_velocity !== undefined && (
                 <DataRow label="Escape Vel" value={formatNumber(physics.escape_velocity)} unit="km/s" />
               )}
-              {physics?.escape_velocity !== undefined && (physics?.speed !== undefined || derivedPhysics.speed !== undefined) && (
+              {physics?.escape_velocity !== undefined && physics?.speed !== undefined && (
                 <DataRow label="v/v_esc" value={formatNumber((physics?.speed ?? derivedPhysics.speed) / physics.escape_velocity, 3)} />
               )}
             </Section>
@@ -671,6 +699,150 @@ export function SatelliteDebugWindow({ satellite, onBodySelect, onClose, onOpenM
                   </div>
                 )}
               </div>
+            </Section>
+
+            {/* Performance Metrics Section */}
+            <Section
+              title={
+                <div className="flex items-center gap-2">
+                  <span>Performance Metrics</span>
+                  {performanceMetrics?.health?.status && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded text-white ${
+                      performanceMetrics.health.status === 'HEALTHY' ? 'bg-green-500' :
+                      performanceMetrics.health.status === 'UNSTABLE' ? 'bg-yellow-500' :
+                      performanceMetrics.health.status === 'DEGRADED' ? 'bg-orange-500' :
+                      'bg-red-500'
+                    }`}>
+                      {performanceMetrics.health.status}
+                    </span>
+                  )}
+                </div>
+              }
+              isOpen={sectionVisibility.performance}
+              onToggle={() => toggleSection('performance')}
+            >
+              {performanceMetrics ? (
+                <div className="space-y-2">
+                  {/* Performance Overview */}
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground">Performance</div>
+                    <DataRow 
+                      label="Integration Time" 
+                      value={formatNumber(performanceMetrics.performance.averageIntegrationTime, 3)} 
+                      unit="ms" 
+                    />
+                    <DataRow 
+                      label="Steps/Second" 
+                      value={formatNumber(performanceMetrics.performance.stepsPerSecond, 1)} 
+                    />
+                    <DataRow 
+                      label="Failure Rate" 
+                      value={formatNumber(performanceMetrics.performance.integrationFailureRate, 2)} 
+                      unit="%" 
+                    />
+                    <DataRow 
+                      label="Method Used" 
+                      value={performanceMetrics.methods.preferredMethod} 
+                    />
+                  </div>
+
+                  {/* Health Status */}
+                  <div className="space-y-1 pt-1 border-t border-border/30">
+                    <div className="text-xs font-semibold text-muted-foreground">Health Status</div>
+                    <DataRow label="Uptime" value={formatDuration(performanceMetrics.health.uptime)} />
+                    <DataRow label="Total Steps" value={performanceMetrics.health.totalSteps} />
+                    <DataRow label="Successful" value={performanceMetrics.health.successfulIntegrations} />
+                    <DataRow label="Recoveries" value={performanceMetrics.health.totalRecoveries} />
+                    <DataRow label="Errors" value={performanceMetrics.health.totalErrors} />
+                  </div>
+
+                  {/* Method Usage */}
+                  {(performanceMetrics.methods.rk4Usage > 0 || performanceMetrics.methods.rk45Usage > 0) && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">Integration Methods</div>
+                      <DataRow label="RK4 Usage" value={performanceMetrics.methods.rk4Usage} />
+                      <DataRow label="RK45 Usage" value={performanceMetrics.methods.rk45Usage} />
+                    </div>
+                  )}
+
+                  {/* Memory Performance */}
+                  {performanceMetrics.memory.cacheHitRate > 0 && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">Memory</div>
+                      <DataRow 
+                        label="Cache Hit Rate" 
+                        value={formatNumber(performanceMetrics.memory.cacheHitRate, 1)} 
+                        unit="%" 
+                      />
+                      <DataRow label="Cache Hits" value={performanceMetrics.memory.cacheHits} />
+                      <DataRow label="Cache Misses" value={performanceMetrics.memory.cacheMisses} />
+                    </div>
+                  )}
+
+                  {/* Recent Issues */}
+                  {performanceMetrics.recentErrors && performanceMetrics.recentErrors.length > 0 && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">Recent Issues</div>
+                      {performanceMetrics.recentErrors.slice(0, 3).map((error, idx) => (
+                        <div key={idx} className="pl-2 space-y-0.5">
+                          <div className="text-xs">
+                            <span className={`font-mono px-1 py-0.5 rounded text-xs ${
+                              error.type.includes('Recovery') ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {error.type}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground pl-2">
+                            {new Date(error.timestamp).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      ))}
+                      {performanceMetrics.recentErrors.length > 3 && (
+                        <div className="text-xs text-muted-foreground pl-2">
+                          +{performanceMetrics.recentErrors.length - 3} more issues
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Worker Pool Status */}
+                  {workerMetrics && (
+                    <div className="space-y-1 pt-1 border-t border-border/30">
+                      <div className="text-xs font-semibold text-muted-foreground">Worker Pool</div>
+                      <DataRow 
+                        label="Active Workers" 
+                        value={`${workerMetrics.busyWorkers}/${workerMetrics.activeWorkers}`} 
+                      />
+                      <DataRow 
+                        label="Parallel Efficiency" 
+                        value={formatNumber(workerMetrics.averageWorkerUtilization * 100, 1)} 
+                        unit="%" 
+                      />
+                      <DataRow 
+                        label="Pending Tasks" 
+                        value={workerMetrics.pendingTasks} 
+                      />
+                    </div>
+                  )}
+
+                  {/* Last Update */}
+                  <div className="space-y-1 pt-1 border-t border-border/30">
+                    <DataRow 
+                      label="Last Update" 
+                      value={`${performanceMetrics.health.timeSinceLastUpdate}s ago`} 
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">
+                    Performance metrics not available
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Metrics will appear once satellite propagation begins
+                  </div>
+                </div>
+              )}
             </Section>
 
             {/* Propagation Information Section */}

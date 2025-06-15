@@ -102,13 +102,6 @@ export class PassPredictionService {
             satPoint.lat, satPoint.lon
         ) * Math.PI / 180;
         
-        // Slant range using law of cosines
-        const slantRange = Math.sqrt(
-            radius * radius + 
-            (radius + satAlt) * (radius + satAlt) - 
-            2 * radius * (radius + satAlt) * Math.cos(angle)
-        );
-        
         // Elevation angle calculation
         // Using the formula: sin(el) = cos(angle) - Re/(Re+h)
         // Where el is elevation, Re is planet radius, h is altitude

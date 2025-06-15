@@ -9,7 +9,7 @@
  * for expensive calculations.
  */
 
-import * as THREE from 'three';
+import { PhysicsVector3 } from '../utils/PhysicsVector3.js';
 import { PhysicsConstants } from './PhysicsConstants.js';
 
 export class CelestialBody {
@@ -62,8 +62,8 @@ export class CelestialBody {
         this._synodicPeriod = null;
         
         // Dynamic properties (updated during simulation)
-        this.position = new THREE.Vector3(); // km from SSB
-        this.velocity = new THREE.Vector3(); // km/s
+        this.position = new PhysicsVector3(); // km from SSB
+        this.velocity = new PhysicsVector3(); // km/s
         this.lastUpdateTime = 0; // JD
         
         // Physics state cache
@@ -168,7 +168,7 @@ export class CelestialBody {
         const relativePos = this.position.clone().sub(position); // Vector from position to body center
         const distance = relativePos.length();
         
-        if (distance === 0) return new THREE.Vector3();
+        if (distance === 0) return new PhysicsVector3();
         
         const accelMagnitude = this.GM / (distance * distance);
         return relativePos.normalize().multiplyScalar(accelMagnitude);
@@ -178,12 +178,12 @@ export class CelestialBody {
      * Compute J2 perturbation acceleration (oblateness effect)
      */
     computeJ2Acceleration(position) {
-        if (!this.J2 || !this.radius) return new THREE.Vector3();
+        if (!this.J2 || !this.radius) return new PhysicsVector3();
         
         const relativePos = position.clone().sub(this.position);
         const r = relativePos.length();
         
-        if (r < this.radius) return new THREE.Vector3();
+        if (r < this.radius) return new PhysicsVector3();
         
         const x = relativePos.x;
         const y = relativePos.y;
@@ -199,7 +199,7 @@ export class CelestialBody {
         const ay = factor * y * (5 * z2_r2 - 1);
         const az = factor * z * (5 * z2_r2 - 3);
         
-        return new THREE.Vector3(ax, ay, az);
+        return new PhysicsVector3(ax, ay, az);
     }
     
     /**

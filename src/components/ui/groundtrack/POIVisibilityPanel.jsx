@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { PassPredictionService } from '../../../services/PassPredictionService';
-import { POIVisibilityService } from '../../../services/POIVisibilityService';
+import { PassPredictionService } from '@/services/PassPredictionService';
+import { POIVisibilityService } from '@/services/POIVisibilityService';
 import { Eye, MapPin, Radio, Satellite, ChevronDown, ChevronRight, Clock, Calendar } from 'lucide-react';
 import { Badge } from '../badge';
 import { Button } from '../button';

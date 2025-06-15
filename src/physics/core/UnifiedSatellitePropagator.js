@@ -14,8 +14,6 @@
 
 import { PhysicsConstants } from './PhysicsConstants.js';
 import { AtmosphericModels } from './AtmosphericModels.js';
-import * as THREE from 'three';
-import { integrateRK45 } from '../integrators/OrbitalIntegrators.js';
 
 export class UnifiedSatellitePropagator {
     
@@ -31,7 +29,8 @@ export class UnifiedSatellitePropagator {
             includeJ2 = true,
             includeDrag = true,
             includeThirdBody = true,
-            detailed = false
+            detailed = false,
+            perturbationScale = 1.0
         } = options;
 
         const centralBody = bodies[satellite.centralBodyNaifId];
@@ -39,7 +38,7 @@ export class UnifiedSatellitePropagator {
             return detailed ? { total: [0, 0, 0], components: {} } : [0, 0, 0];
         }
 
-        const [x, y, z] = satellite.position;
+        const [x, y, z] = Array.isArray(satellite.position) ? satellite.position : [satellite.position.x, satellite.position.y, satellite.position.z];
         const r = Math.sqrt(x*x + y*y + z*z);
         
         if (r === 0) {
@@ -69,7 +68,8 @@ export class UnifiedSatellitePropagator {
         // === 2. J2 PERTURBATION ===
         let j2Accel = [0, 0, 0];
         if (includeJ2 && centralBody.J2 && centralBody.radius) {
-            j2Accel = this._computeJ2Perturbation(satellite.position, centralBody);
+            const satPos = Array.isArray(satellite.position) ? satellite.position : [satellite.position.x, satellite.position.y, satellite.position.z];
+            j2Accel = this._computeJ2Perturbation(satPos, centralBody);
             totalAccel[0] += j2Accel[0];
             totalAccel[1] += j2Accel[1];
             totalAccel[2] += j2Accel[2];
@@ -80,9 +80,11 @@ export class UnifiedSatellitePropagator {
         let dragAccel = [0, 0, 0];
         if (includeDrag && (centralBody.atmosphericModel || centralBody.atmosphere)) {
             const ballisticCoeff = this._getBallisticCoefficient(satellite, centralBody);
+            const satPos = Array.isArray(satellite.position) ? satellite.position : [satellite.position.x, satellite.position.y, satellite.position.z];
+            const satVel = Array.isArray(satellite.velocity) ? satellite.velocity : [satellite.velocity.x, satellite.velocity.y, satellite.velocity.z];
             dragAccel = AtmosphericModels.computeDragAcceleration(
-                satellite.position, 
-                satellite.velocity, 
+                satPos, 
+                satVel, 
                 centralBody, 
                 ballisticCoeff
             );
@@ -109,9 +111,10 @@ export class UnifiedSatellitePropagator {
                 components && (components.thirdBody = [...thirdBodyAccel]);
             }
             
-            totalAccel[0] += thirdBodyAccel[0];
-            totalAccel[1] += thirdBodyAccel[1];
-            totalAccel[2] += thirdBodyAccel[2];
+            // Apply perturbation scale to third-body effects
+            totalAccel[0] += thirdBodyAccel[0] * perturbationScale;
+            totalAccel[1] += thirdBodyAccel[1] * perturbationScale;
+            totalAccel[2] += thirdBodyAccel[2] * perturbationScale;
         }
 
         return detailed ? { total: totalAccel, components } : totalAccel;
@@ -192,8 +195,8 @@ export class UnifiedSatellitePropagator {
         } = params;
 
         const points = [];
-        let position = [...satellite.position];
-        let velocity = [...satellite.velocity];
+        let position = Array.isArray(satellite.position) ? [...satellite.position] : [satellite.position.x, satellite.position.y, satellite.position.z];
+        let velocity = Array.isArray(satellite.velocity) ? [...satellite.velocity] : [satellite.velocity.x, satellite.velocity.y, satellite.velocity.z];
         let currentTime = startTime;
 
         // Sort maneuver nodes by execution time
@@ -308,33 +311,37 @@ export class UnifiedSatellitePropagator {
      */
     static _applyManeuverDeltaV(position, velocity, deltaVLocal) {
         // Convert local delta-V (prograde, normal, radial) to world coordinates
-        const pos = new THREE.Vector3(...position);
-        const vel = new THREE.Vector3(...velocity);
+        const pos = [...position];
+        const vel = [...velocity];
         
         // Calculate local coordinate frame
-        const radialDir = pos.clone().normalize();
-        const velocityDir = vel.clone().normalize();
-        const normalDir = new THREE.Vector3().crossVectors(radialDir, velocityDir).normalize();
+        const radialDir = [pos[0] / Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]),
+                           pos[1] / Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]),
+                           pos[2] / Math.sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])];
+        const velocityDir = [vel[0] / Math.sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]),
+                             vel[1] / Math.sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]),
+                             vel[2] / Math.sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])];
+        const normalDir = [radialDir[1]*velocityDir[2] - radialDir[2]*velocityDir[1],
+                          radialDir[2]*velocityDir[0] - radialDir[0]*velocityDir[2],
+                          radialDir[0]*velocityDir[1] - radialDir[1]*velocityDir[0]];
         
         // In case of zero velocity, use a different normal calculation
-        if (vel.length() < 1e-6) {
+        if (vel[0] < 1e-6 && vel[1] < 1e-6 && vel[2] < 1e-6) {
             // Use z-axis cross product for normal if velocity is near zero
-            const zAxis = new THREE.Vector3(0, 0, 1);
-            normalDir.crossVectors(radialDir, zAxis).normalize();
-            if (normalDir.length() < 0.1) {
-                // If radial is parallel to z, use x-axis
-                const xAxis = new THREE.Vector3(1, 0, 0);
-                normalDir.crossVectors(radialDir, xAxis).normalize();
-            }
+            const zAxis = [0, 0, 1];
+            normalDir[0] = radialDir[1]*zAxis[2] - radialDir[2]*zAxis[1];
+            normalDir[1] = radialDir[2]*zAxis[0] - radialDir[0]*zAxis[2];
+            normalDir[2] = radialDir[0]*zAxis[1] - radialDir[1]*zAxis[0];
         }
         
         // Build world delta-V from local components
-        const worldDeltaV = new THREE.Vector3()
-            .addScaledVector(velocityDir, deltaVLocal.prograde || 0)
-            .addScaledVector(normalDir, deltaVLocal.normal || 0)
-            .addScaledVector(radialDir, deltaVLocal.radial || 0);
+        const worldDeltaV = [
+            velocityDir[0] * (deltaVLocal.prograde || 0) + normalDir[0] * (deltaVLocal.normal || 0) + radialDir[0] * (deltaVLocal.radial || 0),
+            velocityDir[1] * (deltaVLocal.prograde || 0) + normalDir[1] * (deltaVLocal.normal || 0) + radialDir[1] * (deltaVLocal.radial || 0),
+            velocityDir[2] * (deltaVLocal.prograde || 0) + normalDir[2] * (deltaVLocal.normal || 0) + radialDir[2] * (deltaVLocal.radial || 0)
+        ];
         
-        return worldDeltaV.toArray();
+        return worldDeltaV;
     }
 
     /**
@@ -399,10 +406,11 @@ export class UnifiedSatellitePropagator {
         const totalAccel = [0, 0, 0];
         
         // Satellite global position
+        const satPos = Array.isArray(satellite.position) ? satellite.position : [satellite.position.x, satellite.position.y, satellite.position.z];
         const satGlobalPos = [
-            satellite.position[0] + (centralBody.position?.[0] || 0),
-            satellite.position[1] + (centralBody.position?.[1] || 0),
-            satellite.position[2] + (centralBody.position?.[2] || 0)
+            satPos[0] + (centralBody.position?.[0] || 0),
+            satPos[1] + (centralBody.position?.[1] || 0),
+            satPos[2] + (centralBody.position?.[2] || 0)
         ];
 
         for (const [bodyId, body] of Object.entries(bodies)) {
@@ -457,10 +465,11 @@ export class UnifiedSatellitePropagator {
         
         // Convert satellite position from planet-centric to SSB coordinates
         // satellite.position is relative to central body, centralBody.position is SSB-relative
+        const satPos = Array.isArray(satellite.position) ? satellite.position : [satellite.position.x, satellite.position.y, satellite.position.z];
         const satGlobalPos = [
-            satellite.position[0] + (centralBody.position?.[0] || 0),
-            satellite.position[1] + (centralBody.position?.[1] || 0),
-            satellite.position[2] + (centralBody.position?.[2] || 0)
+            satPos[0] + (centralBody.position?.[0] || 0),
+            satPos[1] + (centralBody.position?.[1] || 0),
+            satPos[2] + (centralBody.position?.[2] || 0)
         ];
 
         for (const [bodyId, body] of Object.entries(bodies)) {
@@ -578,50 +587,142 @@ export class UnifiedSatellitePropagator {
             method = 'auto',
             timeWarp = 1,
             absTol = 1e-6,
-            relTol = 1e-6,
-            minStep = 1e-6,
-            maxStep = 60
+            relTol = 1e-6
         } = options;
 
         // Determine which integrator to use
         let useMethod = method;
         if (method === 'auto') {
-            // Use RK45 for better precision, only fall back to RK4 for very small real-time steps
-            if (timeWarp >= 10 || dt > 10) {
-                useMethod = 'rk45';
+            // Use RK45 for high precision when time warp is high or large time steps
+            // Use RK4 for normal operations
+            useMethod = (timeWarp >= 100 || dt > 60) ? 'rk45' : 'rk4';
+        }
+
+        // Call appropriate integration method
+        switch (useMethod) {
+            case 'rk45':
+                return this.integrateRK45(position, velocity, accelerationFunc, dt, { absTol, relTol });
+            case 'rk4':
+            default:
+                return this.integrateRK4(position, velocity, accelerationFunc, dt);
+        }
+    }
+
+    /**
+     * Self-contained Runge-Kutta 4/5 (Dormand-Prince) integration with error control
+     * @param {Array} position - [x, y, z] in km
+     * @param {Array} velocity - [vx, vy, vz] in km/s
+     * @param {Function} accelerationFunc - (pos, vel) => [ax, ay, az]
+     * @param {number} targetTime - Target integration time in seconds
+     * @param {Object} options - Integration options
+     * @returns {Object} - {position: [x,y,z], velocity: [vx,vy,vz]}
+     */
+    static integrateRK45(position, velocity, accelerationFunc, targetTime, options = {}) {
+        const {
+            absTol = 1e-6,
+            relTol = 1e-6,
+            minStep = 1e-6,
+            maxStep = 60
+        } = options;
+
+        let t = 0;
+        let dt = Math.min(maxStep, targetTime * 0.1);
+
+        // Current state
+        let pos = [...position];
+        let vel = [...velocity];
+
+        // RK45 Dormand-Prince coefficients
+        const a = [
+            [],
+            [1/4],
+            [3/32, 9/32],
+            [1932/2197, -7200/2197, 7296/2197],
+            [439/216, -8, 3680/513, -845/4104],
+            [-8/27, 2, -3544/2565, 1859/4104, -11/40]
+        ];
+        const b = [35/384, 0, 500/1113, 125/192, -2187/6784, 11/84];
+        const b_star = [5179/57600, 0, 7571/16695, 393/640, -92097/339200, 187/2100, 1/40];
+
+        while (t < targetTime && dt > minStep) {
+            // Don't overshoot target time
+            if (t + dt > targetTime) {
+                dt = targetTime - t;
+            }
+
+            // Compute RK stages
+            const k = [];
+            
+            // k1
+            const acc1 = accelerationFunc(pos, vel);
+            k[0] = { pos: [...vel], vel: [...acc1] };
+
+            // k2
+            const pos2 = pos.map((p, i) => p + dt * a[1][0] * k[0].pos[i]);
+            const vel2 = vel.map((v, i) => v + dt * a[1][0] * k[0].vel[i]);
+            const acc2 = accelerationFunc(pos2, vel2);
+            k[1] = { pos: [...vel2], vel: [...acc2] };
+
+            // k3
+            const pos3 = pos.map((p, i) => p + dt * (a[2][0] * k[0].pos[i] + a[2][1] * k[1].pos[i]));
+            const vel3 = vel.map((v, i) => v + dt * (a[2][0] * k[0].vel[i] + a[2][1] * k[1].vel[i]));
+            const acc3 = accelerationFunc(pos3, vel3);
+            k[2] = { pos: [...vel3], vel: [...acc3] };
+
+            // k4
+            const pos4 = pos.map((p, i) => p + dt * (a[3][0] * k[0].pos[i] + a[3][1] * k[1].pos[i] + a[3][2] * k[2].pos[i]));
+            const vel4 = vel.map((v, i) => v + dt * (a[3][0] * k[0].vel[i] + a[3][1] * k[1].vel[i] + a[3][2] * k[2].vel[i]));
+            const acc4 = accelerationFunc(pos4, vel4);
+            k[3] = { pos: [...vel4], vel: [...acc4] };
+
+            // k5
+            const pos5 = pos.map((p, i) => p + dt * (a[4][0] * k[0].pos[i] + a[4][1] * k[1].pos[i] + a[4][2] * k[2].pos[i] + a[4][3] * k[3].pos[i]));
+            const vel5 = vel.map((v, i) => v + dt * (a[4][0] * k[0].vel[i] + a[4][1] * k[1].vel[i] + a[4][2] * k[2].vel[i] + a[4][3] * k[3].vel[i]));
+            const acc5 = accelerationFunc(pos5, vel5);
+            k[4] = { pos: [...vel5], vel: [...acc5] };
+
+            // k6
+            const pos6 = pos.map((p, i) => p + dt * (a[5][0] * k[0].pos[i] + a[5][1] * k[1].pos[i] + a[5][2] * k[2].pos[i] + a[5][3] * k[3].pos[i] + a[5][4] * k[4].pos[i]));
+            const vel6 = vel.map((v, i) => v + dt * (a[5][0] * k[0].vel[i] + a[5][1] * k[1].vel[i] + a[5][2] * k[2].vel[i] + a[5][3] * k[3].vel[i] + a[5][4] * k[4].vel[i]));
+            const acc6 = accelerationFunc(pos6, vel6);
+            k[5] = { pos: [...vel6], vel: [...acc6] };
+
+            // 5th order solution
+            const newPos = pos.map((p, i) => p + dt * (b[0] * k[0].pos[i] + b[1] * k[1].pos[i] + b[2] * k[2].pos[i] + b[3] * k[3].pos[i] + b[4] * k[4].pos[i] + b[5] * k[5].pos[i]));
+            const newVel = vel.map((v, i) => v + dt * (b[0] * k[0].vel[i] + b[1] * k[1].vel[i] + b[2] * k[2].vel[i] + b[3] * k[3].vel[i] + b[4] * k[4].vel[i] + b[5] * k[5].vel[i]));
+
+            // 4th order solution for error estimation
+            const newPos4 = pos.map((p, i) => p + dt * (b_star[0] * k[0].pos[i] + b_star[1] * k[1].pos[i] + b_star[2] * k[2].pos[i] + b_star[3] * k[3].pos[i] + b_star[4] * k[4].pos[i] + b_star[5] * k[5].pos[i]));
+            const newVel4 = vel.map((v, i) => v + dt * (b_star[0] * k[0].vel[i] + b_star[1] * k[1].vel[i] + b_star[2] * k[2].vel[i] + b_star[3] * k[3].vel[i] + b_star[4] * k[4].vel[i] + b_star[5] * k[5].vel[i]));
+
+            // Error estimation
+            const posError = Math.sqrt(newPos.reduce((sum, p, i) => sum + Math.pow(p - newPos4[i], 2), 0));
+            const velError = Math.sqrt(newVel.reduce((sum, v, i) => sum + Math.pow(v - newVel4[i], 2), 0));
+            const error = Math.max(posError, velError);
+
+            // Error tolerance
+            const posTol = Math.max(absTol, relTol * Math.sqrt(newPos.reduce((sum, p) => sum + p*p, 0)));
+            const velTol = Math.max(absTol, relTol * Math.sqrt(newVel.reduce((sum, v) => sum + v*v, 0)));
+            const tolerance = Math.max(posTol, velTol);
+
+            if (error <= tolerance || dt <= minStep) {
+                // Accept step
+                pos = newPos;
+                vel = newVel;
+                t += dt;
+
+                // Adapt step size for next iteration
+                if (error > 0) {
+                    const factor = 0.9 * Math.pow(tolerance / error, 0.2);
+                    dt = Math.min(maxStep, Math.max(minStep, dt * Math.min(2.0, Math.max(0.5, factor))));
+                }
             } else {
-                useMethod = 'rk4';
+                // Reject step and reduce step size
+                const factor = 0.9 * Math.pow(tolerance / error, 0.25);
+                dt = Math.max(minStep, dt * Math.max(0.1, factor));
             }
         }
 
-        if (useMethod === 'rk45') {
-            // Convert to Three.js vectors
-            const pos3 = new THREE.Vector3(...position);
-            const vel3 = new THREE.Vector3(...velocity);
-            
-            // Wrap acceleration function to work with Three.js vectors
-            const accelFunc3 = (p, v) => {
-                const accel = accelerationFunc(
-                    [p.x, p.y, p.z],
-                    [v.x, v.y, v.z]
-                );
-                return new THREE.Vector3(...accel);
-            };
-            
-            const result = integrateRK45(pos3, vel3, accelFunc3, dt, {
-                absTol,
-                relTol,
-                minStep,
-                maxStep
-            });
-            
-            return {
-                position: [result.position.x, result.position.y, result.position.z],
-                velocity: [result.velocity.x, result.velocity.y, result.velocity.z]
-            };
-        } else {
-            // Use built-in RK4 (no dependencies)
-            return this.integrateRK4(position, velocity, accelerationFunc, dt);
-        }
+        return { position: pos, velocity: vel };
     }
 }

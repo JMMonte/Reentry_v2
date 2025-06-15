@@ -1,11 +1,11 @@
-import React, { useState, useContext } from 'react';
+import React, { useState } from 'react';
 import { DraggableModal } from '../modal/DraggableModal';
 import { Button } from '../button';
 import PropTypes from 'prop-types';
 import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import { Input } from '../input';
-import { supabase } from '../../../supabaseClient';
-import { ToastContext } from '../../../components/ui/Layout';
+import { supabase } from '@/supabaseClient';
+import { useToast } from '../Toast';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
 export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: externalSetMode, onSignupSuccess }) {
@@ -19,7 +19,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
     const [confirmPassword, setConfirmPassword] = useState('');
     const [forgotMode, setForgotMode] = useState(false);
     const [resetEmail, setResetEmail] = useState('');
-    const { showToast } = useContext(ToastContext);
+    const { showToast } = useToast();
 
     const handleAuth = async (e) => {
         e.preventDefault();

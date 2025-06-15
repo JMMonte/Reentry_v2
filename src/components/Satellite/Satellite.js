@@ -31,7 +31,7 @@ export class Satellite {
      */
     constructor({
         scene, id, color, app3d, name, planetConfig, centralBodyNaifId,
-        position, velocity, ...otherProps
+        position, velocity
     }) {
         this.app3d = app3d;
         this.scene = scene;

@@ -1,4 +1,7 @@
-import { groundTrackService } from '../services/GroundTrackService.js';
+import { GroundTrackService } from '../services/GroundTrackService.js';
+
+// Create a singleton instance
+const groundTrackService = new GroundTrackService();
 
 /**
  * Project a world-space position to planet surface coordinates using physics service.

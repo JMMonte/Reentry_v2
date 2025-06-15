@@ -1,5 +1,5 @@
 import App3D from '@/App3D.js';
-import { setupExternalApi } from './externalApi.js';
+import { setupExternalApi } from '../api/externalApi.js';
 
 /**
  * OOP controller for App3D lifecycle and orchestration.

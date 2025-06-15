@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+import { PhysicsVector3 } from './PhysicsVector3.js';
+import { PhysicsQuaternion } from './PhysicsQuaternion.js';
 import { stateToKeplerian } from './KeplerianUtils.js';
 import { CoordinateTransforms } from './CoordinateTransforms.js';
 
@@ -26,8 +27,8 @@ export class OrbitalElementsConverter {
 
     /**
      * Calculate orbital elements from state vectors with reference frame support
-     * @param {THREE.Vector3|Array} position - Position vector in planet-centered inertial frame (km)
-     * @param {THREE.Vector3|Array} velocity - Velocity vector in planet-centered inertial frame (km/s)
+     * @param {PhysicsVector3|Array} position - Position vector in planet-centered inertial frame (km)
+     * @param {PhysicsVector3|Array} velocity - Velocity vector in planet-centered inertial frame (km/s)
      * @param {Object} centralBody - Central body object with GM, radius, etc.
      * @param {string} referenceFrame - 'ecliptic' or 'equatorial' (default: 'ecliptic')
      * @returns {Object|null} Orbital elements in the specified reference frame
@@ -35,24 +36,24 @@ export class OrbitalElementsConverter {
     static calculateOrbitalElements(position, velocity, centralBody, referenceFrame = 'ecliptic') {
         // Validate inputs (throws on failure)
         this._validateInputs(position, velocity, centralBody);
-        
+
         try {
             // Normalize inputs and extract parameters
             const { workingPos, workingVel } = this._normalizeStateVectors(position, velocity);
             const bodyParams = this._extractCentralBodyParams(centralBody);
-            
+
             // Calculate base orbital elements
             const elements = this._calculateBaseElements(workingPos, workingVel, bodyParams);
             if (!elements) return null;
-            
+
             // Apply reference frame transformation if needed
             if (referenceFrame === 'equatorial') {
                 this._applyEquatorialTransformation(elements, workingPos, workingVel, centralBody, bodyParams);
             }
-            
+
             // Add metadata and return
             return this._finalizeElements(elements, referenceFrame, centralBody);
-            
+
         } catch (error) {
             console.warn('[OrbitalElementsConverter] Calculation failed:', error.message);
             return null;
@@ -64,11 +65,11 @@ export class OrbitalElementsConverter {
      * @private
      */
     static _validateInputs(position, velocity, centralBody) {
-        if (!position || (!position.isVector3 && !Array.isArray(position))) {
-            throw new Error('Position must be a THREE.Vector3 or array [x, y, z]');
+        if (!position || (position.x === undefined && !Array.isArray(position))) {
+            throw new Error('Position must be a PhysicsVector3 or array [x, y, z]');
         }
-        if (!velocity || (!velocity.isVector3 && !Array.isArray(velocity))) {
-            throw new Error('Velocity must be a THREE.Vector3 or array [vx, vy, vz]');
+        if (!velocity || (velocity.x === undefined && !Array.isArray(velocity))) {
+            throw new Error('Velocity must be a PhysicsVector3 or array [vx, vy, vz]');
         }
         if (!centralBody) {
             throw new Error('Central body is required');
@@ -80,8 +81,8 @@ export class OrbitalElementsConverter {
      * @private
      */
     static _normalizeStateVectors(position, velocity) {
-        const workingPos = position.isVector3 ? position.clone() : new THREE.Vector3(...position);
-        const workingVel = velocity.isVector3 ? velocity.clone() : new THREE.Vector3(...velocity);
+        const workingPos = position.x !== undefined ? position.clone() : new PhysicsVector3(...position);
+        const workingVel = velocity.x !== undefined ? velocity.clone() : new PhysicsVector3(...velocity);
         return { workingPos, workingVel };
     }
 
@@ -109,11 +110,11 @@ export class OrbitalElementsConverter {
             0,
             bodyParams.radius
         );
-        
+
         if (!elements || !this._validateElements(elements)) {
             return null;
         }
-        
+
         return elements;
     }
 
@@ -122,9 +123,9 @@ export class OrbitalElementsConverter {
      * @private
      */
     static _validateElements(elements) {
-        return elements.semiMajorAxis > 0 && 
-               elements.eccentricity >= 0 && 
-               !isNaN(elements.inclination);
+        return elements.semiMajorAxis > 0 &&
+            elements.eccentricity >= 0 &&
+            !isNaN(elements.inclination);
     }
 
     /**
@@ -137,11 +138,11 @@ export class OrbitalElementsConverter {
             console.warn('[OrbitalElementsConverter] No valid quaternion for equatorial transformation');
             return;
         }
-        
+
         try {
             // Transform vectors to equatorial frame
             const { transformedPos, transformedVel } = this._transformVectors(workingPos, workingVel, quaternion);
-            
+
             // Recalculate elements in new frame
             const equatorialElements = this._calculateBaseElements(transformedPos, transformedVel, bodyParams);
             if (equatorialElements) {
@@ -164,26 +165,26 @@ export class OrbitalElementsConverter {
     }
 
     /**
-     * Normalize quaternion from various input formats to THREE.Quaternion
+     * Normalize quaternion from various input formats to PhysicsQuaternion
      * @private
      * @param {*} quaternion - Input quaternion in various formats
-     * @returns {THREE.Quaternion|null} Normalized quaternion or null if invalid
+     * @returns {PhysicsQuaternion|null} Normalized quaternion or null if invalid
      */
     static _normalizeQuaternion(quaternion) {
         if (!quaternion) return null;
-        
+
         // Handle array format [x, y, z, w]
         if (Array.isArray(quaternion) && quaternion.length === 4) {
             const [x, y, z, w] = quaternion;
-            return new THREE.Quaternion(x, y, z, w);
+            return new PhysicsQuaternion(x, y, z, w);
         }
-        
-        // Handle Three.js Quaternion object
-        if (quaternion.isQuaternion || (quaternion._x !== undefined && quaternion._w !== undefined)) {
-            return quaternion.clone ? quaternion.clone() : 
-                   new THREE.Quaternion(quaternion._x, quaternion._y, quaternion._z, quaternion._w);
+
+        // Handle PhysicsQuaternion object
+        if (quaternion.x !== undefined && quaternion.w !== undefined) {
+            return quaternion.clone ? quaternion.clone() :
+                new PhysicsQuaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
         }
-        
+
         return null;
     }
 
@@ -195,10 +196,10 @@ export class OrbitalElementsConverter {
         // Add reference frame metadata
         elements.referenceFrame = referenceFrame;
         elements.referenceFrameNote = this._generateFrameNote(referenceFrame, centralBody);
-        
+
         // Ensure all angles are in valid range [0, 360)
         this._normalizeAngles(elements);
-        
+
         return elements;
     }
 
@@ -220,7 +221,7 @@ export class OrbitalElementsConverter {
      */
     static _normalizeAngles(elements) {
         const angleFields = ['inclination', 'longitudeOfAscendingNode', 'argumentOfPeriapsis', 'trueAnomaly'];
-        
+
         angleFields.forEach(field => {
             if (elements[field] !== undefined) {
                 elements[field] = this._normalizeAngle(elements[field]);

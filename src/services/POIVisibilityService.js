@@ -136,7 +136,7 @@ export class POIVisibilityService {
      * @param {Array} groundTracks - Ground track data for satellites
      * @returns {Object|null} Next passage info or null
      */
-    static estimateNextPassage(poi, satellites, groundTracks) {
+    static estimateNextPassage() {
         // For now, return a placeholder
         // Full implementation would require orbit propagation
         return {

@@ -1,9 +1,6 @@
 import * as THREE from 'three';
-// import { Planet } from './Planet.js'; // Removed unused import
 import { PhysicsConstants } from '../../physics/core/PhysicsConstants.js';
-// Move RENDER_ORDER to a separate constants file to avoid circular dependency
 import { RENDER_ORDER } from './PlanetConstants.js';
-import { shaderOptimizer } from '../../utils/ShaderUniformOptimizer.js';
 
 export class AtmosphereComponent {
     constructor(planet, config, shaders) {
@@ -18,8 +15,6 @@ export class AtmosphereComponent {
         };
         const outer = planet.materials.createAtmosphereMesh(config, atmosphereOptions);
         if (!outer) return;
-        // Keep the side as configured in PlanetMaterials (FrontSide for proper depth testing)
-        // outer.material.side = THREE.DoubleSide; // Removed - this was overriding the depth fix
 
         // Apply oblateness and atmosphere thickness scaling directly to the mesh
         const equR = planet.radius;
@@ -27,11 +22,6 @@ export class AtmosphereComponent {
         const equAtm = equR + planet.atmosphereThickness;
         const polAtm = polR + planet.atmosphereThickness;
 
-        // Store initial atmosphere equatorial radius for dynamic scaling - REMOVED, direct scaling now
-        // this._baseEquAtm = equAtm; // Old
-
-        // const yScale = equAtm === 0 ? 1 : polAtm / equAtm; // Old
-        // outer.scale.set(1, yScale, 1); // Old, for pre-scaled geometry
         // Scale atmosphere to its proper size (handle both Mesh and LOD)
         if (outer instanceof THREE.LOD) {
             // For LOD, scale each level
@@ -88,6 +78,8 @@ export class AtmosphereComponent {
         const rayScale = atm.rayleighScaleHeight || atm.densityScaleHeight;
         const mieScale = atm.mieScaleHeight || atm.densityScaleHeight;
         const steps = atm.numLightSteps;
+        const scaleHeightMultiplier = atm.scaleHeightMultiplier || 5.0;
+        
         // Helper CPU port of density falloff
         const getDensity = (h, H) => Math.exp(-h / H);
         // CPU ray-sphere intersection
@@ -101,6 +93,7 @@ export class AtmosphereComponent {
             const sd = Math.sqrt(disc);
             return [(-B - sd) / (2 * A), (-B + sd) / (2 * A)];
         };
+        
         for (let j = 0; j < lutSize; j++) {
             const hNorm = j / (lutSize - 1);
             const h = atm.thickness * hNorm;
@@ -126,8 +119,9 @@ export class AtmosphereComponent {
                     if (pgI && pgI[0] > 0 && pgI[0] < t1) { odR = odM = 0; break; }
                     const height = Math.sqrt(px * px + py * py + pz * pz) - equR;
                     if (height < 0) continue;
-                    odR += getDensity(height, rayScale) * step;
-                    odM += getDensity(height, mieScale) * step;
+                    // Apply scale height multiplier here in CPU calculation
+                    odR += getDensity(height, rayScale * scaleHeightMultiplier) * step;
+                    odM += getDensity(height, mieScale * scaleHeightMultiplier) * step;
                 }
                 const idx = (j * lutSize + i) * 4;
                 data[idx] = odR;
@@ -138,11 +132,6 @@ export class AtmosphereComponent {
         }
         const lutTex = new THREE.DataTexture(data, lutSize, lutSize, THREE.RGBAFormat, THREE.FloatType);
         lutTex.needsUpdate = true;
-        
-        // Add scale height multiplier uniform
-        const scaleHeightMultiplier = config.atmosphere && typeof config.atmosphere.scaleHeightMultiplier === 'number' 
-            ? config.atmosphere.scaleHeightMultiplier 
-            : 5.0; // Default to 5.0 if not specified in config
         
         // Attach LUT and multiplier to material (handle both Mesh and LOD)
         const attachUniformsToMaterial = (material) => {
@@ -254,11 +243,9 @@ export class AtmosphereComponent {
         // Relative sun
         const sunRel = this._sunPos.clone().sub(this._planetPos);
         
-        // Update uniforms using the material we found - with optimization
-        shaderOptimizer.updateUniforms(material, {
-            uCameraPosition: this._camRel,
-            uSunPosition: sunRel
-        });
+        // Update uniforms using the material we found
+        material.uniforms.uCameraPosition.value.copy(this._camRel);
+        material.uniforms.uSunPosition.value.copy(sunRel);
         
         // Calculate LOD factor based on distance
         const distance = this._camRel.length();

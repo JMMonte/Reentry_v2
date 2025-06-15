@@ -8,6 +8,7 @@
 
 import { SatelliteSubsystem } from './SatelliteSubsystem.js';
 import { PhysicsConstants } from '../core/PhysicsConstants.js';
+import { MathUtils } from '../utils/MathUtils.js';
 
 export class CommunicationSubsystem extends SatelliteSubsystem {
     constructor(satelliteId, config = {}) {
@@ -299,7 +300,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
         // Calculate free space path loss (Friis equation)
         const frequency = this.config.transmitFrequency * 1e9; // Convert to Hz
         const wavelength = PhysicsConstants.PHYSICS.C / frequency; // c / f (m)
-        const pathLoss = 20 * Math.log10(4 * Math.PI * distance * 1000 / wavelength); // dB
+        const pathLoss = 20 * Math.log10(4 * MathUtils.PI * distance * 1000 / wavelength); // dB
 
         // Link budget calculation
         const txPower = 10 * Math.log10(this.config.transmitPower * 1000); // dBm
@@ -324,7 +325,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
         }
 
         // Calculate achievable data rate based on link quality
-        const linkQuality = Math.min(100, Math.max(0, margin * 10)); // 0-100%
+        const linkQuality = MathUtils.clamp(margin * 10, 0, 100); // 0-100%
         const dataRate = this.config.dataRate * (linkQuality / 100);
 
         return {
@@ -345,7 +346,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
         const dx = pos1[0] - pos2[0];
         const dy = pos1[1] - pos2[1];
         const dz = pos1[2] - pos2[2];
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        return MathUtils.magnitude3D(dx, dy, dz);
     }
 
     /**
@@ -358,7 +359,7 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
 
         const groundDistance = Math.sqrt(dx * dx + dy * dy);
 
-        return Math.atan2(dz, groundDistance) * 180 / Math.PI;
+        return MathUtils.radToDeg(Math.atan2(dz, groundDistance));
     }
 
     /**

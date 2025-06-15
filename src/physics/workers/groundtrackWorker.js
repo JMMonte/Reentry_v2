@@ -290,5 +290,3 @@ self.onmessage = async function (e) {
         }
     }
 };
-
-console.log('[GroundtrackWorker] Worker script fully loaded and ready'); 

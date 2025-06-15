@@ -24,6 +24,13 @@ export class TextureManager {
             this.loader.load(
                 url,
                 texture => {
+                    // Configure texture to prevent WebGL errors
+                    texture.generateMipmaps = false;
+                    texture.minFilter = THREE.LinearFilter;
+                    texture.magFilter = THREE.LinearFilter;
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    
                     this.textures[name] = texture;
                     this._loadingPromises.delete(name);
                     resolve(texture);

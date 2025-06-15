@@ -4,9 +4,8 @@
  * Physical, orbital, and rendering properties for Earth's natural satellites
  */
 
-import * as THREE from 'three';
 import { PhysicsConstants } from '../../core/PhysicsConstants.js';
-import { geojsonDataMissions } from '../../../config/geojsonData.js';
+import { geojsonDataMissions } from '@/config/geojsonData.js';
 
 // Moon physical and orbital constants (all in km, kg, or km/s)
 export const moonRadius = 1737.4; // km
@@ -60,6 +59,9 @@ export default [
             orbitPoints: 720 // High resolution for Moon-EMB orbit
         },
 
+        // LOD levels
+        lodLevelsKey: 'default',
+
         // Rendering properties
         materials: {
             surfaceConfig: {
@@ -67,11 +69,10 @@ export default [
                 textureKey: 'moonTexture',
                 normalMapKey: 'moonNormalTexture',
                 params: {
-                    normalScale: new THREE.Vector2(0.5, 0.5),
-                    roughness: 0.7,
-                    metalness: 0.1,
+                    roughness: 0.9,
+                    metalness: 0.0,
                 }
-            },
+            }
         },
 
         // Lighting
@@ -81,9 +82,6 @@ export default [
             intensity: MOON_RAD * 10,
             helper: false
         },
-
-        // LOD levels for rendering optimization
-        lodLevelsKey: 'default',
 
         // Surface options to enable POIs (missions)
         surfaceOptions: {

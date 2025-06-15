@@ -7,6 +7,7 @@ import { SubsystemManager } from './subsystems/SubsystemManager.js';
 import { SatelliteEngine } from './engines/SatelliteEngine.js';
 import { CelestialBodyEngine } from './engines/CelestialBodyEngine.js';
 import * as PhysicsAPI from './PhysicsAPI.js';
+import { PropagationMetrics } from './utils/PropagationMetrics.js';
 
 
 /**
@@ -30,11 +31,10 @@ export class PhysicsEngine {
         this.timeStep = PhysicsConstants.SIMULATION.DEFAULT_TIME_STEP;
 
         // Satellite engine - handles all satellite operations
-        this.satelliteEngine = new SatelliteEngine();
+        this.satelliteEngine = new SatelliteEngine(this);
         
-        // Set up references for satellite engine
-        this.satelliteEngine.physicsAPI = { PhysicsAPI };
-        this.satelliteEngine.physicsEngineRef = this;
+        // Set up references for satellite engine after PhysicsAPI is available
+        // This will be done in initialize() after modules are ready
 
         // Celestial body engine - handles all celestial body operations
         this.celestialBodyEngine = new CelestialBodyEngine();
@@ -79,6 +79,12 @@ export class PhysicsEngine {
 
         // Initialize subsystem manager after physics engine is ready
         this.subsystemManager = new SubsystemManager(this);
+
+        // Now that all modules are initialized, set up PhysicsAPI reference for satellite engine
+        this.satelliteEngine.setPhysicsAPI(PhysicsAPI);
+
+        // Expose performance metrics to window for React components
+        this._exposePerformanceMetrics();
 
         return this;
     }
@@ -153,7 +159,11 @@ export class PhysicsEngine {
         return {
             time: this.simulationTime,
             bodies: this.celestialBodyEngine.getBodyStates(),
-            satellites: this.satelliteEngine.getSatelliteStates(this.bodies, this.simulationTime),
+            satellites: this.satelliteEngine.getSatelliteStates(
+                this.bodies, 
+                this.simulationTime, 
+                this.getBodiesForOrbitPropagation.bind(this)
+            ),
             barycenters: this.celestialBodyEngine.getBarycenterStates(),
             hierarchy: this.hierarchy?.hierarchy || null
         };
@@ -364,12 +374,12 @@ export class PhysicsEngine {
     /**
      * Cleanup function to call on removal
      */
-    cleanup() {
+    async cleanup() {
         if (this.subsystemManager) {
             this.subsystemManager.cleanup?.();
         }
         if (this.satelliteEngine) {
-            this.satelliteEngine.cleanup?.();
+            await this.satelliteEngine.cleanup?.();
         }
         if (this.celestialBodyEngine) {
             this.celestialBodyEngine.cleanup?.();
@@ -410,6 +420,48 @@ export class PhysicsEngine {
             this.getBodiesForOrbitPropagation.bind(this),
             this.addSatellite.bind(this)
         );
+    }
+
+    /**
+     * Expose performance metrics to window for React components
+     * @private
+     */
+    _exposePerformanceMetrics() {
+        if (typeof window !== 'undefined') {
+            if (!window.physicsAPI) {
+                window.physicsAPI = {};
+            }
+            
+            // Expose satellite performance metrics method
+            window.physicsAPI.getSatellitePerformanceMetrics = (satelliteId) => {
+                return PropagationMetrics.getSatelliteMetrics(satelliteId);
+            };
+            
+            // Expose global performance metrics method
+            window.physicsAPI.getGlobalPerformanceMetrics = () => {
+                return PropagationMetrics.getGlobalMetrics();
+            };
+            
+            // Expose worker pool metrics
+            window.physicsAPI.getWorkerPoolMetrics = () => {
+                return this.satelliteEngine.getWorkerMetrics();
+            };
+            
+            // Expose worker control methods
+            window.physicsAPI.setUseWorkers = (useWorkers) => {
+                this.satelliteEngine.setUseWorkers(useWorkers);
+            };
+            
+            // Expose debug methods
+            window.physicsAPI.debugCelestialBodies = () => {
+                return {
+                    bodiesCount: Object.keys(this.bodies).length,
+                    bodies: this.bodies,
+                    barycentersCount: this.barycenters?.size || 0,
+                    barycenters: this.barycenters
+                };
+            };
+        }
     }
 
 }

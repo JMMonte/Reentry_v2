@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../popover";
 import { Button } from "../button";
-import { cn } from "../../../lib/utils";
+import { cn } from "@/lib/utils";
 import { parseISO, isValid } from "date-fns";
 import { Calendar } from "lucide-react";
 import { CalendarViews, VIEWS } from "./CalendarViews";

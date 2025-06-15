@@ -109,8 +109,26 @@ export class SatelliteCommsManager {
         // Apply global settings
         finalConfig.updateInterval = finalConfig.updateInterval || this.globalSettings.updateInterval;
 
-        // Update the physics subsystem
-        this.physicsEngine.subsystemManager.updateSubsystemConfig(satelliteId, 'communication', finalConfig);
+        // Try to update existing subsystem – returns true on success
+        const updated = this.physicsEngine.subsystemManager.updateSubsystemConfig(
+            satelliteId,
+            'communication',
+            finalConfig
+        );
+
+        // If the satellite has no comms subsystem yet, add one now
+        if (!updated) {
+            try {
+                this.physicsEngine.subsystemManager.addSubsystem(
+                    satelliteId,
+                    'communication',
+                    finalConfig
+                );
+            } catch (error) {
+                console.error('[SatelliteCommsManager] Failed to create communication subsystem:', error);
+                return null;
+            }
+        }
 
         return this.getCommsSystem(satelliteId);
     }
@@ -119,8 +137,28 @@ export class SatelliteCommsManager {
      * Remove communication system for a satellite
      */
     removeCommsSystem(satelliteId) {
-        // Communications are managed by physics subsystem
-        // This method now just clears any local cache if needed
+        if (!this.physicsEngine?.subsystemManager) {
+            console.warn('[SatelliteCommsManager] No physics engine available – cannot remove comms system');
+            return false;
+        }
+
+        // First try to disable the subsystem (preferred – keeps instance for later re-enable).
+        const disabled = this.physicsEngine.subsystemManager.setSubsystemEnabled?.(
+            satelliteId,
+            'communication',
+            false
+        );
+
+        // If disabling failed because subsystem is missing (satellite may already be gone),
+        // attempt a hard removal to clean up any lingering reference.
+        if (disabled === false) {
+            return this.physicsEngine.subsystemManager.removeSubsystem(
+                satelliteId,
+                'communication'
+            );
+        }
+
+        return disabled;
     }
 
     /**
@@ -153,7 +191,7 @@ export class SatelliteCommsManager {
      * NOTE: This is now handled by LineOfSightManager and physics subsystems
      * This method is kept for backward compatibility but should be deprecated
      */
-    calculateCommunicationLinks(satellites, bodies, groundStations = []) {
+    calculateCommunicationLinks(satellites, bodies, groundStations = []) { // eslint-disable-line no-unused-vars
         console.warn('SatelliteCommsManager.calculateCommunicationLinks is deprecated. Use LineOfSightManager instead.');
         return [];
     }
@@ -197,7 +235,7 @@ export class SatelliteCommsManager {
         const satellites = this.physicsEngine.satellites;
         const systems = [];
         
-        for (const [satelliteId, satellite] of satellites) {
+        for (const [satelliteId] of satellites) {
             const subsystem = this.physicsEngine.subsystemManager.getSubsystem(satelliteId, 'communication');
             if (subsystem) {
                 systems.push({

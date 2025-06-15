@@ -4,7 +4,6 @@
  * Physical, orbital, and rendering properties for Mercury
  */
 
-import * as THREE from 'three';
 import {PhysicsConstants} from '../../core/PhysicsConstants.js';
 
 const mercuryMass = 3.301e23; // kg
@@ -25,18 +24,19 @@ export default {
     oblateness: 0,
     soiRadius: 112397,
     lodLevelsKey: 'default',
+    
+    // Rendering properties
     materials: {
         surfaceConfig: {
             materialType: 'standard',
             textureKey: 'mercuryTexture',
-            normalMapKey: 'mercuryNormalTexture',
             params: {
-                normalScale: new THREE.Vector2(0.5, 0.5),
                 roughness: 0.7,
                 metalness: 0.1,
             }
-        },
+        }
     },
+
     radialGridConfig: {
         markerStep: 8000,
         labelMarkerStep: 40000,

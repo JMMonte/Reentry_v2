@@ -4,7 +4,6 @@
  * Physical, orbital, and rendering properties for Earth
  */
 
-import * as THREE from 'three';
 import { PhysicsConstants } from '../../core/PhysicsConstants.js';
 
 // Earth physical and orbital constants (all in km, kg, or km/s)
@@ -28,7 +27,7 @@ import {
     geojsonDataObservatories,
     geojsonDataSovereignty,
     geojsonDataStates
-} from '../../../config/geojsonData.js';
+} from '@/config/geojsonData.js';
 
 export default {
     // Basic identification
@@ -134,17 +133,19 @@ export default {
             normalMapKey: 'earthNormalTexture',
             roughnessMap: 'earthRoughnessTexture',
             params: {
-                normalScale: new THREE.Vector2(0.5, 0.5),
-                roughness: 0.9,
-                metalness: 0.0,
+                roughness: 0.8,
+                metalness: 0.1,
             }
         },
         cloudConfig: {
+            materialType: 'standard',
             textureKey: 'cloudTexture',
-            cloudType: 'transparent', // Earth uses transparent clouds
-            opacity: 1.0,
-            color: 0xffffff,
-        },
+            params: {
+                transparent: true,
+                opacity: 0.8,
+                alphaTest: 0.1,
+            }
+        }
     },
 
     // Lighting
@@ -166,6 +167,21 @@ export default {
     spaceportsData: geojsonDataSpaceports,
     groundStationsData: geojsonDataGroundStations,
     observatoriesData: geojsonDataObservatories,
+
+    // Surface options to enable POIs
+    surfaceOptions: {
+        addLatitudeLines: true,
+        addLongitudeLines: true,
+        addCountryBorders: true,
+        addStates: true,
+        addCities: true,
+        addAirports: true,
+        addSpaceports: true,
+        addGroundStations: true,  // Enable ground stations for Earth
+        addObservatories: true,
+        latitudeStep: 15,
+        longitudeStep: 15
+    },
 
     // Radial grid configuration for orbital visualization
     radialGridConfig: {

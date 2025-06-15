@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { ScrollArea, ScrollBar } from '../scroll-area';
+import { ScrollBar } from '../scroll-area';
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { Loader2 } from 'lucide-react';
 import MessageRouter from './MessageRouter';
@@ -7,7 +7,7 @@ import ConversationStarters from './ConversationStarters';
 import { ConnectionIndicator } from './ConnectionIndicator';
 import PropTypes from 'prop-types';
 import Prism from 'prismjs';
-import { cn } from '../../../lib/utils';
+import { cn } from '@/lib/utils';
 
 export function MessageArea({ 
   messages, 

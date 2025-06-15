@@ -14,7 +14,6 @@ export function usePreviewNodes({
     vx, 
     vy, 
     vz, 
-    currentTime, 
     isAdding
 }) {
     const previewSystemRef = useRef(null);

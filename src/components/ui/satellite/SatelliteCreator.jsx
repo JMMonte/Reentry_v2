@@ -269,7 +269,9 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     longitude: params.longitude,
                     altitude: params.altitude,
                     azimuth: params.azimuth,
-                    velocity: params.circular ? undefined : params.velocity, // Pass undefined to trigger circular velocity calculation
+                    // Don't pass velocity if using circular mode or if velocity is the default value
+                    // This allows the physics engine to calculate the proper circular velocity
+                    velocity: params.circular ? undefined : undefined, // Always let physics calculate velocity
                     angleOfAttack: params.angleOfAttack,
                     mass: params.mass,
                     size: params.size,

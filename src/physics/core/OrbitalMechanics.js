@@ -1,7 +1,8 @@
-import * as THREE from 'three';
+import { PhysicsVector3 } from '../utils/PhysicsVector3.js';
 import { PhysicsConstants } from './PhysicsConstants.js';
 import { GravityCalculator } from './GravityCalculator.js';
 import { stateToKeplerian, solveKeplerEquation } from '../utils/KeplerianUtils.js';
+import { MathUtils } from '../utils/MathUtils.js';
 
 /**
  * Centralized orbital mechanics calculations for any celestial body
@@ -31,8 +32,8 @@ export class OrbitalMechanics {
     
     /**
      * Calculate orbital period from position and velocity vectors
-     * @param {THREE.Vector3|Array} position - Position vector (km)
-     * @param {THREE.Vector3|Array} velocity - Velocity vector (km/s)
+     * @param {PhysicsVector3|Array} position - Position vector (km)
+     * @param {PhysicsVector3|Array} velocity - Velocity vector (km/s)
      * @param {Object|number} centralBodyOrGM - Central body or GM value
      * @returns {number} Orbital period in seconds (0 for non-elliptical orbits)
      */
@@ -63,11 +64,12 @@ export class OrbitalMechanics {
         }
         
         const rotationRate = (2 * Math.PI) / Math.abs(body.rotationPeriod); // rad/s
-        const latRad = THREE.MathUtils.degToRad(latitude);
+        const latRad = MathUtils.degToRad(latitude);
         const r = (body.radius || 0) + altitude;
         const distanceFromAxis = r * Math.cos(latRad);
+        const result = rotationRate * distanceFromAxis; // km/s
         
-        return rotationRate * distanceFromAxis; // km/s
+        return result;
     }
     
     /**
@@ -76,7 +78,7 @@ export class OrbitalMechanics {
      * @param {number} latitude - Launch latitude (degrees)
      * @param {number} altitude - Target orbital altitude (km)
      * @param {number} azimuth - Launch azimuth (degrees, 0=North, 90=East)
-     * @returns {number} Required surface-relative velocity (km/s)
+     * @returns {number} Required surface-relative velocity (km/s) - can be negative beyond geostationary
      */
     static calculateLaunchVelocity(body, latitude, altitude, azimuth = 90) {
         // Required inertial velocity for circular orbit
@@ -88,12 +90,13 @@ export class OrbitalMechanics {
         const vRotation = this.calculateSurfaceRotationVelocity(body, latitude, altitude);
         
         // Calculate rotation contribution based on launch direction
-        const azRad = THREE.MathUtils.degToRad(azimuth);
-        const latRad = THREE.MathUtils.degToRad(latitude);
-        const rotationContribution = vRotation * Math.sin(azRad) * Math.cos(latRad);
+        const azRad = MathUtils.degToRad(azimuth);
+        const rotationContribution = vRotation * Math.sin(azRad);
         
-        // Surface-relative velocity needed
-        return Math.max(0, vInertial - rotationContribution);
+        // Surface-relative velocity needed (can be negative beyond geostationary)
+        const result = vInertial - rotationContribution;
+        
+        return result;
     }
     
     /**
@@ -183,8 +186,8 @@ export class OrbitalMechanics {
         const vz = P31 * vx_orb + P32 * vy_orb + P33 * vz_orb;
 
         return {
-            position: new THREE.Vector3(x, y, z),
-            velocity: new THREE.Vector3(vx, vy, vz)
+            position: new PhysicsVector3(x, y, z),
+            velocity: new PhysicsVector3(vx, vy, vz)
         };
     }
     
@@ -237,13 +240,13 @@ export class OrbitalMechanics {
     }
     
     /**
-     * Calculate optimal inclination change delta-V at any point in orbit
-     * @param {number} velocity - Current velocity magnitude (km/s)
-     * @param {number} inclinationChange - Inclination change required (degrees)
-     * @returns {number} Delta-V required for plane change (km/s)
+     * Calculate delta-V required for inclination change at any velocity
+     * @param {number} velocity - Current orbital velocity (km/s)
+     * @param {number} inclinationChange - Inclination change in degrees
+     * @returns {number} Required delta-V (km/s)
      */
     static calculateInclinationChangeDeltaV(velocity, inclinationChange) {
-        const changeRad = THREE.MathUtils.degToRad(Math.abs(inclinationChange));
+        const changeRad = MathUtils.degToRad(Math.abs(inclinationChange));
         return 2 * velocity * Math.sin(changeRad / 2);
     }
     
@@ -264,8 +267,8 @@ export class OrbitalMechanics {
     
     /**
      * Calculate orbital elements from state vectors for any body
-     * @param {THREE.Vector3|Array} position - Position vector (km)
-     * @param {THREE.Vector3|Array} velocity - Velocity vector (km/s) 
+     * @param {PhysicsVector3|Array} position - Position vector (km)
+     * @param {PhysicsVector3|Array} velocity - Velocity vector (km/s) 
      * @param {Object|number} centralBodyOrGM - Central body or GM value
      * @param {number} bodyRadius - Central body radius for altitude calculations (km, optional)
      * @returns {Object} Complete orbital elements
@@ -280,8 +283,8 @@ export class OrbitalMechanics {
     
     /**
      * Calculate time to next apsis (periapsis or apoapsis) for any orbit
-     * @param {THREE.Vector3|Array} position - Current position (km)
-     * @param {THREE.Vector3|Array} velocity - Current velocity (km/s)
+     * @param {PhysicsVector3|Array} position - Current position (km)
+     * @param {PhysicsVector3|Array} velocity - Current velocity (km/s)
      * @param {Object|number} centralBodyOrGM - Central body or GM value
      * @param {string} apsisType - 'periapsis' or 'apoapsis'
      * @param {Date} currentTime - Current time
@@ -300,7 +303,7 @@ export class OrbitalMechanics {
         }
         
         // Calculate time to next apsis based on current true anomaly
-        const currentAnomaly = THREE.MathUtils.degToRad(elements.trueAnomaly);
+        const currentAnomaly = MathUtils.degToRad(elements.trueAnomaly);
         let targetAnomaly;
         
         if (apsisType === 'periapsis') {
@@ -371,49 +374,78 @@ export class OrbitalMechanics {
     
     /**
      * Transform local delta-V (prograde/normal/radial) to world coordinates
-     * @param {THREE.Vector3} localDV - Local delta-V vector
-     * @param {THREE.Vector3|Array} position - Position vector
-     * @param {THREE.Vector3|Array} velocity - Velocity vector
-     * @returns {THREE.Vector3} World delta-V vector
+     * @param {Object} localDV - Local delta-V vector {prograde, normal, radial}
+     * @param {PhysicsVector3|Array} position - Position vector
+     * @param {PhysicsVector3|Array} velocity - Velocity vector
+     * @returns {Array} World delta-V vector [x, y, z]
      */
     static localToWorldDeltaV(localDV, position, velocity) {
-        const pos = position.isVector3 ? position : new THREE.Vector3(...position);
-        const vel = velocity.isVector3 ? velocity : new THREE.Vector3(...velocity);
+        // Convert inputs to arrays for consistent handling
+        const pos = Array.isArray(position) ? position : [position.x, position.y, position.z];
+        const vel = Array.isArray(velocity) ? velocity : [velocity.x, velocity.y, velocity.z];
         
-        // Create local reference frame
-        const prograde = vel.clone().normalize();
-        const radial = pos.clone().normalize();
-        const normal = new THREE.Vector3().crossVectors(radial, prograde).normalize();
+        // Create local reference frame vectors
+        const velMag = Math.sqrt(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]);
+        const prograde = [vel[0] / velMag, vel[1] / velMag, vel[2] / velMag];
+        
+        const posMag = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
+        const radial = [pos[0] / posMag, pos[1] / posMag, pos[2] / posMag];
+        
+        // Normal = radial × prograde
+        const normal = [
+            radial[1] * prograde[2] - radial[2] * prograde[1],
+            radial[2] * prograde[0] - radial[0] * prograde[2],
+            radial[0] * prograde[1] - radial[1] * prograde[0]
+        ];
+        const normalMag = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+        normal[0] /= normalMag;
+        normal[1] /= normalMag;
+        normal[2] /= normalMag;
         
         // Transform to world coordinates
-        return new THREE.Vector3()
-            .addScaledVector(prograde, localDV.x)  // Prograde component
-            .addScaledVector(normal, localDV.y)    // Normal component  
-            .addScaledVector(radial, localDV.z);   // Radial component
+        return [
+            prograde[0] * localDV.prograde + normal[0] * localDV.normal + radial[0] * localDV.radial,
+            prograde[1] * localDV.prograde + normal[1] * localDV.normal + radial[1] * localDV.radial,
+            prograde[2] * localDV.prograde + normal[2] * localDV.normal + radial[2] * localDV.radial
+        ];
     }
     
     /**
      * Transform world delta-V to local coordinates (prograde/normal/radial)
-     * @param {THREE.Vector3} worldDV - World delta-V vector
-     * @param {THREE.Vector3|Array} position - Position vector
-     * @param {THREE.Vector3|Array} velocity - Velocity vector
-     * @returns {THREE.Vector3} Local delta-V vector (prograde, normal, radial)
+     * @param {Array} worldDV - World delta-V vector [x, y, z]
+     * @param {PhysicsVector3|Array} position - Position vector
+     * @param {PhysicsVector3|Array} velocity - Velocity vector
+     * @returns {Object} Local delta-V vector {prograde, normal, radial}
      */
     static worldToLocalDeltaV(worldDV, position, velocity) {
-        const pos = position.isVector3 ? position : new THREE.Vector3(...position);
-        const vel = velocity.isVector3 ? velocity : new THREE.Vector3(...velocity);
+        // Convert inputs to arrays for consistent handling
+        const pos = Array.isArray(position) ? position : [position.x, position.y, position.z];
+        const vel = Array.isArray(velocity) ? velocity : [velocity.x, velocity.y, velocity.z];
         
-        // Create local reference frame
-        const prograde = vel.clone().normalize();
-        const radial = pos.clone().normalize();
-        const normal = new THREE.Vector3().crossVectors(radial, prograde).normalize();
+        // Create local reference frame vectors
+        const velMag = Math.sqrt(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]);
+        const prograde = [vel[0] / velMag, vel[1] / velMag, vel[2] / velMag];
+        
+        const posMag = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
+        const radial = [pos[0] / posMag, pos[1] / posMag, pos[2] / posMag];
+        
+        // Normal = radial × prograde
+        const normal = [
+            radial[1] * prograde[2] - radial[2] * prograde[1],
+            radial[2] * prograde[0] - radial[0] * prograde[2],
+            radial[0] * prograde[1] - radial[1] * prograde[0]
+        ];
+        const normalMag = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+        normal[0] /= normalMag;
+        normal[1] /= normalMag;
+        normal[2] /= normalMag;
         
         // Project world delta-V onto local axes
-        return new THREE.Vector3(
-            worldDV.dot(prograde),  // Prograde component
-            worldDV.dot(normal),    // Normal component
-            worldDV.dot(radial)     // Radial component
-        );
+        return {
+            prograde: worldDV[0] * prograde[0] + worldDV[1] * prograde[1] + worldDV[2] * prograde[2],
+            normal: worldDV[0] * normal[0] + worldDV[1] * normal[1] + worldDV[2] * normal[2],
+            radial: worldDV[0] * radial[0] + worldDV[1] * radial[1] + worldDV[2] * radial[2]
+        };
     }
     
     /**
@@ -429,7 +461,7 @@ export class OrbitalMechanics {
     
     /**
      * Check if a position is within a body's sphere of influence
-     * @param {THREE.Vector3|Array} position - Position to check
+     * @param {PhysicsVector3|Array} position - Position to check
      * @param {Object} body - Celestial body with position and soiRadius
      * @returns {boolean} True if within SOI
      */
@@ -439,9 +471,9 @@ export class OrbitalMechanics {
     
     /**
      * Find the dominant gravitational body at a position
-     * @param {THREE.Vector3|Array} position - Position to check
+     * @param {PhysicsVector3|Array} position - Position to check
      * @param {Array} bodies - Array of celestial bodies
-     * @returns {Object|null} Dominant body or null
+     * @returns {Object} Dominant body or null
      */
     static findDominantBody(position, bodies) {
         return GravityCalculator.findDominantBody(position, bodies);

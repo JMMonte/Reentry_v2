@@ -4,6 +4,7 @@
  */
 
 import { CoordinateTransforms } from '../physics/utils/CoordinateTransforms.js';
+import Physics from '../physics/PhysicsAPI.js';
 
 export class GroundTrackService {
     constructor() {
@@ -20,6 +21,7 @@ export class GroundTrackService {
      */
     async transformECIToSurface(eciPosition, planetNaifId, timeMs, planetState = null) {
         if (!eciPosition || planetNaifId === undefined) {
+            console.warn('[GroundTrackService] Invalid input:', { eciPosition, planetNaifId });
             return { lat: 0, lon: 0, alt: 0 };
         }
 
@@ -29,8 +31,22 @@ export class GroundTrackService {
             
             // In worker context, planet data must be provided
             if (!planetData) {
-                console.warn(`Planet data not provided for NAIF ID: ${planetNaifId}`);
+                console.warn(`[GroundTrackService] Planet data not provided for NAIF ID: ${planetNaifId}`);
                 return { lat: 0, lon: 0, alt: 0 };
+            }
+
+            // Validate that planet data has required fields for coordinate transformation
+            if (!planetData.radius) {
+                console.warn(`[GroundTrackService] Planet data missing radius for NAIF ID: ${planetNaifId}`);
+                return { lat: 0, lon: 0, alt: 0 };
+            }
+
+            // If quaternion is missing, create a simple fallback for basic coordinate conversion
+            if (!planetData.quaternion) {
+                console.warn(`[GroundTrackService] Planet data missing quaternion for NAIF ID: ${planetNaifId}, using simple spherical conversion`);
+                
+                // Simple spherical coordinate conversion as fallback
+                return Physics.Coordinates.cartesianToSphericalLatLonAlt(eciPosition, planetData.radius);
             }
 
             const time = new Date(timeMs);
@@ -40,8 +56,8 @@ export class GroundTrackService {
             const result = CoordinateTransforms.transformCoordinates(
                 eciPosition, 
                 velocity, 
-                'PCI', 
-                'PF', 
+                'planet-inertial', 
+                'planet-fixed', 
                 planetData, 
                 time
             );
@@ -55,7 +71,7 @@ export class GroundTrackService {
                 alt: geo[2]
             };
         } catch (error) {
-            console.warn('Failed to transform ECI to surface coordinates:', error);
+            console.warn('[GroundTrackService] Failed to transform ECI to surface coordinates:', error);
             return { lat: 0, lon: 0, alt: 0 };
         }
     }

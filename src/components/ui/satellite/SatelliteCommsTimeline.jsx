@@ -30,7 +30,7 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
     const [timeWindow, setTimeWindow] = useState(3600); // 1 hour in seconds
     const [connectionHistory, setConnectionHistory] = useState([]);
     const [dataTransferEvents, setDataTransferEvents] = useState([]);
-    const [lastWindowChange, setLastWindowChange] = useState(null);
+    const [, setLastWindowChange] = useState(null);
 
     // Initialize timeline tracking
     useEffect(() => {
@@ -388,7 +388,6 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                                     {timelineData.map((data, idx) => {
                                     // Use the actual time window for calculations
                                     const windowStart = currentTime - timeWindow;
-                                    const windowEnd = currentTime;
                                     const windowDuration = timeWindow;
                                     const position = ((data.timestamp - windowStart) / windowDuration) * 100;
                                     const width = Math.max(1, (1 / timelineData.length) * 100);
@@ -419,7 +418,6 @@ export function SatelliteCommsTimeline({ satelliteId, app }) {
                                     {connectionHistory.map((conn, idx) => {
                                     // Use the actual time window for consistent calculations
                                     const windowStart = currentTime - timeWindow;
-                                    const windowEnd = currentTime;
                                     const windowDuration = timeWindow;
                                     const connStart = ((conn.startTime - windowStart) / windowDuration) * 100;
                                     const connEnd = conn.endTime 

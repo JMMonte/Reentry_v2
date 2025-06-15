@@ -1,17 +1,17 @@
-import * as THREE from 'three';
 import { PhysicsEngine } from './PhysicsEngine.js';
 import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import { OrbitalMechanics } from './core/OrbitalMechanics.js';
 import { solarSystemDataManager } from './PlanetaryDataManager.js';
 import { PhysicsConstants } from './core/PhysicsConstants.js';
+import { PhysicsVector3 } from './utils/PhysicsVector3.js';
 
 /**
- * Physics Manager - Main interface between application and physics engine
- * Handles initialization, updates, and bridges to existing codebase
+ * Physics Manager - Pure physics interface for the application
+ * Handles initialization, updates, and provides physics data
  * 
- * ARCHITECTURE NOTE: This is the integration layer between pure physics (PhysicsEngine) 
- * and the Three.js application. It's acceptable for this layer to use Three.js for 
- * app integration purposes, while keeping the core PhysicsEngine purely mathematical.
+ * ARCHITECTURE NOTE: This is a pure physics layer that returns physics data types.
+ * The frontend/app layer is responsible for converting to Three.js objects when needed.
+ * This layer should NEVER import or use Three.js directly.
  */
 export class PhysicsManager {
     constructor(app) {
@@ -144,6 +144,7 @@ export class PhysicsManager {
 
     /**
      * Generate orbit path for a celestial body
+     * @returns {Array<Array<number>>} Array of position arrays [x, y, z] in km
      */
     generateOrbitPath(bodyName, numPoints = 360) {
         if (!this.isInitialized) return [];
@@ -173,6 +174,7 @@ export class PhysicsManager {
 
     /**
      * Generate future trajectory for a satellite
+     * @returns {Array<Array<number>>} Array of position arrays [x, y, z] in km
      */
     async generateSatelliteTrajectory(satelliteId, duration = 3600, timeStep = 60) {
         if (!this.isInitialized) return [];
@@ -202,8 +204,8 @@ export class PhysicsManager {
             includeThirdBody: false
         });
 
-        // Convert to Vector3 array
-        return propagatedPoints.map(pt => new THREE.Vector3().fromArray(pt.position));
+        // Return array of position arrays for frontend conversion
+        return propagatedPoints.map(pt => pt.position);
     }
 
     /**
@@ -216,13 +218,14 @@ export class PhysicsManager {
 
         if (!body || !parent) return null;
 
-        // Calculate relative position and velocity
-        const relPos = new THREE.Vector3().fromArray(body.position).sub(
-            new THREE.Vector3().fromArray(parent.position)
-        );
-        const relVel = new THREE.Vector3().fromArray(body.velocity).sub(
-            new THREE.Vector3().fromArray(parent.velocity)
-        );
+        // Calculate relative position and velocity using physics vectors
+        const bodyPos = PhysicsVector3.fromArray(body.position);
+        const parentPos = PhysicsVector3.fromArray(parent.position);
+        const relPos = bodyPos.clone().sub(parentPos);
+        
+        const bodyVel = PhysicsVector3.fromArray(body.velocity);
+        const parentVel = PhysicsVector3.fromArray(parent.velocity);
+        const relVel = bodyVel.clone().sub(parentVel);
 
         const mu = parent.mu || (parent.mass * PhysicsConstants.PHYSICS.G); // G in km³/kg/s²
 
@@ -657,6 +660,11 @@ export class PhysicsManager {
 
     /**
      * Private: Sync physics state with existing celestial bodies
+     * Sets physics data properties on celestial bodies for frontend conversion:
+     * - physicsPosition: [x, y, z] array in km
+     * - physicsVelocity: [x, y, z] array in km/s  
+     * - physicsQuaternion: [x, y, z, w] array for orientation
+     * - physicsNorthPole: [x, y, z] array for north pole vector
      */
     _syncWithCelestialBodies(state) {
         if (!this.app.celestialBodies || !Array.isArray(this.app.celestialBodies)) {
@@ -673,33 +681,26 @@ export class PhysicsManager {
             if (!bodyState) continue;
 
             try {
-                // Store absolute position for physics calculations and orbit rendering
-                if (!celestialBody.absolutePosition) {
-                    celestialBody.absolutePosition = new THREE.Vector3();
+                // Check if this body has a parent in the hierarchy (needed for both position and velocity)
+                const bodyConfig = solarSystemDataManager.getBodyByNaif(naifId);
+                let parentNaifId = null;
+                if (bodyConfig && bodyConfig.parent) {
+                    const parentConfig = solarSystemDataManager.getBodyByName(bodyConfig.parent);
+                    if (parentConfig && parentConfig.naifId !== undefined) {
+                        parentNaifId = parentConfig.naifId;
+                    }
                 }
+
+                // Store absolute position as physics data (frontend will convert to Three.js)
                 if (Array.isArray(bodyState.position)) {
-                    celestialBody.absolutePosition.set(
-                        bodyState.position[0],
-                        bodyState.position[1],
-                        bodyState.position[2]
-                    );
+                    celestialBody.physicsPosition = [...bodyState.position];
                 }
 
                 // Update target position (Planet class expects this)
                 if (celestialBody.targetPosition && Array.isArray(bodyState.position)) {
-                    // Check if this body has a parent in the hierarchy
-                    const bodyConfig = solarSystemDataManager.getBodyByNaif(naifId);
-                    let parentNaifId = null;
-                    if (bodyConfig && bodyConfig.parent) {
-                        const parentConfig = solarSystemDataManager.getBodyByName(bodyConfig.parent);
-                        if (parentConfig && parentConfig.naifId !== undefined) {
-                            parentNaifId = parentConfig.naifId;
-                        }
-                    }
 
                     // For single-planet systems (like dwarf planets), the planet position IS the absolute position
                     // For multi-body systems (like Earth-Moon, Pluto-Charon), calculate relative to parent
-                    // const bodyConfig = this.physicsEngine.positionManager?.hierarchy?.getBodyInfo?.(naifId);
                     const isMultiBodySystem = this._isMultiBodySystem(naifId, parentNaifId);
 
                     // Check if this body is parented to another body in the Three.js scene
@@ -731,53 +732,92 @@ export class PhysicsManager {
                     }
                 }
 
-                // Store velocity for orbital calculations if needed
+                // ALWAYS provide BOTH absolute and local velocities for ALL bodies
                 if (Array.isArray(bodyState.velocity)) {
-                    if (!celestialBody.velocity) {
-                        celestialBody.velocity = new THREE.Vector3();
+                    // Store absolute velocity (SSB-relative velocity from PositionManager)
+                    celestialBody.absoluteVelocity = [...bodyState.velocity];
+                    celestialBody.physicsVelocity = [...bodyState.velocity]; // Legacy alias
+                    
+                    // Calculate local velocity (velocity relative to immediate parent)
+                    if (parentNaifId && state.bodies[parentNaifId] && Array.isArray(state.bodies[parentNaifId].velocity)) {
+                        // Body has a parent - calculate relative velocity
+                        const parentVelocity = state.bodies[parentNaifId].velocity;
+                        celestialBody.localVelocity = [
+                            bodyState.velocity[0] - parentVelocity[0],
+                            bodyState.velocity[1] - parentVelocity[1],
+                            bodyState.velocity[2] - parentVelocity[2]
+                        ];
+                    } else {
+                        // Body has no parent (SSB, Sun) OR is a barycenter - local = absolute
+                        celestialBody.localVelocity = [...bodyState.velocity];
                     }
-                    celestialBody.velocity.set(
-                        bodyState.velocity[0],
-                        bodyState.velocity[1],
-                        bodyState.velocity[2]
-                    );
                 }
 
-                // Update target orientation if we have quaternion data
-                if (celestialBody.targetOrientation && bodyState.quaternion) {
-                    // Convert quaternion array back to Three.js Quaternion
-                    // bodyState.quaternion format: [x, y, z, w]
-                    const newQuat = new THREE.Quaternion(
-                        bodyState.quaternion[0], // x
-                        bodyState.quaternion[1], // y  
-                        bodyState.quaternion[2], // z
-                        bodyState.quaternion[3]  // w
-                    );
+                // Store orientation as physics data (frontend will convert to Three.js)
 
-                    // Check for flips - especially for Earth
+                // Update target orientation if we have quaternion data
+                if (bodyState.quaternion && Array.isArray(bodyState.quaternion) && bodyState.quaternion.length === 4) {
+                    // Store the raw physics quaternion data - let the frontend handle coordinate conversion
+                    // bodyState.quaternion format: [x, y, z, w] from physics engine
+                    const rawQuaternion = bodyState.quaternion;
+
+                    // Check for flips using raw quaternion data
                     const lastQuat = this._lastOrientations.get(naifId);
                     if (lastQuat) {
-                        const dot = lastQuat.dot(newQuat);
+                        // Calculate dot product manually to avoid THREE.js dependency
+                        const dot = lastQuat[0] * rawQuaternion[0] +
+                            lastQuat[1] * rawQuaternion[1] +
+                            lastQuat[2] * rawQuaternion[2] +
+                            lastQuat[3] * rawQuaternion[3];
 
                         // If quaternions are pointing in opposite directions, negate to take shorter path
                         if (dot < 0) {
-                            newQuat.x *= -1;
-                            newQuat.y *= -1;
-                            newQuat.z *= -1;
-                            newQuat.w *= -1;
+                            rawQuaternion[0] *= -1;
+                            rawQuaternion[1] *= -1;
+                            rawQuaternion[2] *= -1;
+                            rawQuaternion[3] *= -1;
                         }
-
-                        // No special handling for Earth - treat all bodies the same
                     }
 
-                    // Update the orientation
-                    celestialBody.targetOrientation.copy(newQuat);
+                    // Store raw physics quaternion data - frontend will handle THREE.js conversion
+                    celestialBody.physicsQuaternion = rawQuaternion;
 
-                    // Store for next comparison
-                    if (!this._lastOrientations.has(naifId)) {
-                        this._lastOrientations.set(naifId, new THREE.Quaternion());
+                    // Store for next comparison (as array to avoid THREE.js dependency)
+                    this._lastOrientations.set(naifId, [...rawQuaternion]);
+                } else if (bodyState.quaternion && typeof bodyState.quaternion === 'object' &&
+                    bodyState.quaternion.x !== undefined && bodyState.quaternion.y !== undefined &&
+                    bodyState.quaternion.z !== undefined && bodyState.quaternion.w !== undefined) {
+                    // Handle case where quaternion is a PhysicsQuaternion object instead of array
+                    const rawQuaternion = [
+                        bodyState.quaternion.x,
+                        bodyState.quaternion.y,
+                        bodyState.quaternion.z,
+                        bodyState.quaternion.w
+                    ];
+
+                    // Check for flips using raw quaternion data
+                    const lastQuat = this._lastOrientations.get(naifId);
+                    if (lastQuat) {
+                        // Calculate dot product manually to avoid THREE.js dependency
+                        const dot = lastQuat[0] * rawQuaternion[0] +
+                            lastQuat[1] * rawQuaternion[1] +
+                            lastQuat[2] * rawQuaternion[2] +
+                            lastQuat[3] * rawQuaternion[3];
+
+                        // If quaternions are pointing in opposite directions, negate to take shorter path
+                        if (dot < 0) {
+                            rawQuaternion[0] *= -1;
+                            rawQuaternion[1] *= -1;
+                            rawQuaternion[2] *= -1;
+                            rawQuaternion[3] *= -1;
+                        }
                     }
-                    this._lastOrientations.get(naifId).copy(newQuat);
+
+                    // Store raw physics quaternion data - frontend will handle THREE.js conversion
+                    celestialBody.physicsQuaternion = rawQuaternion;
+
+                    // Store for next comparison (as array to avoid THREE.js dependency)
+                    this._lastOrientations.set(naifId, [...rawQuaternion]);
                 }
 
                 // Also update the direct orientation if it exists
@@ -796,22 +836,16 @@ export class PhysicsManager {
                     celestialBody.poleDec = bodyState.poleDec;
                     celestialBody.spin = bodyState.spin;
 
-                    // Store north pole vector if needed
+                    // Store north pole vector as physics data (frontend will convert to Three.js)
                     if (bodyState.northPole && Array.isArray(bodyState.northPole)) {
-                        if (!celestialBody.northPole) {
-                            celestialBody.northPole = new THREE.Vector3();
-                        }
-                        celestialBody.northPole.fromArray(bodyState.northPole);
+                        celestialBody.physicsNorthPole = [...bodyState.northPole];
                     }
                 }
-
 
             } catch (error) {
                 console.warn(`[PhysicsManager] Failed to update ${celestialBody.name}:`, error);
             }
         }
-
-
     }
 
     /**
@@ -905,14 +939,17 @@ export class PhysicsManager {
 
     /**
      * Private: Generate orbit path from orbital elements
+     * @returns {Array<Array<number>>} Array of position arrays [x, y, z] in km
      */
     _generateOrbitPathFromElements(body, parent, numPoints) {
-        const relPos = new THREE.Vector3().fromArray(body.position).sub(
-            new THREE.Vector3().fromArray(parent.position)
-        );
-        const relVel = new THREE.Vector3().fromArray(body.velocity).sub(
-            new THREE.Vector3().fromArray(parent.velocity)
-        );
+        // Use physics vectors for internal calculations
+        const bodyPos = PhysicsVector3.fromArray(body.position);
+        const parentPos = PhysicsVector3.fromArray(parent.position);
+        const relPos = bodyPos.clone().sub(parentPos);
+        
+        const bodyVel = PhysicsVector3.fromArray(body.velocity);
+        const parentVel = PhysicsVector3.fromArray(parent.velocity);
+        const relVel = bodyVel.clone().sub(parentVel);
 
         const mu = parent.mu || (parent.mass * PhysicsConstants.PHYSICS.G); // G in km³/kg/s²
 
@@ -952,9 +989,10 @@ export class PhysicsManager {
                 mu
             );
 
-            // Add parent position to get absolute position
-            const absolutePos = stateVector.position.add(new THREE.Vector3().fromArray(parent.position));
-            points.push(absolutePos);
+            // Add parent position to get absolute position (return as physics array)
+            const parentPos = PhysicsVector3.fromArray(parent.position);
+            const absolutePos = stateVector.position.add(parentPos);
+            points.push(absolutePos.toArray());
         }
 
         return points;

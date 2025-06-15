@@ -1,9 +1,10 @@
-import * as THREE from 'three';
 import { AtmosphericModels } from '../core/AtmosphericModels.js';
 import { GravityCalculator } from '../core/GravityCalculator.js';
 import { UnifiedSatellitePropagator } from '../core/UnifiedSatellitePropagator.js';
 import { stateToKeplerian } from '../utils/KeplerianUtils.js';
 import { PhysicsConstants } from '../core/PhysicsConstants.js';
+import { MathUtils } from '../utils/MathUtils.js';
+import { PhysicsVector3 } from '../utils/PhysicsVector3.js';
 
 /**
  * Centralized orbital integration methods for the simulation
@@ -21,12 +22,14 @@ export function cleanupTimeouts() {
     activeTimeouts.clear();
 }
 
-// Pre-allocated vector pools for RK4 integration to avoid GC pressure
-const _rk4VectorPools = {
-    positions: Array.from({ length: 8 }, () => new THREE.Vector3()),
-    velocities: Array.from({ length: 8 }, () => new THREE.Vector3()),
-    accelerations: Array.from({ length: 4 }, () => new THREE.Vector3()),
-    ks: Array.from({ length: 8 }, () => new THREE.Vector3())
+// Working vector pools to avoid GC pressure
+const _vectorPool = {
+    positions: Array.from({ length: 8 }, () => new PhysicsVector3()),
+    velocities: Array.from({ length: 8 }, () => new PhysicsVector3()),
+    accelerations: Array.from({ length: 4 }, () => new PhysicsVector3()),
+    ks: Array.from({ length: 8 }, () => new PhysicsVector3()),
+    // Additional working vectors for RK45
+    workVecs: Array.from({ length: 20 }, () => new PhysicsVector3())
 };
 
 /**
@@ -41,68 +44,67 @@ const _rk4VectorPools = {
  */
 export function integrateRK4(position, velocity, accelerationFunc, dt) {
     // Get pooled vectors
-    const [pos0, pos1, pos2, pos3] = _rk4VectorPools.positions;
-    const [vel0, vel1, vel2, vel3] = _rk4VectorPools.velocities;
-    const [acc0, acc1, acc2, acc3] = _rk4VectorPools.accelerations;
-    const [k1p, k1v, k2p, k2v, k3p, k3v, k4p, k4v] = _rk4VectorPools.ks;
-    
+    const [pos0, pos1, pos2, pos3] = _vectorPool.positions;
+    const [vel0, vel1, vel2, vel3] = _vectorPool.velocities;
+    const [acc0, acc1, acc2, acc3] = _vectorPool.accelerations;
+    const [k1p, k1v, k2p, k2v, k3p, k3v, k4p, k4v] = _vectorPool.ks;
+
     // Initialize with input values
     pos0.copy(position);
     vel0.copy(velocity);
-    
+
     // k1
     acc0.copy(accelerationFunc(pos0, vel0));
     k1v.copy(acc0).multiplyScalar(dt);
     k1p.copy(vel0).multiplyScalar(dt);
-    
+
     // k2
     pos1.copy(pos0).addScaledVector(k1p, 0.5);
     vel1.copy(vel0).addScaledVector(k1v, 0.5);
     acc1.copy(accelerationFunc(pos1, vel1));
     k2v.copy(acc1).multiplyScalar(dt);
     k2p.copy(vel1).multiplyScalar(dt);
-    
+
     // k3
     pos2.copy(pos0).addScaledVector(k2p, 0.5);
     vel2.copy(vel0).addScaledVector(k2v, 0.5);
     acc2.copy(accelerationFunc(pos2, vel2));
     k3v.copy(acc2).multiplyScalar(dt);
     k3p.copy(vel2).multiplyScalar(dt);
-    
+
     // k4
     pos3.copy(pos0).add(k3p);
     vel3.copy(vel0).add(k3v);
     acc3.copy(accelerationFunc(pos3, vel3));
     k4v.copy(acc3).multiplyScalar(dt);
     k4p.copy(vel3).multiplyScalar(dt);
-    
+
     // Combine steps (reuse pos0 and vel0 as output)
     pos0.copy(position)
-        .addScaledVector(k1p, 1/6)
-        .addScaledVector(k2p, 1/3)
-        .addScaledVector(k3p, 1/3)
-        .addScaledVector(k4p, 1/6);
-        
+        .addScaledVector(k1p, 1 / 6)
+        .addScaledVector(k2p, 1 / 3)
+        .addScaledVector(k3p, 1 / 3)
+        .addScaledVector(k4p, 1 / 6);
+
     vel0.copy(velocity)
-        .addScaledVector(k1v, 1/6)
-        .addScaledVector(k2v, 1/3)
-        .addScaledVector(k3v, 1/3)
-        .addScaledVector(k4v, 1/6);
-    
-    // Return new Vector3s with the computed values
+        .addScaledVector(k1v, 1 / 6)
+        .addScaledVector(k2v, 1 / 3)
+        .addScaledVector(k3v, 1 / 3)
+        .addScaledVector(k4v, 1 / 6);
+
+    // Return new PhysicsVector3s with the computed values
     return { position: pos0.clone(), velocity: vel0.clone() };
 }
 
 /**
- * Dormand-Prince RK45 adaptive integration
- * Variable timestep integration with error control
+ * Adaptive Runge-Kutta 4/5 (Dormand-Prince) integration with error control
  * 
- * @param {THREE.Vector3} position - Current position (km)
- * @param {THREE.Vector3} velocity - Current velocity (km/s)
+ * @param {PhysicsVector3} position - Current position (km)
+ * @param {PhysicsVector3} velocity - Current velocity (km/s)
  * @param {Function} accelerationFunc - Function that computes acceleration
  * @param {number} targetTime - Target integration time (seconds)
  * @param {Object} options - Integration options
- * @returns {{position: THREE.Vector3, velocity: THREE.Vector3, actualTime: number}}
+ * @returns {{position: PhysicsVector3, velocity: PhysicsVector3, actualTime: number}}
  */
 export function integrateRK45(position, velocity, accelerationFunc, targetTime, options = {}) {
     const {
@@ -112,225 +114,258 @@ export function integrateRK45(position, velocity, accelerationFunc, targetTime, 
         maxStep = 60,
         sensitivityScale = 1
     } = options;
-    
+
     let t = 0;
     let dt = Math.min(maxStep, targetTime * 0.1);
-    
-    const pos = position.clone();
-    const vel = velocity.clone();
-    
+
+    // Use working vectors from pool
+    const pos = _vectorPool.workVecs[0].copy(position);
+    const vel = _vectorPool.workVecs[1].copy(velocity);
+
+    // Pre-allocate all working vectors
+    const k1p = _vectorPool.workVecs[2];
+    const k1v = _vectorPool.workVecs[3];
+    const k2p = _vectorPool.workVecs[4];
+    const k2v = _vectorPool.workVecs[5];
+    const k3p = _vectorPool.workVecs[6];
+    const k3v = _vectorPool.workVecs[7];
+    const k4p = _vectorPool.workVecs[8];
+    const k4v = _vectorPool.workVecs[9];
+    const k5p = _vectorPool.workVecs[10];
+    const k5v = _vectorPool.workVecs[11];
+    const k6p = _vectorPool.workVecs[12];
+    const k6v = _vectorPool.workVecs[13];
+    const k7p = _vectorPool.workVecs[14];
+    const k7v = _vectorPool.workVecs[15];
+
+    const pos2 = _vectorPool.workVecs[16];
+    const vel2 = _vectorPool.workVecs[17];
+    const pos3 = _vectorPool.workVecs[18];
+    const vel3 = _vectorPool.workVecs[19];
+
+    // Additional working vectors for stages 4-6
+    const pos4 = _vectorPool.positions[0];
+    const vel4 = _vectorPool.velocities[0];
+    const pos5 = _vectorPool.positions[1];
+    const vel5 = _vectorPool.velocities[1];
+    const pos6 = _vectorPool.positions[2];
+    const vel6 = _vectorPool.velocities[2];
+
+    // Working vectors for final calculations
+    const newPos4 = _vectorPool.positions[3];
+    const newVel4 = _vectorPool.velocities[3];
+    const newPos5 = _vectorPool.positions[4];
+    const newVel5 = _vectorPool.velocities[4];
+    const posError = _vectorPool.positions[5];
+    const velError = _vectorPool.velocities[5];
+
     // Dormand-Prince coefficients
-    const a21 = 1/5;
-    const a31 = 3/40, a32 = 9/40;
-    const a41 = 44/45, a42 = -56/15, a43 = 32/9;
-    const a51 = 19372/6561, a52 = -25360/2187, a53 = 64448/6561, a54 = -212/729;
-    const a61 = 9017/3168, a62 = -355/33, a63 = 46732/5247, a64 = 49/176, a65 = -5103/18656;
-    
-    const b1 = 35/384, b3 = 500/1113, b4 = 125/192, b5 = -2187/6784, b6 = 11/84;
-    const b1s = 5179/57600, b3s = 7571/16695, b4s = 393/640, b5s = -92097/339200, b6s = 187/2100, b7s = 1/40;
-    
+    const a21 = 1 / 5;
+    const a31 = 3 / 40, a32 = 9 / 40;
+    const a41 = 44 / 45, a42 = -56 / 15, a43 = 32 / 9;
+    const a51 = 19372 / 6561, a52 = -25360 / 2187, a53 = 64448 / 6561, a54 = -212 / 729;
+    const a61 = 9017 / 3168, a62 = -355 / 33, a63 = 46732 / 5247, a64 = 49 / 176, a65 = -5103 / 18656;
+
+    const b1 = 35 / 384, b3 = 500 / 1113, b4 = 125 / 192, b5 = -2187 / 6784, b6 = 11 / 84;
+    const b1s = 5179 / 57600, b3s = 7571 / 16695, b4s = 393 / 640, b5s = -92097 / 339200, b6s = 187 / 2100, b7s = 1 / 40;
+
     while (t < targetTime) {
         if (t + dt > targetTime) dt = targetTime - t;
-        
-        // RK45 stages - properly separate position and velocity k-values
+
+        // RK45 stages - reuse working vectors
         // Stage 1
-        const k1v = accelerationFunc(pos, vel);
-        const k1p = vel.clone();
-        
+        k1v.copy(accelerationFunc(pos, vel));
+        k1p.copy(vel);
+
         // Stage 2
-        const pos2 = pos.clone().addScaledVector(k1p, a21 * dt);
-        const vel2 = vel.clone().addScaledVector(k1v, a21 * dt);
-        const k2v = accelerationFunc(pos2, vel2);
-        const k2p = vel2.clone();
-        
+        pos2.copy(pos).addScaledVector(k1p, a21 * dt);
+        vel2.copy(vel).addScaledVector(k1v, a21 * dt);
+        k2v.copy(accelerationFunc(pos2, vel2));
+        k2p.copy(vel2);
+
         // Stage 3
-        const pos3 = pos.clone()
+        pos3.copy(pos)
             .addScaledVector(k1p, a31 * dt)
             .addScaledVector(k2p, a32 * dt);
-        const vel3 = vel.clone()
+        vel3.copy(vel)
             .addScaledVector(k1v, a31 * dt)
             .addScaledVector(k2v, a32 * dt);
-        const k3v = accelerationFunc(pos3, vel3);
-        const k3p = vel3.clone();
-        
+        k3v.copy(accelerationFunc(pos3, vel3));
+        k3p.copy(vel3);
+
         // Stage 4
-        const pos4 = pos.clone()
+        pos4.copy(pos)
             .addScaledVector(k1p, a41 * dt)
             .addScaledVector(k2p, a42 * dt)
             .addScaledVector(k3p, a43 * dt);
-        const vel4 = vel.clone()
+        vel4.copy(vel)
             .addScaledVector(k1v, a41 * dt)
             .addScaledVector(k2v, a42 * dt)
             .addScaledVector(k3v, a43 * dt);
-        const k4v = accelerationFunc(pos4, vel4);
-        const k4p = vel4.clone();
-        
+        k4v.copy(accelerationFunc(pos4, vel4));
+        k4p.copy(vel4);
+
         // Stage 5
-        const pos5 = pos.clone()
+        pos5.copy(pos)
             .addScaledVector(k1p, a51 * dt)
             .addScaledVector(k2p, a52 * dt)
             .addScaledVector(k3p, a53 * dt)
             .addScaledVector(k4p, a54 * dt);
-        const vel5 = vel.clone()
+        vel5.copy(vel)
             .addScaledVector(k1v, a51 * dt)
             .addScaledVector(k2v, a52 * dt)
             .addScaledVector(k3v, a53 * dt)
             .addScaledVector(k4v, a54 * dt);
-        const k5v = accelerationFunc(pos5, vel5);
-        const k5p = vel5.clone();
-        
+        k5v.copy(accelerationFunc(pos5, vel5));
+        k5p.copy(vel5);
+
         // Stage 6
-        const pos6 = pos.clone()
+        pos6.copy(pos)
             .addScaledVector(k1p, a61 * dt)
             .addScaledVector(k2p, a62 * dt)
             .addScaledVector(k3p, a63 * dt)
             .addScaledVector(k4p, a64 * dt)
             .addScaledVector(k5p, a65 * dt);
-        const vel6 = vel.clone()
+        vel6.copy(vel)
             .addScaledVector(k1v, a61 * dt)
             .addScaledVector(k2v, a62 * dt)
             .addScaledVector(k3v, a63 * dt)
             .addScaledVector(k4v, a64 * dt)
             .addScaledVector(k5v, a65 * dt);
-        const k6v = accelerationFunc(pos6, vel6);
-        const k6p = vel6.clone();
-        
+        k6v.copy(accelerationFunc(pos6, vel6));
+        k6p.copy(vel6);
+
         // 4th order solution (note: b2 = 0 in Dormand-Prince)
-        const newPos4 = pos.clone()
+        newPos4.copy(pos)
             .addScaledVector(k1p, b1 * dt)
             .addScaledVector(k3p, b3 * dt)
             .addScaledVector(k4p, b4 * dt)
             .addScaledVector(k5p, b5 * dt)
             .addScaledVector(k6p, b6 * dt);
-            
-        const newVel4 = vel.clone()
+
+        newVel4.copy(vel)
             .addScaledVector(k1v, b1 * dt)
             .addScaledVector(k3v, b3 * dt)
             .addScaledVector(k4v, b4 * dt)
             .addScaledVector(k5v, b5 * dt)
             .addScaledVector(k6v, b6 * dt);
-        
-        // Stage 7 (needed for 5th order solution)
-        const k7v = accelerationFunc(newPos4, newVel4);
-        const k7p = newVel4.clone();
-        
-        // 5th order solution (for error estimation)
-        const newPos5 = pos.clone()
+
+        // 5th order solution for error estimation
+        k7v.copy(accelerationFunc(pos6, vel6));
+        k7p.copy(vel6);
+
+        newPos5.copy(pos)
             .addScaledVector(k1p, b1s * dt)
             .addScaledVector(k3p, b3s * dt)
             .addScaledVector(k4p, b4s * dt)
             .addScaledVector(k5p, b5s * dt)
             .addScaledVector(k6p, b6s * dt)
             .addScaledVector(k7p, b7s * dt);
-            
-        const newVel5 = vel.clone()
+
+        newVel5.copy(vel)
             .addScaledVector(k1v, b1s * dt)
             .addScaledVector(k3v, b3s * dt)
             .addScaledVector(k4v, b4s * dt)
             .addScaledVector(k5v, b5s * dt)
             .addScaledVector(k6v, b6s * dt)
             .addScaledVector(k7v, b7s * dt);
-        
+
         // Error estimation
-        const errPos = newPos5.clone().sub(newPos4).length();
-        const errVel = newVel5.clone().sub(newVel4).length();
-        
-        const accMag = k1v.length();
-        const dynTol = absTol / (1 + Math.log1p(sensitivityScale * accMag));
-        
-        const scalePos = dynTol + relTol * Math.max(pos.length(), newPos4.length());
-        const scaleVel = dynTol + relTol * Math.max(vel.length(), newVel4.length());
-        
-        const errMax = Math.max(errPos / scalePos, errVel / scaleVel);
-        
-        // Step size control (PI controller)
-        if (errMax <= 1) {
+        posError.copy(newPos5).sub(newPos4);
+        velError.copy(newVel5).sub(newVel4);
+
+        const posErrorMag = posError.length();
+        const velErrorMag = velError.length();
+
+        // Scale errors by tolerance
+        const posScale = absTol + relTol * Math.max(pos.length(), newPos4.length());
+        const velScale = absTol + relTol * Math.max(vel.length(), newVel4.length());
+
+        const error = Math.max(posErrorMag / posScale, velErrorMag / velScale) * sensitivityScale;
+
+        if (error <= 1.0 || dt <= minStep) {
             // Accept step
-            t += dt;
             pos.copy(newPos4);
             vel.copy(newVel4);
-            
-            // Increase step size
-            dt *= Math.min(5, 0.9 * Math.pow(1 / errMax, 0.2));
-            dt = Math.min(dt, maxStep);
-        } else {
-            // Reject step, decrease step size
-            dt *= Math.max(0.2, 0.9 * Math.pow(1 / errMax, 0.2));
-            dt = Math.max(dt, minStep);
+            t += dt;
+        }
+
+        // Adjust step size
+        if (error > 0) {
+            const factor = Math.max(0.1, Math.min(5.0, 0.9 * Math.pow(1.0 / error, 0.2)));
+            dt = MathUtils.clamp(dt * factor, minStep, maxStep);
+        }
+
+        // Safety check
+        if (dt < minStep) {
+            console.warn(`[OrbitalIntegrators] Step size too small: ${dt}`);
+            break;
         }
     }
-    
-    return { position: pos, velocity: vel, actualTime: t };
+
+    return { position: pos.clone(), velocity: vel.clone(), actualTime: t };
 }
 
 /**
  * Simple Euler integration
- * First-order integration, useful for atmospheric reentry
- * 
- * @param {THREE.Vector3} position - Current position (km)
- * @param {THREE.Vector3} velocity - Current velocity (km/s)
- * @param {Function} accelerationFunc - Function that computes acceleration
- * @param {number} dt - Time step (seconds)
- * @returns {{position: THREE.Vector3, velocity: THREE.Vector3}}
+ * @param {PhysicsVector3} position - Current position
+ * @param {PhysicsVector3} velocity - Current velocity
+ * @param {Function} accelerationFunc - Acceleration function
+ * @param {number} dt - Time step
+ * @returns {{position: PhysicsVector3, velocity: PhysicsVector3}}
  */
 export function integrateEuler(position, velocity, accelerationFunc, dt) {
     const acceleration = accelerationFunc(position, velocity);
-    
-    const newVelocity = velocity.clone().addScaledVector(acceleration, dt);
-    const newPosition = position.clone().addScaledVector(velocity, dt);
-    
-    return { position: newPosition, velocity: newVelocity };
+
+    // Use working vectors to avoid allocations
+    const newPosition = _vectorPool.workVecs[0].copy(position).addScaledVector(velocity, dt);
+    const newVelocity = _vectorPool.workVecs[1].copy(velocity).addScaledVector(acceleration, dt);
+
+    return { position: newPosition.clone(), velocity: newVelocity.clone() };
 }
 
 /**
  * Verlet integration
- * Symplectic integrator that conserves energy well
- * 
- * @param {THREE.Vector3} position - Current position (km)
- * @param {THREE.Vector3} prevPosition - Previous position (km)
- * @param {Function} accelerationFunc - Function that computes acceleration
- * @param {number} dt - Time step (seconds)
- * @returns {{position: THREE.Vector3, velocity: THREE.Vector3}}
+ * @param {PhysicsVector3} position - Current position
+ * @param {PhysicsVector3} prevPosition - Previous position
+ * @param {Function} accelerationFunc - Acceleration function
+ * @param {number} dt - Time step
+ * @returns {{position: PhysicsVector3, velocity: PhysicsVector3}}
  */
 export function integrateVerlet(position, prevPosition, accelerationFunc, dt) {
     const acceleration = accelerationFunc(position, null);
-    
-    const newPosition = position.clone()
+
+    // Use working vectors
+    const newPosition = _vectorPool.workVecs[0].copy(position)
         .multiplyScalar(2)
         .sub(prevPosition)
         .addScaledVector(acceleration, dt * dt);
-    
-    // Estimate velocity from positions
-    const velocity = newPosition.clone().sub(position).divideScalar(dt);
-    
-    return { position: newPosition, velocity: velocity };
+
+    const velocity = _vectorPool.workVecs[1].copy(newPosition).sub(prevPosition).divideScalar(2 * dt);
+
+    return { position: newPosition.clone(), velocity: velocity.clone() };
 }
 
 /**
  * Leapfrog integration
- * Symplectic integrator with good long-term stability
- * 
- * @param {THREE.Vector3} position - Current position (km)
- * @param {THREE.Vector3} velocity - Current velocity at half-step (km/s)
- * @param {Function} accelerationFunc - Function that computes acceleration
- * @param {number} dt - Time step (seconds)
- * @returns {{position: THREE.Vector3, velocity: THREE.Vector3}}
+ * @param {PhysicsVector3} position - Current position
+ * @param {PhysicsVector3} velocity - Current velocity
+ * @param {Function} accelerationFunc - Acceleration function
+ * @param {number} dt - Time step
+ * @returns {{position: PhysicsVector3, velocity: PhysicsVector3}}
  */
 export function integrateLeapfrog(position, velocity, accelerationFunc, dt) {
-    // Update position using velocity at half-step
-    const newPosition = position.clone().addScaledVector(velocity, dt);
-    
-    // Calculate acceleration at new position
-    const acceleration = accelerationFunc(newPosition, velocity);
-    
-    // Update velocity to next half-step
-    const newVelocity = velocity.clone().addScaledVector(acceleration, dt);
-    
-    return { position: newPosition, velocity: newVelocity };
+    const acceleration = accelerationFunc(position, velocity);
+
+    // Use working vectors
+    const newVelocity = _vectorPool.workVecs[0].copy(velocity).addScaledVector(acceleration, dt);
+    const newPosition = _vectorPool.workVecs[1].copy(position).addScaledVector(newVelocity, dt);
+
+    return { position: newPosition.clone(), velocity: newVelocity.clone() };
 }
 
 // Vector conversion pools to avoid allocations
-const _conversionVectorPool = Array.from({ length: 4 }, () => new THREE.Vector3());
+const _conversionVectorPool = Array.from({ length: 4 }, () => new PhysicsVector3());
 let _poolIndex = 0;
 
 /**
@@ -350,9 +385,15 @@ export function vector3ToArray(vec) {
 }
 
 /**
- * Reset vector pools (call occasionally to prevent memory leaks)
+ * Reset vector pools to avoid memory leaks
  */
 export function resetVectorPools() {
+    _vectorPool.positions.forEach(v => v.set(0, 0, 0));
+    _vectorPool.velocities.forEach(v => v.set(0, 0, 0));
+    _vectorPool.accelerations.forEach(v => v.set(0, 0, 0));
+    _vectorPool.ks.forEach(v => v.set(0, 0, 0));
+    _vectorPool.workVecs.forEach(v => v.set(0, 0, 0));
+    _conversionVectorPool.forEach(v => v.set(0, 0, 0));
     _poolIndex = 0;
     // Vectors are reused, so no need to recreate
 }
@@ -366,18 +407,18 @@ export function resetVectorPools() {
  */
 export function analyzeOrbit(satellite, centralBody, G) {
     // Handle both Vector3 and array formats
-    const r = satellite.position.toArray ? satellite.position.clone() : new THREE.Vector3().fromArray(satellite.position);
-    const v = satellite.velocity.toArray ? satellite.velocity.clone() : new THREE.Vector3().fromArray(satellite.velocity);
+    const r = satellite.position.toArray ? satellite.position.clone() : PhysicsVector3.fromArray(satellite.position);
+    const v = satellite.velocity.toArray ? satellite.velocity.clone() : PhysicsVector3.fromArray(satellite.velocity);
     const mu = G * centralBody.mass;
-    
+
     // Calculate orbital energy
     const rMag = r.length();
     const vMag = v.length();
     const specificEnergy = (vMag * vMag / 2) - (mu / rMag);
-    
+
     // Calculate eccentricity vector
-    const h = new THREE.Vector3().crossVectors(r, v);
-    const eVec = new THREE.Vector3()
+    const h = new PhysicsVector3().crossVectors(r, v);
+    const eVec = new PhysicsVector3()
         .crossVectors(v, h)
         .divideScalar(mu)
         .sub(r.clone().divideScalar(rMag));
@@ -425,7 +466,7 @@ export function calculatePropagationParameters(orbitParams, orbitPeriods, points
             // New orbit calculation
             maxDuration = orbitPeriods * orbitParams.period;
         }
-        
+
         // Time step based on desired points per period
         timeStep = orbitParams.period / pointsPerPeriod;
     } else {
@@ -433,14 +474,14 @@ export function calculatePropagationParameters(orbitParams, orbitPeriods, points
         // Base duration on a reasonable time scale
         const baseDuration = 86400; // 1 day in seconds
         maxDuration = orbitPeriods * baseDuration; // Use orbitPeriods as a multiplier
-        
+
         // Smaller time step for non-elliptical orbits to capture trajectory properly
         timeStep = maxDuration / (pointsPerPeriod * orbitPeriods);
     }
 
     // Ensure reasonable limits
-    maxDuration = Math.max(60, Math.min(maxDuration, 86400 * 365)); // Between 1 minute and 1 year
-    timeStep = Math.max(0.1, Math.min(timeStep, 3600)); // Between 0.1 seconds and 1 hour
+    maxDuration = MathUtils.clamp(maxDuration, 60, 86400 * 365); // Between 1 minute and 1 year
+    timeStep = MathUtils.clamp(timeStep, 0.1, 3600); // Between 0.1 seconds and 1 hour
 
     return { maxDuration, timeStep };
 }
@@ -522,29 +563,29 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
 
     // Find the central body for orbital calculations
     let dominantBody = null;
-    
+
     // If centralBodyNaifId is specified, use that body
     if (centralBodyNaifId !== null) {
-        dominantBody = bodies.find(body => 
-            body.naif === centralBodyNaifId || 
+        dominantBody = bodies.find(body =>
+            body.naif === centralBodyNaifId ||
             body.naifId === centralBodyNaifId ||
             parseInt(body.naif) === parseInt(centralBodyNaifId) ||
             parseInt(body.naifId) === parseInt(centralBodyNaifId)
         );
-        
+
         if (!dominantBody) {
             console.warn(`[OrbitalIntegrators] Specified central body ${centralBodyNaifId} not found, falling back to auto-detection`);
         }
     }
-    
+
     // Fallback: Find the dominant gravitational body at the initial position
     if (!dominantBody) {
-        const position = new THREE.Vector3(...pos0);
+        const position = new PhysicsVector3(...pos0);
         let maxInfluence = 0;
-        
+
         for (const body of bodies) {
             if (!body.mass || !body.position) continue;
-            const bodyPos = new THREE.Vector3(...(body.position.toArray ? body.position.toArray() : body.position));
+            const bodyPos = new PhysicsVector3(...(body.position.toArray ? body.position.toArray() : body.position));
             const distance = position.distanceTo(bodyPos);
             const influence = body.mass / (distance * distance);
             if (influence > maxInfluence) {
@@ -552,7 +593,7 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
                 dominantBody = body;
             }
         }
-        
+
         // Final fallback if no dominant body found
         if (!dominantBody && bodies.length > 0) {
             // Try to find any body with valid GM or mass
@@ -562,7 +603,7 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
             }
         }
     }
-    
+
     // Use the dominant body's gravitational parameter, with safety check
     if (!dominantBody || (!dominantBody.GM && !dominantBody.mass)) {
         console.warn('[OrbitalIntegrators] No valid dominant body found for orbit propagation');
@@ -582,8 +623,8 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
     }
     const mu = dominantBody.GM || (PhysicsConstants.PHYSICS.G * dominantBody.mass);
     const oe = stateToKeplerian(
-        new THREE.Vector3(...pos0),
-        new THREE.Vector3(...vel0),
+        new PhysicsVector3(...pos0),
+        new PhysicsVector3(...vel0),
         mu
     );
     const hyperbolic = oe && oe.eccentricity >= 1;
@@ -591,41 +632,41 @@ export async function propagateOrbit(pos0, vel0, bodies, period, numPoints, opti
     for (let i = 0; i < numPoints; i++) {
         // Integrate one step using centralized physics (same as main engine)
         const accelerationFunc = (p, v) => {
-            // Convert Three.js Vector3 to pure physics format
+            // Convert to pure physics format
             const satPhysics = {
                 position: p.toArray ? p.toArray() : [p.x, p.y, p.z],
                 velocity: v.toArray ? v.toArray() : [v.x, v.y, v.z],
                 centralBodyNaifId: centralBodyNaifId,
                 ballisticCoefficient: ballisticCoefficient
             };
-            
+
             // Convert bodies to pure physics format
             const bodiesPhysics = {};
             for (const body of bodies) {
                 const naifId = body.naif || body.naifId || body.id;
                 bodiesPhysics[naifId] = {
                     ...body,
-                    position: Array.isArray(body.position) ? body.position : 
-                             (body.position.toArray ? body.position.toArray() : [0, 0, 0]),
+                    position: Array.isArray(body.position) ? body.position :
+                        (body.position.toArray ? body.position.toArray() : [0, 0, 0]),
                     velocity: body.velocity || [0, 0, 0],
                     naifId: naifId
                 };
             }
-            
+
             // Use UnifiedSatellitePropagator for consistent physics
             const accelArray = UnifiedSatellitePropagator.computeAcceleration(satPhysics, bodiesPhysics, {
                 includeJ2: true,
                 includeDrag: true,
                 includeThirdBody: false
             });
-            
-            // Convert back to Three.js Vector3 for integration
-            return new THREE.Vector3().fromArray(accelArray);
+
+            // Convert back to PhysicsVector3 for integration
+            return PhysicsVector3.fromArray(accelArray);
         };
 
         const state = integrateRK45(
-            new THREE.Vector3(...pos),
-            new THREE.Vector3(...vel),
+            new PhysicsVector3(...pos),
+            new PhysicsVector3(...vel),
             accelerationFunc,
             dt,
             { absTol: 1e-6, relTol: 1e-6 }
@@ -691,7 +732,7 @@ export async function propagateAtmosphere(
 ) {
     const points = [];
     const steps = Math.ceil(maxSeconds / dt);
-    
+
     const p = pos0.slice();
     const v = vel0.slice();
 
@@ -713,10 +754,10 @@ export async function propagateAtmosphere(
 
         // Compute accelerations
         const grav = GravityCalculator.computeAcceleration(
-            new THREE.Vector3(...p), 
+            new PhysicsVector3(...p),
             bodies
         );
-        const drag = host 
+        const drag = host
             ? AtmosphericModels.computeDragAcceleration(p, v, host, ballisticCoefficient)
             : [0, 0, 0];
 

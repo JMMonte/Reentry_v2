@@ -22,19 +22,22 @@ export class LabelFader {
         }
         this._opacityLogCounter = (this._opacityLogCounter || 0) + 1;
 
-        // Apply the calculated opacity to all labels (Sprites)
+        // Apply the calculated opacity to all labels
         this.sprites.forEach(label => {
-            if (label.material) { // Handle THREE.Sprite
+            // Handle WebGL sprites (preferred)
+            if (label instanceof THREE.Sprite && label.material) {
                 label.material.opacity = opacity;
                 label.material.transparent = opacity < 1;
                 label.material.needsUpdate = true;
                 label.material.depthWrite = opacity === 1; // Only write depth when fully opaque
+                label.visible = opacity > 0.01;
             }
-            if (label.element && label.element.style) { // Handle CSS2DObject
-                // CSS doesn't directly interact with depth buffer in the same way
+            // Handle legacy CSS2D labels (for backward compatibility)
+            else if (label.element && label.element.style) {
                 label.element.style.transition = 'opacity 0.1s ease-out';
                 label.element.style.opacity = opacity;
                 label.element.style.display = opacity === 0 ? 'none' : '';
+                label.visible = opacity > 0.01;
             }
         });
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { WebGLLabels } from '../../utils/WebGLLabels.js';
 
 export class RadialGrid {
     /**
@@ -48,8 +49,6 @@ export class RadialGrid {
             return;
         }
 
-        const scaledPlanetRadius = planet.radius;
-
         this.createGrid();
         // Initial position will be set by the first Planet.update() call
     }
@@ -66,9 +65,6 @@ export class RadialGrid {
 
         // --- Materials with transparency for better appearance ---
         const majorOpacity = 0.25;  // Reduced from 0.35 for less shine
-        const minorOpacity = 0.15;  // Reduced from 0.20
-        const markerOpacity = 0.06;  // Reduced from 0.08
-        const radialOpacity = 0.08;  // Reduced from 0.10
         
         // Colors for alternating pattern - neutral gray-blue tones
         const color1 = new THREE.Color(0x4d5d6d); // Dark gray-blue
@@ -175,39 +171,22 @@ export class RadialGrid {
         }
     }
 
-    createTextSprite(text) {
-        const fontSize = 42;
-        const font = `${fontSize}px sans-serif`;
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        ctx.font = font;
-        const metrics = ctx.measureText(text);
-        const textWidth = Math.ceil(metrics.width);
-        const textHeight = fontSize;
-        canvas.width = textWidth;
-        canvas.height = textHeight;
-        ctx.font = font;
-        ctx.fillStyle = '#ffffff';
-        ctx.textBaseline = 'top';
-        ctx.fillText(text, 0, 0);
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        const material = new THREE.SpriteMaterial({
-            map: texture,
-            transparent: true,
-            sizeAttenuation: false
-        });
-        const sprite = new THREE.Sprite(material);
-        const pixelScale = 0.0002;
-        sprite.scale.set(textWidth * pixelScale, textHeight * pixelScale, 1);
-        return sprite;
-    }
-
     // This function now expects an already scaled radius
     createLabel(text, scaledRadius) {
-        const sprite = this.createTextSprite(text);
+        // Use WebGLLabels with matching configuration for visual consistency
+        const labelConfig = {
+            fontSize: 42,
+            fontFamily: 'sans-serif',
+            color: '#ffffff',
+            pixelScale: 0.0002,
+            sizeAttenuation: false,
+            transparent: true,
+            renderOrder: 999
+        };
+        
+        const sprite = WebGLLabels.createLabel(text, labelConfig);
         const offset = 1.02;
-        sprite.position.set(scaledRadius * offset, 0, 0); // Use directly
+        sprite.position.set(scaledRadius * offset, 0, 0);
         this.group.add(sprite);
         this.labelsSprites.push(sprite);
     }
@@ -289,13 +268,13 @@ export class RadialGrid {
     }
 
     dispose() {
-        // Dispose geometries and materials
+        // Dispose all label sprites using WebGLLabels utility
+        WebGLLabels.disposeLabels(this.labelsSprites);
+
+        // Dispose geometries and materials for grid mesh
         this.group.traverse((object) => {
             if (object instanceof THREE.Line || object instanceof THREE.LineSegments) {
                 if (object.geometry) object.geometry.dispose();
-                if (object.material) object.material.dispose();
-            } else if (object instanceof THREE.Sprite) {
-                if (object.material.map) object.material.map.dispose();
                 if (object.material) object.material.dispose();
             }
         });

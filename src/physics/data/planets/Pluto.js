@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import {PhysicsConstants} from '../../core/PhysicsConstants.js';
 
 const plutoMass = 1.303e22; // kg
@@ -74,19 +73,8 @@ export default {
         pressure: 1e-5 // bar - surface pressure (highly variable)
     },
 
-    // Rendering properties
-    materials: {
-        surfaceConfig: {
-            materialType: 'standard',
-            textureKey: 'plutoTexture',
-            normalMapKey: 'plutoNormalTexture',
-            params: {
-                normalScale: new THREE.Vector2(0.2, 0.2),
-                roughness: 0.75,
-                metalness: 0.05,
-            }
-        },
-    },
+    // NOTE: Material configurations moved to frontend PlanetMaterials.js
+    // This physics data file should only contain pure physics properties
 
     // Lighting
     addLight: true,
@@ -98,6 +86,18 @@ export default {
 
     // LOD levels
     lodLevelsKey: 'default',
+
+    // Rendering properties
+    materials: {
+        surfaceConfig: {
+            materialType: 'standard',
+            textureKey: 'plutoTexture',
+            params: {
+                roughness: 0.8,
+                metalness: 0.05,
+            }
+        }
+    },
 
     // Radial grid configuration (for Pluto system if centered on Pluto itself)
     radialGridConfig: {

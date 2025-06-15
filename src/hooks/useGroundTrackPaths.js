@@ -138,44 +138,32 @@ export function useGroundTrackPaths({
     const currentPositions = useCallback(async () => {
         if (!planet || !Object.keys(filteredSatellites).length) return [];
         
-        const { groundTrackService } = await import('../services/GroundTrackService.js');
-        const currentPlanetState = physicsBodies?.find(b => b.naifId === planet.naifId);
-        
-        const positions = await Promise.all(
-            Object.values(filteredSatellites).map(async sat => {
-                if (!sat.position) {
-                    return { id: sat.id, lat: 0, lon: 0, color: sat.color || 0xffff00 };
-                }
-                
-                try {
-                    const eciPos = Array.isArray(sat.position) 
-                        ? [sat.position[0], sat.position[1], sat.position[2]]
-                        : [sat.position.x, sat.position.y, sat.position.z];
-                    
-                    const currentTime = simulationTime || Date.now();
-                    const geoPos = await groundTrackService.transformECIToSurface(
-                        eciPos, 
-                        planet.naifId, 
-                        currentTime,
-                        currentPlanetState
-                    );
-                    
-                    return {
-                        id: sat.id,
-                        lat: geoPos.lat,
-                        lon: geoPos.lon,
-                        alt: geoPos.alt,
-                        color: sat.color || 0xffff00
-                    };
-                } catch (error) {
-                    console.warn(`Failed to convert position for satellite ${sat.id}:`, error);
-                    return { id: sat.id, lat: 0, lon: 0, color: sat.color || 0xffff00 };
-                }
-            })
-        );
+        // Use physics engine's calculated lat/lon values instead of separate transformation
+        const positions = Object.values(filteredSatellites).map(sat => {
+            // Check if physics engine has already calculated lat/lon
+            if (sat.latitude !== undefined && sat.longitude !== undefined) {
+                return {
+                    id: sat.id,
+                    lat: sat.latitude,
+                    lon: sat.longitude,
+                    alt: sat.altitude_surface || sat.altitude_radial || 0,
+                    color: sat.color || 0xffff00
+                };
+            }
+            
+            // Fallback: if no lat/lon from physics engine, return default
+            console.warn(`[useGroundTrackPaths] No lat/lon from physics engine for satellite ${sat.id}`);
+            return { 
+                id: sat.id, 
+                lat: 0, 
+                lon: 0, 
+                alt: 0,
+                color: sat.color || 0xffff00 
+            };
+        });
         
         return positions;
-    }, [filteredSatellites, planet, simulationTime, physicsBodies]);
+    }, [filteredSatellites, planet]);
     
     return {
         trackPoints,

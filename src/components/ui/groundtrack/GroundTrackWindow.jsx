@@ -8,17 +8,17 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 import { DraggableModal } from '../modal/DraggableModal';
-import { usePlanetList } from '../../../hooks/useGroundTrack';
+import { usePlanetList } from '@/hooks/useGroundTrack';
 import GroundTrackCanvas from './GroundTrackCanvas.jsx';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 import { Button } from '../button';
 import { Switch } from '../switch';
-import { usePhysicsBodies } from '../../../hooks/usePhysicsBodies.js';
-import { useGroundTrackPaths } from '../../../hooks/useGroundTrackPaths.js';
+import { usePhysicsBodies } from '@/hooks/usePhysicsBodies';
+import { useGroundTrackPaths } from '@/hooks/useGroundTrackPaths';
 import { POIVisibilityPanel } from './POIVisibilityPanel.jsx';
 import { POIPassSchedule } from './POIPassSchedule.jsx';
 import { ChevronLeft, GripHorizontal } from 'lucide-react';
-import { groundTrackService } from '../../../services/GroundTrackService';
+import { groundTrackService } from '@/services/GroundTrackService';
 
 // ---------------------------------------------------------------------------
 // Main component

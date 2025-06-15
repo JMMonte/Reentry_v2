@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { WebGLLabels } from './WebGLLabels.js';
 
 export class ArrowUtils {
     
@@ -50,15 +51,14 @@ export class ArrowUtils {
         arrow.setLength(length, actualHeadLength, actualHeadWidth);
         arrow.visible = visible;
 
-        // Apply material properties
-        if (arrow.line?.material) {
+        // Apply material properties to both line and cone
+        if (arrow.line && arrow.line.material) {
             arrow.line.material.transparent = transparent || opacity < 1.0;
             arrow.line.material.opacity = opacity;
             arrow.line.material.depthTest = depthTest;
             arrow.line.material.depthWrite = depthWrite;
         }
-        
-        if (arrow.cone?.material) {
+        if (arrow.cone && arrow.cone.material) {
             arrow.cone.material.transparent = transparent || opacity < 1.0;
             arrow.cone.material.opacity = opacity;
             arrow.cone.material.depthTest = depthTest;
@@ -153,7 +153,7 @@ export class ArrowUtils {
     }
 
     /**
-     * Create a canvas-based text sprite
+     * Create a canvas-based text sprite using WebGLLabels
      * @param {Object} config Configuration object
      * @returns {Object} {sprite: THREE.Sprite, dispose: Function}
      */
@@ -168,56 +168,29 @@ export class ArrowUtils {
             pixelScale = 0.0002,
             sizeAttenuation = false,
             renderOrder = 999,
-            visible = true
+            visible = true,
+            padding = backgroundColor ? 16 : 0
         } = config;
 
-        // Create canvas
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const font = `${fontSize}px ${fontFamily}`;
+        // Use WebGLLabels for consistent implementation
+        const labelConfig = {
+            fontSize,
+            fontFamily,
+            color,
+            backgroundColor,
+            padding,
+            pixelScale,
+            sizeAttenuation,
+            renderOrder
+        };
         
-        // Measure text
-        ctx.font = font;
-        const metrics = ctx.measureText(text);
-        const textWidth = Math.ceil(metrics.width);
-        const textHeight = fontSize;
-        
-        // Size canvas
-        canvas.width = textWidth;
-        canvas.height = textHeight;
-        
-        // Draw background if specified
-        if (backgroundColor) {
-            ctx.fillStyle = backgroundColor;
-            ctx.fillRect(0, 0, textWidth, textHeight);
-        }
-        
-        // Draw text
-        ctx.font = font;
-        ctx.fillStyle = color;
-        ctx.textBaseline = 'top';
-        ctx.fillText(text, 0, 0);
-
-        // Create texture and sprite
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        
-        const material = new THREE.SpriteMaterial({
-            map: texture,
-            transparent: true,
-            sizeAttenuation
-        });
-        
-        const sprite = new THREE.Sprite(material);
-        sprite.scale.set(textWidth * pixelScale, textHeight * pixelScale, 1);
+        const sprite = WebGLLabels.createLabel(text, labelConfig);
         sprite.position.copy(position);
-        sprite.renderOrder = renderOrder;
         sprite.visible = visible;
 
         // Disposal function
         const dispose = () => {
-            if (texture) texture.dispose();
-            if (material) material.dispose();
+            WebGLLabels.disposeLabel(sprite);
         };
 
         return { sprite, dispose };
@@ -368,60 +341,13 @@ export class ArrowUtils {
     }
 
     /**
-     * Update sprite label text
+     * Update sprite label text using WebGLLabels
      * @param {THREE.Sprite} sprite Sprite object with canvas texture
      * @param {string} newText New text content
      * @param {Object} styleConfig Optional style overrides
      */
     static updateSpriteText(sprite, newText, styleConfig = {}) {
-        if (!sprite?.material?.map?.image) {
-            console.warn('[ArrowUtils.updateSpriteText] Invalid sprite object');
-            return;
-        }
-
-        const canvas = sprite.material.map.image;
-        const ctx = canvas.getContext('2d');
-        const {
-            fontSize = 42,
-            fontFamily = 'sans-serif',
-            color = '#ffffff',
-            backgroundColor = null
-        } = styleConfig;
-
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Measure new text
-        const font = `${fontSize}px ${fontFamily}`;
-        ctx.font = font;
-        const metrics = ctx.measureText(newText);
-        const textWidth = Math.ceil(metrics.width);
-        const textHeight = fontSize;
-
-        // Resize canvas if needed
-        if (textWidth > canvas.width || textHeight > canvas.height) {
-            canvas.width = textWidth;
-            canvas.height = textHeight;
-            
-            // Update sprite scale
-            const pixelScale = 0.0002;
-            sprite.scale.set(textWidth * pixelScale, textHeight * pixelScale, 1);
-        }
-
-        // Draw background if specified
-        if (backgroundColor) {
-            ctx.fillStyle = backgroundColor;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        // Draw text
-        ctx.font = font;
-        ctx.fillStyle = color;
-        ctx.textBaseline = 'top';
-        ctx.fillText(newText, 0, 0);
-
-        // Update texture
-        sprite.material.map.needsUpdate = true;
+        WebGLLabels.updateLabel(sprite, newText, styleConfig);
     }
 
     /**
@@ -485,7 +411,7 @@ export class ArrowUtils {
                 });
                 results.label = labelResult.label;
             } else {
-                // Default to sprite
+                // Default to sprite using WebGLLabels
                 labelResult = ArrowUtils.createTextSprite({
                     text, position: labelPosition, visible,
                     color: `#${color.toString(16).padStart(6, '0')}`,

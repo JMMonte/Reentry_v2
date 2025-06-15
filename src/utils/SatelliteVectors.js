@@ -7,6 +7,7 @@
 
 import * as THREE from 'three';
 import { ArrowUtils } from './ArrowUtils.js';
+import { WebGLLabels } from './WebGLLabels.js';
 
 export class SatelliteVectors {
     constructor({
@@ -45,7 +46,7 @@ export class SatelliteVectors {
 
         // Track satellite vector objects
         this.satelliteVectors = new Map(); // satelliteId -> vector objects
-        this.visible = false;
+        this.visible = true;
 
         // Vector colors and configuration
         this.colors = {
@@ -294,7 +295,7 @@ export class SatelliteVectors {
     }
 
     /**
-     * Create an arrow with label using consolidated ArrowUtils
+     * Create an arrow with label using WebGLLabels
      */
     _createArrowWithLabel(color, text) {
         const result = ArrowUtils.createArrowWithLabel({
@@ -303,20 +304,20 @@ export class SatelliteVectors {
             length: this.config.baseLength,
             color,
             text,
-            labelType: 'css2d',
+            labelType: 'sprite',
             visible: this.visible,
             headLengthRatio: this.config.headLength,
             headWidthRatio: this.config.headWidth,
-            fontSize: '12px',
-            fontWeight: 'bold',
-            textShadow: '0 0 3px black',
-            pointerEvents: 'none'
+            fontSize: 12,
+            fontFamily: 'Arial',
+            pixelScale: 0.0002,
+            sizeAttenuation: false,
+            renderOrder: 999
         });
 
         return { 
             arrow: result.arrow, 
             label: result.label, 
-            div: result.div,
             dispose: result.dispose 
         };
     }
@@ -325,7 +326,7 @@ export class SatelliteVectors {
      * Update arrow direction with fixed length
      */
     _updateArrow(vectorObj, direction, labelText) {
-        const { arrow, label, div } = vectorObj;
+        const { arrow, label } = vectorObj;
 
         // Handle both Vector3 and array inputs
         let magnitude;
@@ -368,13 +369,17 @@ export class SatelliteVectors {
         label.position.copy(dirNormalized.multiplyScalar(length * 1.1));
         
         // Format the label to match debug window exactly
+        let labelTextWithValue;
         if (labelText === 'V' || labelText === 'Velocity') {
             // Velocity: show in km/s with 2 decimal places
-            div.textContent = `${labelText}: ${magnitude.toFixed(2)} km/s`;
+            labelTextWithValue = `${labelText}: ${magnitude.toFixed(2)} km/s`;
         } else {
             // Acceleration: show in scientific notation km/s²
-            div.textContent = `${labelText}: ${magnitude.toExponential(2)} km/s²`;
+            labelTextWithValue = `${labelText}: ${magnitude.toExponential(2)} km/s²`;
         }
+        
+        // Update label text using WebGLLabels utility
+        WebGLLabels.updateLabel(label, labelTextWithValue);
     }
 
     /**
@@ -393,10 +398,11 @@ export class SatelliteVectors {
                 opacity = Math.max(0, Math.min(1, opacity));
             }
 
-            // Apply to all labels
+            // Apply to all labels (now WebGL sprites)
             Object.values(vectors).forEach(v => {
-                if (v.div) {
-                    v.div.style.opacity = opacity;
+                if (v.label && v.label.material) {
+                    v.label.material.opacity = opacity;
+                    v.label.visible = opacity > 0.01;
                 }
             });
         });
@@ -430,9 +436,9 @@ export class SatelliteVectors {
                     if (v.arrow.cone?.material) v.arrow.cone.material.dispose();
                 }
                 
-                // Remove label div from DOM - CRITICAL!
-                if (v.div && v.div.parentNode) {
-                    v.div.parentNode.removeChild(v.div);
+                // Dispose WebGL label using WebGLLabels utility
+                if (v.label) {
+                    WebGLLabels.disposeLabel(v.label);
                 }
             }
         };

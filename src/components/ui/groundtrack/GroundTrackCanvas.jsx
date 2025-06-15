@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import PropTypes from 'prop-types';
 import { drawGrid, drawPOI, drawGeoJSONLines, rasteriseCoverage } from './GroundTrackRendering';
-import { groundTrackService } from '../../../services/GroundTrackService';
+import { groundTrackService } from '@/services/GroundTrackService';
 
 const SAT_DOT_RADIUS = 4;
 

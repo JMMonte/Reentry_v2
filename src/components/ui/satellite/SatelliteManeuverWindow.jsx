@@ -4,11 +4,11 @@ import { Button } from '../button';
 import PropTypes from 'prop-types';
 import { ExecutionTimeSection } from './ExecutionTimeSection.jsx';
 import { DeltaVSection } from './DeltaVSection.jsx';
-import { useManeuverWindow } from '../../../hooks/useManeuverWindow.jsx';
+import { useManeuverWindow } from '@/hooks/useManeuverWindow';
 import HohmannSection from './HohmannSection.jsx';
 import MissionPlanSection from './MissionPlanSection.jsx';
 import ManeuverErrorBoundary from './ManeuverErrorBoundary.jsx';
-import { useSimulation } from '../../../simulation/SimulationContext.jsx';
+import { useSimulation } from '@/simulation/SimulationContext';
 
 export function SatelliteManeuverWindow({ satellite, onClose }) {
     // Get current time from simulation context

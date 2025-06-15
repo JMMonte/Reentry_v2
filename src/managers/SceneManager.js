@@ -155,6 +155,7 @@ export class SceneManager {
     }
 
     _resizePOIs() {
+        // Early return if POI picking is disabled or no pickable points exist
         if (!this.app.pickablePoints?.length) return;
         const { camera } = this.app;
         

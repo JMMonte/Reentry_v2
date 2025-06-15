@@ -27,8 +27,7 @@ export { OrbitalMechanics } from './core/OrbitalMechanics.js';
 export { GravityCalculator } from './core/GravityCalculator.js';
 export { AtmosphericModels } from './core/AtmosphericModels.js';
 
-// Physics utilities
-export { PhysicsUtils } from './utils/PhysicsUtils.js';
+// Physics utilities (use through PhysicsAPI for proper abstraction)
 export { CoordinateTransforms } from './utils/CoordinateTransforms.js';
 
 // Body data

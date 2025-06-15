@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { Utils } from '../physics/PhysicsAPI.js';
 
 /**
@@ -16,7 +15,7 @@ export class ManeuverUtils {
      * @param {Object} satellite Satellite instance (for fallback path)
      * @returns {Object|null} Orbit data or null
      */
-    static getCompositePath(nodes, idx, satellite) {
+    static getCompositePath(nodes, idx, satellite) { // eslint-disable-line no-unused-vars
         if (idx > 0 && nodes[idx - 1]?.predictedOrbit) {
             return nodes[idx - 1].predictedOrbit;
         }

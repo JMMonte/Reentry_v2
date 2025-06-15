@@ -51,8 +51,21 @@ export class SimulationStateManager {
             console.warn('Satellite creation skipped: missing velocity');
             return null;
         }
-        // Create Three.js satellite
-        const sat = this.satellites.addSatellite(safeParams);
+        // Create satellite through physics engine
+        const physicsEngine = this.app.physicsIntegration?.physicsEngine;
+        if (!physicsEngine) {
+            console.warn('[SimulationStateManager] Physics engine not available');
+            return null;
+        }
+        
+        const physicsId = physicsEngine.addSatellite(safeParams);
+        
+        // Create UI satellite
+        const sat = this.satellites.createUISatellite(physicsId, {
+            planetConfig: safeParams.planetConfig,
+            color: safeParams.color,
+            name: safeParams.name
+        });
         return sat;
     }
 

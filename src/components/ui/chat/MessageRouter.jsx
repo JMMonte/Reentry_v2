@@ -8,7 +8,7 @@ import {
   ErrorMessage 
 } from './messages';
 
-export default function MessageRouter({ message, onCopy, copiedStates = {} }) {
+export default function MessageRouter({ message, onCopy, copiedStates }) {
   // Determine message type and role
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
@@ -60,6 +60,7 @@ export default function MessageRouter({ message, onCopy, copiedStates = {} }) {
       <AssistantMessage 
         message={message} 
         onCopy={onCopy} 
+        copiedStates={copiedStates}
         isStreaming={isStreaming} 
       />
     );
@@ -74,6 +75,7 @@ export default function MessageRouter({ message, onCopy, copiedStates = {} }) {
     <AssistantMessage 
       message={message} 
       onCopy={onCopy} 
+      copiedStates={copiedStates}
       isStreaming={isStreaming} 
     />
   );
@@ -86,7 +88,8 @@ MessageRouter.propTypes = {
     type: PropTypes.string,
     content: PropTypes.string,
     status: PropTypes.string,
-    streaming: PropTypes.bool
+    streaming: PropTypes.bool,
+    toolResponses: PropTypes.array
   }).isRequired,
   onCopy: PropTypes.func,
   copiedStates: PropTypes.object

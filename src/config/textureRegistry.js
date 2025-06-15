@@ -28,6 +28,7 @@ import plutoTexture from '../assets/texture/pluto_surface.png';
 import plutoNormalTexture from '../assets/texture/pluto_normal.png';
 import charonTexture from '../assets/texture/charon_surface.png';
 // Saturn moons
+import mimasTexture from '../assets/texture/placeholder.jpg';
 import enceladusTexture from '../assets/texture/placeholder.jpg';
 import tethysTexture from '../assets/texture/placeholder.jpg';
 import dioneTexture from '../assets/texture/placeholder.jpg';
@@ -61,6 +62,7 @@ export const textureDefinitions = [
     { key: 'earthTexture', src: earthTexture },
     { key: 'earthRoughnessTexture', src: earthRoughnessTexture },
     { key: 'earthNormalTexture', src: earthNormalTexture },
+    { key: 'earthNightTexture', src: earthNightTexture },
     { key: 'cloudTexture', src: cloudTexture },
     { key: 'moonTexture', src: moonTexture },
     { key: 'moonNormalTexture', src: moonNormalTexture },
@@ -84,6 +86,7 @@ export const textureDefinitions = [
     { key: 'plutoTexture', src: plutoTexture },
     { key: 'plutoNormalTexture', src: plutoNormalTexture },
     { key: 'charonTexture', src: charonTexture },
+    { key: 'mimasTexture', src: mimasTexture },
     { key: 'enceladusTexture', src: enceladusTexture },
     { key: 'tethysTexture', src: tethysTexture },
     { key: 'dioneTexture', src: dioneTexture },
@@ -138,6 +141,7 @@ export {
     plutoTexture,
     plutoNormalTexture,
     charonTexture,
+    mimasTexture,
     enceladusTexture,
     tethysTexture,
     dioneTexture,

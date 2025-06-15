@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
-import { supabase } from '../../../supabaseClient';
+import { supabase } from '@/supabaseClient';
 import { DraggableModal } from '../modal/DraggableModal';
 import { Input } from '../input';
 import { Button } from '../button';

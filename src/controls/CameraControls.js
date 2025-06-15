@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { objectPool, withVector3 } from '../utils/ObjectPool.js';
+import { objectPool } from '../utils/ObjectPool.js';
 
 class CameraControls {
     constructor(camera, controls) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { supabase } from '../../../supabaseClient';
+import { supabase } from '@/supabaseClient';
 import LogoMenu from './LogoMenu';
 import BodySelector from './BodySelector';
 import TimeControls from './TimeControls';
@@ -287,7 +287,8 @@ Navbar.propTypes = {
   setShareUrl: PropTypes.func.isRequired,
   setIsAuthOpen: PropTypes.func.isRequired,
   setAuthMode: PropTypes.func.isRequired,
-  timeWarpLoading: PropTypes.bool
+  timeWarpLoading: PropTypes.bool,
+  timeWarpOptions: PropTypes.arrayOf(PropTypes.number)
 };
 
 export default Navbar;

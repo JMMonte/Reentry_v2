@@ -6,7 +6,14 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { POIVisibilityService } from '../services/POIVisibilityService.js';
+import { POIDataService } from '../services/POIDataService.js';
+
+// Worker is created lazily; using ES-module worker so bundlers (Vite) can include it.
+// Keep path relative to this file.
+const createVisibilityWorker = () =>
+    new Worker(new URL('../physics/workers/poiVisibilityWorker.js', import.meta.url), {
+        type: 'module'
+    });
 
 /**
  * Hook for calculating POI visibility with optimized performance
@@ -33,6 +40,8 @@ export function usePOIVisibility(satellites, currentPositions, planetData, plane
     const lastUpdateTime = useRef(0);
     const updateTimeoutRef = useRef(null);
     const lastPositionsHash = useRef('');
+    const workerRef = useRef(null);
+    const nextRequestId = useRef(0);
 
     /**
      * Create a hash of satellite positions to detect changes
@@ -71,79 +80,56 @@ export function usePOIVisibility(satellites, currentPositions, planetData, plane
         setIsCalculating(true);
 
         try {
-            // Get POI data from planet surface
-            const poiData = {};
-            if (planetData?.surface?.points) {
-                Object.entries(planetData.surface.points).forEach(([category, data]) => {
-                    if (Array.isArray(data)) {
-                        poiData[category] = data.map(item => {
-                            if (item.userData?.feature) {
-                                const feat = item.userData.feature;
-                                const [lon, lat] = feat.geometry.coordinates;
-                                return {
-                                    lat,
-                                    lon,
-                                    name: feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank
-                                };
-                            }
-                            return null;
-                        }).filter(Boolean);
-                    }
-                });
-            }
-
-            // Calculate visibility using the working logic from externalApi
-            const visibilityResult = {};
-            for (const pos of currentPositions) {
-                const satellite = satellites?.[pos.id];
-                if (!satellite || !pos.lat || !pos.lon || pos.alt === undefined) continue;
-
-                // Calculate coverage radius
-                const altitude = pos.alt;
-                const planetRadius = planetData?.radius || 6371;
-                const centralAngle = Math.acos(planetRadius / (planetRadius + altitude));
-                const coverageRadius = centralAngle * (180 / Math.PI);
-
-                const satelliteData = {
+            // Build satellites array expected by the services/worker
+            const satArray = (currentPositions || []).map(pos => {
+                const satInfo = satellites?.[pos.id] || {};
+                return {
+                    id: pos.id,
                     lat: pos.lat,
                     lon: pos.lon,
-                    alt: altitude,
-                    coverageRadius,
-                    name: satellite.name,
-                    id: pos.id
+                    alt: pos.alt,
+                    name: satInfo.name,
+                    color: satInfo.color
                 };
+            });
 
-                // Flatten all POIs
-                const allPOIs = [];
-                Object.entries(poiData).forEach(([category, pois]) => {
-                    if (Array.isArray(pois)) {
-                        pois.forEach(poi => {
-                            if (poi.lat !== undefined && poi.lon !== undefined) {
-                                allPOIs.push({
-                                    ...poi,
-                                    category
-                                });
-                            }
-                        });
-                    }
-                });
+            // Decide whether to off-load to worker based on workload size
+            const poiCount = POIDataService.getAllPOIs(planetId).length;
+            const workload = poiCount * satArray.length; // rough measure
+            const OFFLOAD_THRESHOLD = 100_000; // tuned experimentally
 
-                // Find visible POIs using the working service
-                const visiblePOIs = POIVisibilityService.getVisiblePOIs(allPOIs, satelliteData);
-                
-                console.log(`Satellite ${pos.id}: ${allPOIs.length} POIs, ${visiblePOIs.length} visible`);
-                
-                if (visiblePOIs.length > 0) {
-                    visibilityResult[pos.id] = {
-                        satellite: satelliteData,
-                        visiblePOIs: visiblePOIs.reduce((acc, poi) => {
-                            if (!acc[poi.category]) acc[poi.category] = [];
-                            acc[poi.category].push(poi);
-                            return acc;
-                        }, {}),
-                        totalCount: visiblePOIs.length
+            let visibilityResult;
+
+            if (workload > OFFLOAD_THRESHOLD && workerRef.current) {
+                // Use worker path
+                visibilityResult = await new Promise((resolve, reject) => {
+                    const requestId = nextRequestId.current++;
+
+                    const handleMessage = (e) => {
+                        const { type, data } = e.data;
+                        if (type === 'VISIBILITY_RESULT' && data.requestId === requestId) {
+                            workerRef.current.removeEventListener('message', handleMessage);
+                            resolve(data.result);
+                        } else if (type === 'VISIBILITY_ERROR' && data.requestId === requestId) {
+                            workerRef.current.removeEventListener('message', handleMessage);
+                            reject(new Error(data.error));
+                        }
                     };
-                }
+
+                    workerRef.current.addEventListener('message', handleMessage);
+
+                    workerRef.current.postMessage({
+                        type: 'CALCULATE_VISIBILITY',
+                        data: {
+                            requestId,
+                            satellites: satArray,
+                            pois: POIDataService.getAllPOIs(planetId)
+                        }
+                    });
+                });
+            } else {
+                // Fast path – compute synchronously with spatial cache
+                visibilityResult = POIDataService.calculateVisibility(satArray, planetId, planetData);
             }
 
             setVisibilityData(visibilityResult);
@@ -190,6 +176,14 @@ export function usePOIVisibility(satellites, currentPositions, planetData, plane
             if (updateTimeoutRef.current) {
                 clearTimeout(updateTimeoutRef.current);
             }
+        };
+    }, []);
+
+    // Initialise worker once – cleaned up on unmount
+    useEffect(() => {
+        workerRef.current = createVisibilityWorker();
+        return () => {
+            if (workerRef.current) workerRef.current.terminate();
         };
     }, []);
 

@@ -12,7 +12,7 @@ import { RingComponent } from './RingComponent.js';
 import { SoiComponent } from './SoiComponent.js';
 import { DistantMeshComponent } from './DistantMeshComponent.js';
 import { getPlanetManager } from '../../managers/PlanetManager.js';
-import { shaderOptimizer } from '../../utils/ShaderUniformOptimizer.js';
+
 
 /*
  * Planet.js
@@ -62,7 +62,15 @@ export class Planet {
     static instances = [];
     static _instanceSet = new WeakSet(); // WeakSet allows GC of unreferenced planets
     static camera = null;
-    static setCamera(cam) { Planet.camera = cam; }
+    static setCamera(cam) { 
+        Planet.camera = cam; 
+        // Update camera on all existing distant components
+        Planet.instances.forEach(planet => {
+            if (planet.distantComponent && planet.distantComponent.setCamera) {
+                planet.distantComponent.setCamera(cam);
+            }
+        });
+    }
 
     /**
      * Centralized LOD levels generator for planets
@@ -95,6 +103,7 @@ export class Planet {
             this.type = 'barycenter';
             this.targetPosition = new THREE.Vector3();
             this.targetOrientation = new THREE.Quaternion();
+            this.physicsQuaternion = null; // Will be set by PhysicsManager
             this.velocity = new THREE.Vector3(0, 0, 0);
             this.meshRes = this.meshRes || 8;
             // Minimal group structure with equatorial frame for moon positioning
@@ -134,6 +143,7 @@ export class Planet {
         this.GM = config.GM; // Gravitational parameter (km³/s²)
         this.targetPosition = new THREE.Vector3();
         this.targetOrientation = new THREE.Quaternion();
+        this.physicsQuaternion = null; // Will be set by PhysicsManager
         this.hasBeenInitializedByServer = false;
         this.meshRes = config.meshRes || PLANET_DEFAULTS.DEFAULT_MESH_RES;
         this.atmosphereRes = config.atmosphereRes || PLANET_DEFAULTS.DEFAULT_ATMOSPHERE_RES;
@@ -184,6 +194,11 @@ export class Planet {
         // Create for all planets, including models
         this.distantComponent = new DistantMeshComponent(this);
         this.components.push(this.distantComponent);
+        
+        // Set camera if available
+        if (Planet.camera && this.distantComponent.setCamera) {
+            this.distantComponent.setCamera(Planet.camera);
+        }
 
         if (config.addLight && config.lightOptions) {
             this.planetLight = new THREE.PointLight(
@@ -219,7 +234,11 @@ export class Planet {
         this.orbitGroup.position.copy(this.targetPosition);
         this.orientationGroup.quaternion.copy(this.targetOrientation);
 
-        // Restore: set equatorialGroup rotation to align Y-up (planet) with Z-up (world)
+        // COORDINATE SYSTEM HIERARCHY:
+        // 1. orientationGroup: Receives physics quaternion (Z-up coordinate system)
+        // 2. equatorialGroup: Applies Y-up to Z-up conversion (rotation.x = π/2)
+        // 3. rotationGroup: Contains planet mesh with proper Y-up orientation
+        // 4. planetMesh: Sphere geometry where Y-axis is the polar axis
         this.equatorialGroup.rotation.x = Math.PI / 2;
 
         this.orientationGroup.add(this.equatorialGroup);
@@ -309,11 +328,25 @@ export class Planet {
             this.orbitGroup.position.copy(this.targetPosition);
         }
 
-        // Orientation update - direct copy to avoid interpolation issues
-        if (this.orientationGroup && this.targetOrientation) {
+        // Orientation update - convert from physics quaternion 
+        if (this.orientationGroup && this.physicsQuaternion && Array.isArray(this.physicsQuaternion)) {
+            // Convert physics quaternion array to THREE.js quaternion
+            // Physics engine exports as [x, y, z, w] and calculates in Z-up coordinates
+            this.targetOrientation.set(
+                this.physicsQuaternion[0], // x
+                this.physicsQuaternion[1], // y  
+                this.physicsQuaternion[2], // z
+                this.physicsQuaternion[3]  // w
+            );
+            
+            // Apply physics quaternion to orientationGroup
+            // The equatorialGroup (child) automatically handles Y-up to Z-up conversion via rotation.x = π/2
+            // This ensures planets display with Y-axis as polar axis (North pole = +Y direction)
+            this.orientationGroup.quaternion.copy(this.targetOrientation);
+        } else if (this.orientationGroup && this.targetOrientation) {
+            // Fallback: use existing targetOrientation if no physics quaternion
             this.orientationGroup.quaternion.copy(this.targetOrientation);
         }
-        // Do NOT set equatorialGroup quaternion here
 
         // Update all other detailed components as usual
         this.components.forEach(c => {
@@ -662,7 +695,8 @@ export class Planet {
         this.materials = new PlanetMaterials(
             this.textureManager,
             this.renderer.capabilities,
-            materialOverrides
+            materialOverrides,
+            this.nameLower // Pass planet name for automatic config selection
         );
         this.renderOrderOverrides = (config.materials && config.materials.renderOrderOverrides) || {};
         const planetIndex = Planet.instances.length - 1;

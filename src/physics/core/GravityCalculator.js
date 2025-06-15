@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { PhysicsVector3 } from '../utils/PhysicsVector3.js';
 import { PhysicsConstants } from './PhysicsConstants.js';
 
 /**
@@ -9,10 +9,10 @@ import { PhysicsConstants } from './PhysicsConstants.js';
 export class GravityCalculator {
     /**
      * Compute gravitational acceleration on a body due to multiple gravitating bodies
-     * @param {THREE.Vector3} position - Position of the body (km)
+     * @param {PhysicsVector3} position - Position of the body (km)
      * @param {Array} bodies - Array of CelestialBody instances or legacy body objects
      * @param {Object} options - Additional options
-     * @returns {THREE.Vector3} - Total gravitational acceleration (km/s²)
+     * @returns {PhysicsVector3} - Total gravitational acceleration (km/s²)
      */
     static computeAcceleration(position, bodies, options = {}) {
         const {
@@ -21,17 +21,17 @@ export class GravityCalculator {
             centralBody = null
         } = options;
 
-        const acceleration = new THREE.Vector3();
+        const acceleration = new PhysicsVector3();
 
         // N-body gravitational forces
         for (const body of bodies) {
             if (excludeBodies.includes(body.naifId || body.id)) continue;
 
             // Handle both CelestialBody instances and legacy objects
-            const bodyPos = body.position instanceof THREE.Vector3 
-                ? body.position 
-                : new THREE.Vector3().fromArray(body.position);
-            
+            const bodyPos = body.position instanceof PhysicsVector3
+                ? body.position
+                : PhysicsVector3.fromArray(body.position);
+
             const r = bodyPos.clone().sub(position);
             const distance = r.length();
 
@@ -63,12 +63,12 @@ export class GravityCalculator {
 
     /**
      * Compute J2 perturbation acceleration (oblateness effect)
-     * @param {THREE.Vector3} position - Position relative to central body (km)
+     * @param {PhysicsVector3} position - Position relative to central body (km)
      * @param {Object} body - Central body with J2, radius, and mass
-     * @returns {THREE.Vector3} - J2 acceleration (km/s²)
+     * @returns {PhysicsVector3} - J2 acceleration (km/s²)
      */
     static computeJ2Acceleration(position, body) {
-        if (!body.J2 || !body.radius) return new THREE.Vector3();
+        if (!body.J2 || !body.radius) return new PhysicsVector3();
 
         const r = position.length();
         const mu = body.mu || (PhysicsConstants.PHYSICS.G * body.mass);
@@ -76,7 +76,7 @@ export class GravityCalculator {
         const Re = body.radius;
 
         // Avoid singularity at center
-        if (r < Re) return new THREE.Vector3();
+        if (r < Re) return new PhysicsVector3();
 
         const x = position.x;
         const y = position.y;
@@ -93,27 +93,27 @@ export class GravityCalculator {
         const ay = factor * y * (5 * z2_r2 - 1);
         const az = factor * z * (5 * z2_r2 - 3);
 
-        return new THREE.Vector3(ax, ay, az);
+        return new PhysicsVector3(ax, ay, az);
     }
 
     /**
      * Compute gravitational force between two bodies
      * @param {Object|CelestialBody} body1 - First body with position and mass
      * @param {Object|CelestialBody} body2 - Second body with position and mass
-     * @returns {THREE.Vector3} - Gravitational force on body1 due to body2 (kg⋅km/s²)
+     * @returns {PhysicsVector3} - Gravitational force on body1 due to body2 (kg⋅km/s²)
      */
     static computeForce(body1, body2) {
-        const pos1 = body1.position instanceof THREE.Vector3 
-            ? body1.position 
-            : new THREE.Vector3().fromArray(body1.position);
-        const pos2 = body2.position instanceof THREE.Vector3 
-            ? body2.position 
-            : new THREE.Vector3().fromArray(body2.position);
+        const pos1 = body1.position instanceof PhysicsVector3
+            ? body1.position
+            : PhysicsVector3.fromArray(body1.position);
+        const pos2 = body2.position instanceof PhysicsVector3
+            ? body2.position
+            : PhysicsVector3.fromArray(body2.position);
 
         const r = pos2.clone().sub(pos1);
         const distance = r.length();
 
-        if (distance === 0) return new THREE.Vector3();
+        if (distance === 0) return new PhysicsVector3();
 
         const mass1 = body1.mass || 0;
         const mass2 = body2.mass || 0;
@@ -128,12 +128,12 @@ export class GravityCalculator {
      * @returns {number} - Gravitational potential energy (kg⋅km²/s²)
      */
     static computePotentialEnergy(body1, body2) {
-        const pos1 = body1.position instanceof THREE.Vector3 
-            ? body1.position 
-            : new THREE.Vector3().fromArray(body1.position);
-        const pos2 = body2.position instanceof THREE.Vector3 
-            ? body2.position 
-            : new THREE.Vector3().fromArray(body2.position);
+        const pos1 = body1.position instanceof PhysicsVector3
+            ? body1.position
+            : PhysicsVector3.fromArray(body1.position);
+        const pos2 = body2.position instanceof PhysicsVector3
+            ? body2.position
+            : PhysicsVector3.fromArray(body2.position);
 
         const distance = pos1.distanceTo(pos2);
         if (distance === 0) return 0;
@@ -149,7 +149,7 @@ export class GravityCalculator {
      */
     static computeEscapeVelocity(bodyOrGM, distance = null) {
         let mu, r;
-        
+
         if (typeof bodyOrGM === 'number') {
             mu = bodyOrGM;
             if (!distance) {
@@ -161,7 +161,7 @@ export class GravityCalculator {
             mu = bodyOrGM.GM || bodyOrGM.mu || (PhysicsConstants.PHYSICS.G * bodyOrGM.mass);
             r = distance || bodyOrGM.radius;
         }
-        
+
         if (!mu || mu <= 0 || !r || r <= 0) return 0;
         return Math.sqrt(2 * mu / r);
     }
@@ -174,22 +174,22 @@ export class GravityCalculator {
      */
     static computeOrbitalVelocity(centralBodyOrGM, distance) {
         if (distance <= 0) return 0;
-        
+
         let mu;
         if (typeof centralBodyOrGM === 'number') {
             mu = centralBodyOrGM; // GM passed directly
         } else {
             mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (PhysicsConstants.PHYSICS.G * centralBodyOrGM.mass);
         }
-        
+
         if (!mu || mu <= 0) {
             console.warn('[GravityCalculator] Invalid gravitational parameter for orbital velocity calculation');
             return 0;
         }
-        
+
         return Math.sqrt(mu / distance);
     }
-    
+
     /**
      * Compute orbital velocity for multiple orbit types using vis-viva equation
      * @param {Object|number} centralBodyOrGM - Central body or GM value
@@ -205,30 +205,30 @@ export class GravityCalculator {
         } else {
             mu = centralBodyOrGM.GM || centralBodyOrGM.mu || (PhysicsConstants.PHYSICS.G * centralBodyOrGM.mass);
         }
-        
+
         if (!mu || mu <= 0 || semiMajorAxis <= 0) {
             return { circular: 0, apoapsis: 0, periapsis: 0 };
         }
-        
+
         const result = {
             circular: Math.sqrt(mu / semiMajorAxis),
             apoapsis: 0,
             periapsis: 0
         };
-        
+
         if (eccentricity >= 0 && eccentricity < 1) {
             const ra = semiMajorAxis * (1 + eccentricity); // Apoapsis radius
             const rp = semiMajorAxis * (1 - eccentricity); // Periapsis radius
-            
+
             // Vis-viva equation: v = sqrt(mu * (2/r - 1/a))
             result.apoapsis = Math.sqrt(mu * (2 / ra - 1 / semiMajorAxis));
             result.periapsis = Math.sqrt(mu * (2 / rp - 1 / semiMajorAxis));
         }
-        
+
         if (currentRadius && currentRadius > 0) {
             result.current = Math.sqrt(mu * (2 / currentRadius - 1 / semiMajorAxis));
         }
-        
+
         return result;
     }
 
@@ -240,7 +240,7 @@ export class GravityCalculator {
      */
     static computeSOIRadius(body, parent) {
         if (!parent || !parent.mass) return Infinity;
-        
+
         // For the body's orbit around parent
         const a = body.orbitalRadius || body.semiMajorAxis;
         if (!a) return 0;
@@ -258,31 +258,31 @@ export class GravityCalculator {
      */
     static computeHillRadius(body, parent, a, e = 0) {
         if (!parent || !parent.mass) return Infinity;
-        
+
         const massRatio = body.mass / (3 * parent.mass);
-        return a * (1 - e) * Math.pow(massRatio, 1/3);
+        return a * (1 - e) * Math.pow(massRatio, 1 / 3);
     }
 
     /**
      * Check if position is within a body's sphere of influence
-     * @param {THREE.Vector3} position - Position to check (km)
+     * @param {PhysicsVector3} position - Position to check (km)
      * @param {Object} body - Body with position and soiRadius
      * @returns {boolean} - True if within SOI
      */
     static isWithinSOI(position, body) {
         if (!body.soiRadius) return false;
-        
-        const bodyPos = body.position instanceof THREE.Vector3 
-            ? body.position 
-            : new THREE.Vector3().fromArray(body.position);
-        
+
+        const bodyPos = body.position instanceof PhysicsVector3
+            ? body.position
+            : PhysicsVector3.fromArray(body.position);
+
         const distance = position.distanceTo(bodyPos);
         return distance < body.soiRadius;
     }
 
     /**
      * Find the dominant gravitational body at a position
-     * @param {THREE.Vector3} position - Position to check (km)
+     * @param {PhysicsVector3} position - Position to check (km)
      * @param {Array} bodies - Array of bodies to check
      * @returns {Object|null} - Dominant body or null
      */
@@ -291,10 +291,10 @@ export class GravityCalculator {
         let maxAcceleration = 0;
 
         for (const body of bodies) {
-            const bodyPos = body.position instanceof THREE.Vector3 
-                ? body.position 
-                : new THREE.Vector3().fromArray(body.position);
-            
+            const bodyPos = body.position instanceof PhysicsVector3
+                ? body.position
+                : PhysicsVector3.fromArray(body.position);
+
             const r = position.distanceTo(bodyPos);
             if (r === 0) continue;
 

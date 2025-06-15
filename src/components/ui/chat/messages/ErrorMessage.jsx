@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { AlertTriangle } from 'lucide-react';
 import { MessageBadge } from '../MessageBadge';
 
-export function ErrorMessage({ message, isStreaming = false }) {
+export function ErrorMessage({ message }) {
   return (
     <div
       id={`message-${message.id}`}
@@ -35,6 +35,5 @@ ErrorMessage.propTypes = {
     content: PropTypes.string,
     message: PropTypes.string,
     code: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
-  }).isRequired,
-  isStreaming: PropTypes.bool
+  }).isRequired
 };

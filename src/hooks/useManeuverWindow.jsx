@@ -156,7 +156,7 @@ export function useManeuverWindow(satellite, currentTime = new Date()) {
     // Build nodes from physics engine instead of satellite's local array
     const nodes = useMemo(() => {
         // Trigger dependency on refresh
-        maneuverRefreshTrigger; // eslint-disable-line no-unused-expressions
+        maneuverRefreshTrigger;  
         
         // Get nodes directly from physics engine
         const physicsEngine = satellite.app3d?.physicsIntegration?.physicsEngine;

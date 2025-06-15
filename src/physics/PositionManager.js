@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+import { PhysicsVector3 } from './utils/PhysicsVector3.js';
+import { PhysicsQuaternion } from './utils/PhysicsQuaternion.js';
 
 /**
  * Position Manager
@@ -12,6 +13,16 @@ export class PositionManager {
         this.hierarchy = hierarchy;
         this.stateCalculator = stateCalculator;
         this.bodies = {}; // NAIF ID -> body state
+        
+        // Working vectors to avoid GC pressure
+        this._workVec1 = new PhysicsVector3();
+        this._workVec2 = new PhysicsVector3();
+        this._workVec3 = new PhysicsVector3();
+        
+        // Pre-allocated objects for body states
+        this._zeroVector = new PhysicsVector3(0, 0, 0);
+        this._identityQuaternion = new PhysicsQuaternion();
+        this._unitZ = new PhysicsVector3(0, 0, 1);
     }
 
     /**
@@ -70,14 +81,14 @@ export class PositionManager {
 
         // Root level bodies (SSB, Sun, major planets) use absolute positions
         if (parentId === null || parentId === 0) {
-            return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]).clone();
         }
 
         // For bodies with parents, calculate relative position
         const parentBody = this.bodies[parentId];
         if (!parentBody) {
             console.warn(`Parent body ${parentId} not found for ${naifId}`);
-            return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]).clone();
         }
 
         // Special handling for different hierarchy relationships
@@ -87,8 +98,8 @@ export class PositionManager {
             return this._calculatePlanetPosition(naifId, rawState);
         } else {
             // Default: use raw position relative to parent
-            const relativePos = new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
-            return relativePos.sub(parentBody.position);
+            this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return this._workVec1.sub(parentBody.position).clone();
         }
     }
 
@@ -98,13 +109,13 @@ export class PositionManager {
     _calculateMoonPosition(moonNaifId, rawState, parentPlanetId) {
         const parentBody = this.bodies[parentPlanetId];
         if (!parentBody) {
-            return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]).clone();
         }
         // Moon coordinates should remain in their native reference frame
         // The 3D scene handles coordinate transformations via equatorial groups
         // Default: position is relative to parent, so add parent position
-        const relativePos = new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
-        return relativePos.add(parentBody.position);
+        this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]);
+        return this._workVec1.add(parentBody.position).clone();
     }
 
     /**
@@ -116,49 +127,50 @@ export class PositionManager {
         const parentId = bodyInfo.parent;
         if (parentId === null || parentId === 0) {
             // Root-level planets (should not happen for real planets)
-            return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]).clone();
         }
         const parentBody = this.bodies[parentId];
         if (!parentBody) {
             // Fallback: treat as root
-            return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]).clone();
         }
         // If parent is a barycenter, add the barycenter's position to get absolute position
         if (this.hierarchy.isBarycenter(parentId)) {
-            const relativePos = new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]);
-            return relativePos.add(parentBody.position);
+            this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]);
+            return this._workVec1.add(parentBody.position).clone();
         }
         // Otherwise, subtract parent position
-        return new THREE.Vector3(rawState.position[0], rawState.position[1], rawState.position[2]).sub(parentBody.position);
+        this._workVec1.set(rawState.position[0], rawState.position[1], rawState.position[2]);
+        return this._workVec1.sub(parentBody.position).clone();
     }
 
     /**
      * Calculate hierarchical velocity (similar to position)
      */
-    _calculateHierarchicalVelocity(naifId, rawState) {
+        _calculateHierarchicalVelocity(naifId, rawState) {
         const bodyInfo = this.hierarchy.getBodyInfo(naifId);
         const parentId = bodyInfo.parent;
         
         // Root level bodies use absolute velocities
         if (parentId === null || parentId === 0) {
-            return new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
+            return this._workVec2.set(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]).clone();
         }
         
         const parentBody = this.bodies[parentId];
         if (!parentBody) {
             // Fallback: use raw velocity
-            return new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
+            return this._workVec2.set(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]).clone();
         }
         
         // For hierarchical bodies, velocities are relative to parent
         // We need to add parent's velocity to get absolute velocity
-        const relativeVel = new THREE.Vector3(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
+        this._workVec2.set(rawState.velocity[0], rawState.velocity[1], rawState.velocity[2]);
         
         // Moon velocities should remain in their native reference frame
         // The 3D scene handles coordinate transformations via equatorial groups
         
         // Add parent velocity to get absolute velocity
-        return relativeVel.add(parentBody.velocity);
+        return this._workVec2.add(parentBody.velocity).clone();
     }
 
     /**
@@ -171,23 +183,41 @@ export class PositionManager {
                 throw new Error(`Missing radius for ${bodyConfig.name} (NAIF ${naifId})`);
             }
         }
-        return {
-            naif: naifId,
-            name: bodyConfig.name,
-            mass: bodyConfig.mass,
-            position: position,
-            velocity: velocity,
-            acceleration: new THREE.Vector3(),
-            radius: bodyConfig.radius,
-            isActive: true,
-            // Orientation will be calculated separately
-            quaternion: new THREE.Quaternion(),
-            poleRA: 0,
-            poleDec: 90,
-            spin: 0,
-            northPole: new THREE.Vector3(0, 0, 1),
-            astronomyEngineName: bodyConfig.astronomyEngineName
-        };
+        
+        // Reuse existing body state if it exists to avoid creating new objects
+        let bodyState = this.bodies[naifId];
+        if (!bodyState) {
+            bodyState = {
+                naif: naifId,
+                name: bodyConfig.name,
+                mass: bodyConfig.mass,
+                position: new PhysicsVector3(),
+                velocity: new PhysicsVector3(),
+                acceleration: new PhysicsVector3(),
+                radius: bodyConfig.radius,
+                isActive: true,
+                // Orientation will be calculated separately
+                quaternion: new PhysicsQuaternion(),
+                poleRA: 0,
+                poleDec: 90,
+                spin: 0,
+                northPole: new PhysicsVector3(0, 0, 1),
+                astronomyEngineName: bodyConfig.astronomyEngineName
+            };
+        } else {
+            // Update existing state
+            bodyState.name = bodyConfig.name;
+            bodyState.mass = bodyConfig.mass;
+            bodyState.radius = bodyConfig.radius;
+            bodyState.isActive = true;
+            bodyState.astronomyEngineName = bodyConfig.astronomyEngineName;
+        }
+        
+        // Update position and velocity by copying values
+        bodyState.position.copy(position);
+        bodyState.velocity.copy(velocity);
+        
+        return bodyState;
     }
 
     /**
@@ -197,22 +227,38 @@ export class PositionManager {
         if (bodyConfig.radius === undefined) {
             throw new Error(`Missing radius for ${bodyConfig.name} (NAIF ${naifId})`);
         }
-        return {
-            naif: naifId,
-            name: bodyConfig.name,
-            mass: bodyConfig.mass,
-            position: new THREE.Vector3(0, 0, 0),
-            velocity: new THREE.Vector3(0, 0, 0),
-            acceleration: new THREE.Vector3(),
-            radius: bodyConfig.radius,
-            isActive: false,
-            quaternion: new THREE.Quaternion(),
-            poleRA: 0,
-            poleDec: 90,
-            spin: 0,
-            northPole: new THREE.Vector3(0, 0, 1),
-            astronomyEngineName: bodyConfig.astronomyEngineName
-        };
+        
+        // Reuse existing body state if it exists
+        let bodyState = this.bodies[naifId];
+        if (!bodyState) {
+            bodyState = {
+                naif: naifId,
+                name: bodyConfig.name,
+                mass: bodyConfig.mass,
+                position: new PhysicsVector3(0, 0, 0),
+                velocity: new PhysicsVector3(0, 0, 0),
+                acceleration: new PhysicsVector3(),
+                radius: bodyConfig.radius,
+                isActive: false,
+                quaternion: new PhysicsQuaternion(),
+                poleRA: 0,
+                poleDec: 90,
+                spin: 0,
+                northPole: new PhysicsVector3(0, 0, 1),
+                astronomyEngineName: bodyConfig.astronomyEngineName
+            };
+        } else {
+            // Update existing state
+            bodyState.name = bodyConfig.name;
+            bodyState.mass = bodyConfig.mass;
+            bodyState.radius = bodyConfig.radius;
+            bodyState.isActive = false;
+            bodyState.astronomyEngineName = bodyConfig.astronomyEngineName;
+            bodyState.position.set(0, 0, 0);
+            bodyState.velocity.set(0, 0, 0);
+        }
+        
+        return bodyState;
     }
 
     /**

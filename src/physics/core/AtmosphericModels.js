@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { PhysicsVector3 } from '../utils/PhysicsVector3.js';
 
 /**
  * Centralized atmospheric models and drag calculations
@@ -39,8 +39,8 @@ export class AtmosphericModels {
 
     /**
      * Compute drag acceleration on a body
-     * @param {Array|THREE.Vector3} position - Position relative to planet center (km)
-     * @param {Array|THREE.Vector3} velocity - Velocity relative to planet center (km/s)
+     * @param {Array|PhysicsVector3} position - Position relative to planet center (km)
+     * @param {Array|PhysicsVector3} velocity - Velocity relative to planet center (km/s)
      * @param {Object} planet - Planet with atmosphere and rotation properties
      * @param {number} ballisticCoefficient - Ballistic coefficient (mass/area/Cd) in kg/m²
      * @returns {Array} - Drag acceleration [ax, ay, az] (km/s²)
@@ -50,9 +50,9 @@ export class AtmosphericModels {
             return [0, 0, 0];
         }
 
-        // Convert inputs to arrays if needed
-        const p = position instanceof THREE.Vector3 ? position.toArray() : position;
-        const v = velocity instanceof THREE.Vector3 ? velocity.toArray() : velocity;
+        // Convert inputs to arrays if needed  
+        const p = Array.isArray(position) ? position : (position?.toArray ? position.toArray() : [position.x || 0, position.y || 0, position.z || 0]);
+        const v = Array.isArray(velocity) ? velocity : (velocity?.toArray ? velocity.toArray() : [velocity.x || 0, velocity.y || 0, velocity.z || 0]);
         
         const [x, y, z] = p;
         const r = Math.sqrt(x * x + y * y + z * z);
@@ -137,12 +137,12 @@ export class AtmosphericModels {
 
     /**
      * Find the host planet for a given position
-     * @param {Array|THREE.Vector3} position - Position in solar system (km)
+     * @param {Array|PhysicsVector3} position - Position in solar system (km)
      * @param {Map|Object} bodyMap - Map of NAIF ID to body data
      * @returns {Object|null} - Host planet or null
      */
     static findHostPlanet(position, bodyMap) {
-        const p = position instanceof THREE.Vector3 ? position : new THREE.Vector3().fromArray(position);
+        const p = Array.isArray(position) ? position : (position?.toArray ? position.toArray() : [position.x || 0, position.y || 0, position.z || 0]);
         
         let closestBody = null;
         let closestDistance = Infinity;
@@ -153,11 +153,13 @@ export class AtmosphericModels {
         for (const body of bodies) {
             if (!body.atmosphere || !body.radius) continue;
             
-            const bodyPos = body.position instanceof THREE.Vector3 
-                ? body.position 
-                : new THREE.Vector3().fromArray(body.position || [0, 0, 0]);
+            const bodyPos = Array.isArray(body.position) ? body.position : (body.position?.toArray ? body.position.toArray() : [0, 0, 0]);
             
-            const distance = p.distanceTo(bodyPos);
+            // Calculate distance using array coordinates
+            const dx = p[0] - bodyPos[0];
+            const dy = p[1] - bodyPos[1];
+            const dz = p[2] - bodyPos[2];
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             
             // Check if within atmosphere
             const atmRadius = body.radius + (body.atmosphere.thickness || 100);
@@ -213,14 +215,14 @@ export class AtmosphericModels {
 
     /**
      * Check if a body has entered atmosphere
-     * @param {Array|THREE.Vector3} position - Position relative to planet center (km)
+     * @param {Array|PhysicsVector3} position - Position relative to planet center (km)
      * @param {Object} planet - Planet with atmosphere and radius
      * @returns {boolean} - True if in atmosphere
      */
     static isInAtmosphere(position, planet) {
         if (!planet || (!planet.atmosphere && !planet.atmosphericModel) || !planet.radius) return false;
         
-        const p = position instanceof THREE.Vector3 ? position : new THREE.Vector3().fromArray(position);
+        const p = position instanceof PhysicsVector3 ? position : PhysicsVector3.fromArray(position);
         const r = p.length();
         const altitude = r - planet.radius;
         

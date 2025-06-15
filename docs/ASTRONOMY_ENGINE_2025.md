@@ -497,7 +497,7 @@ For a planet orbiting the Sun, apsis is a perihelion or aphelion, respectively. 
 - [SearchPlanetApsis](https://www.npmjs.com/package/astronomy-engine#SearchPlanetApsis)
 - [NextPlanetApsis](https://www.npmjs.com/package/astronomy-engine#NextPlanetApsis)
 
-**Properties**
+Properties:
 
 | Name    | Type                                                                    | Description                                                                                                                                                            |
 | ------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

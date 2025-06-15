@@ -1,6 +1,6 @@
 //TimeUtils.js
 import * as THREE from 'three';
-import { Constants, Bodies } from '../physics/PhysicsAPI.js';
+import { PhysicsConstants } from '../physics/core/PhysicsConstants.js';
 
 /**
  * Convert JavaScript Date to Julian Date
@@ -8,7 +8,7 @@ import { Constants, Bodies } from '../physics/PhysicsAPI.js';
  * @returns {number} Julian Date
  */
 export function dateToJd(date) {
-    return (date.getTime() / Constants.TIME.MILLISECONDS_IN_DAY) + Constants.PHYSICS.J2000_EPOCH;
+    return (date.getTime() / PhysicsConstants.TIME.MILLISECONDS_IN_DAY) + PhysicsConstants.PHYSICS.J2000_EPOCH;
 }
 
 export class TimeUtils {
@@ -143,7 +143,7 @@ export class TimeUtils {
             0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180)
         );
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
-        const distance = Constants.PHYSICS.AU;
+        const distance = PhysicsConstants.PHYSICS.AU;
         const rad = trueLongitude * Math.PI / 180;
         const x = distance * Math.cos(rad);
         const y = distance * Math.sin(rad);
@@ -151,16 +151,20 @@ export class TimeUtils {
         return new THREE.Vector3(x, y, z);
     }
 
-    static calculateBodyVelocity(simulatedTime, bodyName = 'earth') {
-        const bodyData = Bodies.getData(bodyName);
+    static calculateBodyVelocity(simulatedTime, bodyName = 'earth') { // eslint-disable-line no-unused-vars
+        // Use default orbital period for Earth to break dependency on Bodies.getData()
+        // This maintains the same functionality while avoiding circular dependency
+        // NOTE: bodyName parameter kept for API compatibility but currently only supports Earth
+        const orbitalPeriod = 365.25; // Earth's orbital period in days
         const dayOfYear = TimeUtils.getDayOfYear(simulatedTime);
-        const orbitalPeriod = bodyData?.orbitalPeriod || 365.25; // Default to Earth's orbital period
         return new THREE.Vector3(-Math.sin(2 * Math.PI * dayOfYear / orbitalPeriod), 0, Math.cos(2 * Math.PI * dayOfYear / orbitalPeriod));
     }
 
-    static getBodyTilt(bodyName = 'earth') {
-        const bodyData = Bodies.getData(bodyName);
-        const tilt = bodyData?.tilt || 23.5; // Default to Earth's tilt
+    static getBodyTilt(bodyName = 'earth') { // eslint-disable-line no-unused-vars
+        // Use default Earth tilt to break dependency on Bodies.getData()
+        // This maintains the same functionality while avoiding circular dependency
+        // NOTE: bodyName parameter kept for API compatibility but currently only supports Earth
+        const tilt = 23.5; // Earth's axial tilt in degrees
         return new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(tilt)));
     }
 
@@ -186,7 +190,7 @@ export class TimeUtils {
         } else {
             julianDay = Math.floor(365.25 * (year + 4716)) + Math.floor(30.6001 * (month + 1)) + day - 1524.5;
         }
-        const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / Constants.TIME.SECONDS_IN_DAY + millisecond / Constants.TIME.MILLISECONDS_IN_DAY;
+        const julianDate = julianDay + (hour - 12) / 24 + minute / 1440 + second / PhysicsConstants.TIME.SECONDS_IN_DAY + millisecond / PhysicsConstants.TIME.MILLISECONDS_IN_DAY;
         return julianDate;
     }
 

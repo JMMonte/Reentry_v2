@@ -195,13 +195,16 @@ export class SimulationLoop {
                 }
                 break;
             case 'physicsTimeStep':
-                this.satellites.setPhysicsTimeStep(value);
+                this.app3d?.physicsIntegration?.physicsEngine?.satelliteEngine?.setPhysicsTimeStep(value);
                 break;
             case 'integrationMethod':
-                this.satellites.setIntegrationMethod(value);
+                this.app3d?.physicsIntegration?.physicsEngine?.satelliteEngine?.setIntegrationMethod(value);
                 break;
             case 'sensitivityScale':
-                this.satellites.setSensitivityScale(value);
+                this.app3d?.physicsIntegration?.physicsEngine?.satelliteEngine?.setSensitivityScale(value);
+                break;
+            case 'perturbationScale':
+                this.app3d?.physicsIntegration?.physicsEngine?.satelliteEngine?.setPerturbationScale(value);
                 break;
         }
     }

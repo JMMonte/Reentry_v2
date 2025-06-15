@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { WebGLLabels } from '../../utils/WebGLLabels.js';
 
 /**
  * Adds graticules, borders and point‐of‐interest billboards to a planet mesh.
@@ -93,6 +94,12 @@ export class PlanetSurface {
         this.countryBorders = [];
         this.states = [];
         this.points = {
+            cities: [], airports: [], spaceports: [],
+            groundStations: [], observatories: [], missions: []
+        };
+
+        // WebGL labels for POIs
+        this.labels = {
             cities: [], airports: [], spaceports: [],
             groundStations: [], observatories: [], missions: []
         };
@@ -281,6 +288,36 @@ export class PlanetSurface {
             mesh.visible = true;
             this.root.add(mesh);
             this.points[category].push(mesh);
+
+            // Create WebGL label sprite (always faces camera, fixed screen size)
+            const poiName = feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank || `${category}`;
+            if (poiName && poiName.trim()) {
+                const labelSprite = WebGLLabels.createLabel(poiName.trim(), {
+                    fontSize: 48,
+                    color: '#ffffff',
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    padding: 16,
+                    sizeAttenuation: false, // constant screen size
+                    transparent: true,
+                    depthWrite: false,
+                    depthTest: true,
+                    renderOrder: Math.max(0, poiRenderOrder - 1)
+                });
+
+                // Offset sprite slightly above the POI marker along surface normal
+                const spriteOffset = sphereNorm.clone().multiplyScalar(this.markerSize * 1.5);
+                labelSprite.position.copy(pos).add(spriteOffset);
+
+                // Store quick refs for disposal later
+                labelSprite.userData = {
+                    parentPOI: mesh,
+                    feature: feat,
+                    category
+                };
+
+                this.root.add(labelSprite);
+                this.labels[category].push(labelSprite);
+            }
         });
     }
 
@@ -290,6 +327,7 @@ export class PlanetSurface {
         // Update internal state only
         this.pointVisibility[cat] = v;
         // DO NOT set m.visible here; updateFade will handle it.
+        // Labels will also be handled by updateFade
     }
 
     setSurfaceLinesVisible(v) {
@@ -510,6 +548,12 @@ export class PlanetSurface {
                     );
                 }
             });
+
+            // Update label sprites (opacity only; sprite faces camera automatically)
+            this.labels[cat].forEach(sprite => {
+                if (sprite.material) sprite.material.opacity = opacity;
+                sprite.visible = categoryIsCurrentlyVisible && opacity > 0.01;
+            });
         });
     }
 
@@ -575,6 +619,23 @@ export class PlanetSurface {
             });
             if (this.lod.parent) this.lod.parent.remove(this.lod);
         }
+
+        // Dispose labels
+        Object.keys(this.labels).forEach(cat => {
+            this.labels[cat].forEach(label => {
+                // Dispose texture and material for mesh-based labels
+                if (label.userData?.texture) {
+                    label.userData.texture.dispose();
+                }
+                if (label.material) {
+                    label.material.dispose();
+                }
+                if (label.geometry) {
+                    label.geometry.dispose();
+                }
+            });
+            this.labels[cat] = [];
+        });
 
         // Clear all arrays
         this.surfaceLines = [];

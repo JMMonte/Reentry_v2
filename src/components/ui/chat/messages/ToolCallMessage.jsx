@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Check, Loader2, Copy, Satellite, Clock, Search, Radio, Map, Settings, Globe, Info, AlertCircle, CheckCircle } from 'lucide-react';
+import { Check, Loader2, Copy, Satellite, Clock, Search, Radio, Map, Settings, Globe, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '../../button';
 import { MessageBadge } from '../MessageBadge';
 
@@ -241,7 +241,7 @@ const formatToolResult = (toolName, content) => {
 };
 
 // Tool Call Card UI for sent tool calls
-const renderToolCallCard = ({ toolName, status, args, isDone, isStreaming }) => {
+const renderToolCallCard = ({ toolName, args, isDone, isStreaming }) => {
   // Format arguments as a readable list
   let argList = null;
   if (args && typeof args === 'object' && !Array.isArray(args)) {
@@ -342,7 +342,6 @@ export function ToolCallMessage({ message, isStreaming = false }) {
           // Show tool call
           renderToolCallCard({
             toolName: message.toolName || message.tool_name || 'Unknown Tool',
-            status: message.status,
             args: args,
             isDone: isDone,
             isStreaming: isStreaming
@@ -383,11 +382,16 @@ export function ToolCallMessage({ message, isStreaming = false }) {
 ToolCallMessage.propTypes = {
   message: PropTypes.shape({
     id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    type: PropTypes.string,
+    content: PropTypes.string,
+    output: PropTypes.any,
+    toolResponses: PropTypes.any,
     toolName: PropTypes.string,
     tool_name: PropTypes.string,
-    status: PropTypes.string,
-    arguments: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
-    raw: PropTypes.object
+    status: PropTypes.any,
+    args: PropTypes.any,
+    arguments: PropTypes.any,
+    raw: PropTypes.any,
   }).isRequired,
   isStreaming: PropTypes.bool
 };
