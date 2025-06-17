@@ -21,6 +21,7 @@ export class TimeUtils {
         this._lastDispatchedTimeMs = 0;
         this._lastDispatchedWarp = 1;
         this._dispatchThreshold = 100; // Only dispatch if time changed by >100ms
+        this._dispatchScheduled = false; // Track if a dispatch is already scheduled
     }
 
     /**
@@ -48,9 +49,12 @@ export class TimeUtils {
         this._dispatchTimeUpdate();
     }
 
+    /**
+     * Set local time warp (for real-time controls)
+     */
     setLocalTimeWarp(newWarp) {
         this.timeWarp = newWarp;
-        this._dispatchTimeUpdate();
+        this._dispatchTimeUpdate(true); // Force dispatch to ensure immediate UI sync
     }
 
     setSimTimeFromServer(date, timeWarp) {
@@ -86,18 +90,19 @@ export class TimeUtils {
     /**
      * Dispatch time update event - optimized to reduce redundant events
      */
-    _dispatchTimeUpdate() {
+    _dispatchTimeUpdate(forceDispatch = false) {
         const currentTimeMs = this.simulatedTime.getTime();
         const timeDiff = Math.abs(currentTimeMs - this._lastDispatchedTimeMs);
         
         // Only dispatch if time changed significantly or warp changed
-        if (timeDiff < this._dispatchThreshold && this.timeWarp === this._lastDispatchedWarp) {
+        if (timeDiff < this._dispatchThreshold && this.timeWarp === this._lastDispatchedWarp && !forceDispatch) {
             return; // Skip redundant dispatch
         }
         
         this._lastDispatchedTimeMs = currentTimeMs;
         this._lastDispatchedWarp = this.timeWarp;
         
+        // Dispatch immediately for responsiveness
         document.dispatchEvent(new CustomEvent('timeUpdate', {
             detail: {
                 simulatedTime: this.simulatedTime.toISOString(),
@@ -131,23 +136,53 @@ export class TimeUtils {
     }
 
     static getSunPosition(simulatedTime) {
+        // Try to get orbital constants from centralized Sun configuration
+        let orbitalConstants = null;
+        try {
+            // Access the PhysicsAPI to get Sun configuration
+            if (window.app3d?.physicsAPI?.isReady()) {
+                const sunConfig = window.app3d.physicsAPI.Bodies.getData('sun');
+                orbitalConstants = sunConfig?.orbitalConstants;
+            }
+        } catch {
+            // Fallback to hardcoded values if centralized data is not available
+            console.warn('[TimeUtils] Could not access centralized Sun orbital constants, using fallback values');
+        }
+
+        // Use centralized constants or fallback to original hardcoded values
+        const constants = orbitalConstants || {
+            meanAnomalyBase: 357.5291,
+            meanAnomalyRate: 0.98560028,
+            meanLongitudeBase: 280.4665,
+            meanLongitudeRate: 0.98564736,
+            eccentricity: 0.0167,
+            equationOfCenter: {
+                c1: 1.9148,
+                c2: 0.0200,
+                c3: 0.0003
+            }
+        };
+
         const dayOfYear = TimeUtils.getDayOfYear(simulatedTime);
         const fractionOfDay = TimeUtils.getFractionOfDay(simulatedTime);
         const days = dayOfYear + fractionOfDay;
-        const meanAnomaly = (357.5291 + 0.98560028 * days) % 360;
-        const meanLongitude = (280.4665 + 0.98564736 * days) % 360;
-        const eccentricity = 0.0167;
+        
+        const meanAnomaly = (constants.meanAnomalyBase + constants.meanAnomalyRate * days) % 360;
+        const meanLongitude = (constants.meanLongitudeBase + constants.meanLongitudeRate * days) % 360;
+        const eccentricity = constants.eccentricity;
+        
         const equationOfCenter = (
-            1.9148 * Math.sin(meanAnomaly * Math.PI / 180) +
-            0.0200 * Math.sin(2 * meanAnomaly * Math.PI / 180) +
-            0.0003 * Math.sin(3 * meanAnomaly * Math.PI / 180)
+            constants.equationOfCenter.c1 * Math.sin(meanAnomaly * Math.PI / 180) +
+            constants.equationOfCenter.c2 * Math.sin(2 * meanAnomaly * Math.PI / 180) +
+            constants.equationOfCenter.c3 * Math.sin(3 * meanAnomaly * Math.PI / 180)
         );
+        
         const trueLongitude = (meanLongitude + equationOfCenter) % 360;
         const distance = PhysicsConstants.PHYSICS.AU;
         const rad = trueLongitude * Math.PI / 180;
         const x = distance * Math.cos(rad);
         const y = distance * Math.sin(rad);
-        const z =  distance * eccentricity * Math.sin(rad);
+        const z = distance * eccentricity * Math.sin(rad);
         return new THREE.Vector3(x, y, z);
     }
 
@@ -195,9 +230,29 @@ export class TimeUtils {
     }
 
     static getGreenwichSiderealTime(simulatedTime) {
+        // Try to get Greenwich constants from centralized Sun configuration
+        let greenwichConstants = null;
+        try {
+            if (window.app3d?.physicsAPI?.isReady()) {
+                const sunConfig = window.app3d.physicsAPI.Bodies.getData('sun');
+                greenwichConstants = sunConfig?.orbitalConstants?.greenwich;
+            }
+        } catch {
+            // Fallback to hardcoded values if centralized data is not available
+        }
+
+        // Use centralized constants or fallback to original hardcoded values
+        const constants = greenwichConstants || {
+            base: 280.46061837,
+            rate: 360.98564736629,
+            t2Coefficient: 0.000387933,
+            t3Coefficient: 1.0 / 38710000
+        };
+
         const jd = TimeUtils.getJulianDate(simulatedTime);
         const t = (jd - 2451545.0) / 36525;
-        const theta = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * t * t - t * t * t / 38710000;
+        const theta = constants.base + constants.rate * (jd - 2451545.0) + 
+                      constants.t2Coefficient * t * t - t * t * t * constants.t3Coefficient;
         return theta % 360;
     }
 

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 
+// Memoize the conversation starters array to prevent recreations
 const conversationStarters = [
     // Earth Mission Examples
     "Create a Walker constellation with 24 satellites for global coverage.",
@@ -33,20 +34,45 @@ const conversationStarters = [
     "Create a real-time mission control dashboard for my fleet."
 ];
 
-const ChatStarters = ({ onSelect }) => (
-    <>
-        {conversationStarters.map((starter, idx) => (
-            <button
-                key={idx}
-                className="w-full text-left px-4 py-3 rounded-xl bg-secondary shadow-sm border border-border hover:bg-primary/10 transition-colors text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 break-words min-h-[56px]"
-                onClick={() => onSelect(starter)}
-                type="button"
-            >
-                {starter}
-            </button>
-        ))}
-    </>
-);
+// Memoized individual starter button component
+const StarterButton = React.memo(function StarterButton({ starter, onClick, index }) {
+    return (
+        <button
+            key={index}
+            className="w-full text-left px-4 py-3 rounded-xl bg-secondary shadow-sm border border-border hover:bg-primary/10 transition-colors text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 break-words min-h-[56px]"
+            onClick={onClick}
+            type="button"
+        >
+            {starter}
+        </button>
+    );
+});
+
+StarterButton.propTypes = {
+    starter: PropTypes.string.isRequired,
+    onClick: PropTypes.func.isRequired,
+    index: PropTypes.number.isRequired
+};
+
+const ChatStarters = React.memo(function ChatStarters({ onSelect }) {
+    // Memoize the handlers to prevent recreations
+    const starterHandlers = useMemo(() => {
+        return conversationStarters.map((starter) => () => onSelect(starter));
+    }, [onSelect]);
+
+    return (
+        <>
+            {conversationStarters.map((starter, idx) => (
+                <StarterButton
+                    key={idx}
+                    starter={starter}
+                    onClick={starterHandlers[idx]}
+                    index={idx}
+                />
+            ))}
+        </>
+    );
+});
 
 ChatStarters.propTypes = {
     onSelect: PropTypes.func.isRequired

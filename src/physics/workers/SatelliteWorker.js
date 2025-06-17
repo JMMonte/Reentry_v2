@@ -12,6 +12,8 @@ import { PhysicsConstants } from '../core/PhysicsConstants.js';
 import { SolarSystemHierarchy } from '../SolarSystemHierarchy.js';
 import { SOITransitionManager } from '../utils/SOITransitionManager.js';
 import { integrateRK4, getIntegrator } from '../integrators/OrbitalIntegrators.js';
+import { GroundTrackService } from '../../services/GroundTrackService.js';
+import { ManeuverExecutor } from '../core/ManeuverExecutor.js';
 
 class SatelliteWorkerEngine {
     constructor() {
@@ -23,16 +25,19 @@ class SatelliteWorkerEngine {
         this.perturbationScale = 1.0;
         this.hierarchy = null; // Will be initialized when physics data is received
         this.soiTransitionManager = null; // Will be initialized when hierarchy is available
-        
+
         // Working vectors to avoid GC pressure
         this._workVec1 = new PhysicsVector3();
         this._workVec2 = new PhysicsVector3();
         this._workVec3 = new PhysicsVector3();
-        
+
         // Performance tracking
         this.taskCount = 0;
         this.totalTime = 0;
         this.lastTaskTime = 0;
+
+        // Ground track service for coordinate transformations
+        this.groundTrackService = new GroundTrackService();
 
         console.log('[SatelliteWorker] Worker initialized');
     }
@@ -62,6 +67,18 @@ class SatelliteWorkerEngine {
                     this._handleConfigure(taskId, data);
                     break;
 
+                case 'propagateOrbit':
+                    this._handlePropagateOrbit(taskId, data);
+                    break;
+
+                case 'generateGroundTrack':
+                    this._handleGenerateGroundTrack(taskId, data);
+                    break;
+
+                case 'previewManeuver':
+                    this._handlePreviewManeuver(taskId, data);
+                    break;
+
                 default:
                     this._sendError(taskId, `Unknown message type: ${type}`);
             }
@@ -89,6 +106,13 @@ class SatelliteWorkerEngine {
      */
     _handleUpdatePhysics(taskId, physicsData) {
         try {
+            console.log(`[SatelliteWorker] Received physics data update:`, {
+                taskId,
+                hasBodies: !!physicsData?.bodies,
+                bodiesCount: physicsData?.bodies ? Object.keys(physicsData.bodies).length : 0,
+                simulationTime: physicsData?.simulationTime
+            });
+
             // Initialize hierarchy if we have bodies data
             if (physicsData.bodies && !this.hierarchy) {
                 // Convert bodies object to Map for SolarSystemHierarchy
@@ -97,14 +121,16 @@ class SatelliteWorkerEngine {
                     bodiesMap.set(parseInt(naifId), body);
                 }
                 this.hierarchy = new SolarSystemHierarchy(bodiesMap);
-                
+
                 // Initialize SOI transition manager
                 this.soiTransitionManager = new SOITransitionManager(this.hierarchy);
+                console.log(`[SatelliteWorker] Initialized hierarchy with ${bodiesMap.size} bodies`);
             }
-            
+
             // Store physics data for propagation
             this.physicsData = physicsData;
-            
+            console.log(`[SatelliteWorker] Physics data stored successfully`);
+
             this._sendResult(taskId, 'updatePhysics', { success: true });
         } catch (error) {
             console.error('[SatelliteWorker] Error updating physics:', error);
@@ -214,8 +240,15 @@ class SatelliteWorkerEngine {
             lastUpdate: new Date(simulationTime)
         };
 
-        // Check for maneuvers (simplified - no maneuver execution in worker for now)
-        // Maneuvers will be handled in main thread before sending to worker
+        // Execute any pending maneuvers inside the worker (better separation of concerns)
+        if (Array.isArray(satelliteData.maneuverNodes) && satelliteData.maneuverNodes.length > 0) {
+            const currentSimTime = new Date(simulationTime);
+            ManeuverExecutor.executePendingManeuvers(
+                satellite,
+                satelliteData.maneuverNodes,
+                currentSimTime
+            );
+        }
 
         // Compute acceleration using UnifiedSatellitePropagator
         const accelResult = this._computeAcceleration(satellite, physicsData.bodies);
@@ -340,12 +373,12 @@ class SatelliteWorkerEngine {
                 velocity: integrationResult.velocity,
                 centralBodyNaifId: satellite.centralBodyNaifId
             };
-            
+
             const transitionOccurred = this.soiTransitionManager.performTransition(
                 satelliteState,
                 physicsData.bodies
             );
-            
+
             if (transitionOccurred) {
                 finalPosition = satelliteState.position;
                 finalVelocity = satelliteState.velocity;
@@ -367,8 +400,15 @@ class SatelliteWorkerEngine {
             a_gravity_total: accelResult.components?.primary || [0, 0, 0],
             a_j2: accelResult.components?.j2 || [0, 0, 0],
             a_drag: accelResult.components?.drag || [0, 0, 0],
-            a_bodies: accelResult.components?.thirdBodies || [0, 0, 0],
-            a_bodies_direct: accelResult.components?.thirdBodiesDirect || [0, 0, 0]
+            a_bodies: accelResult.components?.thirdBody || [0, 0, 0],
+            a_bodies_direct: accelResult.components?.thirdBodyIndividual || {},
+            // Add local frame components for proper vector visualization
+            a_total_local: accelResult.components?.totalLocal || [0, 0, 0],
+            a_gravity_total_local: accelResult.components?.primaryLocal || [0, 0, 0],
+            a_j2_local: accelResult.components?.j2Local || [0, 0, 0],
+            a_drag_local: accelResult.components?.dragLocal || [0, 0, 0],
+            a_bodies_local: accelResult.components?.thirdBodyLocal || [0, 0, 0],
+            a_bodies_direct_local: accelResult.components?.thirdBodyIndividualLocal || {}
         };
     }
 
@@ -411,8 +451,6 @@ class SatelliteWorkerEngine {
         );
     }
 
-
-
     /**
      * Send successful result back to main thread
      * @private
@@ -421,7 +459,7 @@ class SatelliteWorkerEngine {
         self.postMessage({
             taskId,
             type,
-            result
+            data: result  // Changed from 'result' to 'data' to match worker pool expectations
         });
     }
 
@@ -435,6 +473,342 @@ class SatelliteWorkerEngine {
             error: error,
             ...additionalData
         });
+    }
+
+    /**
+     * Handle orbit propagation request
+     * @private
+     */
+    _handlePropagateOrbit(taskId, data) {
+        const startTime = performance.now();
+
+        try {
+            const { satellite, duration, timeStep, maxPoints, includeJ2, includeDrag, includeThirdBody, maneuverNodes } = data;
+
+            if (!satellite) {
+                throw new Error('Missing satellite data for orbit propagation');
+            }
+
+            // Use current physics data or provided data
+            const currentPhysics = this.physicsData;
+            console.log(`[SatelliteWorker] Checking physics data for orbit propagation:`, {
+                hasPhysicsData: !!this.physicsData,
+                hasBodies: !!currentPhysics?.bodies,
+                bodiesCount: currentPhysics?.bodies ? Object.keys(currentPhysics.bodies).length : 0
+            });
+            
+            if (!currentPhysics || !currentPhysics.bodies) {
+                throw new Error('No physics data available for orbit propagation');
+            }
+
+            // Debug: Log the satellite data received
+            console.log(`[SatelliteWorker] Satellite data for orbit propagation:`, {
+                satelliteId: satellite.id,
+                hasPosition: !!satellite.position,
+                hasVelocity: !!satellite.velocity,
+                position: satellite.position,
+                velocity: satellite.velocity,
+                positionType: typeof satellite.position,
+                velocityType: typeof satellite.velocity
+            });
+
+            // Get current simulation time from physics data
+            const simulationTimeString = currentPhysics.simulationTime;
+            const currentSimTime = simulationTimeString ? new Date(simulationTimeString) : new Date();
+            const startTimeSeconds = currentSimTime.getTime() / 1000; // Convert to seconds since epoch
+
+            const propagationParams = {
+                satellite: {
+                    position: satellite.position || [7000, 0, 0],
+                    velocity: satellite.velocity || [0, 7.546, 0],
+                    centralBodyNaifId: satellite.centralBodyNaifId || 399,
+                    mass: satellite.mass || 1000,
+                    crossSectionalArea: satellite.crossSectionalArea || 2.0, // Realistic satellite cross-section
+                    dragCoefficient: satellite.dragCoefficient || 2.2
+                },
+                bodies: currentPhysics.bodies,
+                duration: duration || 5400, // 90 minutes default
+                timeStep: timeStep || 60,    // 1 minute default
+                startTime: startTimeSeconds, // Use current simulation time
+                maxPoints: maxPoints,
+                includeJ2: includeJ2 !== false,
+                includeDrag: includeDrag !== false,
+                includeThirdBody: includeThirdBody !== false,
+                timeWarp: 1,
+                method: this.integrationMethod,
+                maneuverNodes: maneuverNodes || [],
+                perturbationScale: this.perturbationScale
+            };
+
+            console.log(`[SatelliteWorker] Calling UnifiedSatellitePropagator.propagateOrbit with params:`, {
+                satelliteId: satellite.id,
+                duration: propagationParams.duration,
+                timeStep: propagationParams.timeStep,
+                startTime: propagationParams.startTime,
+                expectedPoints: Math.floor(propagationParams.duration / propagationParams.timeStep),
+                includeJ2: propagationParams.includeJ2,
+                includeDrag: propagationParams.includeDrag,
+                includeThirdBody: propagationParams.includeThirdBody
+            });
+
+            // Use UnifiedSatellitePropagator for consistent physics
+            const orbitPoints = UnifiedSatellitePropagator.propagateOrbit(propagationParams);
+
+            console.log(`[SatelliteWorker] UnifiedSatellitePropagator returned:`, {
+                pointsCount: orbitPoints ? orbitPoints.length : 0,
+                firstPoint: orbitPoints && orbitPoints.length > 0 ? orbitPoints[0] : null,
+                lastPoint: orbitPoints && orbitPoints.length > 0 ? orbitPoints[orbitPoints.length - 1] : null
+            });
+
+            const taskTime = performance.now() - startTime;
+            this.taskCount++;
+            this.totalTime += taskTime;
+            this.lastTaskTime = taskTime;
+
+            this._sendResult(taskId, 'propagateOrbit', {
+                points: orbitPoints,
+                satelliteId: satellite.id,
+                taskTime,
+                workerId: this.workerId
+            });
+
+        } catch (error) {
+            const taskTime = performance.now() - startTime;
+            console.error('[SatelliteWorker] Orbit propagation error:', error);
+            this._sendError(taskId, `Orbit propagation failed: ${error.message}`, { taskTime });
+        }
+    }
+
+    /**
+     * Handle ground track generation request
+     * @private
+     */
+    async _handleGenerateGroundTrack(taskId, data) {
+        const startTime = performance.now();
+
+        try {
+            const {
+                satellite,
+                duration,
+                timeStep,
+                centralBodyNaifId,
+                canvasWidth,
+                canvasHeight,
+                chunkSize = 50
+            } = data;
+
+            if (!satellite) {
+                throw new Error('Missing satellite data for ground track generation');
+            }
+
+            // Use current physics data
+            const currentPhysics = this.physicsData;
+            if (!currentPhysics || !currentPhysics.bodies) {
+                throw new Error('No physics data available for ground track generation');
+            }
+
+            // Get current simulation time from physics data
+            const simulationTimeString = currentPhysics.simulationTime;
+            const currentSimTime = simulationTimeString ? new Date(simulationTimeString) : new Date();
+            const startTimeSeconds = currentSimTime.getTime() / 1000; // Convert to seconds since epoch
+
+            // First propagate the orbit
+            const propagationParams = {
+                satellite: {
+                    position: satellite.position,
+                    velocity: satellite.velocity,
+                    centralBodyNaifId: centralBodyNaifId || 399,
+                    mass: satellite.mass || 1000,
+                    crossSectionalArea: satellite.crossSectionalArea || 2.0, // Realistic satellite cross-section
+                    dragCoefficient: satellite.dragCoefficient || 2.2
+                },
+                bodies: currentPhysics.bodies,
+                duration: duration || 5400,
+                timeStep: timeStep || 60,
+                startTime: startTimeSeconds, // Use current simulation time
+                includeJ2: true,
+                includeDrag: false, // Usually disabled for ground track
+                includeThirdBody: false,
+                timeWarp: 1,
+                method: this.integrationMethod,
+                perturbationScale: this.perturbationScale
+            };
+
+            const orbitPoints = await UnifiedSatellitePropagator.propagateOrbit(propagationParams);
+
+            // Get planet data for coordinate transformations
+            const planetData = Object.values(currentPhysics.bodies).find(b => b.naifId === centralBodyNaifId);
+            if (!planetData) {
+                throw new Error(`Planet data not found for NAIF ID: ${centralBodyNaifId}`);
+            }
+
+            // Convert orbit points to ground track points
+            const groundTrackPoints = [];
+            let prevLon = undefined;
+
+            for (let i = 0; i < orbitPoints.length; i++) {
+                const point = orbitPoints[i];
+                const pointTime = Date.now() + point.time * 1000; // Convert to absolute time
+
+                try {
+                    // Transform ECI to surface coordinates
+                    const surface = await this.groundTrackService.transformECIToSurface(
+                        point.position,
+                        centralBodyNaifId || 399,
+                        pointTime,
+                        planetData
+                    );
+
+                    // Check for dateline crossing
+                    const isDatelineCrossing = this.groundTrackService.isDatelineCrossing(prevLon, surface.lon);
+                    prevLon = surface.lon;
+
+                    // Calculate canvas coordinates if dimensions provided
+                    let canvasX = 0, canvasY = 0;
+                    if (canvasWidth && canvasHeight) {
+                        const canvas = this.groundTrackService.projectToCanvas(surface.lat, surface.lon, canvasWidth, canvasHeight);
+                        canvasX = canvas.x;
+                        canvasY = canvas.y;
+                    }
+
+                    groundTrackPoints.push({
+                        time: pointTime,
+                        lat: surface.lat,
+                        lon: surface.lon,
+                        alt: surface.alt,
+                        canvasX,
+                        canvasY,
+                        isDatelineCrossing,
+                        eciPosition: point.position
+                    });
+
+                } catch (error) {
+                    console.warn('[SatelliteWorker] Coordinate transformation failed:', error);
+                    // Add point with zero coordinates as fallback
+                    groundTrackPoints.push({
+                        time: pointTime,
+                        lat: 0,
+                        lon: 0,
+                        alt: 0,
+                        canvasX: 0,
+                        canvasY: 0,
+                        isDatelineCrossing: false,
+                        eciPosition: point.position
+                    });
+                }
+            }
+
+            // Send results in chunks
+            for (let i = 0; i < groundTrackPoints.length; i += chunkSize) {
+                const chunk = groundTrackPoints.slice(i, i + chunkSize);
+                const progress = (i + chunk.length) / groundTrackPoints.length;
+                const isComplete = i + chunk.length >= groundTrackPoints.length;
+
+                this._sendResult(taskId, 'groundTrackChunk', {
+                    satelliteId: satellite.id,
+                    points: chunk,
+                    progress,
+                    isComplete,
+                    workerId: this.workerId
+                });
+
+                // Yield control for large datasets
+                if (!isComplete && groundTrackPoints.length > 1000 && i % 500 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+
+            const taskTime = performance.now() - startTime;
+            this.taskCount++;
+            this.totalTime += taskTime;
+            this.lastTaskTime = taskTime;
+
+        } catch (error) {
+            const taskTime = performance.now() - startTime;
+            console.error('[SatelliteWorker] Ground track generation error:', error);
+            this._sendError(taskId, `Ground track generation failed: ${error.message}`, { taskTime });
+        }
+    }
+
+    /**
+     * Handle maneuver preview request
+     * @private
+     */
+    _handlePreviewManeuver(taskId, data) {
+        const startTime = performance.now();
+
+        try {
+            const { satellite, maneuver, duration, timeStep } = data;
+
+            if (!satellite || !maneuver) {
+                throw new Error('Missing satellite or maneuver data for preview');
+            }
+
+            // Use current physics data
+            const currentPhysics = this.physicsData;
+            if (!currentPhysics || !currentPhysics.bodies) {
+                throw new Error('No physics data available for maneuver preview');
+            }
+
+            // Get current simulation time from physics data
+            const simulationTimeString = currentPhysics.simulationTime;
+            const currentSimTime = simulationTimeString ? new Date(simulationTimeString) : new Date();
+            const startTimeSeconds = currentSimTime.getTime() / 1000; // Convert to seconds since epoch
+
+            // Create maneuver nodes array
+            const maneuverNodes = [{
+                executionTime: maneuver.executionTime,
+                deltaV: maneuver.deltaV
+            }];
+
+            const propagationParams = {
+                satellite: {
+                    position: satellite.position,
+                    velocity: satellite.velocity,
+                    centralBodyNaifId: satellite.centralBodyNaifId || 399,
+                    mass: satellite.mass || 1000,
+                    crossSectionalArea: satellite.crossSectionalArea || 2.0, // Realistic satellite cross-section
+                    dragCoefficient: satellite.dragCoefficient || 2.2
+                },
+                bodies: currentPhysics.bodies,
+                duration: duration || 5400,
+                timeStep: timeStep || 60,
+                startTime: startTimeSeconds, // Use current simulation time
+                includeJ2: true,
+                includeDrag: true,
+                includeThirdBody: true,
+                timeWarp: 1,
+                method: this.integrationMethod,
+                maneuverNodes: maneuverNodes,
+                perturbationScale: this.perturbationScale
+            };
+
+            // Propagate with maneuver
+            const orbitWithManeuver = UnifiedSatellitePropagator.propagateOrbit(propagationParams);
+
+            // Also propagate without maneuver for comparison
+            const baselineParams = { ...propagationParams, maneuverNodes: [] };
+            const baselineOrbit = UnifiedSatellitePropagator.propagateOrbit(baselineParams);
+
+            const taskTime = performance.now() - startTime;
+            this.taskCount++;
+            this.totalTime += taskTime;
+            this.lastTaskTime = taskTime;
+
+            this._sendResult(taskId, 'previewManeuver', {
+                satelliteId: satellite.id,
+                orbitWithManeuver,
+                baselineOrbit,
+                maneuver,
+                taskTime,
+                workerId: this.workerId
+            });
+
+        } catch (error) {
+            const taskTime = performance.now() - startTime;
+            console.error('[SatelliteWorker] Maneuver preview error:', error);
+            this._sendError(taskId, `Maneuver preview failed: ${error.message}`, { taskTime });
+        }
     }
 }
 

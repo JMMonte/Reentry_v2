@@ -16,6 +16,7 @@ export function buildNavbarProps({
   app3d,
   timeWarpLoading,
   simTime,
+  timeWarp,
   handleSimulatedTimeChange,
   satellites,
   handleImportState,
@@ -27,7 +28,8 @@ export function buildNavbarProps({
   setAuthMode,
   isSimulationOpen,
   setIsSimulationOpen,
-  planetOptions
+  planetOptions,
+  onTimeWarpChange
 }) {
   return {
     onChatToggle: modalState.onChatToggle,
@@ -45,14 +47,10 @@ export function buildNavbarProps({
     groupedPlanetOptions,
     satelliteOptions,
     getDisplayValue,
-    timeWarp: app3d?.simulationController?.getTimeWarp() ?? app3d?.timeUtils?.getTimeWarp() ?? 1,
+    timeWarp,
     timeWarpLoading,
     timeWarpOptions: app3d?.physicsIntegration?.getTimeWarpOptions() ?? [0, 0.25, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 1000000, 10000000],
-    onTimeWarpChange: (newWarp) => {
-      if (app3d?.simulationController) {
-        app3d.simulationController.setTimeWarp(newWarp);
-      }
-    },
+    onTimeWarpChange,
     simulatedTime: simTime,
     onSimulatedTimeChange: handleSimulatedTimeChange,
     app3DRef: { current: app3d },
@@ -90,7 +88,10 @@ export function buildModalProps({
   setAuthMode,
   showToast,
   satellitesPhysics,
-  simTime
+  simTime,
+  centralizedBodies = {},
+  planetOptions = [],
+  groupedPlanetOptions = []
 }) {
   return {
     chatModal: {
@@ -102,7 +103,13 @@ export function buildModalProps({
     displayOptions: {
       settings: displaySettings,
       onSettingChange: (key, value) => {
-        if (app3d) {
+        if (app3d?.displaySettingsManager) {
+          // Update through DisplaySettingsManager - it will handle batching and coordination
+          app3d.displaySettingsManager.updateSetting(key, value);
+          // Update React state to keep UI in sync - this is necessary for React components
+          setDisplaySettings(prev => ({ ...prev, [key]: value }));
+        } else if (app3d) {
+          // Fallback to legacy method if DisplaySettingsManager not available
           app3d.updateDisplaySetting(key, value);
           setDisplaySettings(prev => ({ ...prev, [key]: value }));
         }
@@ -143,7 +150,7 @@ export function buildModalProps({
         } else {
           // Strategy 1: Direct name match (case-insensitive)
           preselectedBody = availableBodies.find(body =>
-            body.name.toLowerCase() === selectedBody.toLowerCase()
+            body.name && body.name.toLowerCase() === selectedBody.toLowerCase()
           );
 
           // Strategy 2: Use planetary data manager if available and initialized
@@ -180,12 +187,60 @@ export function buildModalProps({
         }
       }
 
+      // If availableBodies is empty or doesn't have what we need, convert from planetOptions as fallback
+      let finalAvailableBodies = availableBodies;
+      if (!finalAvailableBodies || finalAvailableBodies.length === 0) {
+        // Convert from the same source the navbar uses
+        finalAvailableBodies = (planetOptions || []).map(option => ({
+          name: option.text || option.name,
+          naifId: option.naifId || option.naif_id,
+          type: option.type || 'planet'
+        })).filter(body => body.naifId !== undefined && body.naifId !== null);
+        
+        // Also try to extract from groupedPlanetOptions if planetOptions is not available
+        if (finalAvailableBodies.length === 0 && groupedPlanetOptions) {
+          // Flatten groupedPlanetOptions to get all planets and moons
+          const allBodies = [];
+          groupedPlanetOptions.forEach(group => {
+            if (group.planet) {
+              allBodies.push({
+                name: group.planet.text || group.planet.name,
+                naifId: group.planet.naifId || group.planet.naif_id,
+                type: 'planet'
+              });
+            }
+            if (group.moons) {
+              group.moons.forEach(moon => {
+                allBodies.push({
+                  name: moon.text || moon.name,
+                  naifId: moon.naifId || moon.naif_id,
+                  type: 'moon'
+                });
+              });
+            }
+          });
+          
+          // Filter out bodies without valid naifId and barycenters
+          finalAvailableBodies = allBodies.filter(body => 
+            body.naifId !== undefined && 
+            body.naifId !== null &&
+            !body.name.toLowerCase().includes('barycenter')
+          );
+        }
+        
+        // Ensure we have at least Earth as fallback
+        if (finalAvailableBodies.length === 0) {
+          finalAvailableBodies = [{ name: 'Earth', naifId: 399, type: 'planet' }];
+        }
+      }
+
       return {
         isOpen: modalState.isSatelliteModalOpen,
         onClose: () => modalState.setIsSatelliteModalOpen(false),
+        onOpen: () => modalState.setIsSatelliteModalOpen(true),
         onCreate: onCreateSatellite,
-        availableBodies,
-        selectedBody: preselectedBody
+        availableBodies: finalAvailableBodies,
+        selectedBody: preselectedBody || finalAvailableBodies.find(b => b.name === 'Earth') || finalAvailableBodies[0]
       };
     })(),
 
@@ -222,6 +277,8 @@ export function buildModalProps({
       satellites: satellitesPhysics,
       planets: window.app3d?.celestialBodies || [],
       simulationTime: simTime,
+      centralizedBodies: centralizedBodies,
+      selectedBody: selectedBody, // Pass navbar's selected body
       onDataUpdate: (poiData, tracks, planet, currentPositions) => {
         modalState.setGroundTrackData({ poiData, tracks, planet, currentPositions });
       }

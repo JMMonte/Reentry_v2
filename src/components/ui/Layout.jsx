@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navbar } from './navbar/Navbar';
 import { ModalPortal } from './modal/ModalPortal';
 import { AuthModal } from './auth/AuthModal';
@@ -14,12 +14,12 @@ import { SimulationWindow } from './simulation/SimulationWindow';
 import { SatelliteManeuverWindow } from './satellite/SatelliteManeuverWindow';
 import { Button } from './button';
 import { GroundTrackWindow } from './groundtrack/GroundTrackWindow';
-import EnhancedLoader from './EnhancedLoader';
+import LoadingScreen from './LoadingScreen';
 import { Brain } from 'lucide-react';
 import { useToast } from './Toast';
 
 // SatelliteCreatorModal
-function SatelliteCreatorModal({ isOpen, onClose, onCreate, availableBodies, selectedBody }) {
+const SatelliteCreatorModal = React.memo(function SatelliteCreatorModal({ isOpen, onClose, onCreate, availableBodies, selectedBody }) {
     const satelliteCreatorRef = React.useRef();
     return (
         <DraggableModal
@@ -35,7 +35,7 @@ function SatelliteCreatorModal({ isOpen, onClose, onCreate, availableBodies, sel
             <SatelliteCreator ref={satelliteCreatorRef} onCreateSatellite={onCreate} availableBodies={availableBodies} selectedBody={selectedBody} />
         </DraggableModal>
     );
-}
+});
 SatelliteCreatorModal.propTypes = {
     isOpen: PropTypes.bool.isRequired,
     onClose: PropTypes.func.isRequired,
@@ -48,7 +48,7 @@ SatelliteCreatorModal.propTypes = {
 };
 
 // ShareModal
-function ShareModal({ isOpen, onClose, shareUrl, shareCopied, onCopy, onShareEmail }) {
+const ShareModal = React.memo(function ShareModal({ isOpen, onClose, shareUrl, shareCopied, onCopy, onShareEmail }) {
     return (
         <DraggableModal
             title="Share Simulation State"
@@ -82,7 +82,7 @@ function ShareModal({ isOpen, onClose, shareUrl, shareCopied, onCopy, onShareEma
             </div>
         </DraggableModal>
     );
-}
+});
 ShareModal.propTypes = {
     isOpen: PropTypes.bool.isRequired,
     onClose: PropTypes.func.isRequired,
@@ -92,7 +92,14 @@ ShareModal.propTypes = {
     onShareEmail: PropTypes.func.isRequired
 };
 
-export function Layout({
+// Memoized components that don't need real-time simulation updates
+const MemoizedSatelliteListWindow = React.memo(SatelliteListWindow);
+const MemoizedSatelliteCreatorModal = React.memo(SatelliteCreatorModal);
+const MemoizedShareModal = React.memo(ShareModal);
+const MemoizedAuthModal = React.memo(AuthModal);
+
+// Main Layout component with React.memo and comprehensive performance improvements
+export const Layout = React.memo(function Layout({
     groundTrackWindowProps,
     children,
     navbarProps,
@@ -105,94 +112,85 @@ export function Layout({
     authModalProps,
     simulationWindowProps,
     earthPointModalProps,
-    isLoadingInitialData,
-    loadingProgress = 0,
-    loadingStage = 'Initializing...',
-    satellitesPhysics = {}
+    satellitesPhysics = {},
+    celestialBodies = [],
+    onBodySelect
 }) {
     const { showToast } = useToast();
     const [resetModalOpen, setResetModalOpen] = useState(false);
     const [maneuverSat, setManeuverSat] = useState(null);
-    const handleOpenManeuver = (satellite) => setManeuverSat(satellite);
+    const handleOpenManeuver = useCallback((satellite) => setManeuverSat(satellite), []);
     const [showIntro, setShowIntro] = useState(false);
     const [currentSlide, setCurrentSlide] = useState(0);
     const [isMobile, setIsMobile] = useState(false);
 
-    // Removed duplicate usePhysicsSatellites() call - now passed as prop for better performance
+    // Memoized intro slides data to prevent recreation on every render
+    const introSlides = useMemo(() => [
+        {
+            title: "Welcome to Darksun",
+            content: "Professional orbital mechanics simulation for satellite constellation design, interplanetary missions, and space communication networks.",
+            image: "/assets/images/Screenshot 2025-04-22 at 22.44.48.png"
+        },
+        {
+            title: "Satellite Operations",
+            content: "Create satellites, plan maneuvers, and monitor subsystems including power, thermal, communications, and propulsion systems.",
+            image: "/assets/images/Screenshot 2025-04-25 at 02.20.23.png"
+        },
+        {
+            title: "Mission Planning",
+            content: "Design interplanetary transfers, gravity assists, and complex trajectories with AI-powered mission planning assistance.",
+            image: "/assets/images/Screenshot 2025-04-25 at 02.22.55.png"
+        }
+    ], []);
+
+    // Memoized event handlers to prevent recreation
+    const handleDismissIntro = useCallback(() => {
+        localStorage.setItem('introShown', 'true');
+        setShowIntro(false);
+        setCurrentSlide(0);
+    }, []);
+
+    const handleOpenAI = useCallback(() => {
+        handleDismissIntro();
+        if (navbarProps?.onChatToggle) {
+            navbarProps.onChatToggle();
+        }
+    }, [handleDismissIntro, navbarProps?.onChatToggle]);
+
+    const handleNextSlide = useCallback(() => {
+        if (currentSlide < introSlides.length - 1) {
+            setCurrentSlide(currentSlide + 1);
+        } else {
+            handleDismissIntro();
+        }
+    }, [currentSlide, introSlides.length, handleDismissIntro]);
+
+    const handlePrevSlide = useCallback(() => {
+        if (currentSlide > 0) {
+            setCurrentSlide(currentSlide - 1);
+        }
+    }, [currentSlide]);
 
     // Check mobile on mount and resize
     useEffect(() => {
         const checkMobile = () => {
             setIsMobile(window.innerWidth < 768);
         };
-        
+
         checkMobile();
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
     useEffect(() => {
-        if (typeof window !== 'undefined' && !localStorage.getItem('introShown') && !isLoadingInitialData) {
-            // Show intro only after loading is complete
+        if (typeof window !== 'undefined' && !localStorage.getItem('introShown')) {
+            // Show intro when ready (loading will be handled by LoadingScreen component)
             const timer = setTimeout(() => {
                 setShowIntro(true);
-            }, 1000); // Give fade-out time to complete
+            }, 2000); // Give loading screen time to complete
             return () => clearTimeout(timer);
         }
-    }, [isLoadingInitialData]);
-
-    // Intro slides data
-    const introSlides = [
-        {
-            title: "Welcome to Darksun",
-            content: "Professional orbital mechanics simulation for satellite constellation design, interplanetary missions, and space communication networks.",
-            image: "/assets/images/Screenshot 2025-04-22 at 22.44.48.png" // Overview screenshot
-        },
-        {
-            title: "Satellite Operations",
-            content: "Create satellites, plan maneuvers, and monitor subsystems including power, thermal, communications, and propulsion systems.",
-            image: "/assets/images/Screenshot 2025-04-25 at 02.20.23.png" // Satellite screenshot
-        },
-        {
-            title: "Mission Planning", 
-            content: "Design interplanetary transfers, gravity assists, and complex trajectories with AI-powered mission planning assistance.",
-            image: "/assets/images/Screenshot 2025-04-25 at 02.22.55.png" // Mission planning screenshot
-        }
-    ];
-
-    const handleDismissIntro = () => {
-        localStorage.setItem('introShown', 'true');
-        setShowIntro(false);
-        setCurrentSlide(0);
-    };
-
-    const handleOpenAI = () => {
-        handleDismissIntro();
-        // Open the chat modal using the onClose function structure
-        if (chatModalProps?.onClose) {
-            // If onClose exists, we can infer the modal state setter
-            // The chatModalProps.onClose is () => modalState.setIsChatVisible(false)
-            // So we need to call the opposite - setIsChatVisible(true)
-            // We'll trigger this through the navbar chat toggle
-            if (navbarProps?.onChatToggle) {
-                navbarProps.onChatToggle();
-            }
-        }
-    };
-
-    const handleNextSlide = () => {
-        if (currentSlide < introSlides.length - 1) {
-            setCurrentSlide(currentSlide + 1);
-        } else {
-            handleDismissIntro();
-        }
-    };
-
-    const handlePrevSlide = () => {
-        if (currentSlide > 0) {
-            setCurrentSlide(currentSlide - 1);
-        }
-    };
+    }, []);
 
     // Open reset modal if URL contains type=recovery and access_token
     useEffect(() => {
@@ -217,14 +215,14 @@ export function Layout({
         <>
             <Navbar {...navbarProps} />
             <main>{children}</main>
-            
+
             {/* Darkmatter credit */}
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
                 <div className="text-xs font-mono mix-blend-difference text-white/50 pointer-events-auto flex items-center gap-1">
                     made with <Brain size={12} /> by{' '}
-                    <a 
-                        href="https://darkmatter.is" 
-                        target="_blank" 
+                    <a
+                        href="https://darkmatter.is"
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="hover:underline"
                     >
@@ -233,22 +231,21 @@ export function Layout({
                 </div>
             </div>
 
-            {/* Enhanced Loading Overlay with fade-out */}
-            <div 
-                className={`transition-opacity duration-1000 ${
-                    isLoadingInitialData ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                }`}
-            >
-                <EnhancedLoader 
-                    loadingProgress={loadingProgress} 
-                    loadingStage={loadingStage} 
-                />
-            </div>
+            {/* Centralized Loading Screen */}
+            <LoadingScreen />
 
             <ModalPortal>
                 <ChatModal {...chatModalProps} />
                 <DisplayOptions {...displayOptionsProps} />
-                {debugWindows && debugWindows.map(({ id, satellite, earth, onBodySelect, onClose }) => {
+
+                {/* Only render debug windows when they exist and have valid satellites */}
+                {debugWindows?.map(({ id, satellite, onClose }) => {
+                    // Only render if satellite exists and has valid data
+                    if (!satellite?.id) return null;
+
+                    const physicsData = satellitesPhysics?.[satellite.id];
+                    const earth = celestialBodies?.find(body => body.naifId === 399);
+
                     return (
                         <SatelliteDebugWindow
                             key={id}
@@ -257,28 +254,58 @@ export function Layout({
                             onBodySelect={onBodySelect}
                             onClose={onClose}
                             onOpenManeuver={handleOpenManeuver}
-                            physics={satellitesPhysics?.[String(id)]}
+                            physics={physicsData}
+                            celestialBodies={celestialBodies}
                         />
                     );
                 })}
-                <SatelliteListWindow {...satelliteListWindowProps} onOpenManeuver={handleOpenManeuver} />
-                <SatelliteCreatorModal {...satelliteCreatorModalProps} />
-                <ShareModal {...shareModalProps} />
-                <AuthModal {...authModalProps} />
-                <SimulationWindow {...simulationWindowProps} />
-                {groundTrackWindowProps &&
+
+                {/* Only render when visible */}
+                {satelliteListWindowProps?.isOpen && (
+                    <MemoizedSatelliteListWindow
+                        {...satelliteListWindowProps}
+                        onOpenManeuver={handleOpenManeuver}
+                        onCreateSatellite={satelliteCreatorModalProps.onCreate}
+                    />
+                )}
+
+                {/* Only render when visible */}
+                {satelliteCreatorModalProps?.isOpen && (
+                    <MemoizedSatelliteCreatorModal {...satelliteCreatorModalProps} />
+                )}
+
+                {/* Only render when visible */}
+                {shareModalProps?.isOpen && (
+                    <MemoizedShareModal {...shareModalProps} />
+                )}
+
+                {/* Only render when visible */}
+                {authModalProps?.isOpen && (
+                    <MemoizedAuthModal {...authModalProps} />
+                )}
+
+                {/* SimulationWindow needs simulation updates - render conditionally but don't memoize */}
+                {simulationWindowProps?.isOpen && (
+                    <SimulationWindow {...simulationWindowProps} />
+                )}
+
+                {/* GroundTrackWindow needs simulation updates - render conditionally but don't memoize */}
+                {groundTrackWindowProps?.isOpen && (
                     <GroundTrackWindow
                         {...groundTrackWindowProps}
                         planets={window.app3d?.celestialBodies || []}
                     />
-                }
+                )}
+
+                {/* Only render when maneuver satellite is selected */}
                 {maneuverSat && (
                     <SatelliteManeuverWindow
                         satellite={maneuverSat}
                         onClose={() => setManeuverSat(null)}
                     />
                 )}
-                {/* Render a modal for each selected point */}
+
+                {/* Render a modal for each selected point - only when they exist */}
                 {earthPointModalProps?.openModals?.map(({ feature, category }, idx) => {
                     const featureProps = feature.properties || {};
                     const name = featureProps.name || featureProps.NAME || category;
@@ -305,14 +332,15 @@ export function Layout({
                         </DraggableModal>
                     );
                 })}
+
                 {/* Responsive Tutorial with Images */}
                 {showIntro && (
                     <DraggableModal
                         title={`Getting Started (${currentSlide + 1}/${introSlides.length})`}
                         isOpen={true}
                         onClose={handleDismissIntro}
-                        defaultPosition={{ 
-                            x: isMobile ? 20 : Math.max(20, window.innerWidth / 2 - 350), 
+                        defaultPosition={{
+                            x: isMobile ? 20 : Math.max(20, window.innerWidth / 2 - 350),
                             y: isMobile ? 20 : Math.max(20, window.innerHeight / 2 - 200)
                         }}
                         defaultWidth={isMobile ? window.innerWidth - 40 : 700}
@@ -325,10 +353,9 @@ export function Layout({
                             {/* Content Area */}
                             <div className={`flex-1 ${isMobile ? 'flex flex-col space-y-4' : 'grid grid-cols-2 gap-6'}`}>
                                 {/* Image */}
-                                <div className={`bg-zinc-900/30 border border-zinc-800 rounded overflow-hidden ${
-                                    isMobile ? 'h-48 flex-shrink-0' : ''
-                                }`}>
-                                    <img 
+                                <div className={`bg-zinc-900/30 border border-zinc-800 rounded overflow-hidden ${isMobile ? 'h-48 flex-shrink-0' : ''
+                                    }`}>
+                                    <img
                                         src={introSlides[currentSlide].image}
                                         alt={introSlides[currentSlide].title}
                                         className="w-full h-full object-cover"
@@ -341,15 +368,13 @@ export function Layout({
                                 </div>
 
                                 {/* Text Content */}
-                                <div className={`flex flex-col justify-center space-y-4 ${
-                                    isMobile ? 'flex-1' : ''
-                                }`}>
-                                    <h2 className={`font-semibold text-white ${
-                                        isMobile ? 'text-lg' : 'text-xl'
+                                <div className={`flex flex-col justify-center space-y-4 ${isMobile ? 'flex-1' : ''
                                     }`}>
+                                    <h2 className={`font-semibold text-white ${isMobile ? 'text-lg' : 'text-xl'
+                                        }`}>
                                         {introSlides[currentSlide].title}
                                     </h2>
-                                    
+
                                     <p className="text-sm text-zinc-300 leading-relaxed">
                                         {introSlides[currentSlide].content}
                                     </p>
@@ -357,31 +382,27 @@ export function Layout({
                             </div>
 
                             {/* Navigation */}
-                            <div className={`pt-4 border-t border-zinc-800 ${
-                                isMobile ? 'flex flex-col space-y-3' : 'flex items-center justify-between'
-                            }`}>
-                                <div className={`flex gap-2 ${
-                                    isMobile ? 'justify-center' : ''
+                            <div className={`pt-4 border-t border-zinc-800 ${isMobile ? 'flex flex-col space-y-3' : 'flex items-center justify-between'
                                 }`}>
+                                <div className={`flex gap-2 ${isMobile ? 'justify-center' : ''
+                                    }`}>
                                     {introSlides.map((_, index) => (
                                         <div
                                             key={index}
-                                            className={`w-2 h-2 rounded-full transition-colors ${
-                                                index === currentSlide ? 'bg-white' : 'bg-zinc-600'
-                                            }`}
+                                            className={`w-2 h-2 rounded-full transition-colors ${index === currentSlide ? 'bg-white' : 'bg-zinc-600'
+                                                }`}
                                         />
                                     ))}
                                 </div>
 
-                                <div className={`flex gap-2 ${
-                                    isMobile ? 'justify-center' : ''
-                                }`}>
+                                <div className={`flex gap-2 ${isMobile ? 'justify-center' : ''
+                                    }`}>
                                     {currentSlide > 0 && (
                                         <Button variant="ghost" size="sm" onClick={handlePrevSlide}>
                                             Previous
                                         </Button>
                                     )}
-                                    
+
                                     {currentSlide === introSlides.length - 1 ? (
                                         <>
                                             <Button variant="outline" size="sm" onClick={handleOpenAI}>
@@ -405,7 +426,7 @@ export function Layout({
             </ModalPortal>
         </>
     );
-}
+});
 
 Layout.propTypes = {
     children: PropTypes.node,
@@ -435,13 +456,13 @@ Layout.propTypes = {
         ).isRequired,
         onToggle: PropTypes.func.isRequired
     }),
-    isLoadingInitialData: PropTypes.bool.isRequired,
-    loadingProgress: PropTypes.number,
-    loadingStage: PropTypes.string,
+
     satellitesPhysics: PropTypes.object,
     groundTrackData: PropTypes.shape({
         poiData: PropTypes.object,
         tracks: PropTypes.object,
         planet: PropTypes.object
-    })
+    }),
+    celestialBodies: PropTypes.array,
+    onBodySelect: PropTypes.func
 }; 

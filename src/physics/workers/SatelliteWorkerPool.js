@@ -5,7 +5,7 @@
  * Distributes satellites across workers for optimal performance
  */
 
-import { PropagationMetrics } from '../utils/PropagationMetrics.js';
+// PropagationMetrics import removed to reduce CPU overhead
 
 export class SatelliteWorkerPool {
     constructor(options = {}) {
@@ -16,6 +16,17 @@ export class SatelliteWorkerPool {
         this.pendingTasks = new Map(); // Map<taskId, Promise>
         this.taskCounter = 0;
 
+        // Separate tracking for different request types
+        this.physicsTaskCounter = 0;
+        this.visualizationTaskCounter = 0;
+        this.pendingPhysicsTasks = new Map(); // Map<taskId, Promise>
+        this.pendingVisualizationTasks = new Map(); // Map<taskId, Promise>
+
+        // Physics data streaming optimization
+        this.lastPhysicsDataHash = null;
+        this.physicsDataCacheTime = 0;
+        this.PHYSICS_CACHE_TTL = 100; // Only update physics data every 100ms max
+
         // Performance tracking
         this.metrics = {
             totalTasks: 0,
@@ -23,7 +34,10 @@ export class SatelliteWorkerPool {
             failedTasks: 0,
             averageTaskTime: 0,
             workerUtilization: new Array(this.maxWorkers).fill(0),
-            lastUpdate: Date.now()
+            lastUpdate: Date.now(),
+            physicsUpdates: 0,
+            visualizationRequests: 0,
+            physicsDataSkipped: 0
         };
 
         // Worker state
@@ -70,7 +84,7 @@ export class SatelliteWorkerPool {
 
                 // Set up message handling
                 worker.onmessage = (event) => {
-                    this._handleWorkerMessage(workerId, event.data);
+                    this._handleWorkerMessage(workerId, event);
                 };
 
                 worker.onerror = (error) => {
@@ -87,7 +101,7 @@ export class SatelliteWorkerPool {
 
                 // Test worker with ping
                 const testTaskId = this._generateTaskId();
-                this.pendingTasks.set(testTaskId, { resolve, reject, type: 'ping', startTime: performance.now() });
+                this.pendingTasks.set(testTaskId, { resolve, reject, type: 'ping' });
 
                 worker.postMessage({
                     type: 'ping',
@@ -106,49 +120,80 @@ export class SatelliteWorkerPool {
      * Handle messages from workers
      * @private
      */
-    _handleWorkerMessage(workerId, data) {
-        const { taskId, type, result, error } = data;
-
-        if (!this.pendingTasks.has(taskId)) {
-            console.warn(`[SatelliteWorkerPool] Received response for unknown task ${taskId}`);
+    _handleWorkerMessage(workerId, event) {
+        // Handle initialization messages without taskId
+        if (!event.data || typeof event.data !== 'object') {
+            console.warn(`[SatelliteWorkerPool] Received invalid message from worker ${workerId}:`, event.data);
             return;
         }
 
-        const task = this.pendingTasks.get(taskId);
-        const taskTime = performance.now() - task.startTime;
+        const { taskId, error, data } = event.data;
 
-        // Update worker state
+        // Handle initialization or status messages without taskId
+        if (!taskId) {
+            console.log(`[SatelliteWorkerPool] Worker ${workerId} status message:`, event.data);
+            return;
+        }
+
+        console.log(`[SatelliteWorkerPool] Received response from worker ${workerId}:`, {
+            taskId,
+            hasError: !!error,
+            dataType: typeof data,
+            dataKeys: data ? Object.keys(data) : []
+        });
+
+        // Route to appropriate task queue based on task ID prefix
+        let task = null;
+        if (taskId.startsWith('physics_')) {
+            task = this.pendingPhysicsTasks.get(taskId);
+            if (task) {
+                this.pendingPhysicsTasks.delete(taskId);
+                console.log(`[SatelliteWorkerPool] Found physics task for ${taskId}`);
+            }
+        } else if (taskId.startsWith('viz_')) {
+            task = this.pendingVisualizationTasks.get(taskId);
+            if (task) {
+                this.pendingVisualizationTasks.delete(taskId);
+                console.log(`[SatelliteWorkerPool] Found visualization task for ${taskId}`);
+            }
+        } else {
+            // Legacy task ID format
+            task = this.pendingTasks.get(taskId);
+            if (task) {
+                this.pendingTasks.delete(taskId);
+                console.log(`[SatelliteWorkerPool] Found legacy task for ${taskId}`);
+            }
+        }
+
+        if (!task) {
+            console.warn(`[SatelliteWorkerPool] Received response for unknown task: ${taskId}`, {
+                pendingPhysicsCount: this.pendingPhysicsTasks.size,
+                pendingVisualizationCount: this.pendingVisualizationTasks.size,
+                pendingLegacyCount: this.pendingTasks.size
+            });
+            return;
+        }
+
+        // Mark worker as available
         const worker = this.workers[workerId];
         if (worker) {
             worker.busy = false;
-            worker.taskCount++;
-            worker.lastTaskTime = taskTime;
         }
 
-        // Update metrics
-        this.metrics.completedTasks++;
-        this.metrics.averageTaskTime = (this.metrics.averageTaskTime * (this.metrics.completedTasks - 1) + taskTime) / this.metrics.completedTasks;
-        this.metrics.workerUtilization[workerId] = (this.metrics.workerUtilization[workerId] * 0.9) + (taskTime * 0.1);
-
+        // Handle response
         if (error) {
-            console.error(`[SatelliteWorkerPool] Task ${taskId} failed:`, error);
             this.metrics.failedTasks++;
             task.reject(new Error(error));
         } else {
-            // Track performance metrics for satellite tasks
-            if (type === 'propagate' && result.satelliteId) {
-                PropagationMetrics.trackIntegrationStep(
-                    result.satelliteId,
-                    taskTime,
-                    result.method || 'worker',
-                    !error
-                );
-            }
-
-            task.resolve(result);
+            this.metrics.completedTasks++;
+            task.resolve(data);
         }
 
-        this.pendingTasks.delete(taskId);
+        // Update metrics
+        if (task.startTime) {
+            const taskTime = performance.now() - task.startTime;
+            this.metrics.averageTaskTime = (this.metrics.averageTaskTime + taskTime) / 2;
+        }
     }
 
     /**
@@ -193,7 +238,7 @@ export class SatelliteWorkerPool {
     }
 
     /**
-     * Propagate a satellite using worker pool
+     * Propagate a satellite using worker pool (PHYSICS PRIORITY)
      * @param {Object} satelliteData - Satellite state and configuration
      * @param {Object} physicsData - Physics bodies and simulation parameters
      * @returns {Promise<Object>} Updated satellite state
@@ -203,7 +248,7 @@ export class SatelliteWorkerPool {
             throw new Error('Worker pool not initialized');
         }
 
-        const taskId = this._generateTaskId();
+        const taskId = this._generatePhysicsTaskId();
         const workerId = this._selectWorker(satelliteData.id);
 
         return new Promise((resolve, reject) => {
@@ -212,11 +257,11 @@ export class SatelliteWorkerPool {
                 reject,
                 type: 'propagate',
                 workerId,
-                startTime: performance.now(),
-                satelliteId: satelliteData.id
+                satelliteId: satelliteData.id,
+                priority: 'physics' // High priority for real-time physics
             };
 
-            this.pendingTasks.set(taskId, task);
+            this.pendingPhysicsTasks.set(taskId, task);
             this.metrics.totalTasks++;
 
             // Mark worker as busy
@@ -233,6 +278,7 @@ export class SatelliteWorkerPool {
             worker.postMessage({
                 type: 'propagate',
                 taskId,
+                priority: 'physics',
                 data: {
                     satellite: satelliteData,
                     physics: physicsData
@@ -241,10 +287,10 @@ export class SatelliteWorkerPool {
 
             // Set timeout for task
             setTimeout(() => {
-                if (this.pendingTasks.has(taskId)) {
-                    this.pendingTasks.delete(taskId);
+                if (this.pendingPhysicsTasks.has(taskId)) {
+                    this.pendingPhysicsTasks.delete(taskId);
                     this.metrics.failedTasks++;
-                    reject(new Error(`Task ${taskId} timed out`));
+                    reject(new Error(`Physics task ${taskId} timed out`));
                 }
             }, 5000); // 5 second timeout
         });
@@ -260,8 +306,6 @@ export class SatelliteWorkerPool {
         if (!this.initialized) {
             throw new Error('Worker pool not initialized');
         }
-
-        const startTime = performance.now();
 
         try {
             // Create propagation tasks for all satellites
@@ -288,13 +332,9 @@ export class SatelliteWorkerPool {
                 }
             });
 
-            const totalTime = performance.now() - startTime;
-
             return {
                 successful: successfulResults,
-                failed: failedResults,
-                totalTime,
-                parallelEfficiency: satellites.length > 0 ? (satellites.length * this.metrics.averageTaskTime) / totalTime : 1
+                failed: failedResults
             };
 
         } catch (error) {
@@ -339,19 +379,33 @@ export class SatelliteWorkerPool {
     }
 
     /**
-     * Update physics data in all workers
+     * Update physics data in all workers (optimized)
      * @param {Object} physicsData - Updated physics bodies and parameters
      */
     async updateWorkersPhysicsState(physicsData) {
         if (!this.initialized) return;
 
+        // Optimize: Only update if physics data actually changed
+        const currentHash = this._hashPhysicsData(physicsData);
+        const now = Date.now();
+        
+        if (this.lastPhysicsDataHash === currentHash && 
+            (now - this.physicsDataCacheTime) < this.PHYSICS_CACHE_TTL) {
+            this.metrics.physicsDataSkipped++;
+            return; // Skip redundant updates
+        }
+
+        this.lastPhysicsDataHash = currentHash;
+        this.physicsDataCacheTime = now;
+        this.metrics.physicsUpdates++;
+
         const updatePromises = this.workers.map((worker, workerId) => {
             if (!worker) return Promise.resolve();
 
-            const taskId = this._generateTaskId();
+            const taskId = this._generatePhysicsTaskId();
 
             return new Promise((resolve, reject) => {
-                this.pendingTasks.set(taskId, { resolve, reject, type: 'updatePhysics', startTime: performance.now() });
+                this.pendingPhysicsTasks.set(taskId, { resolve, reject, type: 'updatePhysics', startTime: performance.now() });
 
                 worker.postMessage({
                     type: 'updatePhysics',
@@ -361,8 +415,8 @@ export class SatelliteWorkerPool {
 
                 // Timeout for physics update
                 setTimeout(() => {
-                    if (this.pendingTasks.has(taskId)) {
-                        this.pendingTasks.delete(taskId);
+                    if (this.pendingPhysicsTasks.has(taskId)) {
+                        this.pendingPhysicsTasks.delete(taskId);
                         reject(new Error(`Physics update timeout for worker ${workerId}`));
                     }
                 }, 2000);
@@ -415,6 +469,159 @@ export class SatelliteWorkerPool {
     }
 
     /**
+     * Propagate orbit for a satellite (VISUALIZATION PRIORITY)
+     * @param {Object} satelliteData - Satellite state and configuration
+     * @param {Object} options - Propagation options (duration, timeStep, etc.)
+     * @returns {Promise<Object>} Orbit points
+     */
+    async propagateOrbit(satelliteData, options = {}) {
+        if (!this.initialized) {
+            throw new Error('Worker pool not initialized');
+        }
+
+        const workerId = this._selectWorker(satelliteData.id);
+        const worker = this.workers[workerId];
+        
+        if (!worker) {
+            throw new Error(`Worker ${workerId} not available`);
+        }
+
+        const taskId = this._generateVisualizationTaskId();
+        this.metrics.visualizationRequests++;
+
+        return new Promise((resolve, reject) => {
+            this.pendingVisualizationTasks.set(taskId, { 
+                resolve, 
+                reject, 
+                type: 'propagateOrbit', 
+                startTime: performance.now(),
+                priority: 'visualization' // Lower priority than physics
+            });
+
+            worker.postMessage({
+                type: 'propagateOrbit',
+                taskId,
+                priority: 'visualization',
+                data: {
+                    satellite: satelliteData,
+                    ...options
+                }
+            });
+
+            // Timeout for orbit propagation
+            const timeoutMs = options.integrationMethod === 'rk45' ? 120000 : 30000; // 2 min for rk45
+            setTimeout(() => {
+                if (this.pendingVisualizationTasks.has(taskId)) {
+                    this.pendingVisualizationTasks.delete(taskId);
+                    reject(new Error(`Orbit propagation timeout for satellite ${satelliteData.id}`));
+                }
+            }, timeoutMs);
+        });
+    }
+
+    /**
+     * Generate ground track for a satellite
+     * @param {Object} satelliteData - Satellite state and configuration
+     * @param {Object} options - Ground track options
+     * @returns {Promise<Object>} Ground track data (streamed via chunks)
+     */
+    async generateGroundTrack(satelliteData, options = {}) {
+        if (!this.initialized) {
+            throw new Error('Worker pool not initialized');
+        }
+
+        const workerId = this._selectWorker(satelliteData.id);
+        const worker = this.workers[workerId];
+        
+        if (!worker) {
+            throw new Error(`Worker ${workerId} not available`);
+        }
+
+        const taskId = this._generateTaskId();
+
+        return new Promise((resolve, reject) => {
+            const chunks = [];
+            
+            this.pendingTasks.set(taskId, { 
+                resolve: (result) => {
+                    if (result.type === 'groundTrackChunk') {
+                        chunks.push(result);
+                        if (result.isComplete) {
+                            resolve({ chunks, totalPoints: chunks.reduce((sum, chunk) => sum + chunk.points.length, 0) });
+                        }
+                    } else {
+                        resolve(result);
+                    }
+                }, 
+                reject, 
+                type: 'generateGroundTrack', 
+                startTime: performance.now() 
+            });
+
+            worker.postMessage({
+                type: 'generateGroundTrack',
+                taskId,
+                data: {
+                    satellite: satelliteData,
+                    ...options
+                }
+            });
+
+            // Timeout for ground track generation
+            setTimeout(() => {
+                if (this.pendingTasks.has(taskId)) {
+                    this.pendingTasks.delete(taskId);
+                    reject(new Error(`Ground track generation timeout for satellite ${satelliteData.id}`));
+                }
+            }, 60000); // 60 second timeout
+        });
+    }
+
+    /**
+     * Preview maneuver for a satellite
+     * @param {Object} satelliteData - Satellite state and configuration
+     * @param {Object} maneuver - Maneuver data
+     * @param {Object} options - Preview options
+     * @returns {Promise<Object>} Maneuver preview data
+     */
+    async previewManeuver(satelliteData, maneuver, options = {}) {
+        if (!this.initialized) {
+            throw new Error('Worker pool not initialized');
+        }
+
+        const workerId = this._selectWorker(satelliteData.id);
+        const worker = this.workers[workerId];
+        
+        if (!worker) {
+            throw new Error(`Worker ${workerId} not available`);
+        }
+
+        const taskId = this._generateTaskId();
+
+        return new Promise((resolve, reject) => {
+            this.pendingTasks.set(taskId, { resolve, reject, type: 'previewManeuver', startTime: performance.now() });
+
+            worker.postMessage({
+                type: 'previewManeuver',
+                taskId,
+                data: {
+                    satellite: satelliteData,
+                    maneuver,
+                    ...options
+                }
+            });
+
+            // Timeout for maneuver preview
+            setTimeout(() => {
+                if (this.pendingTasks.has(taskId)) {
+                    this.pendingTasks.delete(taskId);
+                    reject(new Error(`Maneuver preview timeout for satellite ${satelliteData.id}`));
+                }
+            }, 15000); // 15 second timeout
+        });
+    }
+
+    /**
      * Remove satellite from worker tracking
      * @param {string} satelliteId - Satellite ID to remove
      */
@@ -424,30 +631,17 @@ export class SatelliteWorkerPool {
             this.workerTasks.get(workerId).delete(satelliteId);
             this.satelliteToWorker.delete(satelliteId);
         }
-    }
+        }
 
     /**
-     * Get worker pool performance metrics
-     * @returns {Object} Performance metrics
+     * Get basic worker pool metrics (minimal overhead version)
+     * @returns {Object} Essential metrics only
      */
     getMetrics() {
-        const now = Date.now();
-        const uptime = now - this.metrics.lastUpdate;
-
         return {
-            ...this.metrics,
-            uptime: uptime / 1000,
             activeWorkers: this.workers.filter(w => w).length,
             busyWorkers: this.workers.filter(w => w && w.busy).length,
-            pendingTasks: this.pendingTasks.size,
-            averageWorkerUtilization: this.metrics.workerUtilization.reduce((a, b) => a + b, 0) / this.maxWorkers,
-            workerDetails: this.workers.map((worker, i) => ({
-                id: i,
-                busy: worker ? worker.busy : false,
-                taskCount: worker ? worker.taskCount : 0,
-                lastTaskTime: worker ? worker.lastTaskTime : 0,
-                assignedSatellites: this.workerTasks.get(i).size
-            }))
+            pendingTasks: this.pendingPhysicsTasks.size + this.pendingVisualizationTasks.size
         };
     }
 
@@ -485,5 +679,32 @@ export class SatelliteWorkerPool {
      */
     _generateTaskId() {
         return `task_${++this.taskCounter}_${Date.now()}`;
+    }
+
+    /**
+     * Generate unique task ID for physics requests
+     * @private
+     */
+    _generatePhysicsTaskId() {
+        return `physics_${++this.physicsTaskCounter}_${Date.now()}`;
+    }
+
+    /**
+     * Generate unique task ID for visualization requests
+     * @private
+     */
+    _generateVisualizationTaskId() {
+        return `viz_${++this.visualizationTaskCounter}_${Date.now()}`;
+    }
+
+    /**
+     * Hash physics data to detect changes
+     * @private
+     */
+    _hashPhysicsData(physicsData) {
+        const bodyPositions = Object.values(physicsData.bodies || {})
+            .map(body => body.position.join(','))
+            .join('|');
+        return `${physicsData.simulationTime}_${bodyPositions}`;
     }
 } 

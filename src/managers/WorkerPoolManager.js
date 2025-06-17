@@ -2,65 +2,128 @@
  * WorkerPoolManager.js
  * 
  * Manages Web Worker pool for orbit propagation calculations
+ * Now uses unified SatelliteWorkerPool for all satellite calculations
  */
+
+import { SatelliteWorkerPool } from '../physics/workers/SatelliteWorkerPool.js';
 
 export class WorkerPoolManager {
     constructor() {
-        // Worker management - scale based on hardware
-        this.workers = [];
-        this.workerPool = [];
-        // Use hardware concurrency but cap at 8 to avoid overwhelming the system
-        this.maxWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
+        // Use unified satellite worker pool
+        this.satelliteWorkerPool = null;
         this.activeJobs = new Map();
         this.physicsState = null; // Store for fallback
-
-        this._initializeWorkers();
-    }
-
-    /**
-     * Initialize worker pool
-     */
-    _initializeWorkers() {
         this.workersSupported = true;
-        
-        for (let i = 0; i < this.maxWorkers; i++) {
-            try {
-                const worker = new Worker(
-                    new URL('../physics/workers/orbitPropagationWorker.js', import.meta.url),
-                    { type: 'module' }
-                );
+        this.satelliteEngine = null; // Will be set by PhysicsEngine
+        this._workerPoolInitialized = false;
+        this._workerPoolInitializing = false;
 
-                worker.onmessage = this._handleWorkerMessage.bind(this);
-                worker.onerror = this._handleWorkerError.bind(this);
+        // Don't initialize workers at startup - use lazy initialization
+        // this._initializeWorkerPool();
+    }
 
-                this.workers.push(worker);
-                this.workerPool.push(worker);
-            } catch (error) {
-                console.warn(`[WorkerPoolManager] Failed to create worker ${i}:`, error);
-                this.workersSupported = false;
-                break;
-            }
-        }
+    /**
+     * Set SatelliteEngine reference for worker pool sharing
+     * @param {SatelliteEngine} satelliteEngine - SatelliteEngine instance
+     */
+    setSatelliteEngine(satelliteEngine) {
+        this.satelliteEngine = satelliteEngine;
         
-        if (!this.workersSupported || this.workers.length === 0) {
-            console.warn('[WorkerPoolManager] Workers not supported or failed to load, using main thread fallback');
-            this.workersSupported = false;
+        // Connect worker pool if already initialized
+        if (this.satelliteWorkerPool && this._workerPoolInitialized) {
+            satelliteEngine.setWorkerPool(this.satelliteWorkerPool);
         }
     }
 
     /**
-     * Update physics state in all workers with complete solar system data
+     * Initialize worker pool when first satellite is added
+     * @returns {Promise<boolean>} True if workers are ready
      */
-    updateWorkersPhysicsState(physicsIntegration) {
+    async initializeWorkersForSatellites() {
+        const ready = await this._ensureWorkerPoolInitialized();
+        
+        // Connect to SatelliteEngine if both are ready
+        if (ready && this.satelliteEngine && this.satelliteWorkerPool) {
+            this.satelliteEngine.setWorkerPool(this.satelliteWorkerPool);
+        }
+        
+        return ready;
+    }
+
+    /**
+     * Ensure worker pool is initialized (lazy initialization)
+     */
+    async _ensureWorkerPoolInitialized() {
+        if (this._workerPoolInitialized || this._workerPoolInitializing) {
+            return this._workerPoolInitialized;
+        }
+
+        this._workerPoolInitializing = true;
+
+        try {
+            console.log('[WorkerPoolManager] Initializing worker pool...');
+            await this._initializeWorkerPool();
+            this._workerPoolInitialized = true;
+            console.log('[WorkerPoolManager] Worker pool initialized successfully');
+            return true;
+        } catch (error) {
+            console.warn('[WorkerPoolManager] Failed to initialize worker pool:', error);
+            console.warn('[WorkerPoolManager] Worker support:', {
+                workerSupported: typeof Worker !== 'undefined',
+                hardwareConcurrency: navigator.hardwareConcurrency,
+                userAgent: navigator.userAgent
+            });
+            this._workerPoolInitialized = false;
+            return false;
+        } finally {
+            this._workerPoolInitializing = false;
+        }
+    }
+
+    /**
+     * Initialize unified worker pool
+     */
+    async _initializeWorkerPool() {
+        try {
+            console.log('[WorkerPoolManager] Initializing worker pool on demand...');
+            this.satelliteWorkerPool = new SatelliteWorkerPool({
+                maxWorkers: Math.min(navigator.hardwareConcurrency || 4, 6) // Limit to 6 workers max
+            });
+
+            await this.satelliteWorkerPool.initialize();
+            this.workersSupported = true;
+            
+            // Verify worker pool is actually working
+            const workerCount = this.satelliteWorkerPool.workers?.length || 0;
+            console.log(`[WorkerPoolManager] Successfully initialized ${workerCount} workers`);
+            
+            // Connect to SatelliteEngine if available
+            if (this.satelliteEngine) {
+                this.satelliteEngine.setWorkerPool(this.satelliteWorkerPool);
+                console.log('[WorkerPoolManager] Connected worker pool to satellite engine');
+            }
+            
+        } catch (error) {
+            console.warn('[WorkerPoolManager] Failed to initialize unified worker pool:', error);
+            this.workersSupported = false;
+            this.satelliteWorkerPool = null;
+            throw error;
+        }
+    }
+
+    /**
+     * Update physics state in unified worker pool
+     */
+    async updateWorkersPhysicsState(physicsIntegration) {
         if (!physicsIntegration || !physicsIntegration.physicsEngine) {
             console.warn('[WorkerPoolManager] Cannot update workers - no physics integration');
-            return;
+            return false;
         }
 
         const state = physicsIntegration.getSimulationState();
         if (!state || !state.bodies) {
             console.warn('[WorkerPoolManager] Cannot update workers - no simulation state');
-            return;
+            return false;
         }
 
         const simplifiedBodies = {};
@@ -81,7 +144,7 @@ export class WorkerPoolManager {
             }
 
             simplifiedBodies[id] = {
-                naif: parseInt(id),
+                naifId: parseInt(id),
                 position: body.position.toArray ? body.position.toArray() : body.position,
                 velocity: body.velocity.toArray ? body.velocity.toArray() : body.velocity,
                 mass: body.mass,
@@ -96,81 +159,110 @@ export class WorkerPoolManager {
             };
         }
 
-        // Store for fallback and send to all workers with current simulation time
+        // Store for fallback
         this.physicsState = {
             bodies: simplifiedBodies,
             hierarchy: state.hierarchy || null,
-            currentTime: physicsIntegration.physicsEngine?.simulationTime?.getTime() || Date.now()
+            currentTime: physicsIntegration.physicsEngine?.simulationTime?.getTime() || Date.now(),
+            timestamp: Date.now()
         };
         
+        console.log(`[WorkerPoolManager] Updating workers with ${Object.keys(simplifiedBodies).length} physics bodies`);
         
-        this.workers.forEach(worker => {
-            worker.postMessage({
-                type: 'updatePhysicsState',
-                data: this.physicsState
-            });
-        });
+        // Update unified worker pool if available (but don't initialize just for physics state updates)
+        if (this.satelliteWorkerPool && this._workerPoolInitialized && this.workersSupported) {
+            try {
+                await this.satelliteWorkerPool.updateWorkersPhysicsState({
+                    deltaTime: 0.05, // Default timestep
+                    timeWarp: 1,
+                    simulationTime: new Date(this.physicsState.currentTime).toISOString(),
+                    bodies: simplifiedBodies
+                });
+                console.log(`[WorkerPoolManager] Successfully updated worker pool physics state`);
+                return true;
+            } catch (error) {
+                console.error('[WorkerPoolManager] Failed to update worker pool physics state:', error);
+                return false;
+            }
+        } else {
+            console.warn('[WorkerPoolManager] Worker pool not available for physics state update');
+            return false;
+        }
     }
 
     /**
-     * Start propagation job
+     * Start propagation job using unified worker pool
      */
-    startPropagationJob(params, messageHandler) {
+    async startPropagationJob(params, messageHandler) {
         
         // Cancel existing job but preserve any partial results
         this.cancelJob(params.satelliteId, true);
 
+        // Ensure worker pool is initialized when needed
+        const workerPoolReady = await this._ensureWorkerPoolInitialized();
+
         // Check if workers are supported
-        if (!this.workersSupported || this.workerPool.length === 0) {
+        if (!this.workersSupported || !workerPoolReady || !this.satelliteWorkerPool) {
             this._runMainThreadFallback(params, messageHandler);
             return true;
         }
 
-        // Get available worker
-        const worker = this.workerPool.pop();
-        if (!worker) {
-            // Use main thread fallback
-            this._runMainThreadFallback(params, messageHandler);
-            return true;
-        }
-        
-        // Bind message handlers with proper context
-        const boundHandler = this._handleWorkerMessage.bind(this);
-        worker.onmessage = boundHandler;
-        worker.onerror = this._handleWorkerError.bind(this);
+        try {
+            // Track active job
+            this.activeJobs.set(params.satelliteId, {
+                params,
+                points: params.existingPoints || [], // Start with existing points if extending
+                startTime: Date.now(),
+                messageHandler
+            });
 
-        // Track active job
-        this.activeJobs.set(params.satelliteId, {
-            worker,
-            params,
-            points: params.existingPoints || [], // Start with existing points if extending
-            startTime: Date.now(),
-            messageHandler
-        });
-
-        // Send propagation request with satellite properties for drag calculation
-        worker.postMessage({
-            type: 'propagate',
-            data: {
-                satelliteId: params.satelliteId,
+            // Prepare satellite data for unified worker pool
+            const satelliteData = {
+                id: params.satelliteId,
                 position: params.satellite.position,
                 velocity: params.satellite.velocity,
                 centralBodyNaifId: params.satellite.centralBodyNaifId,
-                duration: params.duration,
-                timeStep: params.timeStep,
-                startTime: params.startTime || 0,
-                // Include satellite properties for accurate drag calculation
                 mass: params.satellite.mass,
                 crossSectionalArea: params.satellite.crossSectionalArea,
                 dragCoefficient: params.satellite.dragCoefficient,
-                // Enable solar system propagation for hyperbolic/parabolic orbits that may leave planetary SOI
-                propagateSolarSystem: params.orbitType === 'hyperbolic' || params.orbitType === 'parabolic',
-                // Include maneuver nodes for maneuver-aware propagation
-                maneuverNodes: params.maneuverNodes || []
-            }
-        });
+                ballisticCoefficient: params.satellite.ballisticCoefficient
+            };
 
-        return true;
+            // Get current simulation time (if available) or use current time
+            const currentSimTime = this.physicsState?.simulationTime || new Date();
+            const startTimeSeconds = currentSimTime instanceof Date ? 
+                currentSimTime.getTime() / 1000 : 
+                new Date(currentSimTime).getTime() / 1000;
+
+            // Use unified worker pool for orbit propagation
+            const result = await this.satelliteWorkerPool.propagateOrbit(satelliteData, {
+                duration: params.duration,
+                timeStep: params.timeStep,
+                startTime: startTimeSeconds, // Use current simulation time
+                maxPoints: params.maxPoints,
+                includeJ2: true,
+                includeDrag: true,
+                includeThirdBody: true,
+                maneuverNodes: params.maneuverNodes || []
+            });
+
+            // Handle successful result
+            const job = this.activeJobs.get(params.satelliteId);
+            if (job && messageHandler) {
+                messageHandler('complete', params.satelliteId, result.points, params, result.soiTransitions);
+            }
+            this.activeJobs.delete(params.satelliteId);
+
+            return true;
+
+        } catch (error) {
+            console.error('[WorkerPoolManager] Propagation job failed:', error);
+            this.cancelJob(params.satelliteId);
+            
+            // Fall back to main thread
+            this._runMainThreadFallback(params, messageHandler);
+            return false;
+        }
     }
 
     /**
@@ -184,143 +276,24 @@ export class WorkerPoolManager {
                 job.messageHandler('partial', satelliteId, job.points, job.params);
             }
 
-            job.worker.postMessage({ type: 'cancel' });
-            this.workerPool.push(job.worker);
+            // Note: Unified worker pool handles cancellation internally
             this.activeJobs.delete(satelliteId);
         }
     }
 
     /**
-     * Handle worker messages
+     * Handle worker messages (legacy - now handled by unified worker pool)
      */
     _handleWorkerMessage(event) {
-        try {
-            const { type, satelliteId, points, isComplete, soiTransitions } = event.data;
-            const job = this.activeJobs.get(satelliteId);
-            if (!job) {
-                // For 'complete' messages, this is normal since the job may have been cleaned up by 'chunk' with isComplete
-                // Also ignore warnings for maneuver preview jobs which are temporary
-                if (type !== 'complete' && !satelliteId?.includes('maneuver_preview')) {
-                    console.warn(`[WorkerPoolManager] No active job found for satellite ${satelliteId}`);
-                }
-                return;
-            }
-
-            switch (type) {
-            case 'chunk':
-                // Accumulate points
-                job.points.push(...points);
-                // Also accumulate SOI transitions
-                if (!job.soiTransitions) job.soiTransitions = [];
-                if (soiTransitions && soiTransitions.length > 0) {
-                    job.soiTransitions.push(...soiTransitions);
-                }
-                
-                // Notify message handler
-                if (job.messageHandler) {
-                    job.messageHandler('chunk', satelliteId, job.points, job.params, isComplete, job.soiTransitions);
-                }
-
-                if (isComplete) {
-                    // Return worker to pool
-                    this.workerPool.push(job.worker);
-                    this.activeJobs.delete(satelliteId);
-                }
-                break;
-
-            case 'complete':
-                // Job completed - do nothing here since we already handled cleanup in 'chunk' with isComplete
-                break;
-
-            case 'error':
-                console.error(`Orbit propagation error for satellite ${satelliteId}:`, event.data.error);
-                if (job.messageHandler) {
-                    job.messageHandler('error', satelliteId, null, job.params, false, null, event.data.error);
-                }
-                // Don't reuse worker after error - replace it instead
-                this._replaceCorruptedWorker(job.worker);
-                this.activeJobs.delete(satelliteId);
-                break;
-            }
-        
-        } catch (error) {
-            console.error('[WorkerPoolManager] ERROR in message handling:', error);
-            console.error('[WorkerPoolManager] Event data:', event.data);
-        }
+        // This method is now largely unused as the unified worker pool handles messaging internally
+        console.warn('[WorkerPoolManager] Legacy worker message received:', event.data);
     }
 
     /**
-     * Handle worker errors
+     * Handle worker errors (legacy - now handled by unified worker pool)
      */
     _handleWorkerError(error) {
-        console.error('Orbit propagation worker error:', error);
-
-        // Find the corrupted worker and replace it
-        const corruptedWorker = error.target || error.currentTarget;
-        if (corruptedWorker) {
-            this._replaceCorruptedWorker(corruptedWorker);
-        }
-    }
-
-    /**
-     * Replace a corrupted worker with a new one
-     */
-    _replaceCorruptedWorker(corruptedWorker) {
-        // Find and remove corrupted worker from workers array
-        const workerIndex = this.workers.findIndex(w => w === corruptedWorker);
-        if (workerIndex !== -1) {
-            this.workers.splice(workerIndex, 1);
-        }
-
-        // Remove from pool if present
-        const poolIndex = this.workerPool.findIndex(w => w === corruptedWorker);
-        if (poolIndex !== -1) {
-            this.workerPool.splice(poolIndex, 1);
-        }
-
-        // Clean up any active jobs using this worker
-        for (const [satelliteId, job] of this.activeJobs.entries()) {
-            if (job.worker === corruptedWorker) {
-                // Notify handler of failure
-                if (job.messageHandler) {
-                    job.messageHandler('error', satelliteId, null, job.params, false, null, 'Worker terminated due to error');
-                }
-                this.activeJobs.delete(satelliteId);
-            }
-        }
-
-        // Terminate the corrupted worker
-        try {
-            corruptedWorker.terminate();
-        } catch (e) {
-            console.warn('Failed to terminate corrupted worker:', e);
-        }
-
-        // Create replacement worker if we're under the max count
-        if (this.workers.length < this.maxWorkers) {
-            this._createReplacementWorker();
-        }
-    }
-
-    /**
-     * Create a replacement worker
-     */
-    _createReplacementWorker() {
-        try {
-            const worker = new Worker(
-                new URL('../physics/workers/orbitPropagationWorker.js', import.meta.url),
-                { type: 'module' }
-            );
-
-            worker.onmessage = this._handleWorkerMessage.bind(this);
-            worker.onerror = this._handleWorkerError.bind(this);
-
-            this.workers.push(worker);
-            this.workerPool.push(worker);
-
-        } catch (error) {
-            console.error('[WorkerPoolManager] Failed to create replacement worker:', error);
-        }
+        console.warn('[WorkerPoolManager] Legacy worker error:', error);
     }
 
     /**
@@ -334,7 +307,7 @@ export class WorkerPoolManager {
      * Check if worker is available
      */
     hasAvailableWorker() {
-        return this.workerPool.length > 0;
+        return this.workersSupported && this.satelliteWorkerPool && this.satelliteWorkerPool.initialized;
     }
 
     /**
@@ -345,13 +318,19 @@ export class WorkerPoolManager {
             // Import the propagation logic
             const { UnifiedSatellitePropagator } = await import('../physics/core/UnifiedSatellitePropagator.js');
             
+            // Get current simulation time (if available) or use current time
+            const currentSimTime = this.physicsState?.simulationTime || new Date();
+            const startTimeSeconds = currentSimTime instanceof Date ? 
+                currentSimTime.getTime() / 1000 : 
+                new Date(currentSimTime).getTime() / 1000;
+            
             const propagationParams = {
                 satellite: {
                     position: params.satellite.position,
                     velocity: params.satellite.velocity,
                     centralBodyNaifId: params.satellite.centralBodyNaifId || 399,
                     mass: params.satellite.mass || 1000,
-                    crossSectionalArea: params.satellite.crossSectionalArea || 10,
+                    crossSectionalArea: params.satellite.crossSectionalArea || 2.0, // Realistic satellite cross-section
                     dragCoefficient: params.satellite.dragCoefficient || 2.2
                 },
                 bodies: this.physicsState?.bodies || {
@@ -366,13 +345,14 @@ export class WorkerPoolManager {
                 },
                 duration: params.duration || 5400,
                 timeStep: params.timeStep || 60,
+                startTime: startTimeSeconds, // Use current simulation time
                 maneuverNodes: params.maneuverNodes || [],
                 includeJ2: params.includeJ2 !== false,
                 includeDrag: params.includeDrag !== false,
                 includeThirdBody: params.includeThirdBody !== false
             };
             
-            const points = UnifiedSatellitePropagator.propagateOrbit(propagationParams);
+            const points = await UnifiedSatellitePropagator.propagateOrbit(propagationParams);
             
             // Simulate chunked response like workers do
             const chunkSize = 100;
@@ -399,28 +379,26 @@ export class WorkerPoolManager {
     }
     
     /**
-     * Dispose of resources
+     * Dispose of unified worker pool
      */
-    dispose() {
-        // Cancel all jobs
-        for (const satelliteId of this.activeJobs.keys()) {
+    async dispose() {
+        // Cancel all active jobs
+        for (const [satelliteId] of this.activeJobs) {
             this.cancelJob(satelliteId);
         }
 
-        // Gracefully terminate workers
-        this.workers.forEach(worker => {
+        // Shutdown unified worker pool
+        if (this.satelliteWorkerPool) {
             try {
-                // Send cleanup signal first
-                worker.postMessage({ type: 'terminate' });
-                // Force termination after a brief delay to allow cleanup
-                setTimeout(() => worker.terminate(), 10);
-            } catch {
-                // If worker is already terminated, just call terminate
-                worker.terminate();
+                await this.satelliteWorkerPool.shutdown();
+            } catch (error) {
+                console.warn('[WorkerPoolManager] Failed to shutdown worker pool:', error);
             }
-        });
-        this.workers = [];
-        this.workerPool = [];
+            this.satelliteWorkerPool = null;
+        }
+
+        // Clear state
         this.activeJobs.clear();
+        this.workersSupported = false;
     }
 }

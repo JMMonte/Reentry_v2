@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useModalState } from './useAppState.js';
 import { SimulationStateManager } from '../managers/SimulationStateManager.js';
 import { defaultSettings } from '../components/ui/controls/DisplayOptions.jsx';
@@ -36,6 +36,11 @@ export function useAppStateConsolidated() {
   const [displaySettings, setDisplaySettings] = useState(() => 
     getInitialDisplaySettings(SimulationStateManager.decodeFromUrlHash())
   );
+
+  // Initialize checked state on mount
+  useEffect(() => {
+    setCheckedInitialState(true);
+  }, [setCheckedInitialState]);
 
   return {
     // Modal state (all modal-related state and togglers)

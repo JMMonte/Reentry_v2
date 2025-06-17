@@ -6,7 +6,7 @@ import PropTypes from 'prop-types'
 import { cn } from "../../lib/utils"
 import { buttonVariants } from "./button"
 
-function Calendar({
+const Calendar = React.memo(function Calendar({
   className,
   classNames,
   showOutsideDays = true,
@@ -57,7 +57,8 @@ function Calendar({
       {...props}
     />
   )
-}
+});
+
 Calendar.displayName = "Calendar"
 
 Calendar.propTypes = {

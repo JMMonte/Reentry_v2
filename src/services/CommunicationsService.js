@@ -418,7 +418,7 @@ export class CommunicationsService extends EventEmitter {
     }
     
     _startDataTransferSimulation() {
-        // Simulate data transfers every second
+        // Simulate data transfers every 10 seconds (reduced from 1s to prevent CPU burn)
         this._dataTransferInterval = setInterval(() => {
             if (!this._enabled) return;
             
@@ -457,7 +457,7 @@ export class CommunicationsService extends EventEmitter {
             
             // Emit update event
             this.emit('dataTransfersUpdated');
-        }, 1000);
+        }, 10000);
     }
     
     /**

@@ -1,9 +1,7 @@
 // Satellite.js
 import * as THREE from 'three';
-import { ApsisVisualizer } from '../planet/ApsisVisualizer.js';
 import { SatelliteVisualizer } from './SatelliteVisualizer.js';
-import { GroundtrackPath } from '../../services/GroundtrackPath.js';
-// ManeuverVisualizationManager removed - now using UnifiedManeuverVisualizer
+import { SatelliteVectorVisualizer } from './SatelliteVectorVisualizer.js';
 import { createManeuverNodeDTO } from '../../types/DataTransferObjects.js';
 
 /**
@@ -57,9 +55,13 @@ export class Satellite {
         
         this._initVisuals();
         
-        // If we have an initial position, set it on the mesh
+        // If we have an initial position, set it on the mesh and vector visualizer
         if (position) {
             this.visualizer.mesh.position.copy(this.position);
+            // Also position the vector visualizer at the same location
+            if (this.vectorVisualizer) {
+                this.vectorVisualizer.group.position.copy(this.position);
+            }
         }
         
         this.maneuverNodes = [];
@@ -70,44 +72,47 @@ export class Satellite {
         // Listen for maneuver events from physics engine
         this._setupManeuverEventListeners();
         
-        // Request orbit update from new orbit manager after a short delay
-        // to ensure physics engine has the satellite data
-        if (this.app3d?.satelliteOrbitManager) {
-            this._orbitUpdateTimeout = setTimeout(() => {
-                this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
-                this._orbitUpdateTimeout = null;
-            }, 100);
-        }
+        // Orbit visualization handled by physics streaming system (OrbitStreamer → orbitStreamUpdate events)
     }
 
     _initVisuals() {
         this.visualizer = new SatelliteVisualizer(this.color, undefined, this.app3d);
+        
+        // Initialize vector visualizer
+        this.vectorVisualizer = new SatelliteVectorVisualizer({
+            visible: this.app3d.getDisplaySetting('showSatVectors') || false,
+            baseLength: 25,
+            satelliteId: this.id,
+            labelManager: this.app3d.labelManager,
+            colors: {
+                velocity: 0x00ff00,
+                totalAccel: 0xff0000,
+                gravity: 0xffff00,
+                j2: 0xff8800,
+                drag: 0x00ffff
+            }
+        });
+        
         // Get orbit group using Planet class getter method
         const orbitGroup = this.planetConfig?.getOrbitGroup?.() || this.planetConfig?.orbitGroup;
         if (orbitGroup) {
             // Add to orbitGroup so satellite moves in inertial space relative to planet
             orbitGroup.add(this.visualizer.mesh);
+            // Add vector visualizer to same parent
+            this.vectorVisualizer.addToParent(orbitGroup);
         } else {
             this.visualizer.addToScene(this.scene);
+            // Add vector visualizer to scene if no orbit group
+            this.vectorVisualizer.addToParent(this.scene);
             console.warn(`[Satellite] Added mesh for satellite ${this.id} directly to scene (no valid planetConfig)`, this.visualizer.mesh);
         }
-        // Skip old orbit path - using new SatelliteOrbitManager instead
-        // this.orbitPath = new OrbitPath(this.color);
-        // this.scene.add(this.orbitPath.orbitLine);
-        // this.orbitPath.orbitLine.visible = this.app3d.getDisplaySetting('showOrbits');
-        // Add apsis visualizer to the same parent as satellite mesh
-        const apsisParent = orbitGroup || this.scene;
-        this.apsisVisualizer = new ApsisVisualizer(apsisParent, this.color);
-        this.apsisVisualizer.setVisible(
-            this.app3d.getDisplaySetting('showOrbits') && 
-            this.app3d.getDisplaySetting('showApsis')
-        );
-        this.groundTrackPath = new GroundtrackPath();
+        
+        // Orbit visualization handled by centralized SimpleSatelliteOrbitVisualizer
     }
 
     /**
      * Update visuals from the latest physics state.
-     * @param {Object} satState - { position, velocity, acceleration, ... }
+     * @param {Object} satState - { position, velocity, acceleration, color, name, centralBodyNaifId, ... }
      */
     updateVisualsFromState(satState) {
         if (!this.visualizer?.mesh || !satState?.position) return;
@@ -141,18 +146,7 @@ export class Satellite {
                 console.error(`[Satellite] Invalid velocity values for satellite ${this.id}:`, satState.velocity);
                 return;
             }
-            
-            // Note: Velocity validation should be handled by physics engine
-            // This UI component should only handle valid data from physics layer
         }
-        
-        // satState.position is already planet-centric (relative to central body)
-        // Since the mesh is parented to the central body's group, we can use it directly
-        this.visualizer.mesh.position.set(
-            satState.position[0],
-            satState.position[1],
-            satState.position[2]
-        );
         
         // Store old state for comparison
         if (this.position) {
@@ -162,55 +156,90 @@ export class Satellite {
             this._oldVelocity.copy(this.velocity);
         }
         
-        // Update current state - avoid creating new Vector3 if they already exist
+        // Update position state - avoid creating new Vector3 if they already exist
         if (!this.position) {
             this.position = new THREE.Vector3();
         }
         this.position.set(satState.position[0], satState.position[1], satState.position[2]);
         
+        // Update velocity state
+        if (satState.velocity) {
         if (!this.velocity) {
             this.velocity = new THREE.Vector3();
         }
         this.velocity.set(satState.velocity[0], satState.velocity[1], satState.velocity[2]);
+        }
         
-        if (satState.acceleration) {
+        // Update acceleration state
+        if (satState.acceleration && Array.isArray(satState.acceleration) && satState.acceleration.length === 3) {
             if (!this.acceleration) {
                 this.acceleration = new THREE.Vector3();
             }
             this.acceleration.set(satState.acceleration[0], satState.acceleration[1], satState.acceleration[2]);
         }
         
-        // Check if orbit needs update (significant change in state)
-        if (this.app3d?.satelliteOrbitManager && this._oldPosition.lengthSq() > 0) {
-            const posDiff = this.position.distanceTo(this._oldPosition);
-            const velDiff = this.velocity.distanceTo(this._oldVelocity);
+        // Update THREE.js mesh position (critical visual update)
+        // satState.position is already planet-centric (relative to central body)
+        // Since the mesh is parented to the central body's group, we can use it directly
+        this.visualizer.mesh.position.set(
+            satState.position[0],
+            satState.position[1],
+            satState.position[2]
+        );
+        
+        // Update vector visualizer with physics data
+        if (this.vectorVisualizer) {
+            // Position vector visualizer group at the satellite's location
+            this.vectorVisualizer.group.position.set(
+                satState.position[0],
+                satState.position[1],
+                satState.position[2]
+            );
             
-            // Update orbit if position changed by >10km or velocity by >0.1km/s
-            if (posDiff > 10 || velDiff > 0.1) {
-                this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
-            }
+            // Add physics engine reference for body names
+            const physicsEngineRef = this.app3d?.physicsIntegration?.physicsEngine;
+            const satStateWithEngine = { ...satState, _physicsEngine: physicsEngineRef };
+            
+            // Get camera for distance-based scaling
+            const camera = this.app3d?.camera;
+            this.vectorVisualizer.updateFromPhysics(satStateWithEngine, camera);
         }
+        
+        // Update other properties (color, name, central body)
+        if (satState.color !== undefined && satState.color !== this.color) {
+            this.setColor(satState.color, true); // fromPhysicsUpdate = true to prevent recursion
+        }
+        
+        if (satState.name !== undefined && satState.name !== this.name) {
+            this.name = satState.name;
+        }
+
+        // Handle SOI transitions (central body changes)
+        if (satState.centralBodyNaifId !== undefined && satState.centralBodyNaifId !== this.centralBodyNaifId) {
+            this.centralBodyNaifId = satState.centralBodyNaifId;
+            this.setCentralBody(satState.centralBodyNaifId);
+        }
+        
+        // Orbit updates handled by physics streaming system (OrbitStreamer → orbitStreamUpdate events)
     }
 
-
     setVisible(v) {
-        const showOrbit = v && this.app3d.getDisplaySetting('showOrbits');
-        const showApsis = showOrbit && this.app3d.getDisplaySetting('showApsis');
+        const showVectors = v && this.app3d.getDisplaySetting('showSatVectors');
+        
         this.visualizer.setVisible(v);
-        // Orbit visibility handled by SatelliteOrbitManager
-        this.apsisVisualizer.setVisible(showApsis);
+        // All orbit visibility handled by centralized SimpleSatelliteOrbitVisualizer
+        
+        // Update vector visualizer visibility
+        if (this.vectorVisualizer) {
+            this.vectorVisualizer.setVisible(showVectors);
+        }
     }
 
     setColor(c, fromPhysicsUpdate = false) {
         this.color = c;
         this.visualizer.setColor(c);
         
-        // Update apsis visualizer color to match satellite
-        if (this.apsisVisualizer) {
-            this.apsisVisualizer.updateColor(c);
-        }
-        
-        // Update orbit color in new manager
+        // Update orbit color in centralized orbit manager
         if (this.app3d?.satelliteOrbitManager) {
             this.app3d.satelliteOrbitManager.updateSatelliteColor(this.id, c);
         }
@@ -242,16 +271,15 @@ export class Satellite {
         }
         this.visualizer?.dispose();
         
-        // Remove orbit from new manager
+        // Remove vector visualizer
+        this.vectorVisualizer?.dispose();
+        
+        // Remove orbit from centralized manager
         if (this.app3d?.satelliteOrbitManager) {
-            this.app3d.satelliteOrbitManager.removeSatelliteOrbit(this.id);
+            this.app3d.satelliteOrbitManager.removeOrbit(this.id);
         }
         
-        // Remove ground track
-        this.groundTrackPath?.dispose();
-        
-        // Remove apsis visualizer
-        this.apsisVisualizer?.dispose();
+        // Ground track cleanup handled by centralized system
         
         // Maneuver visualizations cleaned up by UnifiedManeuverVisualizer
         const visualizer = this.app3d?.maneuverVisualizer;
@@ -316,10 +344,7 @@ export class Satellite {
         
         this._onManeuverExecuted = (event) => {
             if (event.detail.satelliteId !== this.id) return;
-            // Update orbit visualization after maneuver
-            if (this.app3d?.satelliteOrbitManager) {
-                this.app3d.satelliteOrbitManager.updateSatelliteOrbit(this.id);
-            }
+            // Orbit updates handled by physics streaming system after maneuver execution
         };
         
         window.addEventListener('maneuverNodeAdded', this._onManeuverAdded);

@@ -224,46 +224,60 @@ export class CommunicationSubsystem extends SatelliteSubsystem {
     findCommunicationTargets() {
         const targets = [];
 
-        // Get reference to physics engine from the subsystem manager
+        // Get physics engine reference
         const physicsEngine = this.getPhysicsEngine();
-        if (!physicsEngine) {
-            return targets;
-        }
-
-        // Find other satellites
-        if (physicsEngine.satellites) {
+        
+        if (physicsEngine && physicsEngine.satellites) {
+            // Add other satellites as potential targets
             physicsEngine.satellites.forEach((targetSat, targetId) => {
-                // Don't communicate with self
-                if (targetId === this.satelliteId) return;
-
-                // Check if target has communication capability
-                const targetComms = physicsEngine.subsystemManager?.getSubsystem(targetId, 'communication');
-                if (!targetComms) return;
-
-                // Check if target has valid position data
-                if (!targetSat.position) {
-                    console.warn(`[CommunicationSubsystem] Target satellite ${targetId} has no position data`);
-                    return;
+                if (targetId !== this.satelliteId && targetSat.position) {
+                    targets.push({
+                        id: targetId,
+                        name: targetSat.name || `Satellite ${targetId}`,
+                        type: 'satellite',
+                        position: targetSat.position.toArray ? targetSat.position.toArray() : targetSat.position,
+                        antennaGain: targetSat.antennaGain || 0, // dBi
+                        receiverSensitivity: targetSat.receiverSensitivity || -100, // dBm
+                        centralBodyNaifId: targetSat.centralBodyNaifId
+                    });
                 }
-
-                const targetPosition = targetSat.position.toArray ? targetSat.position.toArray() : targetSat.position;
-                if (!targetPosition || !Array.isArray(targetPosition) || targetPosition.length < 3) {
-                    console.warn(`[CommunicationSubsystem] Target satellite ${targetId} has invalid position data:`, targetPosition);
-                    return;
-                }
-
-                targets.push({
-                    id: targetId,
-                    type: 'satellite',
-                    position: targetPosition,
-                    antennaGain: targetComms.config?.antennaGain || 0,
-                    centralBodyNaifId: targetSat.centralBodyNaifId
-                });
             });
         }
 
-        // TODO: Add ground stations from configuration
-        // This could be integrated later with ground station data
+        // Get ground stations from physics engine or configuration
+        if (physicsEngine && physicsEngine.groundStations) {
+            // Add ground stations from physics engine
+            Object.values(physicsEngine.groundStations).forEach(station => {
+                if (station.position && station.config) {
+                    targets.push({
+                        id: station.id,
+                        name: station.name,
+                        type: 'ground_station',
+                        position: station.position,
+                        antennaGain: station.config.antennaGain || 15.0,
+                        receiverSensitivity: station.config.receiverSensitivity || -120, // dBm
+                        centralBodyNaifId: station.centralBodyNaifId || 399 // Earth by default
+                    });
+                }
+            });
+        }
+
+        // Add ground stations from app configuration if available
+        if (typeof window !== 'undefined' && window.app3d?.groundStations) {
+            window.app3d.groundStations.forEach(station => {
+                if (station.position && station.active !== false) {
+                    targets.push({
+                        id: station.id,
+                        name: station.name,
+                        type: 'ground_station',
+                        position: station.position,
+                        antennaGain: station.antennaGain || 15.0,
+                        receiverSensitivity: station.receiverSensitivity || -120, // dBm
+                        centralBodyNaifId: station.centralBodyNaifId || 399
+                    });
+                }
+            });
+        }
 
         return targets;
     }

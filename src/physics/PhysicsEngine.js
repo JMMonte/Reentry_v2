@@ -6,8 +6,11 @@ import { PhysicsConstants } from './core/PhysicsConstants.js';
 import { SubsystemManager } from './subsystems/SubsystemManager.js';
 import { SatelliteEngine } from './engines/SatelliteEngine.js';
 import { CelestialBodyEngine } from './engines/CelestialBodyEngine.js';
+import { PassPredictionEngine } from './engines/PassPredictionEngine.js';
+import { UnifiedSatellitePropagator } from './core/UnifiedSatellitePropagator.js';
 import * as PhysicsAPI from './PhysicsAPI.js';
-import { PropagationMetrics } from './utils/PropagationMetrics.js';
+import { GroundTrackProjectionService } from './services/GroundTrackProjectionService.js';
+// PropagationMetrics import removed - using stub data for performance optimization
 
 
 /**
@@ -39,6 +42,9 @@ export class PhysicsEngine {
         // Celestial body engine - handles all celestial body operations
         this.celestialBodyEngine = new CelestialBodyEngine();
 
+        // Pass prediction engine - handles POI pass calculations
+        this.passPredictionEngine = new PassPredictionEngine(this);
+
         // Delegate storage to respective engines for backward compatibility
         this.satellites = this.satelliteEngine.satellites;
         this.maneuverNodes = this.satelliteEngine.maneuverNodes;
@@ -49,6 +55,11 @@ export class PhysicsEngine {
 
         // Subsystem manager for physics-based satellite subsystems
         this.subsystemManager = null;
+
+        this.groundTrackProjectionService = new GroundTrackProjectionService();
+
+        // Expose methods to window for React components
+        this._exposePerformanceMetrics();
     }
 
     /**
@@ -105,15 +116,14 @@ export class PhysicsEngine {
             console.warn(`[PhysicsEngine] Very large deltaTime in step(): ${actualDeltaTime} seconds (${(actualDeltaTime / 86400).toFixed(2)} days)`);
         }
 
-        // Don't update simulation time here - it's already been set by setTime()
-        // this.simulationTime = new Date(this.simulationTime.getTime() + actualDeltaTime * 1000);
-
-        // Update all body positions and orientations
-        // Note: Body positions are already updated by setTime(), so we skip this
-        // await this._updateAllBodies();
-
-        // Update barycenters are already updated by setTime()
-        // this._updateBarycenters();
+        // Advance simulation time by deltaTime * timeWarp
+        const timeAdvanceMs = actualDeltaTime * timeWarp * 1000;
+        this.simulationTime = new Date(this.simulationTime.getTime() + timeAdvanceMs);
+        
+        // Update all body positions for the new simulation time
+        const result = await this.celestialBodyEngine.updateAllBodies(this.simulationTime);
+        this.bodies = result.bodies;
+        this.barycenters = result.barycenters;
 
         // Only integrate satellite dynamics - delegate to SatelliteEngine
         await this.satelliteEngine.integrateSatellites(
@@ -128,6 +138,11 @@ export class PhysicsEngine {
         // Update all satellite subsystems
         if (this.subsystemManager) {
             this.subsystemManager.update(actualDeltaTime);
+        }
+
+        // Update pass predictions (centralized calculation)
+        if (this.passPredictionEngine) {
+            this.passPredictionEngine.updatePasses(this.simulationTime);
         }
 
         return {
@@ -156,16 +171,27 @@ export class PhysicsEngine {
      * Get current simulation state
      */
     getSimulationState() {
+        const bodies = this.celestialBodyEngine.getBodyStates();
+        const satellites = this.satelliteEngine.getSatelliteStates(
+            this.bodies, 
+            this.simulationTime, 
+            this.getBodiesForOrbitPropagation.bind(this)
+        );
+
+        // Generate ground track projections for all satellites
+        const groundTracks = this.groundTrackProjectionService.projectSatellitesToGroundTracks(
+            satellites,
+            bodies,
+            this.simulationTime
+        );
+
         return {
             time: this.simulationTime,
-            bodies: this.celestialBodyEngine.getBodyStates(),
-            satellites: this.satelliteEngine.getSatelliteStates(
-                this.bodies, 
-                this.simulationTime, 
-                this.getBodiesForOrbitPropagation.bind(this)
-            ),
+            bodies: bodies,
+            satellites: satellites,
             barycenters: this.celestialBodyEngine.getBarycenterStates(),
-            hierarchy: this.hierarchy?.hierarchy || null
+            hierarchy: this.hierarchy?.hierarchy || null,
+            groundTracks: groundTracks // Add ground track data organized by planet NAIF ID
         };
     }
 
@@ -405,13 +431,6 @@ export class PhysicsEngine {
         );
     }
 
-    /**
-     * Create satellite from orbital elements using consistent physics engine data
-     * This is the centralized, authoritative method for satellite creation from orbital elements
-     * @param {Object} params - Orbital element parameters
-     * @param {number} centralBodyNaifId - NAIF ID of the central body
-     * @returns {Object} - { id, position, velocity } in planet-centric inertial coordinates
-     */
     createSatelliteFromOrbitalElements(params, centralBodyNaifId = 399) {
         return this.satelliteEngine.createSatelliteFromOrbitalElements(
             params,
@@ -423,7 +442,64 @@ export class PhysicsEngine {
     }
 
     /**
-     * Expose performance metrics to window for React components
+     * Propagate orbit for a satellite (synchronous fallback for frontend)
+     * This provides a centralized physics API for orbit propagation without workers
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} options - Propagation options
+     * @returns {Array} Orbit points
+     */
+    propagateOrbit(satelliteId, options = {}) {
+        const satellite = this.satelliteEngine.satellites.get(satelliteId);
+        if (!satellite) {
+            throw new Error(`Satellite ${satelliteId} not found`);
+        }
+
+        // Convert bodies to format expected by UnifiedSatellitePropagator
+        const bodies = {};
+        for (const [naifId, body] of Object.entries(this.bodies)) {
+            bodies[naifId] = {
+                naifId: parseInt(naifId),
+                position: body.position.toArray(),
+                velocity: body.velocity.toArray(),
+                mass: body.mass,
+                radius: body.radius,
+                GM: body.GM,
+                J2: body.J2,
+                type: body.type
+            };
+        }
+
+        // Get current simulation time
+        const currentSimTime = this.simulationTime || new Date();
+        const startTimeSeconds = currentSimTime.getTime() / 1000; // Convert to seconds since epoch
+
+        const propagationParams = {
+            satellite: {
+                position: satellite.position.toArray(),
+                velocity: satellite.velocity.toArray(),
+                centralBodyNaifId: satellite.centralBodyNaifId,
+                mass: satellite.mass,
+                crossSectionalArea: satellite.crossSectionalArea,
+                dragCoefficient: satellite.dragCoefficient
+            },
+            bodies,
+            duration: options.duration || 5400,
+            timeStep: options.timeStep || 60,
+            startTime: startTimeSeconds, // Use current simulation time
+            maxPoints: options.maxPoints,
+            includeJ2: options.includeJ2 !== false,
+            includeDrag: options.includeDrag !== false,
+            includeThirdBody: options.includeThirdBody !== false,
+            method: options.method || this.satelliteEngine.getIntegrationMethod(),
+            perturbationScale: options.perturbationScale || 1.0
+        };
+
+        // Use UnifiedSatellitePropagator directly (physics layer can do this)
+        return UnifiedSatellitePropagator.propagateOrbit(propagationParams);
+    }
+
+    /**
+     * Expose essential API to window for React components
      * @private
      */
     _exposePerformanceMetrics() {
@@ -432,27 +508,12 @@ export class PhysicsEngine {
                 window.physicsAPI = {};
             }
             
-            // Expose satellite performance metrics method
-            window.physicsAPI.getSatellitePerformanceMetrics = (satelliteId) => {
-                return PropagationMetrics.getSatelliteMetrics(satelliteId);
-            };
-            
-            // Expose global performance metrics method
-            window.physicsAPI.getGlobalPerformanceMetrics = () => {
-                return PropagationMetrics.getGlobalMetrics();
-            };
-            
-            // Expose worker pool metrics
-            window.physicsAPI.getWorkerPoolMetrics = () => {
-                return this.satelliteEngine.getWorkerMetrics();
-            };
-            
-            // Expose worker control methods
+            // Expose worker control methods (essential functionality)
             window.physicsAPI.setUseWorkers = (useWorkers) => {
                 this.satelliteEngine.setUseWorkers(useWorkers);
             };
             
-            // Expose debug methods
+            // Expose debug methods (essential for debugging)
             window.physicsAPI.debugCelestialBodies = () => {
                 return {
                     bodiesCount: Object.keys(this.bodies).length,

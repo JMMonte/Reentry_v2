@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WebGLLabels } from '../../utils/WebGLLabels.js';
+import { RENDER_ORDER } from './PlanetConstants.js';
+import { objectPool } from '../../utils/ObjectPool.js';
 
 /**
  * Adds graticules, borders and point‐of‐interest billboards to a planet mesh.
@@ -19,16 +21,23 @@ export class PlanetSurface {
      *   @param {number} [opts.markerSize=1]           — radius of the marker circle
      *   @param {number} [opts.fadeStartPixelSize=50]   — Default: fade starts when planet apparent height < 50px
      *   @param {number} [opts.fadeEndPixelSize=15]      — Default: fully faded when planet apparent height < 15px
+     *   @param {number} [opts.atmosphereRenderOrder=100] — Render order for atmosphere
+     *   @param {object} [opts.renderOrderOverrides={}] — Override render order values
+     * @param {LabelManager} [labelManager] — optional LabelManager instance
+     * @param {DisplaySettingsManager} [displaySettingsManager] — optional DisplaySettingsManager instance
      */
     constructor(
         parentMesh,
         planetRadius,
         countryGeo,
         stateGeo,
-        opts = {}
+        opts = {},
+        labelManager = null,
+        displaySettingsManager = null
     ) {
-        // Attach primitives directly to the planet mesh so its scale (oblateness) is applied
         this.root = parentMesh;
+        this.labelManager = labelManager;
+        this.displaySettingsManager = displaySettingsManager;
 
         // Create LOD group
         this.lod = new THREE.LOD();
@@ -43,10 +52,14 @@ export class PlanetSurface {
             fadeStartPixelSize = 50,
             fadeEndPixelSize = 15,
             polarScale = 1.0,
-            poiRenderOrder = 3
+            poiRenderOrder = 3,
+            renderOrderOverrides = {},
+            planetName = 'unknown'
         } = opts;
         this.polarScale = polarScale;
         this.poiRenderOrder = poiRenderOrder;
+        this.planetName = planetName;
+        
         // Assign properties
         this.planetRadius = planetRadius;
         this.heightOffset = heightOffset;
@@ -57,6 +70,10 @@ export class PlanetSurface {
         this.fadeEndPixelSize = fadeEndPixelSize;
         this.countryGeo = countryGeo;
         this.stateGeo = stateGeo;
+        this.renderOrderOverrides = renderOrderOverrides;
+
+        // Set up label category for this planet's POI labels
+        this.labelCategory = `poi_labels_${this.planetName.toLowerCase()}`;
 
         /* ---------- shared resources ---------- */
         this.circleTexture = this.#createCircleTexture(circleTextureSize);
@@ -81,6 +98,10 @@ export class PlanetSurface {
             latitudeMinor: lineMat(0x5d6d7d),  // Same neutral gray-blue
             countryLine: lineMat(0x7788aa),    // Light gray-blue for countries
             stateLine: lineMat(0x8899bb),      // Very light gray-blue for states
+            leaderLine: new THREE.LineBasicMaterial({
+                color: 0x5d6d7d, transparent: true, opacity: 1.0,
+                depthWrite: false, linewidth: 2
+            }),
             cityPoint: pointMat(0x00a5ff),
             airportPoint: pointMat(0xff0000),
             spaceportPoint: pointMat(0xffd700),
@@ -100,6 +121,12 @@ export class PlanetSurface {
 
         // WebGL labels for POIs
         this.labels = {
+            cities: [], airports: [], spaceports: [],
+            groundStations: [], observatories: [], missions: []
+        };
+
+        // Leader lines connecting POIs to labels
+        this.leaders = {
             cities: [], airports: [], spaceports: [],
             groundStations: [], observatories: [], missions: []
         };
@@ -131,11 +158,19 @@ export class PlanetSurface {
             states: true       // Default state for state borders
         };
 
-        // Internal state for visibility toggles
-        this.pointVisibility = {
-            cities: true, airports: true, spaceports: true,
-            groundStations: true, observatories: true, missions: true
+        // Internal state for visibility toggles - sync with display settings if available
+        this.pointVisibility = this.#getInitialPOIVisibility();
+
+        // Memoization for POI visibility updates
+        this._poiVisibilityCache = {
+            lastOpacity: -1,
+            lastVisibilitySettings: null,
+            needsUpdate: true
         };
+
+        // Camera tracking for leader line updates
+        this.lastCameraDistance = 0;
+        this.leaderUpdateThreshold = 0.05; // 5% distance change triggers update
 
         // Animation state for the entire surface
         this.fadeAnimation = {
@@ -146,6 +181,120 @@ export class PlanetSurface {
             animating: false
         };
         this.animationDuration = 300; // 300ms fade duration
+    }
+
+    /**
+     * Get initial POI visibility from display settings or use defaults
+     * @private
+     */
+    #getInitialPOIVisibility() {
+        if (this.displaySettingsManager && this.displaySettingsManager.getSetting) {
+            return {
+                cities: this.displaySettingsManager.getSetting('showCities') ?? false,
+                airports: this.displaySettingsManager.getSetting('showAirports') ?? false,
+                spaceports: this.displaySettingsManager.getSetting('showSpaceports') ?? false,
+                groundStations: this.displaySettingsManager.getSetting('showGroundStations') ?? false,
+                observatories: this.displaySettingsManager.getSetting('showObservatories') ?? false,
+                missions: this.displaySettingsManager.getSetting('showMissions') ?? false
+            };
+        }
+        
+        // Fallback to app defaults (matching DisplayOptions.jsx defaults)
+        return {
+            cities: false,
+            airports: false,
+            spaceports: false,
+            groundStations: false,
+            observatories: false,
+            missions: false
+        };
+    }
+
+    /**
+     * Refresh POI visibility settings from display settings manager
+     * @public
+     */
+    refreshPOIVisibilityFromSettings() {
+        this.pointVisibility = this.#getInitialPOIVisibility();
+        
+        // Mark cache as needing update and force immediate visibility update
+        this._poiVisibilityCache.needsUpdate = true;
+        this._updatePOIVisibilityOptimized(1.0); // Force update with full opacity
+    }
+
+    /**
+     * Centralized, memoized POI visibility update with single-pass efficiency
+     * @private
+     * @param {number} opacity - Global opacity (0-1)
+     */
+    _updatePOIVisibilityOptimized(opacity) {
+        // Create visibility settings hash for memoization
+        const visibilityHash = JSON.stringify(this.pointVisibility);
+        
+        // Check if visibility settings changed (this should trigger updates)
+        const visibilityChanged = this._poiVisibilityCache.lastVisibilitySettings !== visibilityHash;
+        
+        // Check if opacity changed significantly (avoid micro-updates)
+        const opacityChanged = Math.abs(this._poiVisibilityCache.lastOpacity - opacity) > 0.01;
+        
+        // Only update if something meaningful changed or forced update needed
+        if (!this._poiVisibilityCache.needsUpdate && !visibilityChanged && !opacityChanged) {
+            return; // No update needed
+        }
+
+        // Update cache
+        this._poiVisibilityCache.lastOpacity = opacity;
+        this._poiVisibilityCache.lastVisibilitySettings = visibilityHash;
+        this._poiVisibilityCache.needsUpdate = false;
+
+        // Single-pass update for all POI categories
+        Object.keys(this.pointVisibility).forEach(category => {
+            const categoryVisible = this.pointVisibility[category];
+            const finalVisibility = categoryVisible && opacity > 0.01;
+            const leaderOpacity = opacity * 0.8; // Leader lines slightly more transparent
+
+            // Batch update all elements of this category in parallel
+            const [meshes, leaders, labels] = [
+                this.points[category] || [],
+                this.leaders[category] || [],
+                this.labels[category] || []
+            ];
+
+            // Only update visibility if visibility settings changed, otherwise just update opacity
+            if (visibilityChanged || this._poiVisibilityCache.needsUpdate) {
+                // Update both visibility and opacity
+                meshes.forEach(mesh => {
+                    if (mesh.material) mesh.material.opacity = opacity;
+                    mesh.visible = finalVisibility;
+                });
+
+                leaders.forEach(leader => {
+                    if (leader.material) leader.material.opacity = leaderOpacity;
+                    leader.visible = finalVisibility;
+                });
+
+                labels.forEach(sprite => {
+                    if (sprite.material) sprite.material.opacity = opacity;
+                    sprite.visible = finalVisibility;
+                });
+            } else if (opacityChanged) {
+                // Only update opacity, preserve existing visibility state
+                meshes.forEach(mesh => {
+                    if (mesh.material) mesh.material.opacity = opacity;
+                    // Don't change mesh.visible - preserve current state
+                });
+
+                leaders.forEach(leader => {
+                    if (leader.material) leader.material.opacity = leaderOpacity;
+                    // Don't change leader.visible - preserve current state
+                });
+
+                labels.forEach(sprite => {
+                    if (sprite.material) sprite.material.opacity = opacity;
+                    // Don't change sprite.visible - preserve current state
+                });
+            }
+        });
     }
 
     /* ===== graticule lines ===== */
@@ -258,7 +407,6 @@ export class PlanetSurface {
      */
     addInstancedPoints(geojson, material, category) {
         const circleGeom = this.circleGeom;
-        const poiRenderOrder = this.poiRenderOrder ?? 3;
 
         geojson?.features.forEach(feat => {
             const [lon, lat] = feat.geometry.coordinates;
@@ -283,37 +431,69 @@ export class PlanetSurface {
             const normalMatrix = new THREE.Matrix3().getNormalMatrix(this.root.matrixWorld);
             const worldNorm = sphereNorm.applyMatrix3(normalMatrix).normalize();
             mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), worldNorm);
-            mesh.renderOrder = poiRenderOrder;
             mesh.userData = { feature: feat, category };
-            mesh.visible = true;
+            mesh.visible = this.pointVisibility[category]; // Set initial visibility based on display settings
+            mesh.renderOrder = this.renderOrderOverrides.POI ?? RENDER_ORDER.POI;
             this.root.add(mesh);
             this.points[category].push(mesh);
 
-            // Create WebGL label sprite (always faces camera, fixed screen size)
+            // Create leader line from POI to label position
+            const leaderGeom = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(), // POI position (will be updated)
+                new THREE.Vector3()  // Label position (will be updated)
+            ]);
+            const leader = new THREE.Line(leaderGeom, this.materials.leaderLine.clone());
+            leader.frustumCulled = false; // Prevent disappearing at glancing angles
+            leader.userData = { category, parentPOI: mesh, sphereNormal: sphereNorm.clone() };
+            leader.visible = this.pointVisibility[category]; // Set initial visibility based on display settings
+            leader.renderOrder = this.renderOrderOverrides.POI_LEADERS ?? RENDER_ORDER.POI_LEADERS;
+            this.root.add(leader);
+            this.leaders[category].push(leader);
+
+            // Create WebGL label sprite at end of leader line
             const poiName = feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank || `${category}`;
             if (poiName && poiName.trim()) {
-                const labelSprite = WebGLLabels.createLabel(poiName.trim(), {
-                    fontSize: 48,
-                    color: '#ffffff',
-                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                    padding: 16,
-                    sizeAttenuation: false, // constant screen size
-                    transparent: true,
-                    depthWrite: false,
-                    depthTest: true,
-                    renderOrder: Math.max(0, poiRenderOrder - 1)
-                });
+                let labelSprite;
+                
+                if (this.labelManager) {
+                    // Use LabelManager for consistent styling
+                    const label = this.labelManager.createLabel(poiName.trim(), 'POI_LABEL', {
+                        category: this.labelCategory,
+                        position: pos,
+                        visible: this.pointVisibility[category], // Set initial visibility based on display settings
+                        userData: {
+                            parentPOI: mesh,
+                            parentLeader: leader,
+                            feature: feat,
+                            category
+                        }
+                    });
+                    labelSprite = label.sprite;
+                } else {
+                    // Fallback to WebGLLabels
+                    labelSprite = WebGLLabels.createLabel(poiName.trim(), {
+                        fontSize: 48,
+                        color: '#5d6d7d',
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        padding: 16,
+                        sizeAttenuation: false, // constant screen size
+                        transparent: true,
+                        depthWrite: false,
+                        depthTest: true
+                    });
+                    
+                    labelSprite.userData = {
+                        parentPOI: mesh,
+                        parentLeader: leader,
+                        feature: feat,
+                        category
+                    };
+                    labelSprite.renderOrder = this.renderOrderOverrides.POI_LABELS ?? RENDER_ORDER.POI_LABELS;
+                    labelSprite.visible = this.pointVisibility[category]; // Set initial visibility based on display settings
+                }
 
-                // Offset sprite slightly above the POI marker along surface normal
-                const spriteOffset = sphereNorm.clone().multiplyScalar(this.markerSize * 1.5);
-                labelSprite.position.copy(pos).add(spriteOffset);
-
-                // Store quick refs for disposal later
-                labelSprite.userData = {
-                    parentPOI: mesh,
-                    feature: feat,
-                    category
-                };
+                // Initial position (will be updated in updateLeaderLines)
+                labelSprite.position.copy(pos);
 
                 this.root.add(labelSprite);
                 this.labels[category].push(labelSprite);
@@ -386,6 +566,7 @@ export class PlanetSurface {
             const merged = mergeGeometries(this.graticuleGeometries.high);
             const line = new THREE.LineSegments(merged, this.materials.latitudeMajor.clone());
             line.userData.lineType = 'graticule';
+            line.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
             this.detailHigh.add(line);
             this.surfaceLines.push(line);
         }
@@ -393,6 +574,7 @@ export class PlanetSurface {
             const merged = mergeGeometries(this.graticuleGeometries.medium);
             const line = new THREE.LineSegments(merged, this.materials.latitudeMajor.clone());
             line.userData.lineType = 'graticule';
+            line.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
             this.detailMedium.add(line);
             this.surfaceLines.push(line);
         }
@@ -400,6 +582,7 @@ export class PlanetSurface {
             const merged = mergeGeometries(this.graticuleGeometries.low);
             const line = new THREE.LineSegments(merged, this.materials.latitudeMajor.clone());
             line.userData.lineType = 'graticule';
+            line.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
             this.detailLow.add(line);
             this.surfaceLines.push(line);
         }
@@ -409,6 +592,7 @@ export class PlanetSurface {
             const merged = mergeGeometries(this.countryGeometries.high);
             const line = new THREE.LineSegments(merged, this.materials.countryLine.clone());
             line.userData.lineType = 'country';
+            line.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
             this.detailHigh.add(line);
             this.countryBorders.push(line);
         }
@@ -416,6 +600,7 @@ export class PlanetSurface {
             const merged = mergeGeometries(this.countryGeometries.medium);
             const line = new THREE.LineSegments(merged, this.materials.countryLine.clone());
             line.userData.lineType = 'country';
+            line.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
             this.detailMedium.add(line);
             this.countryBorders.push(line);
         }
@@ -425,6 +610,7 @@ export class PlanetSurface {
             const merged = mergeGeometries(this.stateGeometries.high);
             const line = new THREE.LineSegments(merged, this.materials.stateLine.clone());
             line.userData.lineType = 'state';
+            line.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
             this.detailHigh.add(line);
             this.states.push(line);
         }
@@ -432,6 +618,7 @@ export class PlanetSurface {
             const merged = mergeGeometries(this.stateGeometries.medium);
             const line = new THREE.LineSegments(merged, this.materials.stateLine.clone());
             line.userData.lineType = 'state';
+            line.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
             this.detailMedium.add(line);
             this.states.push(line);
         }
@@ -445,116 +632,207 @@ export class PlanetSurface {
     }
 
     /**
+     * Update leader lines and label positions based on camera distance
+     * @param {THREE.Camera} camera
+     */
+    updateLeaderLines(camera) {
+        if (!camera || !this.root?.visible) return;
+
+        const planetWorldPos = objectPool.getVector3();
+        try {
+            this.root.getWorldPosition(planetWorldPos);
+            
+            // Use cached distance for better performance
+            const planetId = this.planetName || 'unknown';
+            let cameraDistance = window.app3d?.distanceCache?.getDistance?.(planetId);
+            
+            // Fallback to direct calculation if cache not available
+            if (!cameraDistance || cameraDistance === 0) {
+                cameraDistance = camera.position.distanceTo(planetWorldPos);
+            }
+
+            // Only update if camera distance changed significantly
+            // BUT always update if this is the first time (lastCameraDistance === 0)
+            const distanceChange = this.lastCameraDistance > 0 ? 
+                Math.abs(cameraDistance - this.lastCameraDistance) / this.lastCameraDistance : 
+                1; // Force update on first call
+            
+            if (distanceChange < this.leaderUpdateThreshold && this.lastCameraDistance > 0) {
+                return;
+            }
+
+            this.lastCameraDistance = cameraDistance;
+
+            // Calculate leader length based on desired screen-space distance
+            // This makes the leader line length define the POI-to-label distance
+            const vFOV = THREE.MathUtils.degToRad(camera.fov);
+            const halfH = window.innerHeight / 2;
+            const targetPixelDistance = 40; // Desired distance in pixels from POI to label
+            const leaderLength = (cameraDistance / (halfH / Math.tan(vFOV / 2))) * targetPixelDistance;
+            
+            // Clamp to reasonable world-space limits
+            const clampedLeaderLength = THREE.MathUtils.clamp(
+                leaderLength,
+                this.planetRadius * 0.001,  // Min: 0.1% of planet radius
+                this.planetRadius * 0.2     // Max: 20% of planet radius
+            );
+
+            // Update all leader lines and their associated labels
+            Object.keys(this.leaders).forEach(category => {
+                this.leaders[category].forEach((leader, index) => {
+                    const poi = leader.userData.parentPOI;
+                    const sphereNorm = leader.userData.sphereNormal;
+                    
+                    if (!poi || !sphereNorm) return;
+
+                    // Update leader line geometry – use pooled vector to avoid allocations
+                    const poiPos = poi.position;
+                    const labelPos = objectPool.getVector3();
+                    try {
+                        labelPos.copy(sphereNorm)
+                            .multiplyScalar(clampedLeaderLength)
+                            .add(poiPos);
+
+                        const positions = leader.geometry.attributes.position;
+                        positions.setXYZ(0, poiPos.x, poiPos.y, poiPos.z);
+                        positions.setXYZ(1, labelPos.x, labelPos.y, labelPos.z);
+                        positions.needsUpdate = true;
+
+                        // Update associated label position to match leader line end
+                        const label = this.labels[category][index];
+                        if (label) {
+                            label.position.copy(labelPos);
+                        }
+                    } finally {
+                        objectPool.releaseVector3(labelPos);
+                    }
+                });
+            });
+        } finally {
+            objectPool.releaseVector3(planetWorldPos);
+        }
+    }
+
+    /**
+     * Force immediate update of leader lines and label positions
+     * Call this after POI creation to ensure proper initial positioning
+     * @param {THREE.Camera} camera
+     */
+    forceUpdateLeaderLines(camera) {
+        if (!camera) return;
+        
+        // Reset lastCameraDistance to force an update
+        const previousDistance = this.lastCameraDistance;
+        this.lastCameraDistance = 0;
+        
+        // Call updateLeaderLines directly (not updateFade) to avoid overriding initial visibility
+        this.updateLeaderLines(camera);
+        
+        // If update didn't happen for some reason, restore previous distance
+        if (this.lastCameraDistance === 0) {
+            this.lastCameraDistance = previousDistance;
+        }
+    }
+
+    /**
      * Update feature opacity based on camera distance.
      * @param {THREE.Camera} camera
      */
     updateFade(camera) {
         if (!camera || !this.root?.visible) return;
 
+        // Update leader lines first
+        this.updateLeaderLines(camera);
+
         // Check if ANY lines are visible - if not, skip calculations
         const anyLinesVisible = this.lineVisibility.surfaceLines ||
             this.lineVisibility.countryBorders ||
             this.lineVisibility.states;
 
-        if (!anyLinesVisible && !Object.values(this.pointVisibility).some(v => v)) {
+        const anyPOIsVisible = Object.values(this.pointVisibility).some(v => v);
+
+        if (!anyLinesVisible && !anyPOIsVisible) {
             this.lod.visible = false;
             return; // Skip all calculations if nothing is visible
         }
 
-        const planetWorldPos = new THREE.Vector3();
-        this.root.getWorldPosition(planetWorldPos);
-        const distance = camera.position.distanceTo(planetWorldPos);
-
-        // Determine target opacity based on distance threshold
-        // Surface features should appear when close enough to see details
-        const fadeThreshold = this.planetRadius * 10;   // Much closer threshold for surface details
-        let targetOpacity = distance < fadeThreshold ? 1 : 0;
-
-        // Check if we need to start a new animation
-        const currentTime = Date.now();
-        if (targetOpacity !== this.fadeAnimation.targetOpacity) {
-            this.fadeAnimation.targetOpacity = targetOpacity;
-            this.fadeAnimation.startOpacity = this.fadeAnimation.currentOpacity;
-            this.fadeAnimation.startTime = currentTime;
-            this.fadeAnimation.animating = true;
-        }
-
-        // Update animation if active
-        if (this.fadeAnimation.animating) {
-            const elapsed = currentTime - this.fadeAnimation.startTime;
-            const progress = Math.min(elapsed / this.animationDuration, 1);
-
-            // Use easing function for smooth animation
-            const eased = this.easeInOutCubic(progress);
-            this.fadeAnimation.currentOpacity = this.fadeAnimation.startOpacity +
-                (this.fadeAnimation.targetOpacity - this.fadeAnimation.startOpacity) * eased;
-
-            if (progress >= 1) {
-                this.fadeAnimation.animating = false;
-                this.fadeAnimation.currentOpacity = this.fadeAnimation.targetOpacity;
+        const planetWorldPos = objectPool.getVector3();
+        try {
+            this.root.getWorldPosition(planetWorldPos);
+            
+            // Use centralized distance cache for massive performance improvement
+            const planetId = this.planetName || 'unknown';
+            let distance = window.app3d?.distanceCache?.getDistance?.(planetId);
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                distance = camera.position.distanceTo(planetWorldPos);
             }
-        }
 
-        // Apply opacity to entire surface
-        const opacity = this.fadeAnimation.currentOpacity;
+            // Determine target opacity based on distance threshold
+            // Surface features should appear when close enough to see details
+            const fadeThreshold = this.planetRadius * 10;   // Much closer threshold for surface details
+            let targetOpacity = distance < fadeThreshold ? 1 : 0;
 
-        // Apply opacity and visibility to lines based on their type
-        [this.detailHigh, this.detailMedium, this.detailLow].forEach(detail => {
-            if (detail) {
-                detail.traverse(obj => {
-                    if ((obj instanceof THREE.Line || obj instanceof THREE.LineSegments) && obj.material) {
-                        const lineType = obj.userData.lineType;
-                        let shouldBeVisible = false;
-
-                        if (lineType === 'graticule') shouldBeVisible = this.lineVisibility.surfaceLines;
-                        else if (lineType === 'country') shouldBeVisible = this.lineVisibility.countryBorders;
-                        else if (lineType === 'state') shouldBeVisible = this.lineVisibility.states;
-
-                        obj.material.opacity = opacity;
-                        obj.visible = shouldBeVisible && opacity > 0.01;
-                    }
-                });
+            // Check if we need to start a new animation
+            const currentTime = Date.now();
+            if (targetOpacity !== this.fadeAnimation.targetOpacity) {
+                this.fadeAnimation.targetOpacity = targetOpacity;
+                this.fadeAnimation.startOpacity = this.fadeAnimation.currentOpacity;
+                this.fadeAnimation.startTime = currentTime;
+                this.fadeAnimation.animating = true;
             }
-        });
 
-        // LOD group is visible if any lines should be shown
-        this.lod.visible = anyLinesVisible && opacity > 0.01;
+            // Update animation if active
+            if (this.fadeAnimation.animating) {
+                const elapsed = currentTime - this.fadeAnimation.startTime;
+                const progress = Math.min(elapsed / this.animationDuration, 1);
 
-        // Apply to POIs (points) based on their individual visibility flags
-        Object.keys(this.points).forEach(cat => {
-            const categoryIsCurrentlyVisible = this.pointVisibility[cat];
-            this.points[cat].forEach(mesh => {
-                if (mesh.material) {
-                    mesh.material.opacity = opacity;
+                // Use easing function for smooth animation
+                const eased = this.easeInOutCubic(progress);
+                this.fadeAnimation.currentOpacity = this.fadeAnimation.startOpacity +
+                    (this.fadeAnimation.targetOpacity - this.fadeAnimation.startOpacity) * eased;
+
+                if (progress >= 1) {
+                    this.fadeAnimation.animating = false;
+                    this.fadeAnimation.currentOpacity = this.fadeAnimation.targetOpacity;
                 }
-                mesh.visible = categoryIsCurrentlyVisible && opacity > 0.01;
+            }
 
-                if (mesh.visible) {
-                    const poiWorldPos = new THREE.Vector3();
-                    mesh.getWorldPosition(poiWorldPos);
-                    const distToPOI = camera.position.distanceTo(poiWorldPos);
+            // Apply opacity to entire surface
+            const opacity = this.fadeAnimation.currentOpacity;
 
-                    // Calculate POI scale based on distance
-                    const vFOV = THREE.MathUtils.degToRad(camera.fov);
-                    const halfH = window.innerHeight / 2;
-                    const pixelSizeTarget = 8;
-                    const poiScale = (distToPOI / (halfH / Math.tan(vFOV / 2))) * pixelSizeTarget;
-                    const minScale = 0.1;
-                    const maxScale = 100;
-                    mesh.scale.set(
-                        THREE.MathUtils.clamp(poiScale, minScale, maxScale),
-                        THREE.MathUtils.clamp(poiScale, minScale, maxScale),
-                        1
-                    );
+            // Apply opacity and visibility to lines based on their type
+            [this.detailHigh, this.detailMedium, this.detailLow].forEach(detail => {
+                if (detail) {
+                    detail.traverse(obj => {
+                        if ((obj instanceof THREE.Line || obj instanceof THREE.LineSegments) && obj.material) {
+                            const lineType = obj.userData.lineType;
+                            let shouldBeVisible = false;
+
+                            if (lineType === 'graticule') shouldBeVisible = this.lineVisibility.surfaceLines;
+                            else if (lineType === 'country') shouldBeVisible = this.lineVisibility.countryBorders;
+                            else if (lineType === 'state') shouldBeVisible = this.lineVisibility.states;
+
+                            obj.material.opacity = opacity;
+                            obj.visible = shouldBeVisible && opacity > 0.01;
+                        }
+                    });
                 }
             });
 
-            // Update label sprites (opacity only; sprite faces camera automatically)
-            this.labels[cat].forEach(sprite => {
-                if (sprite.material) sprite.material.opacity = opacity;
-                sprite.visible = categoryIsCurrentlyVisible && opacity > 0.01;
-            });
-        });
+            // LOD group is visible if any lines should be shown
+            this.lod.visible = anyLinesVisible && opacity > 0.01;
+
+            // Use optimized centralized POI visibility update
+            this._updatePOIVisibilityOptimized(opacity);
+            
+            // Update POI scaling for visible POIs only
+            this._updatePOIScalingOptimized(camera, distance);
+            
+        } finally {
+            objectPool.releaseVector3(planetWorldPos);
+        }
     }
 
     easeInOutCubic(t) {
@@ -620,22 +898,28 @@ export class PlanetSurface {
             if (this.lod.parent) this.lod.parent.remove(this.lod);
         }
 
-        // Dispose labels
-        Object.keys(this.labels).forEach(cat => {
-            this.labels[cat].forEach(label => {
-                // Dispose texture and material for mesh-based labels
-                if (label.userData?.texture) {
-                    label.userData.texture.dispose();
-                }
-                if (label.material) {
-                    label.material.dispose();
-                }
-                if (label.geometry) {
-                    label.geometry.dispose();
-                }
+        // Dispose leader lines
+        Object.keys(this.leaders).forEach(cat => {
+            this.leaders[cat].forEach(leader => {
+                if (leader.geometry) leader.geometry.dispose();
+                if (leader.material) leader.material.dispose();
             });
-            this.labels[cat] = [];
+            this.leaders[cat] = [];
         });
+
+        // Dispose labels
+        if (this.labelManager && this.labelCategory) {
+            // Use LabelManager for coordinated cleanup
+            this.labelManager.clearCategory(this.labelCategory);
+        } else {
+            // Fallback cleanup for WebGLLabels
+            Object.keys(this.labels).forEach(cat => {
+                this.labels[cat].forEach(label => {
+                    WebGLLabels.disposeLabel(label);
+                });
+                this.labels[cat] = [];
+            });
+        }
 
         // Clear all arrays
         this.surfaceLines = [];
@@ -649,5 +933,48 @@ export class PlanetSurface {
         this.root = null;
         this.materials = null;
         this.fadeAnimation = null;
+    }
+
+    /**
+     * Optimized POI scaling update - only processes visible POIs
+     * @private
+     * @param {THREE.Camera} camera
+     * @param {number} planetDistance - Distance from camera to planet center
+     */
+    _updatePOIScalingOptimized(camera, planetDistance) {
+        // Pre-calculate common values
+        const vFOV = THREE.MathUtils.degToRad(camera.fov);
+        const halfH = window.innerHeight / 2;
+        const pixelSizeTarget = 8;
+        const minScale = 0.1;
+        const maxScale = 100;
+        const scalePrecisionThreshold = this.planetRadius * 5;
+
+        Object.keys(this.pointVisibility).forEach(category => {
+            if (!this.pointVisibility[category]) return; // Skip invisible categories
+
+            this.points[category]?.forEach(mesh => {
+                if (!mesh.visible) return; // Skip invisible POIs
+
+                // Optimize distance calculation
+                let distToPOI = planetDistance; // Use cached planet distance as approximation
+                
+                // Only do precise calculation for very close POIs where accuracy matters
+                if (planetDistance < scalePrecisionThreshold) {
+                    const poiWorldPos = objectPool.getVector3();
+                    try {
+                        mesh.getWorldPosition(poiWorldPos);
+                        distToPOI = camera.position.distanceTo(poiWorldPos);
+                    } finally {
+                        objectPool.releaseVector3(poiWorldPos);
+                    }
+                }
+
+                // Calculate and apply POI scale
+                const poiScale = (distToPOI / (halfH / Math.tan(vFOV / 2))) * pixelSizeTarget;
+                const clampedScale = THREE.MathUtils.clamp(poiScale, minScale, maxScale);
+                mesh.scale.set(clampedScale, clampedScale, 1);
+            });
+        });
     }
 }

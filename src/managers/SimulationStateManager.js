@@ -87,7 +87,7 @@ export class SimulationStateManager {
         
         // Clear orbit cache to prevent stale data during scene loading
         if (this.app.satelliteOrbitManager) {
-            this.app.satelliteOrbitManager.orbitCacheManager.clearAll();
+            this.app.satelliteOrbitManager.clearCache();
         }
         
         this._restoreTimeState(state);
@@ -198,13 +198,6 @@ export class SimulationStateManager {
                 // Enable satellite connections via display setting to trigger proper toggles
                 this.app.updateDisplaySetting('showSatConnections', true);
             }
-            
-            // Force orbit visibility update after settings are restored
-            if (this.app.satelliteOrbitManager && settings.showOrbits !== undefined) {
-                setTimeout(() => {
-                    this.app.satelliteOrbitManager._updateOrbitVisibility();
-                }, 100);
-            }
         }
     }
 
@@ -310,15 +303,10 @@ export class SimulationStateManager {
                 const orbitManager = this.app.satelliteOrbitManager;
                 
                 if (orbitManager) {
-                    // Update workers first
-                    if (orbitManager.workerPoolManager && this.app.physicsIntegration) {
-                        orbitManager.workerPoolManager.updateWorkersPhysicsState(this.app.physicsIntegration);
-                    }
+                    // SimpleSatelliteOrbitVisualizer handles workers internally
+                    // No need to manually update worker physics state
                     
-                    // Then update orbits
-                    createdSatelliteIds.forEach(satelliteId => {
-                        orbitManager.updateSatelliteOrbit(String(satelliteId));
-                    });
+                    // Orbit updates handled by physics streaming system automatically
                     
                     // Clear the timeout reference
                     this._physicsWaitTimeout = null;
@@ -334,18 +322,11 @@ export class SimulationStateManager {
 
     _restoreCameraState(cameraState) {
         if (!cameraState) return;
-        const camControls = this.app.cameraControls;
-        const { controls, camera } = camControls;
-        cameraState.target && controls.target.set(cameraState.target.x, cameraState.target.y, cameraState.target.z);
-        cameraState.position && camera.position.set(cameraState.position.x, cameraState.position.y, cameraState.position.z);
-        if (cameraState.spherical) {
-            camControls.sphericalRadius = cameraState.spherical.radius;
-            camControls.sphericalPhi = cameraState.spherical.phi;
-            camControls.sphericalTheta = cameraState.spherical.theta;
-            camControls.spherical.set(cameraState.spherical.radius, cameraState.spherical.phi, cameraState.spherical.theta);
-        }
-        controls.update();
-        cameraState.focusedBody ? this.app.updateSelectedBody(cameraState.focusedBody, true) : camControls.clearCameraTarget();
+        const smartCamera = this.app.cameraControls;
+        if (!smartCamera) return;
+        
+        // Use SmartCamera's setState method for complete state restoration
+        smartCamera.setState(cameraState, this.app);
     }
 
     _serializeSatellites() {
@@ -395,22 +376,11 @@ export class SimulationStateManager {
     }
 
     _serializeCameraState() {
-        const camControls = this.app.cameraControls;
-        if (!camControls) return undefined;
-        return {
-            position: { x: camControls.camera.position.x, y: camControls.camera.position.y, z: camControls.camera.position.z },
-            target: { x: camControls.controls.target.x, y: camControls.controls.target.y, z: camControls.controls.target.z },
-            spherical: { radius: camControls.sphericalRadius, phi: camControls.sphericalPhi, theta: camControls.sphericalTheta },
-            focusedBody: (() => {
-                const fb = camControls.followTarget;
-                if (!fb) return 'none';
-                if (fb === this.app.earth) return 'earth';
-                if (fb === this.app.moon) return 'moon';
-                const sats = this.app.satellites.getSatellites();
-                for (const id in sats) if (sats[id] === fb) return `satellite-${id}`;
-                return 'none';
-            })()
-        };
+        const smartCamera = this.app.cameraControls;
+        if (!smartCamera) return undefined;
+        
+        // Use SmartCamera's getState method for complete state serialization
+        return smartCamera.getState();
     }
 
     _serializeDisplaySettings() {
@@ -463,24 +433,9 @@ export class SimulationStateManager {
     }
 
     _serializeManeuverExecutions() {
-        // Serialize any in-progress maneuver executions
-        const maneuverManager = this.app.maneuverManager;
-        if (!maneuverManager) return null;
-
-        const executions = [];
-        // Check if there are any active maneuver executions
-        if (maneuverManager.activeExecutions) {
-            maneuverManager.activeExecutions.forEach((execution, nodeId) => {
-                executions.push({
-                    nodeId,
-                    satelliteId: execution.satelliteId,
-                    startTime: execution.startTime,
-                    progress: execution.progress,
-                    // Other execution state
-                });
-            });
-        }
-        return executions;
+        // Maneuver executions are now handled directly by the physics engine
+        // No separate maneuver manager exists anymore
+        return null;
     }
 
     _serializeUIState() {

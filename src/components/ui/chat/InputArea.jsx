@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Button } from '../button';
 import { Textarea } from '../textarea';
 import { Send, Loader2 } from 'lucide-react';
 import PropTypes from 'prop-types';
 
-export function InputArea({ 
+export const InputArea = React.memo(function InputArea({ 
   userMessage, 
   setUserMessage, 
   onSendMessage, 
@@ -13,35 +13,47 @@ export function InputArea({
   isLoading, 
   turnInProgress 
 }) {
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     onSendMessage();
-  };
+  }, [onSendMessage]);
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onSendMessage();
     }
-  };
+  }, [onSendMessage]);
 
-  const isDisabled = !socket || !isConnected || isLoading || turnInProgress;
-  const canSend = !isDisabled && userMessage.trim();
+  const handleTextChange = useCallback((e) => {
+    setUserMessage(e.target.value);
+  }, [setUserMessage]);
+
+  // Memoize derived state
+  const { isDisabled, canSend, placeholder } = useMemo(() => {
+    const disabled = !socket || !isConnected || isLoading || turnInProgress;
+    const send = !disabled && userMessage.trim();
+    const placeholderText = !socket 
+      ? "AI chat requires backend server" 
+      : isConnected 
+        ? "Type a message..." 
+        : "Connecting to server...";
+
+    return {
+      isDisabled: disabled,
+      canSend: send,
+      placeholder: placeholderText
+    };
+  }, [socket, isConnected, isLoading, turnInProgress, userMessage]);
 
   return (
     <div className="border-t p-2">
       <form onSubmit={handleSubmit} className="flex gap-2">
         <Textarea
           value={userMessage}
-          onChange={(e) => setUserMessage(e.target.value)}
+          onChange={handleTextChange}
           onKeyDown={handleKeyPress}
-          placeholder={
-            !socket 
-              ? "AI chat requires backend server" 
-              : isConnected 
-                ? "Type a message..." 
-                : "Connecting to server..."
-          }
+          placeholder={placeholder}
           disabled={isDisabled}
           className="flex-1 text-sm"
           textareaClassName="w-full"
@@ -62,7 +74,7 @@ export function InputArea({
       </form>
     </div>
   );
-}
+});
 
 InputArea.propTypes = {
   userMessage: PropTypes.string.isRequired,

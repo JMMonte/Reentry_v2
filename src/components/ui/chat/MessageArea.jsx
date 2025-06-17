@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { ScrollBar } from '../scroll-area';
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { Loader2 } from 'lucide-react';
@@ -9,7 +9,7 @@ import PropTypes from 'prop-types';
 import Prism from 'prismjs';
 import { cn } from '@/lib/utils';
 
-export function MessageArea({ 
+export const MessageArea = React.memo(function MessageArea({ 
   messages, 
   socket, 
   isConnected, 
@@ -22,19 +22,24 @@ export function MessageArea({
 }) {
   const scrollRef = useRef(null);
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
+  // Memoize the scroll to bottom function
+  const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       const scrollElement = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
       if (scrollElement) {
         scrollElement.scrollTop = scrollElement.scrollHeight;
       }
     }
+  }, []);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    scrollToBottom();
     Prism.highlightAll();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
   // Filter out tool_call_sent for runCodeInterpreter if result exists
-  const filteredMessages = React.useMemo(() => {
+  const filteredMessages = useMemo(() => {
     // Find all code_interpreter_result call_ids
     const codeInterpreterIds = new Set(
       messages
@@ -49,6 +54,16 @@ export function MessageArea({
     });
   }, [messages]);
 
+  // Memoize the conversation starter visibility check
+  const showConversationStarters = useMemo(() => {
+    return socket && messages.length === 0 && isConnected && !isLoading;
+  }, [socket, messages.length, isConnected, isLoading]);
+
+  // Memoize the MessageRouter key function
+  const getMessageKey = useCallback((message, idx) => {
+    return message.id || `msg-${idx}`;
+  }, []);
+
   return (
     <ScrollAreaPrimitive.Root
       ref={scrollRef}
@@ -56,52 +71,52 @@ export function MessageArea({
     >
       <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] overflow-x-hidden">
         <div className="space-y-2 pr-2 max-w-full overflow-x-hidden">
-        <ConnectionIndicator 
-          socket={socket} 
-          isConnected={isConnected} 
-          isWebSearchActive={isWebSearchActive} 
-        />
-        
-        {/* Conversation Starters */}
-        {socket && messages.length === 0 && isConnected && !isLoading && (
-          <div className="mb-4">
-            <div className="text-xs text-muted-foreground mb-2">
-              Try one of these to get started:
-            </div>
-            <div
-              className="grid gap-3 grid-cols-1 sm:grid-cols-2"
-              style={{ maxWidth: 400 }}
-            >
-              <ConversationStarters onSelect={onSelectStarter} />
-            </div>
-          </div>
-        )}
-
-        {/* Messages */}
-        {filteredMessages.map((message, idx) => (
-          <MessageRouter
-            key={message.id || `msg-${idx}`}
-            message={message}
-            onCopy={onCopy}
-            copiedStates={copiedStates}
+          <ConnectionIndicator 
+            socket={socket} 
+            isConnected={isConnected} 
+            isWebSearchActive={isWebSearchActive} 
           />
-        ))}
-
-        {/* Loading indicator */}
-        {showChatLoader && (
-          <div className="flex justify-start mb-2">
-            <div className="bg-muted rounded-lg px-3 py-1.5">
-              <Loader2 className="h-3 w-3 animate-spin" />
+          
+          {/* Conversation Starters */}
+          {showConversationStarters && (
+            <div className="mb-4">
+              <div className="text-xs text-muted-foreground mb-2">
+                Try one of these to get started:
+              </div>
+              <div
+                className="grid gap-3 grid-cols-1 sm:grid-cols-2"
+                style={{ maxWidth: 400 }}
+              >
+                <ConversationStarters onSelect={onSelectStarter} />
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Messages */}
+          {filteredMessages.map((message, idx) => (
+            <MessageRouter
+              key={getMessageKey(message, idx)}
+              message={message}
+              onCopy={onCopy}
+              copiedStates={copiedStates}
+            />
+          ))}
+
+          {/* Loading indicator */}
+          {showChatLoader && (
+            <div className="flex justify-start mb-2">
+              <div className="bg-muted rounded-lg px-3 py-1.5">
+                <Loader2 className="h-3 w-3 animate-spin" />
+              </div>
+            </div>
+          )}
         </div>
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar orientation="vertical" />
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   );
-}
+});
 
 MessageArea.propTypes = {
   messages: PropTypes.array.isRequired,

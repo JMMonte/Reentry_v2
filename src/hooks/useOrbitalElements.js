@@ -103,19 +103,10 @@ export function useOrbitalElements(physics, celestialBodies, orbitalReferenceFra
                 };
               }
             } catch {
-              // Fallback for common bodies if API fails
-              const commonBodies = {
-                399: { name: 'Earth', GM: 398600.4418, radius: 6371.0 }, // Earth
-                301: { name: 'Moon', GM: 4902.7779, radius: 1737.4 },   // Moon
-                499: { name: 'Mars', GM: 42828.37, radius: 3389.5 },    // Mars
-                10: { name: 'Sun', GM: 132712440018, radius: 695700 }   // Sun
-              };
-              
-              if (commonBodies[targetNaifId]) {
-                centralBody = commonBodies[targetNaifId];
-              } else {
-                centralBody = null;
-              }
+              // If centralized physics data is not available, gracefully skip apsis calculation
+              // This is normal during initialization or when the physics system is not fully loaded
+              console.debug('[useOrbitalElements] Physics API not available for apsis calculation');
+              centralBody = null;
             }
           }
 

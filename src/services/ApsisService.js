@@ -107,15 +107,45 @@ export class ApsisService {
      */
     static getApsisData(satellite, centralBody, currentTime, options = {}) {
         try {
+            // Validate inputs first
+            if (!satellite || !centralBody) {
+                console.warn('[ApsisService] Missing satellite or central body data');
+                return this._getEmptyApsisData();
+            }
+
+            // Validate satellite position and velocity
+            if (!satellite.position || !satellite.velocity) {
+                console.warn('[ApsisService] Satellite missing position or velocity data');
+                return this._getEmptyApsisData();
+            }
+
+            // Ensure position and velocity are valid arrays or Vector3 objects
+            const position = Array.isArray(satellite.position) ? satellite.position : 
+                            (satellite.position.toArray ? satellite.position.toArray() : [satellite.position.x, satellite.position.y, satellite.position.z]);
+            const velocity = Array.isArray(satellite.velocity) ? satellite.velocity : 
+                            (satellite.velocity.toArray ? satellite.velocity.toArray() : [satellite.velocity.x, satellite.velocity.y, satellite.velocity.z]);
+
+            // Validate that position and velocity have valid numbers
+            if (position.length !== 3 || velocity.length !== 3 || 
+                position.some(v => !Number.isFinite(v)) || velocity.some(v => !Number.isFinite(v))) {
+                console.warn('[ApsisService] Invalid position or velocity values:', { position, velocity });
+                return this._getEmptyApsisData();
+            }
+
+            // Validate central body GM
+            const mu = centralBody.GM || centralBody.mu;
+            if (!mu || !Number.isFinite(mu) || mu <= 0) {
+                console.warn('[ApsisService] Invalid central body GM:', mu);
+                return this._getEmptyApsisData();
+            }
+
             // Convert state to orbital elements
-            const elements = stateToKeplerian(
-                satellite.position,
-                satellite.velocity,
-                centralBody.GM || centralBody.mu
-            );
+            const elements = stateToKeplerian(position, velocity, mu);
 
             // Add central body radius for altitude calculations
-            elements.centralBodyRadius = centralBody.radius || 0;
+            if (elements) {
+                elements.centralBodyRadius = centralBody.radius || 0;
+            }
 
             // Validate elements - basic validation
             if (!elements || !Number.isFinite(elements.semiMajorAxis) || elements.semiMajorAxis <= 0) {
@@ -124,7 +154,6 @@ export class ApsisService {
             }
 
             // Calculate orbital period using existing API
-            const mu = centralBody.GM || centralBody.mu;
             const period = Orbital.calculatePeriodFromSMA(elements.semiMajorAxis, mu);
 
             // Calculate apsis radii

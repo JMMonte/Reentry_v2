@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { DraggableModal } from '../modal/DraggableModal';
 import { Button } from '../button';
 import { Loader2 } from 'lucide-react';
@@ -7,15 +7,19 @@ import { saveAs } from 'file-saver';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '../select';
 import PropTypes from 'prop-types';
+import { useDebouncePhysics } from '@/hooks/useDebouncePhysics';
 
-export function SimulationWindow({ isOpen, onClose }) {
+export const SimulationWindow = React.memo(function SimulationWindow({ isOpen, onClose }) {
     const [simulationData, setSimulationData] = useState({});
     const [isLoading, setIsLoading] = useState(true);
-    // refs to batch incoming updates
+    
+    // refs to batch incoming updates and prevent re-renders
     const pendingSimRef = useRef({});
     const flushSimRef = useRef(false);
-    // Define available metrics
-    const metricsList = [
+    const rafIdRef = useRef(null);
+    
+    // Define available metrics - memoized to prevent recreation
+    const metricsList = useMemo(() => [
         { key: 'altitude', label: 'Altitude', color: '#1f77b4' },
         { key: 'velocity', label: 'Velocity', color: '#ff7f0e' },
         { key: 'lat', label: 'Latitude', color: '#2ca02c' },
@@ -31,12 +35,59 @@ export function SimulationWindow({ isOpen, onClose }) {
         { key: 'pertAccEarth', label: 'Perturb Earth', color: '#8c6d31' },
         { key: 'pertAccMoon', label: 'Perturb Moon', color: '#843c39' },
         { key: 'pertAccSun', label: 'Perturb Sun', color: '#7b4173' }
-    ];
-    // Default metrics selection and axis assignments
-    const [selectedMetrics, setSelectedMetrics] = useState([metricsList[0].key, metricsList[1].key]);
-    const [primaryMetric, setPrimaryMetric] = useState(metricsList[0].key);
-    const [secondaryMetric, setSecondaryMetric] = useState(metricsList[1].key);
+    ], []);
+    
+    // Default metrics selection and axis assignments - memoized
+    const [selectedMetrics, setSelectedMetrics] = useState(() => [metricsList[0].key, metricsList[1].key]);
+    const [primaryMetric, setPrimaryMetric] = useState(() => metricsList[0].key);
+    const [secondaryMetric, setSecondaryMetric] = useState(() => metricsList[1].key);
     const [selectedSatId, setSelectedSatId] = useState(null);
+
+    // Optimized flush function with RAF batching
+    const scheduleFlush = useCallback(() => {
+        if (!flushSimRef.current) {
+            flushSimRef.current = true;
+            rafIdRef.current = requestAnimationFrame(() => {
+                setSimulationData(prev => {
+                    const next = { ...prev };
+                    for (const [sid, updates] of Object.entries(pendingSimRef.current)) {
+                        const prevEntry = next[sid] || { orbitUpdates: [], paramUpdates: [] };
+                        next[sid] = {
+                            orbitUpdates: [...prevEntry.orbitUpdates, ...(updates.orbitUpdates || [])],
+                            paramUpdates: [...prevEntry.paramUpdates, ...(updates.paramUpdates || [])]
+                        };
+                    }
+                    return next;
+                });
+                pendingSimRef.current = {};
+                flushSimRef.current = false;
+                rafIdRef.current = null;
+            });
+        }
+    }, []);
+
+    // Debounced event handlers using centralized system
+    const handleOrbitUpdate = useDebouncePhysics(
+        'charts', // Use RAF strategy for smooth chart updates
+        useCallback((e) => {
+            const { id, orbitPoints, period, numPoints } = e.detail;
+            const bucket = pendingSimRef.current[id] ||= { orbitUpdates: [], paramUpdates: [] };
+            bucket.orbitUpdates.push({ orbitPoints, period, numPoints });
+            scheduleFlush();
+        }, [scheduleFlush]),
+        [scheduleFlush]
+    );
+
+    const handleParamUpdate = useDebouncePhysics(
+        'charts', // Use RAF strategy for smooth chart updates
+        useCallback((e) => {
+            const { id, elements, perturbation, simulatedTime, altitude, velocity, lat, lon, dragData } = e.detail;
+            const bucket = pendingSimRef.current[id] ||= { orbitUpdates: [], paramUpdates: [] };
+            bucket.paramUpdates.push({ elements, perturbation, simulatedTime, altitude, velocity, lat, lon, dragData });
+            scheduleFlush();
+        }, [scheduleFlush]),
+        [scheduleFlush]
+    );
 
     useEffect(() => {
         if (!isOpen) {
@@ -46,63 +97,36 @@ export function SimulationWindow({ isOpen, onClose }) {
             flushSimRef.current = false;
             return;
         }
-        // batch handlers instead of per-event setState
-        let rafId = null;
-        const scheduleFlush = () => {
-            if (!flushSimRef.current) {
-                flushSimRef.current = true;
-                rafId = requestAnimationFrame(() => {
-                    setSimulationData(prev => {
-                        const next = { ...prev };
-                        for (const [sid, updates] of Object.entries(pendingSimRef.current)) {
-                            const prevEntry = next[sid] || { orbitUpdates: [], paramUpdates: [] };
-                            next[sid] = {
-                                orbitUpdates: [...prevEntry.orbitUpdates, ...(updates.orbitUpdates || [])],
-                                paramUpdates: [...prevEntry.paramUpdates, ...(updates.paramUpdates || [])]
-                            };
-                        }
-                        return next;
-                    });
-                    pendingSimRef.current = {};
-                    flushSimRef.current = false;
-                    rafId = null;
-                });
-            }
-        };
-        const handleOrbitUpdate = e => {
-            const { id, orbitPoints, period, numPoints } = e.detail;
-            const bucket = pendingSimRef.current[id] ||= { orbitUpdates: [], paramUpdates: [] };
-            bucket.orbitUpdates.push({ orbitPoints, period, numPoints });
-            scheduleFlush();
-        };
-        const handleParamUpdate = e => {
-            const { id, elements, perturbation, simulatedTime, altitude, velocity, lat, lon, dragData } = e.detail;
-            const bucket = pendingSimRef.current[id] ||= { orbitUpdates: [], paramUpdates: [] };
-            bucket.paramUpdates.push({ elements, perturbation, simulatedTime, altitude, velocity, lat, lon, dragData });
-            scheduleFlush();
-        };
+
         document.addEventListener('orbitDataUpdate', handleOrbitUpdate);
         document.addEventListener('simulationDataUpdate', handleParamUpdate);
+        
         return () => {
             document.removeEventListener('orbitDataUpdate', handleOrbitUpdate);
             document.removeEventListener('simulationDataUpdate', handleParamUpdate);
             // Cancel pending animation frame
-            if (rafId) {
-                cancelAnimationFrame(rafId);
+            if (rafIdRef.current) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
             }
         };
-    }, [isOpen]);
+    }, [isOpen, handleOrbitUpdate, handleParamUpdate]);
 
-    // Initialize selected satellite when data arrives
+    // Initialize selected satellite when data arrives - memoized effect
     useEffect(() => {
         const hasOrbit = Object.values(simulationData).some(entry => entry.orbitUpdates.length > 0);
         if (hasOrbit) setIsLoading(false);
+        
         const ids = Object.keys(simulationData);
-        if (!selectedSatId && ids.length > 0) setSelectedSatId(ids[0]);
-        else if (selectedSatId && !ids.includes(selectedSatId)) setSelectedSatId(ids[0] || null);
+        if (!selectedSatId && ids.length > 0) {
+            setSelectedSatId(ids[0]);
+        } else if (selectedSatId && !ids.includes(selectedSatId)) {
+            setSelectedSatId(ids[0] || null);
+        }
     }, [simulationData, selectedSatId]);
 
-    const handleDownload = () => {
+    // Memoized download handler
+    const handleDownload = useCallback(() => {
         const rows = [];
         // CSV header
         rows.push([
@@ -110,20 +134,13 @@ export function SimulationWindow({ isOpen, onClose }) {
             'semiMajorAxis', 'eccentricity', 'inclination', 'longitudeOfAscendingNode', 'argumentOfPeriapsis', 'trueAnomaly',
             'specificAngularMomentum', 'specificOrbitalEnergy', 'periapsisAltitude', 'apoapsisAltitude'
         ].join(','));
+        
         // Data rows
         Object.entries(simulationData).forEach(([id, entry]) => {
             entry.orbitUpdates.forEach(u => {
                 u.orbitPoints.forEach((pt, idx) => {
                     rows.push([
-                        id,
-                        'orbit',
-                        '',
-                        u.period,
-                        u.numPoints,
-                        idx,
-                        pt.x,
-                        pt.y,
-                        pt.z,
+                        id, 'orbit', '', u.period, u.numPoints, idx, pt.x, pt.y, pt.z,
                         '', '', '', '', '', '', '', '', '', ''
                     ].join(','));
                 });
@@ -131,33 +148,20 @@ export function SimulationWindow({ isOpen, onClose }) {
             entry.paramUpdates.forEach(u => {
                 const el = u.elements || {};
                 rows.push([
-                    id,
-                    'parameters',
-                    u.simulatedTime,
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    el.semiMajorAxis,
-                    el.eccentricity,
-                    el.inclination,
-                    el.longitudeOfAscendingNode,
-                    el.argumentOfPeriapsis,
-                    el.trueAnomaly,
-                    el.specificAngularMomentum,
-                    el.specificOrbitalEnergy,
-                    el.periapsisAltitude,
-                    el.apoapsisAltitude
+                    id, 'parameters', u.simulatedTime, '', '', '', '', '', '',
+                    el.semiMajorAxis, el.eccentricity, el.inclination, el.longitudeOfAscendingNode,
+                    el.argumentOfPeriapsis, el.trueAnomaly, el.specificAngularMomentum,
+                    el.specificOrbitalEnergy, el.periapsisAltitude, el.apoapsisAltitude
                 ].join(','));
             });
         });
+        
         const csv = rows.join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         saveAs(blob, `simulation-data-${new Date().toISOString()}.csv`);
-    };
+    }, [simulationData]);
 
+    // Memoized chart data with complex calculations
     const chartData = useMemo(() => {
         if (!selectedSatId) return [];
         const entry = simulationData[selectedSatId] || {};
@@ -201,6 +205,27 @@ export function SimulationWindow({ isOpen, onClose }) {
         });
     }, [simulationData, selectedSatId, selectedMetrics]);
 
+    // Memoized event handlers for controls
+    const handleMetricToggle = useCallback((metricKey) => {
+        setSelectedMetrics(prev => 
+            prev.includes(metricKey) 
+                ? prev.filter(m => m !== metricKey) 
+                : [...prev, metricKey]
+        );
+    }, []);
+
+    const handleSatelliteChange = useCallback((newSatId) => {
+        setSelectedSatId(newSatId);
+    }, []);
+
+    const handlePrimaryMetricChange = useCallback((metric) => {
+        setPrimaryMetric(metric);
+    }, []);
+
+    const handleSecondaryMetricChange = useCallback((metric) => {
+        setSecondaryMetric(metric);
+    }, []);
+
     return (
         <DraggableModal
             title="Simulation Data"
@@ -222,7 +247,7 @@ export function SimulationWindow({ isOpen, onClose }) {
                     {/* Controls row: Satellite & Axis selectors */}
                     <div className="flex items-center gap-2 px-2 py-1">
                         <span className="font-medium">Satellite:</span>
-                        <Select value={selectedSatId} onValueChange={setSelectedSatId}>
+                        <Select value={selectedSatId} onValueChange={handleSatelliteChange}>
                             <SelectTrigger className="h-6 w-24 text-[10px]"><SelectValue placeholder="Sat" /></SelectTrigger>
                             <SelectContent className="z-[10001]">
                                 <SelectGroup>
@@ -233,7 +258,7 @@ export function SimulationWindow({ isOpen, onClose }) {
                             </SelectContent>
                         </Select>
                         <span className="font-medium">Primary:</span>
-                        <Select value={primaryMetric} onValueChange={setPrimaryMetric}>
+                        <Select value={primaryMetric} onValueChange={handlePrimaryMetricChange}>
                             <SelectTrigger className="h-6 w-24 text-[10px]"><SelectValue /></SelectTrigger>
                             <SelectContent className="z-[10001]">
                                 <SelectGroup>
@@ -246,7 +271,7 @@ export function SimulationWindow({ isOpen, onClose }) {
                             </SelectContent>
                         </Select>
                         <span className="font-medium">Secondary:</span>
-                        <Select value={secondaryMetric} onValueChange={setSecondaryMetric}>
+                        <Select value={secondaryMetric} onValueChange={handleSecondaryMetricChange}>
                             <SelectTrigger className="h-6 w-24 text-[10px]"><SelectValue /></SelectTrigger>
                             <SelectContent className="z-[10001]">
                                 <SelectGroup>
@@ -267,7 +292,7 @@ export function SimulationWindow({ isOpen, onClose }) {
                                     type="checkbox"
                                     style={{ accentColor: metric.color }}
                                     checked={selectedMetrics.includes(metric.key)}
-                                    onChange={() => setSelectedMetrics(prev => prev.includes(metric.key) ? prev.filter(m => m !== metric.key) : [...prev, metric.key])}
+                                    onChange={() => handleMetricToggle(metric.key)}
                                 />
                                 <span>{metric.label}</span>
                             </label>
@@ -324,7 +349,7 @@ export function SimulationWindow({ isOpen, onClose }) {
             )}
         </DraggableModal>
     );
-}
+});
 
 SimulationWindow.propTypes = {
     isOpen: PropTypes.bool.isRequired,

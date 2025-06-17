@@ -32,6 +32,37 @@ export default {
     // Orbital properties
     soiRadius: 1e12, // km - Effectively infinite within the solar system
     hillSphere: 1e12, // km - The Sun dominates the entire solar system
+    orbitalPeriod: Infinity, // The Sun doesn't orbit anything in our solar system
+    semiMajorAxis: 0, // km
+
+    // Orbital mechanics constants for position calculations
+    orbitalConstants: {
+        // Mean anomaly coefficients (degrees)
+        meanAnomalyBase: 357.5291, // degrees at epoch
+        meanAnomalyRate: 0.98560028, // degrees per day
+        
+        // Mean longitude coefficients (degrees)
+        meanLongitudeBase: 280.4665, // degrees at epoch
+        meanLongitudeRate: 0.98564736, // degrees per day
+        
+        // Orbital eccentricity
+        eccentricity: 0.0167,
+        
+        // Equation of center coefficients (for accurate position)
+        equationOfCenter: {
+            c1: 1.9148, // first order coefficient
+            c2: 0.0200, // second order coefficient  
+            c3: 0.0003  // third order coefficient
+        },
+        
+        // Additional orbital mechanics constants
+        greenwich: {
+            base: 280.46061837, // degrees - Greenwich hour angle at J2000
+            rate: 360.98564736629, // degrees per day
+            t2Coefficient: 0.000387933, // T² coefficient
+            t3Coefficient: 1.0 / 38710000 // T³ coefficient
+        }
+    },
 
     // Rendering properties
     materials: {
@@ -44,6 +75,53 @@ export default {
                 roughness: 1.0,
                 metalness: 0.0
             }
+        }
+    },
+
+    // Lens flare configuration for visual effects
+    lensFlare: {
+        // Reference distance for scaling lens flare size (1 AU - Earth's orbital radius)
+        referenceDistance: 149597870.7, // km (1 AU)
+        
+        // Lens flare element specifications
+        elements: [
+            { 
+                url: '/assets/texture/lensflare/lensflare0.png', 
+                size: 700, 
+                distance: 0.0,
+                description: 'Main flare'
+            },
+            { 
+                url: '/assets/texture/lensflare/lensflare2.png', 
+                size: 512, 
+                distance: 0.6,
+                description: 'Secondary flare'
+            },
+            { 
+                url: '/assets/texture/lensflare/lensflare3.png', 
+                size: 60, 
+                distance: 0.7,
+                description: 'Small streak 1'
+            },
+            { 
+                url: '/assets/texture/lensflare/lensflare3.png', 
+                size: 70, 
+                distance: 0.9,
+                description: 'Small streak 2'
+            },
+            { 
+                url: '/assets/texture/lensflare/lensflare3.png', 
+                size: 120, 
+                distance: 1.0,
+                description: 'Small streak 3'
+            }
+        ],
+        
+        // Scaling parameters
+        scaling: {
+            minScale: 0.05,      // Minimum scale factor
+            maxScale: 10.0,      // Maximum scale factor
+            minDistance: 2       // Minimum distance as multiple of Sun radius
         }
     },
 
@@ -113,4 +191,21 @@ export default {
     spin: 286.13, // deg at J2000.0
     spinRate: 0.00001990986, // deg/day (retrograde)
     orientationEpoch: 2451545.0, // JD (J2000.0)
+
+    // Atmospheric model for drag calculations (corona and solar wind)
+    atmosphericModel: {
+        maxAltitude: 1000000, // km - Solar corona extends millions of km
+        minAltitude: 0,
+        referenceAltitude: 10000, // km - above photosphere
+        referenceDensity: 1e-12, // kg/m³ at 10000km (very tenuous corona)
+        scaleHeight: 50000, // km - large scale height for corona
+        getDensity: function(altitude) {
+            // Solar corona and solar wind - very tenuous but extended
+            if (altitude > this.maxAltitude) return 0;
+            // Corona density decreases more slowly than planetary atmospheres
+            return this.referenceDensity * Math.exp(-(altitude - this.referenceAltitude) / this.scaleHeight);
+        }
+    },
+
+    // Surface and atmospheric properties
 }; 

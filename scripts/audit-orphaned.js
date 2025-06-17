@@ -424,6 +424,32 @@ class OrphanedCodeDetector {
                 }
             }
         } 
+        // Handle @/ alias imports (maps to src/)
+        else if (importPath.startsWith('@/')) {
+            const aliasPath = importPath.substring(2); // Remove '@/'
+            const srcPath = path.resolve(this.rootDir, aliasPath);
+            
+            // Try exact path
+            if (this.files.has(srcPath)) {
+                resolvedPaths.push(srcPath);
+            }
+            
+            // Try with extensions
+            for (const ext of this.options.includeExts) {
+                const withExt = srcPath + ext;
+                if (this.files.has(withExt)) {
+                    resolvedPaths.push(withExt);
+                }
+            }
+            
+            // Try index files
+            for (const ext of this.options.includeExts) {
+                const indexPath = path.join(srcPath, `index${ext}`);
+                if (this.files.has(indexPath)) {
+                    resolvedPaths.push(indexPath);
+                }
+            }
+        }
         // Handle absolute imports (from src/)
         else if (!importPath.startsWith('@') && !importPath.includes('node_modules')) {
             // Try from src directory

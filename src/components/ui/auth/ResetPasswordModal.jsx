@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { supabase } from '@/supabaseClient';
 import { DraggableModal } from '../modal/DraggableModal';
@@ -6,13 +6,25 @@ import { Input } from '../input';
 import { Button } from '../button';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
-export function ResetPasswordModal({ isOpen, onClose, showToast }) {
+// OPTIMIZED PATTERN: Memoized ResetPasswordModal component
+export const ResetPasswordModal = React.memo(function ResetPasswordModal({ isOpen, onClose, showToast }) {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [canClose, setCanClose] = useState(false);
 
-    const handleReset = async (e) => {
+    // Memoized password change handler
+    const handlePasswordChange = useCallback((e) => {
+        setPassword(e.target.value);
+    }, []);
+
+    // Memoized confirm password change handler
+    const handleConfirmPasswordChange = useCallback((e) => {
+        setConfirmPassword(e.target.value);
+    }, []);
+
+    // Memoized form submission handler
+    const handleReset = useCallback(async (e) => {
         e.preventDefault();
         if (password !== confirmPassword) {
             showToast('Passwords do not match.');
@@ -31,7 +43,7 @@ export function ResetPasswordModal({ isOpen, onClose, showToast }) {
             setCanClose(true);
             onClose();
         }
-    };
+    }, [password, confirmPassword, showToast, onClose]);
 
     // Prevent closing by escape or outside click unless canClose is true
     // DraggableModal does not have built-in props for this, so we do not pass onClose until canClose is true
@@ -53,7 +65,7 @@ export function ResetPasswordModal({ isOpen, onClose, showToast }) {
                     id="new-password"
                     type="password"
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
+                    onChange={handlePasswordChange}
                     required
                     placeholder="Enter new password"
                     className="w-full text-sm"
@@ -64,7 +76,7 @@ export function ResetPasswordModal({ isOpen, onClose, showToast }) {
                     id="confirm-password"
                     type="password"
                     value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
+                    onChange={handleConfirmPasswordChange}
                     required
                     placeholder="Repeat new password"
                     className="w-full text-sm"
@@ -75,7 +87,7 @@ export function ResetPasswordModal({ isOpen, onClose, showToast }) {
             </form>
         </DraggableModal>
     );
-}
+});
 
 ResetPasswordModal.propTypes = {
     isOpen: PropTypes.bool.isRequired,

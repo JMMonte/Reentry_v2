@@ -304,7 +304,35 @@ export class StateVectorCalculator {
                 }
             }
 
-            // Default: assume elements are already in the correct coordinate system
+            // Check if we need to transform from ecliptic to equatorial coordinates
+            const referenceFrame = orbitalElements.referenceFrame || bodyConfig?.referenceFrame;
+            if (referenceFrame && referenceFrame.toLowerCase().includes('equatorial')) {
+                // Extract planet name from reference frame (e.g., "saturn_equatorial" -> "saturn")
+                const planetName = referenceFrame.toLowerCase().replace('_equatorial', '');
+                
+                // Get planet's orientation to transform from ecliptic to equatorial frame
+                const planetConfig = this._getPlanetConfigForCoordinateTransform(planetName);
+                if (planetConfig && planetConfig.poleRA !== undefined && planetConfig.poleDec !== undefined) {
+                    // Apply coordinate transformation using same logic as orbit visualization
+                    const transformedPosition = this._transformEclipticToEquatorialPosition(
+                        [state.position.x, state.position.y, state.position.z], 
+                        planetConfig
+                    );
+                    const transformedVelocity = this._transformEclipticToEquatorialPosition(
+                        [state.velocity.x, state.velocity.y, state.velocity.z], 
+                        planetConfig
+                    );
+                    
+                    return {
+                        position: transformedPosition,
+                        velocity: transformedVelocity
+                    };
+                } else {
+                    console.warn(`[StateVectorCalculator] Could not find planet config for ${planetName}, using ecliptic coordinates`);
+                }
+            }
+            
+            // Default: Return ecliptic coordinates (no transformation)
             return {
                 position: [state.position.x, state.position.y, state.position.z],
                 velocity: [state.velocity.x, state.velocity.y, state.velocity.z]
@@ -418,6 +446,105 @@ export class StateVectorCalculator {
         } catch (error) {
             console.warn(`Failed to transform orbital elements to ecliptic:`, error);
             return null;
+        }
+    }
+
+    /**
+     * Get planet configuration for coordinate transformation
+     * @param {string} planetName - Name of the planet (e.g., "saturn", "mars")
+     * @returns {Object|null} - Planet configuration with poleRA and poleDec
+     */
+    _getPlanetConfigForCoordinateTransform(planetName) {
+        try {
+            // Get all planets and dwarf planets
+            const planets = solarSystemDataManager.getBodiesByType('planet');
+            const dwarfPlanets = solarSystemDataManager.getBodiesByType('dwarf_planet');
+            const allPlanets = [...planets, ...dwarfPlanets];
+            
+            // Find planet by name
+            const planet = allPlanets.find(p => p.name && p.name.toLowerCase() === planetName.toLowerCase());
+            
+            if (planet && planet.poleRA !== undefined && planet.poleDec !== undefined) {
+                return planet;
+            }
+            
+            console.warn(`[StateVectorCalculator] No planet config found for ${planetName}`);
+            return null;
+            
+        } catch (error) {
+            console.warn(`[StateVectorCalculator] Error getting planet config for ${planetName}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Transform position from ecliptic to planetary equatorial coordinates
+     * Uses same algorithm as CelestialOrbitCalculator for consistency
+     * @param {Array} eclipticPosition - Position vector in ecliptic coordinates [x, y, z]
+     * @param {Object} planetConfig - Planet configuration with pole coordinates
+     * @returns {Array} - Position vector in planetary equatorial coordinates [x, y, z]
+     */
+    _transformEclipticToEquatorialPosition(eclipticPosition, planetConfig) {
+        try {
+            // Calculate planet's pole orientation from RA/Dec
+            const poleRA = planetConfig.poleRA * Math.PI / 180; // Convert to radians
+            const poleDec = planetConfig.poleDec * Math.PI / 180; // Convert to radians
+
+            // Convert pole RA/Dec to Cartesian coordinates (J2000 equatorial frame)
+            const poleX = Math.cos(poleDec) * Math.cos(poleRA);
+            const poleY = Math.cos(poleDec) * Math.sin(poleRA);
+            const poleZ = Math.sin(poleDec);
+            
+            // Apply J2000 equatorial to ecliptic transformation to get pole in ecliptic frame
+            const obliquity = 23.43929111 * Math.PI / 180;
+            const cosObliquity = Math.cos(obliquity);
+            const sinObliquity = Math.sin(obliquity);
+            
+            // Transform pole vector to ecliptic frame
+            const poleXEcl = poleX;
+            const poleYEcl = poleY * cosObliquity + poleZ * sinObliquity;
+            const poleZEcl = -poleY * sinObliquity + poleZ * cosObliquity;
+
+            // Create transformation from ecliptic to planetary equatorial frame
+            // The planet's Z-axis points along its north pole
+            const planetZ = [poleXEcl, poleYEcl, poleZEcl];
+            const planetZMag = Math.sqrt(planetZ[0] * planetZ[0] + planetZ[1] * planetZ[1] + planetZ[2] * planetZ[2]);
+            planetZ[0] /= planetZMag;
+            planetZ[1] /= planetZMag;
+            planetZ[2] /= planetZMag;
+            
+            // Create an arbitrary X-axis perpendicular to the pole
+            // Use ecliptic X-axis as reference, project onto plane perpendicular to pole
+            const eclipticX = [1, 0, 0];
+            const dotProduct = eclipticX[0] * planetZ[0] + eclipticX[1] * planetZ[1] + eclipticX[2] * planetZ[2];
+            const planetX = [
+                eclipticX[0] - planetZ[0] * dotProduct,
+                eclipticX[1] - planetZ[1] * dotProduct,
+                eclipticX[2] - planetZ[2] * dotProduct
+            ];
+            const planetXMag = Math.sqrt(planetX[0] * planetX[0] + planetX[1] * planetX[1] + planetX[2] * planetX[2]);
+            planetX[0] /= planetXMag;
+            planetX[1] /= planetXMag;
+            planetX[2] /= planetXMag;
+            
+            // Y-axis completes the right-handed system: Y = Z × X
+            const planetY = [
+                planetZ[1] * planetX[2] - planetZ[2] * planetX[1],
+                planetZ[2] * planetX[0] - planetZ[0] * planetX[2],
+                planetZ[0] * planetX[1] - planetZ[1] * planetX[0]
+            ];
+
+            // Apply transformation matrix
+            const [x, y, z] = eclipticPosition;
+            const transformedX = planetX[0] * x + planetY[0] * y + planetZ[0] * z;
+            const transformedY = planetX[1] * x + planetY[1] * y + planetZ[1] * z;
+            const transformedZ = planetX[2] * x + planetY[2] * y + planetZ[2] * z;
+
+            return [transformedX, transformedY, transformedZ];
+
+        } catch (error) {
+            console.warn(`[StateVectorCalculator] Failed to transform ecliptic to equatorial coordinates:`, error);
+            return eclipticPosition; // Return original coordinates on error
         }
     }
 

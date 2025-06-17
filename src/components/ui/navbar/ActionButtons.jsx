@@ -1,118 +1,109 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Button } from '../button';
-import { Rocket, Settings2, Brain, List, Share, Activity, Globe } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
+import { Plus, Settings, MessageSquare, List, Share2, BarChart, Map } from 'lucide-react';
 import PropTypes from 'prop-types';
 
-function ActionButtons({ onSatelliteCreatorToggle, onDisplayOptionsToggle, onChatToggle, onSatelliteListToggle, handleShareToggle, onSimulationToggle, onGroundtrackToggle }) {
+// OPTIMIZED PATTERN: Memoized ActionButtons component
+const ActionButtons = React.memo(function ActionButtons({
+    onSatelliteCreatorToggle,
+    onDisplayOptionsToggle,
+    onChatToggle,
+    onSatelliteListToggle,
+    handleShareToggle,
+    onSimulationToggle,
+    onGroundtrackToggle
+}) {
+    // Memoized button configurations to prevent recreation
+    const buttonConfigs = useMemo(() => [
+        {
+            key: 'satellite-creator',
+            icon: Plus,
+            label: 'Create Satellite',
+            onClick: onSatelliteCreatorToggle,
+            variant: 'ghost',
+            className: 'h-8 w-8 p-0'
+        },
+        {
+            key: 'satellite-list',
+            icon: List,
+            label: 'Satellite List',
+            onClick: onSatelliteListToggle,
+            variant: 'ghost',
+            className: 'h-8 w-8 p-0'
+        },
+        {
+            key: 'display-options',
+            icon: Settings,
+            label: 'Display Options',
+            onClick: onDisplayOptionsToggle,
+            variant: 'ghost',
+            className: 'h-8 w-8 p-0'
+        },
+        {
+            key: 'chat',
+            icon: MessageSquare,
+            label: 'AI Assistant',
+            onClick: onChatToggle,
+            variant: 'ghost',
+            className: 'h-8 w-8 p-0'
+        },
+        {
+            key: 'groundtrack',
+            icon: Map,
+            label: 'Ground Track',
+            onClick: onGroundtrackToggle,
+            variant: 'ghost',
+            className: 'h-8 w-8 p-0'
+        },
+        {
+            key: 'share',
+            icon: Share2,
+            label: 'Share Simulation',
+            onClick: handleShareToggle,
+            variant: 'ghost',
+            className: 'h-8 w-8 p-0'
+        },
+        {
+            key: 'simulation',
+            icon: BarChart,
+            label: 'Simulation Window',
+            onClick: onSimulationToggle,
+            variant: 'ghost',
+            className: 'h-8 w-8 p-0'
+        }
+    ], [
+        onSatelliteCreatorToggle,
+        onDisplayOptionsToggle,
+        onChatToggle,
+        onSatelliteListToggle,
+        onGroundtrackToggle,
+        handleShareToggle,
+        onSimulationToggle
+    ]);
+
+    // Memoized button renderer to prevent recreation
+    const renderButton = useCallback((config) => {
+        const IconComponent = config.icon;
+        return (
+            <Button
+                key={config.key}
+                variant={config.variant}
+                size="sm"
+                onClick={config.onClick}
+                className={config.className}
+                title={config.label}
+            >
+                <IconComponent className="h-4 w-4" />
+            </Button>
+        );
+    }, []);
+
     return (
-        <>
-            <TooltipProvider>
-                {/* Create Satellite Button */}
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onSatelliteCreatorToggle}
-                        >
-                            <Rocket className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Create New Satellite</TooltipContent>
-                </Tooltip>
-                {/* Display Options Button */}
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onDisplayOptionsToggle}
-                        >
-                            <Settings2 className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Display Options</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-            {/* Toggle Chat Button at right edge */}
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onChatToggle}
-                        >
-                            <Brain className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Toggle AI Chat</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-            {/* Toggle Satellite List Button at right edge */}
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onSatelliteListToggle}
-                        >
-                            <List className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Toggle Satellite List</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-            {/* Share State Button at right edge */}
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={handleShareToggle}
-                        >
-                            <Share className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Share State</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-            {/* Simulation Data Button */}
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onSimulationToggle}
-                        >
-                            <Activity className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Simulation</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-            {/* Groundtrack Button */}
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onGroundtrackToggle}
-                        >
-                            <Globe className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Groundtrack</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-        </>
+        <div className="flex items-center space-x-2">
+            {buttonConfigs.map(renderButton)}
+        </div>
     );
-}
+});
 
 ActionButtons.propTypes = {
     onSatelliteCreatorToggle: PropTypes.func.isRequired,
@@ -121,7 +112,7 @@ ActionButtons.propTypes = {
     onSatelliteListToggle: PropTypes.func.isRequired,
     handleShareToggle: PropTypes.func.isRequired,
     onSimulationToggle: PropTypes.func.isRequired,
-    onGroundtrackToggle: PropTypes.func.isRequired,
+    onGroundtrackToggle: PropTypes.func.isRequired
 };
 
 export default ActionButtons; 

@@ -168,50 +168,71 @@ class Lensflare extends Mesh {
             screenPositionPixels.x = viewport.x + (positionScreen.x * halfViewportWidth) + halfViewportWidth - 8;
             screenPositionPixels.y = viewport.y + (positionScreen.y * halfViewportHeight) + halfViewportHeight - 8;
 
-            // screen cull
-            if (validArea.containsPoint(screenPositionPixels)) {
-                // save current RGB to temp texture
-                renderer.copyFramebufferToTexture(tempMap, screenPositionPixels);
+            // screen cull with additional bounds checking
+            if (validArea.containsPoint(screenPositionPixels) && 
+                screenPositionPixels.x >= 0 && screenPositionPixels.y >= 0 &&
+                screenPositionPixels.x + 16 <= viewport.z && screenPositionPixels.y + 16 <= viewport.w) {
+                
+                try {
+                    // Additional validation for texture operations
+                    const texX = Math.floor(screenPositionPixels.x);
+                    const texY = Math.floor(screenPositionPixels.y);
+                    
+                    // Ensure texture coordinates are within valid bounds
+                    if (texX >= 0 && texY >= 0 && 
+                        texX + 16 <= renderer.domElement.width && 
+                        texY + 16 <= renderer.domElement.height &&
+                        texX + 16 <= viewport.z && texY + 16 <= viewport.w) {
+                        
+                        const validPosition = new Vector2(texX, texY);
+                        
+                    // save current RGB to temp texture
+                        renderer.copyFramebufferToTexture(tempMap, validPosition);
 
-                // render pink quad
-                let uniforms = material1a.uniforms;
-                uniforms['scale'].value = scale;
-                uniforms['screenPosition'].value = positionScreen;
+                    // render pink quad
+                    let uniforms = material1a.uniforms;
+                    uniforms['scale'].value = scale;
+                    uniforms['screenPosition'].value = positionScreen;
 
-                renderer.renderBufferDirect(camera, null, geometry, material1a, mesh1, null);
+                    renderer.renderBufferDirect(camera, null, geometry, material1a, mesh1, null);
 
-                // copy result to occlusionMap
-                renderer.copyFramebufferToTexture(occlusionMap, screenPositionPixels);
+                    // copy result to occlusionMap
+                        renderer.copyFramebufferToTexture(occlusionMap, validPosition);
 
-                // restore graphics
-                uniforms = material1b.uniforms;
-                uniforms['scale'].value = scale;
-                uniforms['screenPosition'].value = positionScreen;
+                    // restore graphics
+                    uniforms = material1b.uniforms;
+                    uniforms['scale'].value = scale;
+                    uniforms['screenPosition'].value = positionScreen;
 
-                renderer.renderBufferDirect(camera, null, geometry, material1b, mesh1, null);
+                    renderer.renderBufferDirect(camera, null, geometry, material1b, mesh1, null);
 
-                // render elements
-                const vecX = -positionScreen.x * 2;
-                const vecY = -positionScreen.y * 2;
+                    // render elements
+                    const vecX = -positionScreen.x * 2;
+                    const vecY = -positionScreen.y * 2;
 
-                for (let i = 0, l = elements.length; i < l; i++) {
-                    const element = elements[i];
-                    const uniforms = material2.uniforms;
+                    for (let i = 0, l = elements.length; i < l; i++) {
+                        const element = elements[i];
+                        const uniforms = material2.uniforms;
 
-                    uniforms['color'].value.copy(element.color);
-                    uniforms['map'].value = element.texture;
-                    uniforms['screenPosition'].value.x = positionScreen.x + vecX * element.distance;
-                    uniforms['screenPosition'].value.y = positionScreen.y + vecY * element.distance;
-                    uniforms['distanceScale'].value = element.distanceScale !== undefined ? element.distanceScale : 1.0;
-                    const distScale = element.distanceScale !== undefined ? element.distanceScale : 1.0;
-                    const scaledSize = element.size * distScale;
-                    size = scaledSize / viewport.w;
-                    const invAspectLoop = viewport.w / viewport.z;
-                    uniforms['scale'].value.set(size * invAspectLoop, size);
+                        uniforms['color'].value.copy(element.color);
+                        uniforms['map'].value = element.texture;
+                        uniforms['screenPosition'].value.x = positionScreen.x + vecX * element.distance;
+                        uniforms['screenPosition'].value.y = positionScreen.y + vecY * element.distance;
+                        uniforms['distanceScale'].value = element.distanceScale !== undefined ? element.distanceScale : 1.0;
+                        const distScale = element.distanceScale !== undefined ? element.distanceScale : 1.0;
+                        const scaledSize = element.size * distScale;
+                        size = scaledSize / viewport.w;
+                        const invAspectLoop = viewport.w / viewport.z;
+                        uniforms['scale'].value.set(size * invAspectLoop, size);
 
-                    material2.uniformsNeedUpdate = true;
+                        material2.uniformsNeedUpdate = true;
 
-                    renderer.renderBufferDirect(camera, null, geometry, material2, mesh2, null);
+                        renderer.renderBufferDirect(camera, null, geometry, material2, mesh2, null);
+                        }
+                    }
+                } catch (error) {
+                    // Silently handle WebGL texture copy errors
+                    console.warn('[Lensflare] WebGL texture operation failed:', error.message);
                 }
             }
         };

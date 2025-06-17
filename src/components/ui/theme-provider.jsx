@@ -1,5 +1,4 @@
-import React from "react"
-import { createContext, useEffect, useState } from "react"
+import React, { createContext, useEffect, useState, useMemo, useCallback } from "react"
 import PropTypes from "prop-types"
 
 const ThemeProviderContext = createContext({
@@ -7,7 +6,8 @@ const ThemeProviderContext = createContext({
   setTheme: () => null,
 })
 
-export function ThemeProvider({
+// OPTIMIZED PATTERN: Memoized ThemeProvider component
+export const ThemeProvider = React.memo(function ThemeProvider({
   children,
   defaultTheme = "system",
   storageKey = "vite-ui-theme",
@@ -34,20 +34,24 @@ export function ThemeProvider({
     root.classList.add(theme)
   }, [theme])
 
-  const value = {
+  // Memoized theme setter to prevent recreation
+  const handleSetTheme = useCallback((newTheme) => {
+    localStorage.setItem(storageKey, newTheme)
+    setTheme(newTheme)
+  }, [storageKey])
+
+  // Memoized context value to prevent unnecessary re-renders
+  const value = useMemo(() => ({
     theme,
-    setTheme: (theme) => {
-      localStorage.setItem(storageKey, theme)
-      setTheme(theme)
-    },
-  }
+    setTheme: handleSetTheme,
+  }), [theme, handleSetTheme])
 
   return (
     <ThemeProviderContext.Provider value={value}>
       {children}
     </ThemeProviderContext.Provider>
   )
-}
+})
 
 ThemeProvider.propTypes = {
   children: PropTypes.node,

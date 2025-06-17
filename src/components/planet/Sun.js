@@ -20,16 +20,26 @@ export class Sun {
         this.targetOrientation = new THREE.Quaternion();
         this.velocity = new THREE.Vector3();
         this.absolutePosition = new THREE.Vector3()
-        // Store initial flare specs for later scaling
-        this.initialFlareSpecs = [
+        
+        // Use centralized lens flare configuration from physics data
+        this.initialFlareSpecs = config.lensFlare?.elements || [
+            // Fallback to previous hardcoded values if config is missing
             { url: '/assets/texture/lensflare/lensflare0.png', size: 700, distance: 0.0 },
             { url: '/assets/texture/lensflare/lensflare2.png', size: 512, distance: 0.6 },
             { url: '/assets/texture/lensflare/lensflare3.png', size: 60, distance: 0.7 },
             { url: '/assets/texture/lensflare/lensflare3.png', size: 70, distance: 0.9 },
             { url: '/assets/texture/lensflare/lensflare3.png', size: 120, distance: 1.0 }
         ];
-        // Define a reference distance (e.g., Earth's average orbit radius) for 1x scale
-        this.referenceDistance = PhysicsConstants.PHYSICS.AU; // Earth's average orbital radius
+        
+        // Use centralized reference distance or fallback to physics constant
+        this.referenceDistance = config.lensFlare?.referenceDistance || PhysicsConstants.PHYSICS.AU;
+
+        // Get lens flare scaling parameters from config
+        this.lensFlareScaling = config.lensFlare?.scaling || {
+            minScale: 0.05,
+            maxScale: 10.0,
+            minDistance: 2
+        };
 
         // Get the sun surface texture from the texture manager
         const sunTexture = this.textureManager?.getTexture('sunTexture');
@@ -79,12 +89,24 @@ export class Sun {
     // This method only updates lens flare size based on camera distance.
     updateLensFlare(camera) {
         if (camera && this.lensflare && Array.isArray(this.lensflare.elements)) {
-            // Calculate Inverse Square Scale Factor
-            const distance = camera.position.distanceTo(this.sun.position);
-            const effectiveDistance = Math.max(distance, this.radius * 2);
-            const scaleFactor = Math.max(0.05, Math.min(10.0,
-                (this.referenceDistance * this.referenceDistance) / (effectiveDistance * effectiveDistance)
-            ));
+            // Calculate Inverse Square Scale Factor - use cached distance for better performance
+            let distance = window.app3d?.distanceCache?.getDistance?.('sun');
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                distance = camera.position.distanceTo(this.sun.position);
+            }
+            
+            // Use centralized scaling configuration
+            const minDistance = this.radius * this.lensFlareScaling.minDistance;
+            const effectiveDistance = Math.max(distance, minDistance);
+            const scaleFactor = Math.max(
+                this.lensFlareScaling.minScale, 
+                Math.min(
+                    this.lensFlareScaling.maxScale,
+                    (this.referenceDistance * this.referenceDistance) / (effectiveDistance * effectiveDistance)
+                )
+            );
 
             this.lensflare.elements.forEach((element, index) => {
                 const initialSpec = this.initialFlareSpecs[index];

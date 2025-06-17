@@ -135,31 +135,30 @@ function drawLineString(ctx, coordinates, w, h) {
 export function renderCoverageEfficient(ctx, w, h, { lat, lon, altitude }, color, opacity = 0.3, planetNaifId = 399, options = {}) {
     const { gradient = true, elevationAngles = null, planetData = null } = options;
     
-    // Get coverage radius in degrees - synchronous calculation
+    // Get coverage radius in degrees - use centralized service
     if (!planetData || !planetData.radius) {
         console.warn('renderCoverageEfficient: Planet data not provided');
         return;
     }
     
-    const planetRadius = planetData.radius;
-    const centralAngle = Math.acos(planetRadius / (planetRadius + altitude));
-    const coverageRadiusDeg = centralAngle * (180 / Math.PI);
-    
-    // Project satellite position to canvas
-    const satPos = groundTrackService.projectToCanvas(lat, lon, w, h);
+    // Use physics-based coverage calculation for consistency
+    const coverageRadiusDeg = Math.acos(planetData.radius / (planetData.radius + altitude)) * 180 / Math.PI;
     
     // Calculate pixel radius (approximate - accurate enough for visualization)
     // At equator: 360 degrees = w pixels, so radiusPixels = (coverageRadiusDeg / 360) * w
-    const radiusPixelsX = (coverageRadiusDeg / 360) * w;
-    const radiusPixelsY = (coverageRadiusDeg / 180) * h;
+    const coverageRadiusPixelsX = (coverageRadiusDeg / 360) * w;
+    const coverageRadiusPixelsY = (coverageRadiusDeg / 180) * h;
+    
+    // Project satellite position to canvas
+    const satPos = groundTrackService.projectToCanvas(lat, lon, w, h);
     
     ctx.save();
     
     // Always use gradient rendering which now handles edge wrapping
     if (elevationAngles) {
-        renderElevationRings(ctx, satPos.x, satPos.y, radiusPixelsX, radiusPixelsY, color, elevationAngles, altitude, planetNaifId);
+        renderElevationRings(ctx, satPos.x, satPos.y, coverageRadiusPixelsX, coverageRadiusPixelsY, color, elevationAngles, altitude, planetNaifId);
     } else if (gradient) {
-        renderCoverageGradient(ctx, satPos.x, satPos.y, radiusPixelsX, radiusPixelsY, color, opacity, w);
+        renderCoverageGradient(ctx, satPos.x, satPos.y, coverageRadiusPixelsX, coverageRadiusPixelsY, color, opacity, w);
     } else {
         // Fallback to pixel-based for complex cases (poles, etc)
         ctx.globalAlpha = opacity;
@@ -169,7 +168,7 @@ export function renderCoverageEfficient(ctx, w, h, { lat, lon, altitude }, color
             renderCoverageWithWrapping(ctx, w, h, lat, lon, coverageRadiusDeg);
         } else {
             // Use gradient without gradient effect
-            renderCoverageGradient(ctx, satPos.x, satPos.y, radiusPixelsX, radiusPixelsY, color, opacity, w);
+            renderCoverageGradient(ctx, satPos.x, satPos.y, coverageRadiusPixelsX, coverageRadiusPixelsY, color, opacity, w);
         }
     }
     

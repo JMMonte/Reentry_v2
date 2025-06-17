@@ -12,6 +12,7 @@
  */
 
 import * as THREE from 'three';
+import { RENDER_ORDER } from '../components/planet/PlanetConstants.js';
 
 export class WebGLLabels {
     /**
@@ -42,7 +43,7 @@ export class WebGLLabels {
         padding: 16,
         pixelScale: 0.00025,
         sizeAttenuation: false,  // Critical for consistent size
-        renderOrder: 999,
+        renderOrder: RENDER_ORDER.DISTANCE_MARKERS,
         transparent: true,
         depthWrite: false,
         depthTest: true
@@ -99,9 +100,16 @@ export class WebGLLabels {
         ctx.textBaseline = 'top';
         ctx.fillText(text, padding + margin, padding + margin);
         
-        // Create texture
+        // Create texture with error handling
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
+        
+        // Disable mipmaps for dynamic textures to avoid WebGL errors
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
         
         // Create sprite material without mipmaps for dynamically generated textures
         const material = new THREE.SpriteMaterial({
@@ -112,11 +120,6 @@ export class WebGLLabels {
             depthWrite: options.depthWrite,
             depthTest: options.depthTest
         });
-        
-        // Disable mipmaps for dynamic textures to avoid WebGL errors
-        texture.generateMipmaps = false;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
         
         // Create sprite
         const sprite = new THREE.Sprite(material);
@@ -209,6 +212,13 @@ export class WebGLLabels {
         // Update texture
         sprite.userData.texture.needsUpdate = true;
         sprite.userData.text = newText;
+        
+        // Update material properties if they changed
+        if (options.sizeAttenuation !== undefined && 
+            sprite.material.sizeAttenuation !== options.sizeAttenuation) {
+            sprite.material.sizeAttenuation = options.sizeAttenuation;
+            sprite.material.needsUpdate = true;
+        }
     }
 
     /**
@@ -322,53 +332,5 @@ export class WebGLLabels {
      */
     static easeInOutCubic(t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    }
-
-    /**
-     * Create axis label with specific styling
-     * @param {string} axisName - Name of the axis (e.g., 'X', 'Y', 'Z')
-     * @param {string} description - Full description
-     * @param {string} color - Hex color string
-     * @param {Object} config - Additional configuration
-     * @returns {THREE.Sprite} The created sprite
-     */
-    static createAxisLabel(axisName, description, color = '#ffffff', config = {}) {
-        const axisConfig = {
-            renderOrder: 998,
-            sizeAttenuation: false,
-            ...config,
-            color
-        };
-        
-        return WebGLLabels.createLabel(description, axisConfig);
-    }
-
-    /**
-     * Convert CSS2DObject label to Three.js sprite
-     * @param {CSS2DObject} css2dLabel - The CSS2D label to convert
-     * @returns {THREE.Sprite} The created sprite
-     */
-    static convertCSS2DToSprite(css2dLabel) {
-        if (!css2dLabel?.element) {
-            console.warn('[WebGLLabels] Invalid CSS2DObject');
-            return null;
-        }
-        
-        const element = css2dLabel.element;
-        const text = element.textContent || '';
-        const computedStyle = window.getComputedStyle(element);
-        
-        // Extract style from CSS2D element
-        const config = {
-            color: computedStyle.color || '#ffffff',
-            fontSize: parseInt(computedStyle.fontSize) || 42,
-            fontFamily: computedStyle.fontFamily || 'sans-serif'
-        };
-        
-        // Create sprite at same position
-        const sprite = WebGLLabels.createLabel(text, config);
-        sprite.position.copy(css2dLabel.position);
-        
-        return sprite;
     }
 }

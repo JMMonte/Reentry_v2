@@ -1,89 +1,107 @@
-import React, { createContext, useContext, useState, useRef, useImperativeHandle, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import PropTypes from 'prop-types';
 
 // Toast Context
-const ToastContext = createContext(null);
+const ToastContext = createContext();
 
-export function useToast() {
-  return useContext(ToastContext);
-}
+// ✅ OPTIMIZED PATTERN: Memoized Toast item component
+const ToastItem = React.memo(function ToastItem({ toast, onRemove }) {
+  const handleRemove = useCallback(() => {
+    onRemove(toast.id);
+  }, [toast.id, onRemove]);
 
-// Toast Component
-const Toast = React.forwardRef((props, ref) => {
-  const [visible, setVisible] = useState(false);
-  const [internalMessage, setInternalMessage] = useState('');
-  const hideTimeout = useRef();
-
-  useImperativeHandle(ref, () => ({
-    showToast: (msg) => {
-      setInternalMessage(msg);
-      setVisible(true);
-      if (hideTimeout.current) clearTimeout(hideTimeout.current);
-      hideTimeout.current = setTimeout(() => {
-        setVisible(false);
-        hideTimeout.current = setTimeout(() => setInternalMessage(''), 500);
-      }, 2000);
-    }
+  // Memoized toast styles based on type
+  const toastStyles = useMemo(() => ({
+    success: 'bg-green-600 text-white border-green-700',
+    error: 'bg-red-600 text-white border-red-700',
+    warning: 'bg-yellow-600 text-white border-yellow-700',
+    info: 'bg-blue-600 text-white border-blue-700'
   }), []);
 
-  useEffect(() => {
-    return () => hideTimeout.current && clearTimeout(hideTimeout.current);
-  }, []);
+  const toastClass = useMemo(() => 
+    `fixed top-4 right-4 p-4 rounded-lg border shadow-lg z-50 min-w-64 max-w-96 transition-all duration-300 ${
+      toastStyles[toast.type] || toastStyles.info
+    }`,
+    [toast.type, toastStyles]
+  );
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 32,
-        display: 'flex',
-        justifyContent: 'center',
-        zIndex: 10000,
-        pointerEvents: 'none',
-      }}
-    >
-      {internalMessage && (
-        <div
-          className={`transition-all duration-500 ease-in-out transform ${
-            visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-          } shadow-lg`}
-          style={{
-            background: 'linear-gradient(90deg, #232526 0%, #414345 100%)',
-            color: '#fff',
-            padding: '14px 36px',
-            borderRadius: 12,
-            fontSize: 17,
-            fontWeight: 500,
-            boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
-            minWidth: 220,
-            textAlign: 'center',
-            letterSpacing: 0.2,
-            pointerEvents: 'auto',
-          }}
-        >
-          {internalMessage}
+    <div className={toastClass}>
+      <div className="flex justify-between items-start">
+        <div>
+          {toast.title && <div className="font-semibold text-sm">{toast.title}</div>}
+          <div className="text-sm">{toast.message}</div>
         </div>
-      )}
+        <button
+          onClick={handleRemove}
+          className="ml-4 text-white hover:text-gray-200 transition-colors"
+          aria-label="Close"
+        >
+          ×
+        </button>
+      </div>
     </div>
   );
 });
 
-Toast.displayName = 'Toast';
+ToastItem.propTypes = {
+  toast: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    type: PropTypes.oneOf(['success', 'error', 'warning', 'info']).isRequired,
+    title: PropTypes.string,
+    message: PropTypes.string.isRequired
+  }).isRequired,
+  onRemove: PropTypes.func.isRequired
+};
 
-// Toast Provider
-export function ToastProvider({ children }) {
-  const toastRef = useRef();
-  const showToast = (msg) => toastRef.current?.showToast(msg);
+// ✅ OPTIMIZED PATTERN: Memoized ToastProvider component with forwardRef support
+export const ToastProvider = React.memo(forwardRef(function ToastProvider({ children }, ref) {
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = useCallback((type, message, title = null, duration = 5000) => {
+    const id = Date.now() + Math.random();
+    const newToast = { id, type, message, title };
+    
+    setToasts(prev => [...prev, newToast]);
+    
+    // Auto-remove after duration
+    setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== id));
+    }, duration);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
+
+  // Expose the showToast method through the ref for legacy compatibility
+  useImperativeHandle(ref, () => ({
+    showToast: (message) => showToast('info', message) // Legacy single-parameter support
+  }), [showToast]);
+
+  // Memoized context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
+    showToast
+  }), [showToast]);
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
-      <Toast ref={toastRef} />
+      {toasts.map(toast => (
+        <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
+      ))}
     </ToastContext.Provider>
   );
-}
+}));
 
 ToastProvider.propTypes = {
-  children: PropTypes.node.isRequired,
+  children: PropTypes.node.isRequired
+};
+
+export const useToast = () => {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
 };

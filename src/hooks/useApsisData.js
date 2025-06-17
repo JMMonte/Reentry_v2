@@ -7,7 +7,6 @@
 
 import { useMemo, useCallback } from 'react';
 import { ApsisService } from '../services/ApsisService.js';
-import { ApsisDetection } from '../services/ApsisDetection.js';
 
 /**
  * Hook for getting apsis data for a satellite
@@ -48,6 +47,16 @@ export function useApsisData(satellite, currentTime, options = {}) {
             return null;
         }
 
+        // Additional validation for satellite data structure
+        if (!satellite.position || !satellite.velocity || !satellite.centralBodyNaifId) {
+            console.warn('[useApsisData] Satellite missing required data:', {
+                hasPosition: !!satellite.position,
+                hasVelocity: !!satellite.velocity,
+                hasCentralBodyNaifId: !!satellite.centralBodyNaifId
+            });
+            return null;
+        }
+
         try {
             return ApsisService.getApsisData(satellite, centralBody, currentTime, options);
         } catch (error) {
@@ -62,23 +71,7 @@ export function useApsisData(satellite, currentTime, options = {}) {
             return new Date(currentTime?.getTime() + 3600000); // +1 hour fallback
         }
         
-        // Try numerical detection first if orbit points are available
-        if (satellite.orbitPoints && satellite.orbitPoints.length > 3) {
-            try {
-                const nextPeriapsis = ApsisDetection.findNextPeriapsis(
-                    satellite.orbitPoints,
-                    currentTime.getTime(),
-                    centralBody.naifId || centralBody.naif_id
-                );
-                if (nextPeriapsis) {
-                    return new Date(nextPeriapsis.time);
-                }
-            } catch (error) {
-                console.warn('[useApsisData] Numerical detection failed, falling back to analytical:', error);
-            }
-        }
-        
-        // Fallback to analytical calculation
+        // Use existing ApsisService method - no complex numerical detection in UI layer
         return ApsisService.getNextPeriapsisTime(satellite, centralBody, currentTime);
     }, [satellite, centralBody, currentTime]);
 
@@ -87,23 +80,7 @@ export function useApsisData(satellite, currentTime, options = {}) {
             return new Date(currentTime?.getTime() + 7200000); // +2 hours fallback
         }
         
-        // Try numerical detection first if orbit points are available
-        if (satellite.orbitPoints && satellite.orbitPoints.length > 3) {
-            try {
-                const nextApoapsis = ApsisDetection.findNextApoapsis(
-                    satellite.orbitPoints,
-                    currentTime.getTime(),
-                    centralBody.naifId || centralBody.naif_id
-                );
-                if (nextApoapsis) {
-                    return new Date(nextApoapsis.time);
-                }
-            } catch (error) {
-                console.warn('[useApsisData] Numerical detection failed, falling back to analytical:', error);
-            }
-        }
-        
-        // Fallback to analytical calculation
+        // Use existing ApsisService method - no complex numerical detection in UI layer
         return ApsisService.getNextApoapsisTime(satellite, centralBody, currentTime);
     }, [satellite, centralBody, currentTime]);
 

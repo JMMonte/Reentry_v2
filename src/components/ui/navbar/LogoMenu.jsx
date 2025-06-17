@@ -4,7 +4,7 @@ import { Save, Upload } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
 import PropTypes from 'prop-types';
 
-function LogoMenu({ handleSaveState, importInputRef, onImportState }) {
+const LogoMenu = React.memo(function LogoMenu({ handleSaveState, importInputRef, onImportState }) {
     return (
         <>
             <DropdownMenu>
@@ -32,7 +32,7 @@ function LogoMenu({ handleSaveState, importInputRef, onImportState }) {
             />
         </>
     );
-}
+});
 
 LogoMenu.propTypes = {
     handleSaveState: PropTypes.func.isRequired,

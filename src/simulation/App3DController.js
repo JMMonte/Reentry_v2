@@ -23,6 +23,7 @@ export class App3DController {
         this.ready = false;
         this._readyCallbacks = [];
         this.app3d.onSceneReady = () => {
+            console.log('[App3DController] Scene ready callback triggered!');
             this.ready = true;
             this._readyCallbacks.forEach(cb => cb());
             this._readyCallbacks = [];
@@ -34,7 +35,15 @@ export class App3DController {
      * Initialize the App3D instance (calls init()).
      */
     async initialize() {
-        await this.app3d.init();
+        console.log('[App3DController] Starting App3D initialization...');
+        try {
+            await this.app3d.init();
+            console.log('[App3DController] App3D.init() completed successfully');
+        } catch (error) {
+            console.error('[App3DController] App3D.init() failed:', error);
+            throw error;
+        }
+        
         if (this._initialState) {
             try {
                 this.app3d.importSimulationState(this._initialState);
@@ -46,8 +55,8 @@ export class App3DController {
                 console.error('Failed to import initial simulation state:', err);
             }
         } else {
-            // No initial state: default to Earth
-            this.app3d.updateSelectedBody('earth', true);
+            // No initial state: SmartCamera will default to Earth during scene initialization
+            // No need to explicitly call updateSelectedBody here
         }
     }
 

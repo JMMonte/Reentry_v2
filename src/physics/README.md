@@ -49,7 +49,10 @@ physics/
 │   └── barycenters/
 │
 └── workers/              # Web workers for performance
-    └── orbitPropagationWorker.js
+    ├── SatelliteWorker.js         # Unified satellite physics worker
+    ├── SatelliteWorkerPool.js     # Worker pool management
+    ├── groundtrackWorker.js       # Ground track calculations
+    └── lineOfSightWorker.js       # Line of sight calculations
 ```
 
 ## 🎯 Main API Usage

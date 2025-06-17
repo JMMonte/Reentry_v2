@@ -22,7 +22,9 @@ export default {
     j2: 6.0e-5,
     rotationPeriod: 5067000,
     oblateness: 0,
-    soiRadius: 112397,
+    soiRadius: 112000, // km - Sphere of Influence radius
+    orbitalPeriod: 88 * 86400, // seconds (88 Earth days)
+    semiMajorAxis: 57.9e6, // km (0.39 AU)
     lodLevelsKey: 'default',
     
     // Rendering properties
@@ -61,6 +63,22 @@ export default {
     spin: 329.5988,       // deg at J2000.0
     spinRate: 6.1385108,  // deg/day
     orientationEpoch: 2451545.0, // JD (J2000.0)
+    
+    // Atmospheric model for drag calculations (very thin exosphere)
+    atmosphericModel: {
+        maxAltitude: 500, // km - Mercury's thin exosphere extent
+        minAltitude: 0,
+        referenceAltitude: 100, // km - above surface
+        referenceDensity: 1e-12, // kg/m³ at 100km (extremely thin exosphere)
+        scaleHeight: 40, // km - estimated scale height for tenuous exosphere
+        getDensity: function(altitude) {
+            // Extremely thin exosphere - minimal drag effects
+            if (altitude > this.maxAltitude) return 0;
+            return this.referenceDensity * Math.exp(-(altitude - this.referenceAltitude) / this.scaleHeight);
+        }
+    },
+
+    // Atmospheric properties (virtually no atmosphere)
     
     // canonicalOrbit can be added if needed from orbitalBodiesData.js
 }; 

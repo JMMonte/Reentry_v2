@@ -2,6 +2,7 @@
  * Manages display settings and their application to the App3D scene and satellites.
  */
 import { getPlanetManager } from './PlanetManager.js';
+
 export class DisplaySettingsManager {
     /**
      * @param {App3D} app3d - Reference to the main App3D instance
@@ -11,6 +12,26 @@ export class DisplaySettingsManager {
         this.app3d = app3d;
         this.settings = { ...defaults };
         this.listeners = new Map(); // key -> Set of callback functions
+        
+        // Advanced performance optimization: intelligent batching system
+        this._pendingUpdates = new Set();
+        this._updateTimeout = null;
+        this._batchDelay = 100; // ms
+        this._uniformUpdateQueue = new Map(); // material -> uniforms to update
+        this._uniformUpdateTimeout = null;
+        this._uniformBatchDelay = 16; // ~1 frame delay for uniform updates
+        this._lastUniformUpdate = 0;
+        
+        // Track expensive operations to debounce them
+        this._expensiveOperations = new Set([
+            'orbitUpdateInterval',
+            'orbitPredictionInterval', 
+            'orbitPointsPerPeriod',
+            'physicsTimeStep',
+            'integrationMethod',
+            'perturbationScale',
+            'sensitivityScale'
+        ]);
         
         // Store bound event handler for removal
         this._boundDisplaySettingsHandler = (event) => {
@@ -46,7 +67,15 @@ export class DisplaySettingsManager {
     updateSetting(key, value) {
         if (this.settings[key] !== value) {
             this.settings[key] = value;
-            this._applySetting(key, value);
+            
+            // For expensive operations, batch them
+            if (this._expensiveOperations.has(key)) {
+                this._pendingUpdates.add(key);
+                this._scheduleExpensiveUpdate();
+            } else {
+                // Apply immediately for cheap operations
+                this._applySetting(key, value);
+            }
             
             // Notify listeners
             const callbacks = this.listeners.get(key);
@@ -59,6 +88,106 @@ export class DisplaySettingsManager {
                     }
                 });
             }
+        }
+    }
+
+    /**
+     * Schedule expensive updates to be batched
+     * @private
+     */
+    _scheduleExpensiveUpdate() {
+        if (this._updateTimeout) {
+            clearTimeout(this._updateTimeout);
+        }
+        
+        this._updateTimeout = setTimeout(() => {
+            const updates = Array.from(this._pendingUpdates);
+            this._pendingUpdates.clear();
+            this._updateTimeout = null;
+            
+            // Apply all pending expensive updates at once
+            this._applyExpensiveUpdates(updates);
+        }, this._batchDelay);
+    }
+
+    /**
+     * Apply batched expensive updates
+     * @private
+     */
+    _applyExpensiveUpdates(keys) {
+        const hasOrbitChanges = keys.some(key => 
+            ['orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod'].includes(key)
+        );
+        
+        const hasPhysicsChanges = keys.some(key => 
+            ['physicsTimeStep', 'integrationMethod', 'perturbationScale', 'sensitivityScale'].includes(key)
+        );
+        
+        // Apply individual settings first
+        keys.forEach(key => {
+            if (!['orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod'].includes(key)) {
+                this._applySetting(key, this.settings[key]);
+            }
+        });
+        
+        // Then batch the expensive orbit updates
+        if (hasOrbitChanges) {
+            this._updateAllOrbits();
+        }
+        
+        // Batch physics updates if needed
+        if (hasPhysicsChanges) {
+            this._updatePhysicsSettings();
+        }
+    }
+
+    /**
+     * Batch update all satellite orbits
+     * @private
+     */
+    _updateAllOrbits() {
+        // Force update of orbit display parameters in physics engine
+        // IMPORTANT: Only apply global settings to satellites WITHOUT custom local settings
+        // Satellite debug window (local) settings should override display options (global) settings
+        if (this.app3d.physicsIntegration?.physicsEngine?.satelliteEngine) {
+            const satelliteEngine = this.app3d.physicsIntegration.physicsEngine.satelliteEngine;
+            for (const satelliteId of satelliteEngine.satellites.keys()) {
+                const satellite = satelliteEngine.satellites.get(satelliteId);
+                
+                // Only apply global settings if satellite doesn't have custom local settings
+                if (!satellite?.orbitSimProperties || 
+                    (satellite.orbitSimProperties.periods === undefined && satellite.orbitSimProperties.pointsPerPeriod === undefined)) {
+                    // Satellite has NO custom settings, apply global display settings
+                    satelliteEngine.forceOrbitExtension(satelliteId, {
+                        periods: this.settings.orbitPredictionInterval,
+                        pointsPerPeriod: this.settings.orbitPointsPerPeriod
+                    });
+                } else {
+                    // Satellite HAS custom settings, force refresh with current parameters (don't override)
+                    satelliteEngine.forceOrbitExtension(satelliteId);
+                }
+            }
+        }
+        
+        // Also update centralized orbit visualizer if available
+        if (this.app3d.satelliteOrbitManager) {
+            this.app3d.satelliteOrbitManager.updateAllVisibility();
+        }
+    }
+
+    /**
+     * Update physics settings
+     * @private
+     */
+    _updatePhysicsSettings() {
+        // Notify physics system of setting changes
+        if (this.app3d.physicsIntegration?.updateSettings) {
+            this.app3d.physicsIntegration.updateSettings({
+                physicsTimeStep: this.settings.physicsTimeStep,
+                integrationMethod: this.settings.integrationMethod,
+                perturbationScale: this.settings.perturbationScale,
+                sensitivityScale: this.settings.sensitivityScale
+            });
         }
     }
 
@@ -102,7 +231,10 @@ export class DisplaySettingsManager {
         switch (key) {
             case 'ambientLight': {
                 const ambientLight = app3d.scene?.getObjectByName('ambientLight');
-                if (ambientLight) ambientLight.intensity = value;
+                if (ambientLight) {
+                    // Batch uniform updates for better performance
+                    this._queueUniformUpdate(ambientLight, 'intensity', value);
+                }
                 break;
             }
             case 'showGrid': {
@@ -123,12 +255,13 @@ export class DisplaySettingsManager {
                 }
                 break;
             case 'showSatVectors':
-                // Toggle satellite-centric velocity/gravity arrows only
-                if (app3d.satelliteVectors) {
-                    app3d.satelliteVectors.setVisible(value);
-                    // If using new implementation, force update
-                    if (value && app3d.satelliteVectors.update) {
-                        app3d.satelliteVectors.update();
+                // Toggle satellite vector visibility for all satellites
+                if (app3d.satellites?.getSatellitesMap) {
+                    const satelliteMap = app3d.satellites.getSatellitesMap();
+                    for (const satellite of satelliteMap.values()) {
+                        if (satellite.vectorVisualizer) {
+                            satellite.vectorVisualizer.setVisible(value);
+                        }
                     }
                 }
                 break;
@@ -181,22 +314,12 @@ export class DisplaySettingsManager {
                     app3d.sceneManager.composers.fxaaPass.enabled = value;
                 }
                 break;
-            // Force immediate orbit path recalculation when prediction/points/interval change
+            // Orbit settings are now handled by batched updates
             case 'orbitUpdateInterval':
             case 'orbitPredictionInterval':
             case 'orbitPointsPerPeriod':
-                // Just update visualization - don't clear cache
-                if (app3d.satelliteOrbitManager) {
-                    if (app3d.physicsIntegration?.physicsEngine?.satellites) {
-                        for (const satelliteId of app3d.physicsIntegration.physicsEngine.satellites.keys()) {
-                            app3d.satelliteOrbitManager.updateSatelliteOrbit(satelliteId);
-                        }
-                    }
-                }
-                // Fallback to old system if it exists
-                else if (app3d.satellites?.refreshOrbitPaths) {
-                    app3d.satellites.refreshOrbitPaths();
-                }
+                // These are handled by _updateAllOrbits() when batched
+                // No immediate action needed here
                 break;
             case 'showOrbits':
                 // Update satellite orbit visibility for both old and new systems
@@ -208,11 +331,11 @@ export class DisplaySettingsManager {
                     app3d.satellites.setOrbitVisibility(value);
                 }
                 // Update apsis visibility (depends on showOrbits)
-                this._updateApsisVisibility(app3d);
+                this._updateOrbitVisibility(app3d);
                 break;
             case 'showApsis':
                 // Update apsis marker visibility
-                this._updateApsisVisibility(app3d);
+                this._updateOrbitVisibility(app3d);
                 break;
             case 'pixelRatio': {
                 // Update renderer pixel ratio
@@ -239,39 +362,91 @@ export class DisplaySettingsManager {
     }
     
     /**
-     * Update apsis marker visibility for all satellites
+     * Update orbit visibility for all satellites
      * @private
      */
-    _updateApsisVisibility(app3d) {
-        const showOrbits = this.getSetting('showOrbits');
-        const showApsis = this.getSetting('showApsis');
-        const visible = showOrbits && showApsis;
-        
-        // Update satellite apsis visualizers
-        if (app3d.satellites?.satellites) {
-            app3d.satellites.satellites.forEach(satellite => {
-                if (satellite.apsisVisualizer) {
-                    satellite.apsisVisualizer.setVisible(visible);
-                }
-            });
+    _updateOrbitVisibility(app3d) {
+        // Use centralized SimpleSatelliteOrbitVisualizer for all orbit visibility
+        if (app3d.satelliteOrbitManager) {
+            app3d.satelliteOrbitManager.updateAllVisibility();
         }
     }
 
     /**
-     * Clean up resources and remove event listeners
+     * Cleanup and remove all listeners/timeouts
      */
     dispose() {
-        // Remove event listener
-        if (this._boundDisplaySettingsHandler) {
-            document.removeEventListener('displaySettingsUpdate', this._boundDisplaySettingsHandler);
-            this._boundDisplaySettingsHandler = null;
+        // Clear all batching timeouts
+        if (this._updateTimeout) {
+            clearTimeout(this._updateTimeout);
+            this._updateTimeout = null;
         }
         
-        // Clear all listener callbacks
+        if (this._uniformUpdateTimeout) {
+            clearTimeout(this._uniformUpdateTimeout);
+            this._uniformUpdateTimeout = null;
+        }
+        
+        // Clear all pending updates
+        this._pendingUpdates.clear();
+        this._uniformUpdateQueue.clear();
+        
+        // Remove document event listener
+        document.removeEventListener('displaySettingsUpdate', this._boundDisplaySettingsHandler);
+        
+        // Clear all setting listeners
         this.listeners.clear();
         
-        // Clear references
+        // Clear references to prevent memory leaks
         this.app3d = null;
         this.settings = null;
+        this._boundDisplaySettingsHandler = null;
+    }
+
+    /**
+     * Queue uniform updates for batching
+     * @private
+     */
+    _queueUniformUpdate(object, property, value) {
+        if (!this._uniformUpdateQueue.has(object)) {
+            this._uniformUpdateQueue.set(object, new Map());
+        }
+        this._uniformUpdateQueue.get(object).set(property, value);
+        
+        // Schedule batch update
+        if (this._uniformUpdateTimeout) {
+            clearTimeout(this._uniformUpdateTimeout);
+        }
+        
+        this._uniformUpdateTimeout = setTimeout(() => {
+            this._flushUniformUpdates();
+        }, this._uniformBatchDelay);
+    }
+
+    /**
+     * Apply all queued uniform updates in a single batch
+     * @private
+     */
+    _flushUniformUpdates() {
+        const now = performance.now();
+        
+        // Prevent excessive updates
+        if (now - this._lastUniformUpdate < this._uniformBatchDelay) {
+            return;
+        }
+        
+        try {
+            for (const [object, updates] of this._uniformUpdateQueue) {
+                for (const [property, value] of updates) {
+                    if (object && typeof object[property] !== 'undefined') {
+                        object[property] = value;
+                    }
+                }
+            }
+        } finally {
+            this._uniformUpdateQueue.clear();
+            this._uniformUpdateTimeout = null;
+            this._lastUniformUpdate = now;
+        }
     }
 } 

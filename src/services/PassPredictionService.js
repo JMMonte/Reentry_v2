@@ -330,6 +330,70 @@ export class PassPredictionService {
         
         return filtered.slice(0, maxPasses);
     }
+
+    /**
+     * Calculate estimated visibility duration for a POI from satellite altitude
+     * This provides a quick estimate for UI display - for precise calculations use orbit propagation
+     * @param {Object} satellite - Satellite object with altitude
+     * @param {Object} planetData - Planet data with radius
+     * @returns {number} Estimated visibility duration in minutes
+     */
+    static calculateVisibilityDuration(satellite, planetData = null) {
+        try {
+            const altitude = satellite.alt;
+            const planetRadius = planetData?.radius || this._planetRadius || 6371; // km
+
+            if (!altitude || altitude <= 0) {
+                return 0;
+            }
+
+            // Calculate the arc length of visibility using coverage radius
+            const centralAngle = Math.acos(planetRadius / (planetRadius + altitude));
+            const visibilityArcKm = centralAngle * planetRadius;
+
+            // Estimate satellite ground speed
+            // For LEO satellites: v ≈ √(GM/r) where r = planetRadius + altitude
+            const GM = 3.986004418e5; // Earth's GM in km³/s² (approximate for other planets)
+            const orbitalRadius = planetRadius + altitude;
+            const orbitalSpeed = Math.sqrt(GM / orbitalRadius); // km/s
+            
+            // Ground speed is approximately orbital speed (simplified)
+            const groundSpeed = orbitalSpeed;
+            
+            // Duration = arc length / ground speed
+            const durationSeconds = visibilityArcKm / groundSpeed;
+            
+            return Math.round(durationSeconds / 60); // Return in minutes
+        } catch (error) {
+            console.warn('Error calculating visibility duration:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Calculate satellite coverage radius in degrees
+     * @param {number} altitude - Satellite altitude in km
+     * @param {Object} planetData - Planet data with radius
+     * @returns {number} Coverage radius in degrees
+     */
+    static calculateCoverageRadius(altitude, planetData = null) {
+        try {
+            const planetRadius = planetData?.radius || this._planetRadius || 6371; // km
+            
+            if (!altitude || altitude <= 0) {
+                return 0;
+            }
+
+            // Calculate maximum central angle visible from satellite
+            const centralAngle = Math.acos(planetRadius / (planetRadius + altitude));
+            
+            // Convert to degrees
+            return centralAngle * (180 / Math.PI);
+        } catch (error) {
+            console.warn('Error calculating coverage radius:', error);
+            return 0;
+        }
+    }
 }
 
 export const passPredictionService = new PassPredictionService();

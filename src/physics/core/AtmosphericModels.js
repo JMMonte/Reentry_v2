@@ -3,6 +3,14 @@ import { PhysicsVector3 } from '../utils/PhysicsVector3.js';
 /**
  * Centralized atmospheric models and drag calculations
  * Handles atmospheric density profiles and aerodynamic forces
+ * 
+ * NOTE: This file contains GENERIC atmospheric constants and calculation methods.
+ * Body-specific atmospheric data (density profiles, composition, etc.) should be 
+ * defined in the individual planetary configuration files (e.g., src/physics/data/planets/).
+ * 
+ * For Sun-specific data, see: src/physics/data/planets/Sun.js
+ * For Earth-specific data, see: src/physics/data/planets/Earth.js
+ * etc.
  */
 export class AtmosphericModels {
     // Note: Rotation rates should be calculated dynamically from body data
@@ -10,8 +18,9 @@ export class AtmosphericModels {
     /**
      * Default ballistic coefficient for satellites (kg/m²)
      * Note: This is in kg/m² but positions are in km, so we need to convert
+     * This is a GENERIC default - specific satellites may override this value
      */
-    static DEFAULT_BALLISTIC_COEFFICIENT = 50; // kg/m²
+    static DEFAULT_BALLISTIC_COEFFICIENT = 200; // kg/m² - Realistic for satellites (was 50!)
 
     /**
      * Calculate atmospheric density using exponential model

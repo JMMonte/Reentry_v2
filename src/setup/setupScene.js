@@ -17,7 +17,6 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 // Domain utilities ─────────────────────────────────────────────────────────────
-import { SatelliteVectors } from '../utils/SatelliteVectors.js';
 import { PlanetVectors } from '../components/planet/PlanetVectors.js';
 
 // Config ───────────────────────────────────────────────────────────────────────
@@ -61,38 +60,65 @@ const loadTextures = async (textureManager) => {
 
 const setupPostProcessing = (app) => {
     const { scene, camera, renderer, sceneManager } = app;
-    // Use default EffectComposer targets
-    const composer = new EffectComposer(renderer);
+    
+    // Validate that renderer is properly initialized
+    if (!renderer) {
+        console.error('setupPostProcessing: renderer is null or undefined');
+        return;
+    }
+    
+    // Validate that renderer has required methods and properties
+    if (typeof renderer.getPixelRatio !== 'function') {
+        console.error('setupPostProcessing: renderer.getPixelRatio is not a function');
+        return;
+    }
+    
+    // Check if renderer context is valid
+    const context = renderer.getContext();
+    if (!context) {
+        console.error('setupPostProcessing: renderer context is null');
+        return;
+    }
+    
+    try {
+        // Use default EffectComposer targets
+        const composer = new EffectComposer(renderer);
 
-    // 1. Render the main scene
-    composer.addPass(new RenderPass(scene, camera));
+        // 1. Render the main scene
+        composer.addPass(new RenderPass(scene, camera));
 
-    // 2. FXAA Pass (kept)
-    const fxaaPass = new ShaderPass(FXAAShader);
-    fxaaPass.material.uniforms.resolution.value.set(
-        1 / (window.innerWidth * renderer.getPixelRatio()),
-        1 / (window.innerHeight * renderer.getPixelRatio())
-    );
-    composer.addPass(fxaaPass);
-    sceneManager.composers.fxaaPass = fxaaPass;
+        // 2. FXAA Pass (kept)
+        const fxaaPass = new ShaderPass(FXAAShader);
+        const pixelRatio = renderer.getPixelRatio();
+        fxaaPass.material.uniforms.resolution.value.set(
+            1 / (window.innerWidth * pixelRatio),
+            1 / (window.innerHeight * pixelRatio)
+        );
+        composer.addPass(fxaaPass);
+        sceneManager.composers.fxaaPass = fxaaPass;
 
-    // 3. Bloom Pass (re-enabled with potentially adjusted settings)
-    const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        bloomConfig.strength, // We will use the existing config values for now
-        bloomConfig.radius,
-        bloomConfig.threshold
-    );
-    bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2); // Using half resolution is good for perf
-    bloomPass.renderToScreen = true;
-    composer.addPass(bloomPass);
+        // 3. Bloom Pass (re-enabled with potentially adjusted settings)
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            bloomConfig.strength, // We will use the existing config values for now
+            bloomConfig.radius,
+            bloomConfig.threshold
+        );
+        bloomPass.setSize(window.innerWidth / 2, window.innerHeight / 2); // Using half resolution is good for perf
+        bloomPass.renderToScreen = true;
+        composer.addPass(bloomPass);
 
-    sceneManager.composers.final = composer;
+        sceneManager.composers.final = composer;
 
-    // If bloom is re-enabled, FXAA should not render to screen itself.
-    // The final pass in the composer (which is now bloom) will render to screen.
-    fxaaPass.renderToScreen = false;
-
+        // If bloom is re-enabled, FXAA should not render to screen itself.
+        // The final pass in the composer (which is now bloom) will render to screen.
+        fxaaPass.renderToScreen = false;
+        
+        console.log('Post-processing setup completed successfully');
+    } catch (error) {
+        console.error('Failed to setup post-processing:', error);
+        // Don't throw - allow the app to continue without post-processing
+    }
 };
 
 // Using singleton solarSystemDataManager imported from PlanetaryDataManager.js
@@ -179,7 +205,7 @@ export async function createSceneObjects(app) {
             app.stars.push(bodyObj);
             if (config.name.toLowerCase() === 'sun') app.sun = bodyObj;
         } else {
-            bodyObj = new Planet(scene, renderer, timeUtils, textureManager, config);
+            bodyObj = new Planet(scene, renderer, timeUtils, textureManager, config, app.labelManager);
         }
         bodyObj.naifId = config.naifId;
         app.celestialBodies.push(bodyObj);
@@ -270,7 +296,7 @@ export async function createSceneObjects(app) {
     // 5. Create PlanetVectors (for planets, moons, and barycenters)
     app.planetVectors = app.celestialBodies
         .filter(p => p instanceof Planet && p.getMesh)
-        .map(p => new PlanetVectors(p, scene, app.sun?.sun, { name: p.name }));
+        .map(p => new PlanetVectors(p, scene, app.sun?.sun, { name: p.name }, app.labelManager));
 
     // 6. Construct gravitySources correctly (planets/moons + stars)
     const gravitySources = [];
@@ -287,17 +313,6 @@ export async function createSceneObjects(app) {
             mesh,
             mass: body.mass ?? 0
         });
-    });
-
-    // Ensure no null/undefined entries
-    // const validGravitySources = gravitySources.filter(Boolean);
-
-    // Use refactored satellite vectors implementation
-    app.satelliteVectors = new SatelliteVectors({
-        scene,
-        camera,
-        app3d: app,
-        satelliteManager: app.satellites
     });
 
     // --- Parent moons to their barycenter's orbitGroup ---
@@ -332,6 +347,7 @@ export async function initScene(app) {
     app.sceneObjectsInitialized = false; // Flag to track initialization
 
     Planet.setCamera(camera);
+    Planet.setDisplaySettingsManager(app.displaySettingsManager);
 
     if (!scene || !renderer || !camera) throw new Error('Scene, camera, or renderer not set.');
     if (!textureManager) throw new Error('TextureManager not initialized.');
@@ -345,7 +361,9 @@ export async function initScene(app) {
 
     // Signal that all assets are loaded
     if (typeof window !== 'undefined') {
+        console.log('[setupScene] Dispatching assetsLoaded event');
         window.dispatchEvent(new CustomEvent('assetsLoaded'));
+        console.log('[setupScene] assetsLoaded event dispatched');
     }
 
     // Note: Celestial bodies and related managers (OrbitManager, PlanetVectors, etc.)

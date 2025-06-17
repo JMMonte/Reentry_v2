@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
-const EnhancedLoader = ({ loadingProgress, loadingStage }) => {
+const EnhancedLoader = React.memo(function EnhancedLoader({ loadingProgress, loadingStage }) {
   const [currentCapability, setCurrentCapability] = useState(0);
   const [currentMission, setCurrentMission] = useState(0);
   const [backgroundImage, setBackgroundImage] = useState('');
   
-  // Darksun capabilities showcase
-  const capabilities = [
+  // Memoized static data to prevent recreation on every render
+  const capabilities = useMemo(() => [
     { 
       title: "Satellite Constellation Design", 
       desc: "Deploy and manage hundreds of satellites across multiple orbital planes",
@@ -28,26 +28,26 @@ const EnhancedLoader = ({ loadingProgress, loadingStage }) => {
       desc: "Let Darksun's AI assist with orbital mechanics and mission planning",
       tech: "Natural language • Real-time physics • Expert guidance"
     }
-  ];
+  ], []);
 
-  // Mission examples that rotate
-  const missionExamples = [
+  // Memoized mission examples array
+  const missionExamples = useMemo(() => [
     "Deploying a Mars communication relay constellation",
     "Planning a Europa sample return mission",
     "Designing a lunar mining operation supply chain", 
     "Creating a solar observation satellite network",
     "Establishing an asteroid belt monitoring system"
-  ];
+  ], []);
 
-  // NASA and Cassini space images for random background selection
-  const spaceImages = [
+  // Memoized space images array
+  const spaceImages = useMemo(() => [
     "/assets/images/jupiter_nasa.jpg",
     "/assets/images/space_nasa.jpg", 
     "/assets/images/mars_nasa.jpg",
     "/assets/images/tethys_nasa.jpg",
     "/assets/images/saturn_cassini.jpg",
     "/assets/images/earth_NASA.jpg"
-  ];
+  ], []);
 
   // Select random background image on component mount
   useEffect(() => {
@@ -222,7 +222,7 @@ const EnhancedLoader = ({ loadingProgress, loadingStage }) => {
       </div>
     </div>
   );
-};
+});
 
 EnhancedLoader.propTypes = {
   loadingProgress: PropTypes.number.isRequired,

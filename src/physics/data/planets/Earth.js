@@ -3,7 +3,6 @@
  * 
  * Physical, orbital, and rendering properties for Earth
  */
-
 import { PhysicsConstants } from '../../core/PhysicsConstants.js';
 
 // Earth physical and orbital constants (all in km, kg, or km/s)
@@ -11,7 +10,8 @@ export const earthRadius = 6371; // km
 export const earthPolarRadius = 6356.752314245; // km
 export const earthMass = 5.972e24; // kg
 export const earthInclination = 23.5; // degrees
-export const earthGravitationalParameter = PhysicsConstants.PHYSICS.G * earthMass; // km^3/s^2
+// Calculate GM directly to avoid circular dependency
+export const earthGravitationalParameter = PhysicsConstants.PHYSICS.G * earthMass; // km^3/s^2 (G = 6.67430e-20 km³/kg/s²)
 export const atmosphereSeaLevelDensity = 1.225e-9; // kg/km^3
 export const atmosphereRadius = earthRadius + 100; // km
 export const ballisticCoefficient = 100; // kg/m^2
@@ -92,7 +92,7 @@ export default {
     },
 
     // Rotation properties
-    rotationPeriod: PhysicsConstants.TIME.SIDEREAL_DAY, // seconds (sidereal day)
+    rotationPeriod: 86164.0905, // seconds (sidereal day)
     tilt: earthInclination, // degrees - obliquity of ecliptic
     
     // Surface coordinate system alignment
@@ -212,7 +212,7 @@ export default {
         coreRadius: 3485, // km - inner + outer core
         mantleThickness: 2885, // km
         crustThickness: 35, // km - average continental crust
-        age: 4.54e9 * PhysicsConstants.TIME.DAYS_IN_YEAR * PhysicsConstants.TIME.SECONDS_IN_DAY, // seconds (4.54 billion years)
+        age: 4.54e9 * 365.25 * 86400, // seconds (4.54 billion years)
         plateCount: 15 // major tectonic plates
     },
 

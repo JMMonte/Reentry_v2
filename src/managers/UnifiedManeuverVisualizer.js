@@ -315,7 +315,14 @@ export class UnifiedManeuverVisualizer {
         nodeMesh.onBeforeRender = (renderer, scene, camera) => {
             const worldPos = new THREE.Vector3();
             nodeMesh.getWorldPosition(worldPos);
-            const distance = camera.position.distanceTo(worldPos);
+            // Use cached distance for better performance
+            const satelliteId = `satellite_${this.satelliteId || 'unknown'}`;
+            let distance = window.app3d?.distanceCache?.getDistance?.(satelliteId);
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                distance = camera.position.distanceTo(worldPos);
+            }
             const scaleFactor = distance * 0.003;
             nodeMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
         };
@@ -326,7 +333,7 @@ export class UnifiedManeuverVisualizer {
     }
 
     /**
-     * Create an orbit line using the same high-quality system as satellite orbits
+     * Create orbit line visualization
      * @private
      */
     _createOrbitLine({ points, color, opacity, dashed, parent }) {
@@ -334,47 +341,7 @@ export class UnifiedManeuverVisualizer {
             return null;
         }
 
-        // Use OrbitVisualizationManager's method for consistent, high-quality rendering
-        const orbitVisualizationManager = this.app3d.orbitVisualizationManager;
-        if (orbitVisualizationManager) {
-            // Transform points to the format expected by OrbitVisualizationManager
-            const formattedPoints = points.map(point => {
-                let position;
-                if (Array.isArray(point.position)) {
-                    position = point.position;
-                } else if (point.position) {
-                    position = [point.position.x || 0, point.position.y || 0, point.position.z || 0];
-                } else {
-                    position = [point[0] || point.x || 0, point[1] || point.y || 0, point[2] || point.z || 0];
-                }
-                return { position };
-            });
-
-            // Create orbit line using the same method as satellite orbits
-            const orbitLine = orbitVisualizationManager.createManeuverPredictionLine(
-                formattedPoints,
-                { color }, // Mock satellite object with color
-                dashed, // isPreview flag controls dashed rendering
-                parent
-            );
-
-            if (orbitLine) {
-                // Adjust material properties to match our requirements
-                if (orbitLine.material) {
-                    orbitLine.material.opacity = opacity;
-                    orbitLine.material.transparent = true;
-                }
-
-                return {
-                    line: orbitLine,
-                    geometry: orbitLine.geometry,
-                    material: orbitLine.material,
-                    parent
-                };
-            }
-        }
-
-        // Fallback to basic line creation if OrbitVisualizationManager not available
+        // Create line using direct THREE.js (OrbitVisualizationManager removed)
         const positions = new Float32Array(points.length * 3);
 
         for (let i = 0; i < points.length; i++) {
@@ -571,7 +538,7 @@ export class UnifiedManeuverVisualizer {
                 velocity: Array.isArray(velocity) ? velocity : [velocity.x, velocity.y, velocity.z],
                 centralBodyNaifId: centralBodyId,
                 mass: satellite.mass || 1000,
-                crossSectionalArea: satellite.crossSectionalArea || 10,
+                crossSectionalArea: satellite.crossSectionalArea || 2.0, // Realistic satellite cross-section
                 dragCoefficient: satellite.dragCoefficient || 2.2
             };
 
@@ -626,11 +593,16 @@ export class UnifiedManeuverVisualizer {
             }
 
             // Propagate the orbit with enhanced parameters including all physics effects
+            // Use current time as startTime
+            const currentTime = new Date();
+            const startTimeSeconds = currentTime.getTime() / 1000;
+            
             const orbitPoints = UnifiedSatellitePropagator.propagateOrbit({
                 satellite: mockSatellite,
                 bodies: physicsEngine.bodies,
                 duration: propagationParams.maxDuration,
                 timeStep: propagationParams.timeStep,
+                startTime: startTimeSeconds, // Use current time
                 includeJ2: true,
                 includeDrag: true,      // ← Now enabled for realistic maneuver orbits
                 includeThirdBody: true  // ← Now enabled for full N-body physics

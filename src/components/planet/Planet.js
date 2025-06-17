@@ -62,12 +62,30 @@ export class Planet {
     static instances = [];
     static _instanceSet = new WeakSet(); // WeakSet allows GC of unreferenced planets
     static camera = null;
+    static displaySettingsManager = null;
+    
     static setCamera(cam) { 
         Planet.camera = cam; 
         // Update camera on all existing distant components
         Planet.instances.forEach(planet => {
             if (planet.distantComponent && planet.distantComponent.setCamera) {
                 planet.distantComponent.setCamera(cam);
+            }
+            // Also force update POI leader lines for all planets when camera is set
+            if (planet.surface && planet.surface.forceUpdateLeaderLines) {
+                planet.surface.forceUpdateLeaderLines(cam);
+            }
+        });
+    }
+    
+    static setDisplaySettingsManager(dsm) {
+        Planet.displaySettingsManager = dsm;
+        // Update all existing planets with the display settings manager
+        Planet.instances.forEach(planet => {
+            if (planet.surface && planet.surface.displaySettingsManager !== dsm) {
+                planet.surface.displaySettingsManager = dsm;
+                // Re-sync POI visibility with current display settings
+                planet.surface.refreshPOIVisibilityFromSettings();
             }
         });
     }
@@ -91,13 +109,14 @@ export class Planet {
         return res.map((meshRes, i) => ({ meshRes, distance: radius * dist[i] }));
     }
 
-    constructor(scene, renderer, timeManager, textureManager, config = {}) {
+    constructor(scene, renderer, timeManager, textureManager, config = {}, labelManager = null) {
         // Barycenter minimal path
         if (config.type === 'barycenter') {
             this.scene = scene;
             this.renderer = renderer;
             this.timeManager = timeManager;
             this.textureManager = textureManager;
+            this.labelManager = labelManager;
             Object.assign(this, config); // Copy all config properties, including GM
             this.nameLower = (this.name || '').toLowerCase();
             this.type = 'barycenter';
@@ -131,6 +150,7 @@ export class Planet {
         this.renderer = renderer;
         this.timeManager = timeManager;
         this.textureManager = textureManager;
+        this.labelManager = labelManager;
         this.name = config.name;
         this.nameLower = (config.name || '').toLowerCase();
         this.symbol = config.symbol || config.name.charAt(0);
@@ -362,8 +382,18 @@ export class Planet {
      * @param {THREE.Object3D} sun
      */
     updateAtmosphereUniforms(camera, sun) {
-        if (this.atmosphereComponent && typeof this.atmosphereComponent.updateUniforms === 'function') {
-            // Always call the atmosphere update - it handles its own logic
+        // Skip costly shader-uniform math when the atmosphere isn't being rendered.
+        // An atmosphere can be 'inactive' either because the component was never
+        // created for this planet **or** its mesh has been hidden via UI toggles.
+        if (!this.atmosphereComponent) return;
+
+        // If the mesh exists but has visibility turned off we don't need to update
+        // its uniforms every frame – the shader will not run.
+        if (this.atmosphereComponent.mesh && this.atmosphereComponent.mesh.visible === false) {
+            return;
+        }
+
+        if (typeof this.atmosphereComponent.updateUniforms === 'function') {
             this.atmosphereComponent.updateUniforms(camera, sun);
         }
     }
@@ -704,6 +734,9 @@ export class Planet {
         this.renderOrderOverrides.SURFACE = planetIndex * blockSize + RENDER_ORDER.SURFACE;
         this.renderOrderOverrides.CLOUDS = planetIndex * blockSize + RENDER_ORDER.CLOUDS;
         this.renderOrderOverrides.ATMOSPHERE = planetIndex * blockSize + RENDER_ORDER.ATMOSPHERE;
+        this.renderOrderOverrides.POI = planetIndex * blockSize + RENDER_ORDER.POI;
+        this.renderOrderOverrides.POI_LEADERS = planetIndex * blockSize + RENDER_ORDER.POI_LEADERS;
+        this.renderOrderOverrides.POI_LABELS = planetIndex * blockSize + RENDER_ORDER.POI_LABELS;
         this.#initMaterials();
         this.#initMeshes();
         if (config.atmosphere) {
@@ -751,7 +784,13 @@ export class Planet {
             ...config.surfaceOptions // allow config to override if needed
         };
         const polarScale = 1 - this.oblateness;
-        const surfaceOpts = { ...defaultSurfaceOpts, polarScale, poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI };
+        const surfaceOpts = { 
+            ...defaultSurfaceOpts, 
+            polarScale, 
+            poiRenderOrder: this.renderOrderOverrides.POI ?? RENDER_ORDER.POI,
+            renderOrderOverrides: this.renderOrderOverrides,
+            planetName: this.name // Add planet name for label categorization
+        };
         this.planetMesh.userData.planetName = this.name;
         // Reparent planetMesh to rotationGroup (not equatorialGroup)
         this.rotationGroup.add(this.planetMesh);
@@ -761,9 +800,14 @@ export class Planet {
             this.radius,
             config.primaryGeojsonData,
             config.stateGeojsonData,
-            surfaceOpts
+            surfaceOpts,
+            this.labelManager, // Pass labelManager for unified label handling
+            Planet.displaySettingsManager // Pass displaySettingsManager for POI visibility sync
         );
         if (this.surface) {
+            // Remove render order from parent group - let individual elements handle their own
+            // this.equatorialGroup.renderOrder = this.renderOrderOverrides.SURFACE ?? RENDER_ORDER.SURFACE;
+            
             const o = surfaceOpts;
             if (o.addLatitudeLines) this.surface.addLatitudeLines(o.latitudeStep);
             if (o.addLongitudeLines) this.surface.addLongitudeLines(o.longitudeStep);
@@ -782,12 +826,18 @@ export class Planet {
             }
             // Initialize LOD after all content is added
             this.surface.initializeLOD();
+            
+            // Force immediate update of POI leader lines and label positions
+            // This ensures labels are positioned correctly on app load before camera movement
+            if (Planet.camera) {
+                this.surface.forceUpdateLeaderLines(Planet.camera);
+            }
         }
         if (this.atmosphereMesh) {
             this.equatorialGroup.add(this.atmosphereMesh);
         }
         if (config.radialGridConfig) {
-            this.radialGrid = new RadialGrid(this, config.radialGridConfig);
+            this.radialGrid = new RadialGrid(this, config.radialGridConfig, this.labelManager);
         }
         // Add rings for procedural planets
         this.#addRings(config);

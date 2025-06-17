@@ -34,7 +34,8 @@ const buttonVariants = cva(
   }
 )
 
-const Button = React.forwardRef(({ className, variant, size, asChild = false, ...props }, ref) => {
+// OPTIMIZED PATTERN: Memoized Button component for maximum performance
+const Button = React.memo(React.forwardRef(function Button({ className, variant, size, asChild = false, ...props }, ref) {
   const Comp = asChild ? Slot : "button"
   return (
     <Comp
@@ -43,25 +44,14 @@ const Button = React.forwardRef(({ className, variant, size, asChild = false, ..
       {...props}
     />
   )
-})
+}))
+
 Button.displayName = "Button"
 
 Button.propTypes = {
   className: PropTypes.string,
-  variant: PropTypes.oneOf([
-    'default',
-    'destructive',
-    'outline',
-    'secondary',
-    'ghost',
-    'link'
-  ]),
-  size: PropTypes.oneOf([
-    'default',
-    'sm',
-    'lg',
-    'icon'
-  ]),
+  variant: PropTypes.oneOf(['default', 'destructive', 'outline', 'secondary', 'ghost', 'link']),
+  size: PropTypes.oneOf(['default', 'sm', 'lg', 'icon']),
   asChild: PropTypes.bool
 };
 

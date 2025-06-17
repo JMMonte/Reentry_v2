@@ -29,13 +29,25 @@ export default {
     tilt: 26.73, // degrees - axial tilt
 
     // Orbital properties
-    soiRadius: 65500000, // km - Sphere of Influence radius
-    orbitalPeriod: 29.457 * 365.25 * 86400, // seconds (29.457 Earth years)
-    // Saturn orbital elements (J2000, VSOP87, IAU 2025, NASA Horizons)
-    // Note: Saturn's heliocentric orbital elements are defined in the Saturn barycenter
-    // Saturn's position relative to its barycenter is calculated via astronomy-engine
+    soiRadius: 54800000, // km - Sphere of Influence radius
+    orbitalPeriod: 29.5 * 365.25 * 86400, // seconds (29.5 Earth years)
+    semiMajorAxis: 1.434e9, // km (9.58 AU)
 
-    // Atmospheric properties
+    // Atmospheric model for drag calculations
+    atmosphericModel: {
+        maxAltitude: 4000, // km - Saturn's extensive atmosphere and thermosphere
+        minAltitude: 0,
+        referenceAltitude: 100, // km - above 1-bar level
+        referenceDensity: 0.09, // kg/m³ at 100km (less dense than Jupiter)
+        scaleHeight: 30, // km - Saturn scale height
+        getDensity: function(altitude) {
+            // Custom density model for Saturn's atmosphere
+            if (altitude > this.maxAltitude) return 0;
+            return this.referenceDensity * Math.exp(-(altitude - this.referenceAltitude) / this.scaleHeight);
+        }
+    },
+
+    // Atmospheric properties (dense H2/He atmosphere)
     atmosphere: {
         limbFudgeFactor: 1.0,
         hazeIntensity: 2,

@@ -6,8 +6,10 @@
  */
 
 import { POIVisibilityService } from './POIVisibilityService.js';
-import { geojsonDataCities, geojsonDataAirports, geojsonDataSpaceports, 
-         geojsonDataGroundStations, geojsonDataObservatories, geojsonDataMissions } from '../config/geojsonData.js';
+import {
+    geojsonDataCities, geojsonDataAirports, geojsonDataSpaceports,
+    geojsonDataGroundStations, geojsonDataObservatories, geojsonDataMissions
+} from '../config/geojsonData.js';
 
 class POIDataServiceClass {
     constructor() {
@@ -16,12 +18,12 @@ class POIDataServiceClass {
         this._spatialIndex = new Map(); // planetId -> spatial grid
         this._visibilityCache = new Map(); // cacheKey -> visibility results
         this._lastSatellitePositions = new Map(); // satelliteId -> last position
-        
+
         // Configuration
         this._cacheTimeout = 2000; // 2 seconds cache lifetime
         this._positionThreshold = 1.0; // km - minimum movement to recalculate
         this._spatialGridSize = 10.0; // degrees for spatial indexing
-        
+
         // Initialize with default Earth data
         this._initializeEarthPOIs();
     }
@@ -32,7 +34,7 @@ class POIDataServiceClass {
      */
     _initializeEarthPOIs() {
         const earthId = 399; // Earth NAIF ID
-        
+
         const poiCategories = {
             cities: geojsonDataCities,
             airports: geojsonDataAirports,
@@ -58,7 +60,7 @@ class POIDataServiceClass {
                     name: feature.properties?.name || feature.properties?.NAME || `${category}_${index}`,
                     properties: feature.properties || {}
                 };
-                
+
                 allPOIs.push(poi);
                 return poi;
             }).filter(poi => poi.lat !== undefined && poi.lon !== undefined);
@@ -97,7 +99,7 @@ class POIDataServiceClass {
                 if (item.userData?.feature) {
                     const feat = item.userData.feature;
                     const [lon, lat] = feat.geometry.coordinates;
-                    
+
                     const poi = {
                         id: `${planetId}_${category}_${poiCounter++}`,
                         lat,
@@ -163,7 +165,7 @@ class POIDataServiceClass {
 
         const gridSize = this._spatialGridSize;
         const candidates = [];
-        
+
         // Calculate grid cells to check (with buffer for coverage radius)
         const gridBuffer = Math.ceil(coverageRadius / gridSize) + 1;
         const centerGridX = Math.floor(lon / gridSize);
@@ -226,12 +228,12 @@ class POIDataServiceClass {
     calculateVisibility(satellites, planetId, planetData) {
         // First try to get cached POI data
         let poiData = this._poiData.get(planetId);
-        
+
         // If no cached data and we have planetData, process it
         if (!poiData && planetData?.surface?.points) {
             poiData = this._processPlanetPOIData(planetId, planetData);
         }
-        
+
         if (!poiData || !satellites || satellites.length === 0) {
             return {};
         }
@@ -252,7 +254,7 @@ class POIDataServiceClass {
             // Check if we need to recalculate for this satellite
             const cacheKey = this._getCacheKey(satellite.id, position);
             const cachedResult = this._visibilityCache.get(cacheKey);
-            
+
             if (cachedResult && (currentTime - cachedResult.timestamp) < this._cacheTimeout) {
                 result[satellite.id] = cachedResult.data;
                 return;
@@ -268,11 +270,10 @@ class POIDataServiceClass {
                 }
             }
 
-            // Calculate coverage radius
-            const planetRadius = planetData?.radius || 6371; // Default to Earth radius
-            const altitude = position.alt;
-            const centralAngle = Math.acos(planetRadius / (planetRadius + altitude));
-            const coverageRadius = centralAngle * (180 / Math.PI);
+            // Calculate coverage radius using physics-based calculation
+            const coverageRadius = Math.acos(
+                (planetData?.radius || 6371) / ((planetData?.radius || 6371) + position.alt)
+            ) * 180 / Math.PI;
 
             const satelliteData = {
                 ...position,
@@ -357,7 +358,7 @@ class POIDataServiceClass {
      */
     _cleanupCache(currentTime) {
         const maxCacheAge = this._cacheTimeout * 3; // Keep cache 3x longer than timeout
-        
+
         for (const [key, entry] of this._visibilityCache.entries()) {
             if (currentTime - entry.timestamp > maxCacheAge) {
                 this._visibilityCache.delete(key);
@@ -383,19 +384,7 @@ class POIDataServiceClass {
         this._visibilityCache.clear();
         this._lastSatellitePositions.clear();
     }
-
-    /**
-     * Get cache statistics for debugging
-     */
-    getCacheStats() {
-        return {
-            visibilityCacheSize: this._visibilityCache.size,
-            trackedSatellites: this._lastSatellitePositions.size,
-            poiDataPlanets: Array.from(this._poiData.keys()),
-            spatialIndexPlanets: Array.from(this._spatialIndex.keys())
-        };
-    }
 }
 
-// Export singleton instance
-export const POIDataService = new POIDataServiceClass();
+const poiDataService = new POIDataServiceClass();
+export { poiDataService };

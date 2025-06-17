@@ -169,29 +169,52 @@ export class ArrowUtils {
             sizeAttenuation = false,
             renderOrder = 999,
             visible = true,
-            padding = backgroundColor ? 16 : 0
+            padding = backgroundColor ? 16 : 0,
+            labelManager = null,
+            category = null
         } = config;
 
-        // Use WebGLLabels for consistent implementation
-        const labelConfig = {
-            fontSize,
-            fontFamily,
-            color,
-            backgroundColor,
-            padding,
-            pixelScale,
-            sizeAttenuation,
-            renderOrder
-        };
-        
-        const sprite = WebGLLabels.createLabel(text, labelConfig);
-        sprite.position.copy(position);
-        sprite.visible = visible;
+        let sprite;
+        let dispose;
 
-        // Disposal function
-        const dispose = () => {
-            WebGLLabels.disposeLabel(sprite);
-        };
+        if (labelManager && category) {
+            // Use LabelManager for consistent styling
+            const label = labelManager.createLabel(text, 'VECTOR_LABEL', {
+                category,
+                position,
+                userData: { 
+                    context: 'arrow_label',
+                    originalConfig: config
+                }
+            });
+            sprite = label.sprite;
+            
+            // Disposal function for LabelManager
+            dispose = () => {
+                labelManager.removeLabel(label.id);
+            };
+        } else {
+            // Fallback to WebGLLabels for consistent implementation
+            const labelConfig = {
+                fontSize,
+                fontFamily,
+                color,
+                backgroundColor,
+                padding,
+                pixelScale,
+                sizeAttenuation,
+                renderOrder
+            };
+            
+            sprite = WebGLLabels.createLabel(text, labelConfig);
+            sprite.position.copy(position);
+            sprite.visible = visible;
+
+            // Disposal function for WebGLLabels
+            dispose = () => {
+                WebGLLabels.disposeLabel(sprite);
+            };
+        }
 
         return { sprite, dispose };
     }
@@ -369,6 +392,8 @@ export class ArrowUtils {
             labelType = 'sprite', // 'sprite', 'css2d', or '3d'
             labelOffset = 1.1, // Multiplier for label position along direction
             font = null, // Required for 3D text labels
+            labelManager = null, // LabelManager instance for unified styling
+            category = null, // Label category for organization
             
             // Common config
             visible = true
@@ -415,6 +440,8 @@ export class ArrowUtils {
                 labelResult = ArrowUtils.createTextSprite({
                     text, position: labelPosition, visible,
                     color: `#${color.toString(16).padStart(6, '0')}`,
+                    labelManager,
+                    category,
                     ...config
                 });
                 results.label = labelResult.sprite;

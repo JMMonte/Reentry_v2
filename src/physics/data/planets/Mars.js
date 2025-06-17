@@ -41,11 +41,11 @@ export default {
 
     // Atmospheric model for drag calculations  
     atmosphericModel: {
-        maxAltitude: 200, // km - much thinner than Earth
+        maxAltitude: 250, // km - Mars atmosphere extends to ~250 km (updated from 200)
         minAltitude: 0,
-        referenceAltitude: 100, // km
-        referenceDensity: 2.0e-11, // kg/m³ at 100km (much thinner than Earth)
-        scaleHeight: 10.8 // km - Mars scale height
+        referenceAltitude: 20, // km - above surface
+        referenceDensity: 0.020, // kg/m³ at 20km (very thin atmosphere)
+        scaleHeight: 11.1 // km - Mars scale height
     },
 
     // Atmospheric properties for visual rendering

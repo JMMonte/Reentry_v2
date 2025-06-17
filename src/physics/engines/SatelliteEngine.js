@@ -6,10 +6,10 @@ import { GeodeticUtils } from '../utils/GeodeticUtils.js';
 import { OrbitalElementsConverter } from '../utils/OrbitalElementsConverter.js';
 import { MathUtils } from '../utils/MathUtils.js';
 import { PhysicsVector3 } from '../utils/PhysicsVector3.js';
-import { PropagationMetrics } from '../utils/PropagationMetrics.js';
-import { SatelliteWorkerPool } from '../workers/SatelliteWorkerPool.js';
 import { SOITransitionManager } from '../utils/SOITransitionManager.js';
-import { integrateRK4, getIntegrator } from '../integrators/OrbitalIntegrators.js';
+import { SatelliteIntegrator } from './SatelliteIntegrator.js';
+import { ManeuverExecutor } from '../core/ManeuverExecutor.js';
+import { OrbitStreamer } from '../utils/OrbitStreamer.js';
 
 /**
  * SatelliteEngine - Focused satellite simulation and management
@@ -28,6 +28,13 @@ export class SatelliteEngine {
 
         // Maneuver node tracking
         this.maneuverNodes = new Map(); // Map<satelliteId, ManeuverNodeDTO[]>
+
+        // Orbit streaming for visualization - cycle-based approach
+        this.orbitStreamers = new Map(); // Map<satelliteId, OrbitStreamer>
+        this.orbitUpdateInterval = 500; // ms - Cycle interval (2 Hz)
+        this.lastOrbitUpdate = 0;
+        this.orbitPropagationCycles = new Map(); // Map<satelliteId, { inProgress: boolean, startTime: number, timeoutId: number }>
+        this.orbitCacheTimeout = 2000; // ms - How long to cache completed propagations
 
         // Performance optimization caches with size limits
         this._satelliteInfluenceCache = new Map(); // Cache significant bodies per satellite
@@ -51,9 +58,9 @@ export class SatelliteEngine {
         this._sensitivityScale = 1.0;
         this._perturbationScale = 1.0;
 
-        // Worker pool for parallel processing
+        // Worker pool for parallel processing - use shared pool from WorkerPoolManager
         this._useWorkers = true; // Enable workers for parallel processing
-        this._workerPool = null;
+        this._workerPool = null; // Will be set by WorkerPoolManager
         this._workerPoolInitialized = false;
         this._workerPoolInitializing = false;
 
@@ -68,6 +75,9 @@ export class SatelliteEngine {
             normalDir: new PhysicsVector3(),
             worldDeltaV: new PhysicsVector3()
         };
+
+        // Set up event listeners for satellite parameter changes from UI
+        this._setupEventListeners();
     }
 
     // ================================================================
@@ -86,7 +96,7 @@ export class SatelliteEngine {
         const id = String(satellite.id || Date.now());
 
         // Initialize performance metrics tracking for this satellite
-        PropagationMetrics.initializeSatellite(id);
+        // PropagationMetrics.initializeSatellite(id); // Removed for performance optimization
 
         // Debug: Check velocity magnitude before storing
         const velArray = Array.isArray(satellite.velocity) ? satellite.velocity :
@@ -152,7 +162,7 @@ export class SatelliteEngine {
             this.satellites.delete(strId);
 
             // Clear performance metrics for removed satellite
-            PropagationMetrics.clearSatellite(strId);
+            // PropagationMetrics.clearSatellite(strId); // Removed for performance optimization
 
             // Remove satellite from worker pool tracking
             if (this._workerPool) {
@@ -312,18 +322,8 @@ export class SatelliteEngine {
         // Clear caches periodically
         this._clearCacheIfNeeded();
 
-        // Only initialize worker pool if we have satellites to process
-        if (this._useWorkers && this.satellites.size > 0 && !this._workerPoolInitialized && !this._workerPoolInitializing) {
-            this._workerPoolInitializing = true;
-            try {
-                await this._initializeWorkerPool();
-            } catch (error) {
-                console.error('[SatelliteEngine] Worker pool initialization failed:', error);
-                this._useWorkers = false; // Disable workers on initialization failure
-            } finally {
-                this._workerPoolInitializing = false;
-            }
-        }
+        // Worker pool is managed by WorkerPoolManager - no need to initialize here
+        // Just check if it's available
 
         // Use worker-based or main-thread processing based on configuration
         if (this._useWorkers && this._workerPoolInitialized && this._workerPool && this.satellites.size > 0) {
@@ -331,6 +331,9 @@ export class SatelliteEngine {
         } else {
             await this._integrateSatellitesMainThread(deltaTime, bodies, hierarchy, simulationTime, timeWarp);
         }
+
+        // Stream orbit updates
+        this._streamOrbitUpdates(simulationTime);
     }
 
     /**
@@ -342,8 +345,8 @@ export class SatelliteEngine {
             // Prepare satellite data for workers
             const satelliteDataArray = [];
             for (const [, satellite] of this.satellites) {
-                // Check for maneuvers before sending to worker
-                this._checkAndExecuteManeuvers(satellite, simulationTime);
+                // We now execute maneuvers inside the worker; just bundle nodes
+                const pendingNodes = this.maneuverNodes.get(satellite.id) || [];
 
                 satelliteDataArray.push({
                     id: satellite.id,
@@ -354,7 +357,8 @@ export class SatelliteEngine {
                     crossSectionalArea: satellite.crossSectionalArea,
                     dragCoefficient: satellite.dragCoefficient,
                     ballisticCoefficient: satellite.ballisticCoefficient,
-                    centralBodyNaifId: satellite.centralBodyNaifId
+                    centralBodyNaifId: satellite.centralBodyNaifId,
+                    maneuverNodes: pendingNodes
                 });
             }
 
@@ -390,6 +394,14 @@ export class SatelliteEngine {
                     satellite.a_bodies = result.a_bodies;
                     satellite.a_bodies_direct = result.a_bodies_direct;
 
+                    // Store local frame components for proper vector visualization
+                    satellite.a_total_local = result.a_total_local;
+                    satellite.a_gravity_total_local = result.a_gravity_total_local;
+                    satellite.a_j2_local = result.a_j2_local;
+                    satellite.a_drag_local = result.a_drag_local;
+                    satellite.a_bodies_local = result.a_bodies_local;
+                    satellite.a_bodies_direct_local = result.a_bodies_direct_local;
+
                     // Handle SOI transitions in main thread (requires hierarchy)
                     this._handleSOITransitions(satellite, bodies, hierarchy);
                 }
@@ -417,147 +429,30 @@ export class SatelliteEngine {
      */
     async _integrateSatellitesMainThread(deltaTime, bodies, hierarchy, simulationTime, timeWarp) {
         for (const [, satellite] of this.satellites) {
-            // Check for maneuvers before integration
+            // Execute any pending maneuvers for this satellite
             this._checkAndExecuteManeuvers(satellite, simulationTime);
 
-            // Use UnifiedSatellitePropagator for consistent physics across all systems
+            // Provide acceleration breakdown for inspectors / UI
             this._computeSatelliteAccelerationUnified(satellite, bodies);
 
-            // Use unified integrator with automatic method selection
-            const position = satellite.position.toArray();
-            const velocity = satellite.velocity.toArray();
+            // Apply timeWarp scaling at the engine level to prevent double application
+            const scaledDeltaTime = deltaTime * timeWarp;
+            
+            // Delegate numeric integration to the shared helper; if it fails
+            // the helper has already logged and recorded metrics, so we just
+            // skip this satellite for this tick.
+            const ok = SatelliteIntegrator.integrateSingleSatellite(satellite, {
+                deltaTime: scaledDeltaTime,
+                bodies,
+                simulationTime,
+                integrationMethod: this._integrationMethod,
+                sensitivityScale: this._sensitivityScale,
+                perturbationScale: this._perturbationScale
+            });
 
-            // Create acceleration function
-            const accelerationFunc = (pos, vel) => {
-                const satState = {
-                    ...satellite,
-                    position: pos,
-                    velocity: vel,
-                    id: satellite.id,
-                    centralBodyNaifId: satellite.centralBodyNaifId
-                };
-                const accel = UnifiedSatellitePropagator.computeAcceleration(satState, bodies, {
-                    includeJ2: true,
-                    includeDrag: true,
-                    includeThirdBody: true,
-                    perturbationScale: this._perturbationScale
-                });
-                return accel;
-            };
+            if (!ok) continue;
 
-            // Use optimized integrators from OrbitalIntegrators.js
-            const startTime = performance.now();
-            const integrator = getIntegrator(this._integrationMethod);
-            const posVec = new PhysicsVector3(...position);
-            const velVec = new PhysicsVector3(...velocity);
-
-            let result;
-            let integrationTime;
-
-            try {
-                // Primary integration attempt using optimized integrators
-                if (this._integrationMethod === 'rk45' || this._integrationMethod === 'adaptive') {
-                    result = integrator(
-                        posVec,
-                        velVec,
-                        (p, v) => {
-                            const accel = accelerationFunc(p.toArray(), v.toArray());
-                            return new PhysicsVector3(...accel);
-                        },
-                        deltaTime * timeWarp,
-                        {
-                            absTol: 1e-6 / this._sensitivityScale,
-                            relTol: 1e-6 / this._sensitivityScale,
-                            sensitivityScale: this._sensitivityScale
-                        }
-                    );
-                } else {
-                    result = integrator(
-                        posVec,
-                        velVec,
-                        (p, v) => {
-                            const accel = accelerationFunc(p.toArray(), v.toArray());
-                            return new PhysicsVector3(...accel);
-                        },
-                        deltaTime * timeWarp
-                    );
-                }
-
-                integrationTime = performance.now() - startTime;
-
-                // Validate integration result before applying
-                if (!result.position.toArray().every(v => isFinite(v)) || !result.velocity.toArray().every(v => isFinite(v))) {
-                    throw new Error('Integration produced non-finite values');
-                }
-
-                // Track successful integration
-                PropagationMetrics.trackIntegrationStep(satellite.id, integrationTime, this._integrationMethod, true);
-
-                // Convert result back to arrays for consistency
-                result = {
-                    position: result.position.toArray(),
-                    velocity: result.velocity.toArray()
-                };
-
-            } catch (error) {
-                integrationTime = performance.now() - startTime;
-                console.error(`[SatelliteEngine] Integration failed for satellite ${satellite.id}:`, {
-                    error: error.message,
-                    inputPosition: position,
-                    inputVelocity: velocity,
-                    deltaTime,
-                    timeWarp,
-                    integrationMethod: this._integrationMethod
-                });
-
-                // Try recovery with smaller timestep and RK4
-                console.warn(`[SatelliteEngine] Attempting recovery for satellite ${satellite.id} with smaller timestep`);
-                try {
-                    const recoveryResult = integrateRK4(
-                        posVec,
-                        velVec,
-                        (p, v) => {
-                            const accel = accelerationFunc(p.toArray(), v.toArray());
-                            return new PhysicsVector3(...accel);
-                        },
-                        deltaTime * 0.1 // 10x smaller timestep, no time warp
-                    );
-
-                    if (recoveryResult.position.toArray().every(v => isFinite(v)) && 
-                        recoveryResult.velocity.toArray().every(v => isFinite(v))) {
-                        
-                        result = {
-                            position: recoveryResult.position.toArray(),
-                            velocity: recoveryResult.velocity.toArray()
-                        };
-
-                        // Track successful recovery
-                        PropagationMetrics.trackRecovery(satellite.id, 'integration', true);
-                        PropagationMetrics.trackIntegrationStep(satellite.id, integrationTime, 'rk4', true);
-                    } else {
-                        console.error(`[SatelliteEngine] Recovery failed for satellite ${satellite.id}, skipping integration step`);
-
-                        // Track failed recovery
-                        PropagationMetrics.trackRecovery(satellite.id, 'integration', false);
-                        PropagationMetrics.trackIntegrationStep(satellite.id, integrationTime, this._integrationMethod, false);
-                        continue; // Skip this satellite for this step
-                    }
-                } catch (recoveryError) {
-                    console.error(`[SatelliteEngine] Recovery attempt failed for satellite ${satellite.id}:`, recoveryError);
-
-                    // Track failed recovery attempt
-                    PropagationMetrics.trackRecovery(satellite.id, 'integration', false);
-                    PropagationMetrics.trackIntegrationStep(satellite.id, integrationTime, this._integrationMethod, false);
-                    continue; // Skip this satellite for this step
-                }
-            }
-
-            // Update satellite state
-            satellite.position.set(result.position[0], result.position[1], result.position[2]);
-            satellite.velocity.set(result.velocity[0], result.velocity[1], result.velocity[2]);
-            satellite.lastUpdate = new Date(simulationTime.getTime());
-
-            // SOI transition logic
+            // Handle Sphere-of-Influence transitions after state update
             this._handleSOITransitions(satellite, bodies, hierarchy);
         }
     }
@@ -609,8 +504,20 @@ export class SatelliteEngine {
                     centralBody.radius
                 );
 
-                // Also calculate in equatorial frame if planet has orientation data
-                if (centralBody.tilt !== undefined || centralBody.obliquity !== undefined || centralBody.orientationGroup) {
+                // Also calculate in equatorial frame for all bodies with significant rotation
+                // (Most orbital analysis benefits from equatorial reference frame)
+                const shouldCalculateEquatorial = centralBody.tilt !== undefined || 
+                    centralBody.obliquity !== undefined || 
+                    centralBody.orientationGroup ||
+                    centralBody.rotationPeriod !== undefined ||
+                    centralBody.naifId === 399 || // Earth - always calculate equatorial
+                    centralBody.naifId === 499 || // Mars - always calculate equatorial
+                    centralBody.naifId === 599 || // Jupiter - always calculate equatorial
+                    centralBody.naifId === 699 || // Saturn - always calculate equatorial
+                    centralBody.naifId === 799 || // Uranus - always calculate equatorial
+                    centralBody.naifId === 899;   // Neptune - always calculate equatorial
+
+                if (shouldCalculateEquatorial) {
                     try {
                         equatorialElements = OrbitalElementsConverter.calculateOrbitalElements(
                             satellite.position,
@@ -702,7 +609,13 @@ export class SatelliteEngine {
                 a_j2: satellite.a_j2,
                 a_drag: satellite.a_drag,
                 a_bodies: satellite.a_bodies,
-                a_bodies_direct: satellite.a_bodies_direct
+                a_bodies_direct: satellite.a_bodies_direct,
+                a_total_local: satellite.a_total_local,
+                a_gravity_total_local: satellite.a_gravity_total_local,
+                a_j2_local: satellite.a_j2_local,
+                a_drag_local: satellite.a_drag_local,
+                a_bodies_local: satellite.a_bodies_local,
+                a_bodies_direct_local: satellite.a_bodies_direct_local
             };
         }
 
@@ -839,9 +752,6 @@ export class SatelliteEngine {
             };
         }
 
-        // Track acceleration computation time
-        const startTime = performance.now();
-
         // Use UnifiedSatellitePropagator for consistent physics with detailed components
         const accelResult = UnifiedSatellitePropagator.computeAcceleration(
             satState,
@@ -855,8 +765,6 @@ export class SatelliteEngine {
                 perturbationScale: this._perturbationScale
             }
         );
-
-        const accelerationTime = performance.now() - startTime;
 
         // Validate acceleration result
         if (!accelResult.total.every(v => isFinite(v))) {
@@ -886,8 +794,8 @@ export class SatelliteEngine {
                     satellite.acceleration = acceleration;
 
                     // Track successful fallback acceleration
-                    PropagationMetrics.trackRecovery(satellite.id, 'acceleration', true);
-                    PropagationMetrics.trackAcceleration(satellite.id, accelerationTime, true);
+                    // PropagationMetrics.trackRecovery(satellite.id, 'acceleration', true); // Removed for performance optimization
+                    // PropagationMetrics.trackAcceleration(satellite.id, accelerationTime, true); // Removed for performance optimization
                     return acceleration;
                 }
             } catch (fallbackError) {
@@ -900,8 +808,8 @@ export class SatelliteEngine {
             satellite.acceleration = acceleration;
 
             // Track failed acceleration with zero fallback
-            PropagationMetrics.trackRecovery(satellite.id, 'acceleration', false);
-            PropagationMetrics.trackAcceleration(satellite.id, accelerationTime, false);
+            // PropagationMetrics.trackRecovery(satellite.id, 'acceleration', false); // Removed for performance optimization
+            // PropagationMetrics.trackAcceleration(satellite.id, accelerationTime, false); // Removed for performance optimization
             return acceleration;
         }
 
@@ -909,15 +817,23 @@ export class SatelliteEngine {
         const acceleration = PhysicsVector3.fromArray(accelResult.total);
 
         // Track successful acceleration computation
-        PropagationMetrics.trackAcceleration(satellite.id, accelerationTime, true);
+        // PropagationMetrics.trackAcceleration(satellite.id, accelerationTime, true); // Removed for performance optimization
 
         // Store force components for visualization (detailed for vector display)
         satellite.a_total = accelResult.total;
         satellite.a_gravity_total = accelResult.components.primary;
         satellite.a_j2 = accelResult.components.j2;
         satellite.a_drag = accelResult.components.drag;
-        satellite.a_bodies = accelResult.components.thirdBodies; // Tidal perturbations (physics-accurate)
-        satellite.a_bodies_direct = accelResult.components.thirdBodiesDirect; // Direct accelerations (intuitive)
+        satellite.a_bodies = accelResult.components.thirdBody; // Tidal perturbations (physics-accurate)
+        satellite.a_bodies_direct = accelResult.components.thirdBodyIndividual; // Individual body accelerations (per-body object)
+
+        // Store local frame components for proper vector visualization
+        satellite.a_total_local = accelResult.components.totalLocal;
+        satellite.a_gravity_total_local = accelResult.components.primaryLocal;
+        satellite.a_j2_local = accelResult.components.j2Local;
+        satellite.a_drag_local = accelResult.components.dragLocal;
+        satellite.a_bodies_local = accelResult.components.thirdBodyLocal;
+        satellite.a_bodies_direct_local = accelResult.components.thirdBodyIndividualLocal;
         satellite.acceleration = acceleration;
 
         return acceleration;
@@ -939,7 +855,7 @@ export class SatelliteEngine {
 
         // Perform SOI transition using the manager
         const transitionOccurred = this._soiTransitionManager.performTransition(satellite, bodies);
-        
+
         if (transitionOccurred) {
             // Log transition for debugging
             console.log(`[SOI Transition] Satellite ${satellite.id} transitioned to body ${satellite.centralBodyNaifId}`);
@@ -955,66 +871,31 @@ export class SatelliteEngine {
         const nodes = this.maneuverNodes.get(satellite.id);
         if (!nodes || nodes.length === 0) return;
 
-        // Check each maneuver node for execution
+        // Delegate heavy-math to shared executor (decouples physics from engine/UI)
+        const executedNodes = ManeuverExecutor.executePendingManeuvers(
+            satellite,
+            nodes,
+            currentTime,
+            this._maneuverWorkVectors // reuse pre-allocated vectors to avoid GC
+        );
+
+        if (executedNodes.length === 0) return;
+
+        // Remove executed nodes & dispatch UI events – SatelliteEngine keeps the
+        // application-level concerns while ManeuverExecutor focuses on physics.
         for (let i = nodes.length - 1; i >= 0; i--) {
-            const node = nodes[i];
-            const executeTime = node.executionTime instanceof Date ?
-                node.executionTime : new Date(node.executionTime);
+            if (nodes[i].executed) {
+                const node = nodes[i];
+                nodes.splice(i, 1);
 
-            if (currentTime >= executeTime && !node.executed) {
-                // Convert local delta-V (prograde, normal, radial) to world coordinates
-                // Reuse working vectors to avoid GC pressure
-                const localDV = this._maneuverWorkVectors.localDV.set(
-                    node.deltaV.prograde || 0,
-                    node.deltaV.normal || 0,
-                    node.deltaV.radial || 0
-                );
-
-                // Convert to world coordinates based on current velocity direction
-                const velDir = this._maneuverWorkVectors.velDir.copy(satellite.velocity).normalize();
-                const radialDir = this._maneuverWorkVectors.radialDir.copy(satellite.position).normalize();
-                const normalDir = this._maneuverWorkVectors.normalDir.crossVectors(radialDir, velDir).normalize();
-
-                // Build rotation matrix from local to world - reuse working vector
-                const progradeDir = velDir;
-                const worldDeltaV = this._maneuverWorkVectors.worldDeltaV.set(0, 0, 0)
-                    .addScaledVector(progradeDir, localDV.x)
-                    .addScaledVector(normalDir, localDV.y)
-                    .addScaledVector(radialDir, localDV.z);
-
-                // Apply delta-V to velocity
-                satellite.velocity.add(worldDeltaV);
-
-                // Track velocity change for debugging
-                const newVelMag = satellite.velocity.length();
-                if (satellite.velocityHistory) {
-                    satellite.velocityHistory.push({
-                        time: currentTime.toISOString(),
-                        velocity: newVelMag,
-                        context: `maneuver_${node.id}`,
-                        deltaV: worldDeltaV.length()
-                    });
-                    // Keep only last 10 entries
-                    if (satellite.velocityHistory.length > 10) {
-                        satellite.velocityHistory.shift();
-                    }
-                }
-
-                // Mark as executed
-                node.executed = true;
-                node.actualExecuteTime = currentTime.toISOString();
-
-                // Dispatch event for UI
+                // Notify listeners (UI, etc.)
                 this._dispatchSatelliteEvent('maneuverExecuted', {
                     satelliteId: satellite.id,
                     nodeId: node.id,
                     deltaV: node.deltaV,
-                    executeTime: executeTime,
+                    executeTime: node.executionTime,
                     actualExecuteTime: currentTime
                 });
-
-                // Remove executed maneuver
-                nodes.splice(i, 1);
             }
         }
     }
@@ -1219,7 +1100,7 @@ export class SatelliteEngine {
     setIntegrationMethod(method) {
         if (['auto', 'rk4', 'rk45'].includes(method)) {
             this._integrationMethod = method;
-            
+
             // Propagate to worker pool if initialized
             if (this._workerPool && this._workerPoolInitialized) {
                 this._workerPool.updateWorkersConfiguration({
@@ -1238,7 +1119,7 @@ export class SatelliteEngine {
     setPhysicsTimeStep(timeStep) {
         if (typeof timeStep === 'number' && timeStep > 0 && timeStep <= 1) {
             this._physicsTimeStep = timeStep;
-            
+
             // Propagate to worker pool if initialized
             if (this._workerPool && this._workerPoolInitialized) {
                 this._workerPool.updateWorkersConfiguration({
@@ -1257,7 +1138,7 @@ export class SatelliteEngine {
     setSensitivityScale(scale) {
         if (typeof scale === 'number' && scale >= 0 && scale <= 10) {
             this._sensitivityScale = scale;
-            
+
             // Propagate to worker pool if initialized
             if (this._workerPool && this._workerPoolInitialized) {
                 this._workerPool.updateWorkersConfiguration({
@@ -1276,7 +1157,7 @@ export class SatelliteEngine {
     setPerturbationScale(scale) {
         if (typeof scale === 'number' && scale >= 0 && scale <= 1) {
             this._perturbationScale = scale;
-            
+
             // Propagate to worker pool if initialized
             if (this._workerPool && this._workerPoolInitialized) {
                 this._workerPool.updateWorkersConfiguration({
@@ -1297,32 +1178,21 @@ export class SatelliteEngine {
     }
 
     /**
-     * Initialize worker pool for parallel processing
-     * @private
+     * Set worker pool reference from WorkerPoolManager
+     * @param {SatelliteWorkerPool} workerPool - Shared worker pool instance
      */
-    async _initializeWorkerPool() {
-        if (this._workerPoolInitialized) return;
+    setWorkerPool(workerPool) {
+        this._workerPool = workerPool;
+        this._workerPoolInitialized = workerPool && workerPool.initialized;
 
-        try {
-            this._workerPool = new SatelliteWorkerPool({
-                maxWorkers: Math.min(navigator.hardwareConcurrency || 4, 6) // Limit to 6 workers max
-            });
-
-            await this._workerPool.initialize();
-            this._workerPoolInitialized = true;
-
-            // Send initial configuration to all workers
-            await this._workerPool.updateWorkersConfiguration({
+        // Send configuration to workers if pool is ready
+        if (this._workerPoolInitialized) {
+            this._workerPool.updateWorkersConfiguration({
                 integrationMethod: this._integrationMethod,
                 sensitivityScale: this._sensitivityScale,
                 physicsTimeStep: this._physicsTimeStep,
                 perturbationScale: this._perturbationScale
             });
-
-        } catch (error) {
-            console.error('[SatelliteEngine] Failed to initialize worker pool:', error);
-            console.error('[SatelliteEngine] Error details:', error.stack);
-            this._useWorkers = false; // Fallback to main thread
         }
     }
 
@@ -1331,92 +1201,28 @@ export class SatelliteEngine {
      * @private
      */
     async _integrateSingleSatelliteMainThread(satellite, deltaTime, bodies, hierarchy, simulationTime, timeWarp) {
-        // Check for maneuvers before integration
+        // 1. Execute any pending maneuvers before physics step
         this._checkAndExecuteManeuvers(satellite, simulationTime);
 
-        // Use UnifiedSatellitePropagator for consistent physics across all systems
+        // 2. Re-evaluate acceleration once for visualisation (optional)
         this._computeSatelliteAccelerationUnified(satellite, bodies);
 
-        // Use unified integrator with automatic method selection
-        const position = satellite.position.toArray();
-        const velocity = satellite.velocity.toArray();
+        // 3. Apply timeWarp scaling at the engine level to prevent double application
+        const scaledDeltaTime = deltaTime * timeWarp;
+        
+        // Delegate numeric integration to the shared helper
+        const ok = SatelliteIntegrator.integrateSingleSatellite(satellite, {
+            deltaTime: scaledDeltaTime,
+            bodies,
+            simulationTime,
+            integrationMethod: this._integrationMethod,
+            sensitivityScale: this._sensitivityScale,
+            perturbationScale: this._perturbationScale
+        });
 
-        // Create acceleration function
-        const accelerationFunc = (pos, vel) => {
-            const satState = {
-                ...satellite,
-                position: pos,
-                velocity: vel,
-                id: satellite.id,
-                centralBodyNaifId: satellite.centralBodyNaifId
-            };
-            const accel = UnifiedSatellitePropagator.computeAcceleration(satState, bodies, {
-                includeJ2: true,
-                includeDrag: true,
-                includeThirdBody: true,
-                perturbationScale: this._perturbationScale
-            });
-            return accel;
-        };
+        if (!ok) return; // Integration failed – already logged/metriced by helper
 
-        // Use optimized integrators from OrbitalIntegrators.js
-        const startTime = performance.now();
-        const integrator = getIntegrator(this._integrationMethod);
-        const posVec = new PhysicsVector3(...position);
-        const velVec = new PhysicsVector3(...velocity);
-
-        let result;
-        if (this._integrationMethod === 'rk45' || this._integrationMethod === 'adaptive') {
-            result = integrator(
-                posVec,
-                velVec,
-                (p, v) => {
-                    const accel = accelerationFunc(p.toArray(), v.toArray());
-                    return new PhysicsVector3(...accel);
-                },
-                deltaTime * timeWarp,
-                {
-                    absTol: 1e-6 / this._sensitivityScale,
-                    relTol: 1e-6 / this._sensitivityScale,
-                    sensitivityScale: this._sensitivityScale
-                }
-            );
-        } else {
-            result = integrator(
-                posVec,
-                velVec,
-                (p, v) => {
-                    const accel = accelerationFunc(p.toArray(), v.toArray());
-                    return new PhysicsVector3(...accel);
-                },
-                deltaTime * timeWarp
-            );
-        }
-
-        const integrationTime = performance.now() - startTime;
-
-        // Convert result back to arrays for consistency
-        result = {
-            position: result.position.toArray(),
-            velocity: result.velocity.toArray()
-        };
-
-        // Validate and apply result (same as main thread logic)
-        if (!result.position.every(v => isFinite(v)) || !result.velocity.every(v => isFinite(v))) {
-            console.error(`[SatelliteEngine] Integration produced non-finite values for satellite ${satellite.id}`);
-            PropagationMetrics.trackIntegrationStep(satellite.id, integrationTime, this._integrationMethod, false);
-            return;
-        }
-
-        // Update satellite state
-        satellite.position.set(result.position[0], result.position[1], result.position[2]);
-        satellite.velocity.set(result.velocity[0], result.velocity[1], result.velocity[2]);
-        satellite.lastUpdate = new Date(simulationTime.getTime());
-
-        // Track successful integration
-        PropagationMetrics.trackIntegrationStep(satellite.id, integrationTime, this._integrationMethod, true);
-
-        // SOI transition logic
+        // 4. Handle potential Sphere-of-Influence transitions
         this._handleSOITransitions(satellite, bodies, hierarchy);
     }
 
@@ -1456,6 +1262,71 @@ export class SatelliteEngine {
         }
     }
 
+
+
+    /**
+     * Generate ground track for a satellite using worker pool
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} options - Ground track options
+     * @returns {Promise<Object>} Ground track data
+     */
+    async generateGroundTrackAsync(satelliteId, options = {}) {
+        const satellite = this.satellites.get(satelliteId);
+        if (!satellite) {
+            throw new Error(`Satellite ${satelliteId} not found`);
+        }
+
+        // Worker pool is managed by WorkerPoolManager
+        if (this._workerPool && this._workerPoolInitialized) {
+            const satelliteData = {
+                id: satellite.id,
+                position: satellite.position.toArray(),
+                velocity: satellite.velocity.toArray(),
+                centralBodyNaifId: satellite.centralBodyNaifId,
+                mass: satellite.mass,
+                crossSectionalArea: satellite.crossSectionalArea,
+                dragCoefficient: satellite.dragCoefficient,
+                ballisticCoefficient: satellite.ballisticCoefficient
+            };
+
+            return await this._workerPool.generateGroundTrack(satelliteData, options);
+        } else {
+            throw new Error('Worker pool not available for ground track generation');
+        }
+    }
+
+    /**
+     * Preview maneuver for a satellite using worker pool
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} maneuver - Maneuver data
+     * @param {Object} options - Preview options
+     * @returns {Promise<Object>} Maneuver preview data
+     */
+    async previewManeuverAsync(satelliteId, maneuver, options = {}) {
+        const satellite = this.satellites.get(satelliteId);
+        if (!satellite) {
+            throw new Error(`Satellite ${satelliteId} not found`);
+        }
+
+        // Worker pool is managed by WorkerPoolManager
+        if (this._workerPool && this._workerPoolInitialized) {
+            const satelliteData = {
+                id: satellite.id,
+                position: satellite.position.toArray(),
+                velocity: satellite.velocity.toArray(),
+                centralBodyNaifId: satellite.centralBodyNaifId,
+                mass: satellite.mass,
+                crossSectionalArea: satellite.crossSectionalArea,
+                dragCoefficient: satellite.dragCoefficient,
+                ballisticCoefficient: satellite.ballisticCoefficient
+            };
+
+            return await this._workerPool.previewManeuver(satelliteData, maneuver, options);
+        } else {
+            throw new Error('Worker pool not available for maneuver preview');
+        }
+    }
+
     /**
      * Get worker pool metrics
      * @returns {Object|null} Worker pool performance metrics
@@ -1465,9 +1336,10 @@ export class SatelliteEngine {
     }
 
     /**
-     * Cleanup worker pool and resources
+     * Cleanup resources
      */
     async cleanup() {
+        // Shutdown worker pool if exists
         if (this._workerPool) {
             await this._workerPool.shutdown();
             this._workerPool = null;
@@ -1581,5 +1453,932 @@ export class SatelliteEngine {
      */
     _getPhysicsEngineRef() {
         return this.physicsEngineRef;
+    }
+
+    // ================================================================
+    // PUBLIC API - Comprehensive Maneuver Operations
+    // ================================================================
+
+    /**
+     * Calculate Hohmann transfer parameters and optionally create nodes
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} params - Transfer parameters
+     * @param {number} params.targetSemiMajorAxis - Target orbit SMA (km)
+     * @param {number} params.targetEccentricity - Target orbit eccentricity (default: 0)
+     * @param {number} params.targetInclination - Target orbit inclination (degrees, optional)
+     * @param {number} params.targetLAN - Target LAN (degrees, optional)
+     * @param {number} params.targetArgP - Target argument of periapsis (degrees, optional)
+     * @param {Date} params.startTime - Start time for calculations
+     * @param {boolean} params.createNodes - Whether to create actual maneuver nodes (default: false)
+     * @param {Date} params.preferredBurnTime - Preferred time for first burn (optional)
+     * @returns {Object} Complete transfer analysis
+     */
+    calculateHohmannTransfer(satelliteId, params) {
+        const satellite = this.satellites.get(satelliteId);
+        if (!satellite) {
+            throw new Error(`Satellite ${satelliteId} not found`);
+        }
+
+        const {
+            targetSemiMajorAxis,
+            targetEccentricity = 0,
+            targetInclination,
+            targetLAN,
+            targetArgP,
+            startTime,
+            createNodes = false,
+            preferredBurnTime
+        } = params;
+
+        // Get central body data
+        const centralBodyData = this._getPhysicsEngineRef()?.bodies?.[satellite.centralBodyNaifId];
+        if (!centralBodyData) {
+            throw new Error(`Central body ${satellite.centralBodyNaifId} not found`);
+        }
+
+        const currentRadius = satellite.position.length();
+        const targetRadius = targetSemiMajorAxis; // For circular orbits
+        const mu = centralBodyData.GM;
+
+        // Calculate current orbital elements
+        const currentElements = OrbitalMechanics.calculateOrbitalElements(
+            satellite.position,
+            satellite.velocity,
+            mu,
+            centralBodyData.radius
+        );
+
+        // Use target inclination/LAN if provided, otherwise maintain current
+        const finalInclination = targetInclination !== undefined ? targetInclination : currentElements.inclination;
+        const finalLAN = targetLAN !== undefined ? targetLAN : currentElements.longitudeOfAscendingNode;
+        const finalArgP = targetArgP !== undefined ? targetArgP : currentElements.argumentOfPeriapsis;
+
+        // Calculate transfer using core orbital mechanics
+        const transfer = OrbitalMechanics.calculateHohmannTransfer({
+            centralBody: centralBodyData,
+            currentRadius,
+            targetRadius
+        });
+
+        // Calculate optimal burn time
+        let burnTime = preferredBurnTime;
+        if (!burnTime) {
+            // Default to next periapsis for efficiency
+            burnTime = OrbitalMechanics.calculateNextApsis(
+                satellite.position,
+                satellite.velocity,
+                mu,
+                'periapsis',
+                startTime
+            );
+        }
+
+        // Calculate second burn time (after transfer)
+        const burn2Time = new Date(burnTime.getTime() + transfer.transferTime * 1000);
+
+        // Calculate plane change requirements
+        const planeChangeAngle = Math.abs(finalInclination - currentElements.inclination);
+        const planeChangeDV = planeChangeAngle > 0.1 ?
+            2 * Math.sqrt(mu / targetRadius) * Math.sin(MathUtils.degToRad(planeChangeAngle) / 2) : 0;
+
+        const result = {
+            // Basic transfer data
+            deltaV1: transfer.deltaV1,
+            deltaV2: transfer.deltaV2,
+            totalDeltaV: transfer.totalDeltaV + planeChangeDV,
+            transferTime: transfer.transferTime,
+
+            // Timing
+            burn1Time: burnTime,
+            burn2Time: burn2Time,
+
+            // Plane change
+            planeChangeAngle,
+            planeChangeDeltaV: planeChangeDV,
+
+            // Orbital details
+            currentOrbit: currentElements,
+            transferSemiMajorAxis: transfer.transferSemiMajorAxis,
+            finalOrbit: {
+                semiMajorAxis: targetSemiMajorAxis,
+                eccentricity: targetEccentricity,
+                inclination: finalInclination,
+                longitudeOfAscendingNode: finalLAN,
+                argumentOfPeriapsis: finalArgP
+            },
+
+            // Altitudes for display
+            currentAltitude: currentRadius - centralBodyData.radius,
+            targetAltitude: targetRadius - centralBodyData.radius
+        };
+
+        // Optionally create the maneuver nodes
+        if (createNodes) {
+            // Clear existing nodes first
+            this.clearManeuverNodes(satelliteId);
+
+            // Create first burn (prograde only for simplicity)
+            const node1Id = this.addManeuverNode(satelliteId, {
+                executionTime: burnTime,
+                deltaV: {
+                    prograde: transfer.deltaV1,
+                    normal: 0,
+                    radial: 0
+                }
+            });
+
+            // Create second burn (includes plane change if needed)
+            const orbitalDV = transfer.deltaV2;
+            const node2Id = this.addManeuverNode(satelliteId, {
+                executionTime: burn2Time,
+                deltaV: {
+                    prograde: orbitalDV,
+                    normal: planeChangeDV, // Simplified: plane change in normal direction
+                    radial: 0
+                }
+            });
+
+            result.createdNodes = [node1Id, node2Id];
+        }
+
+        return result;
+    }
+
+    /**
+     * Calculate maneuver preview data (for UI display without creating nodes)
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} deltaV - Delta-V components {prograde, normal, radial} in km/s
+     * @param {Date} executionTime - When to execute the maneuver
+     * @param {number} duration - How long to propagate orbit (seconds, optional)
+     * @returns {Object} Preview data including orbit points and orbital elements
+     */
+    async calculateManeuverPreview(satelliteId, deltaV, executionTime, duration = null) {
+        const satellite = this.satellites.get(satelliteId);
+        if (!satellite) {
+            throw new Error(`Satellite ${satelliteId} not found`);
+        }
+
+        // Use physics API for consistent preview calculation
+        const { PhysicsAPI } = this._getPhysicsAPI();
+        if (!PhysicsAPI) {
+            throw new Error('PhysicsAPI not available');
+        }
+
+        const previewData = PhysicsAPI.Orbital.previewManeuver({
+            satellite: {
+                id: satelliteId,
+                position: satellite.position.toArray(),
+                velocity: satellite.velocity.toArray(),
+                centralBodyNaifId: satellite.centralBodyNaifId,
+                mass: satellite.mass,
+                crossSectionalArea: satellite.crossSectionalArea,
+                dragCoefficient: satellite.dragCoefficient
+            },
+            deltaV,
+            executionTime,
+            physicsEngine: this._getPhysicsEngineRef(),
+            duration,
+            isPreview: true
+        });
+
+        if (previewData.error) {
+            throw new Error(previewData.error);
+        }
+
+        // Calculate post-maneuver orbital elements
+        const centralBodyData = this._getPhysicsEngineRef()?.bodies?.[satellite.centralBodyNaifId];
+        if (centralBodyData && previewData.maneuverPosition && previewData.postManeuverVelocity) {
+            const postElements = OrbitalMechanics.calculateOrbitalElements(
+                previewData.maneuverPosition,
+                previewData.postManeuverVelocity,
+                centralBodyData.GM,
+                centralBodyData.radius
+            );
+
+            previewData.postManeuverElements = postElements;
+        }
+
+        return previewData;
+    }
+
+    /**
+     * Calculate optimal burn timing for various maneuver types
+     * @param {string} satelliteId - Satellite ID
+     * @param {string} apsisType - 'periapsis', 'apoapsis', or 'optimal'
+     * @param {Date} currentTime - Current simulation time
+     * @param {Object} targetParams - Target orbit parameters (optional)
+     * @returns {Date} Optimal burn time
+     */
+    calculateOptimalBurnTime(satelliteId, apsisType, currentTime) {
+        const satellite = this.satellites.get(satelliteId);
+        if (!satellite) {
+            throw new Error(`Satellite ${satelliteId} not found`);
+        }
+
+        const centralBodyData = this._getPhysicsEngineRef()?.bodies?.[satellite.centralBodyNaifId];
+        if (!centralBodyData) {
+            throw new Error(`Central body ${satellite.centralBodyNaifId} not found`);
+        }
+
+        const mu = centralBodyData.GM;
+
+        switch (apsisType) {
+            case 'periapsis':
+                return OrbitalMechanics.calculateNextApsis(
+                    satellite.position,
+                    satellite.velocity,
+                    mu,
+                    'periapsis',
+                    currentTime
+                );
+
+            case 'apoapsis':
+                return OrbitalMechanics.calculateNextApsis(
+                    satellite.position,
+                    satellite.velocity,
+                    mu,
+                    'apoapsis',
+                    currentTime
+                );
+
+            case 'optimal':
+                // For general maneuvers, periapsis is usually optimal for efficiency
+                return OrbitalMechanics.calculateNextApsis(
+                    satellite.position,
+                    satellite.velocity,
+                    mu,
+                    'periapsis',
+                    currentTime
+                );
+
+            default:
+                throw new Error(`Unknown apsis type: ${apsisType}`);
+        }
+    }
+
+    /**
+     * Execute a manual burn with given parameters
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} params - Burn parameters
+     * @param {Date} params.executionTime - When to execute
+     * @param {Object} params.deltaV - Delta-V components {prograde, normal, radial} in km/s
+     * @param {boolean} params.replaceExisting - Whether to replace existing nodes (default: false)
+     * @returns {string} Created node ID
+     */
+    scheduleManualBurn(satelliteId, params) {
+        const { executionTime, deltaV, replaceExisting = false } = params;
+
+        // Clear existing nodes if requested
+        if (replaceExisting) {
+            this.clearManeuverNodes(satelliteId);
+        }
+
+        // Create the maneuver node
+        return this.addManeuverNode(satelliteId, {
+            executionTime,
+            deltaV
+        });
+    }
+
+    /**
+     * Get comprehensive maneuver analysis for a satellite
+     * @param {string} satelliteId - Satellite ID
+     * @param {Date} currentTime - Current simulation time
+     * @returns {Object} Complete maneuver state and analysis
+     */
+    getManeuverAnalysis(satelliteId, currentTime) {
+        const satellite = this.satellites.get(satelliteId);
+        if (!satellite) {
+            return null;
+        }
+
+        const nodes = this.getManeuverNodes(satelliteId);
+        const centralBodyData = this._getPhysicsEngineRef()?.bodies?.[satellite.centralBodyNaifId];
+
+        if (!centralBodyData) {
+            return { nodes, currentElements: null, nextApsis: null };
+        }
+
+        // Calculate current orbital elements
+        const currentElements = OrbitalMechanics.calculateOrbitalElements(
+            satellite.position,
+            satellite.velocity,
+            centralBodyData.GM,
+            centralBodyData.radius
+        );
+
+        // Calculate next apsis times
+        const nextPeriapsis = OrbitalMechanics.calculateNextApsis(
+            satellite.position,
+            satellite.velocity,
+            centralBodyData.GM,
+            'periapsis',
+            currentTime
+        );
+
+        const nextApoapsis = OrbitalMechanics.calculateNextApsis(
+            satellite.position,
+            satellite.velocity,
+            centralBodyData.GM,
+            'apoapsis',
+            currentTime
+        );
+
+        // Calculate total delta-V budget
+        const totalDeltaV = nodes.reduce((sum, node) => sum + node.deltaMagnitude, 0);
+
+        return {
+            nodes,
+            currentElements,
+            nextApsis: {
+                periapsis: nextPeriapsis,
+                apoapsis: nextApoapsis
+            },
+            totalDeltaV,
+            nodeCount: nodes.length
+        };
+    }
+
+    // ================================================================
+    // PRIVATE METHODS - Orbit Streaming
+    // ================================================================
+
+    /**
+     * Stream orbit updates for visualization - cycle-based approach
+     * @private
+     */
+    _streamOrbitUpdates(simulationTime) {
+        const now = performance.now();
+
+        // Check if it's time for a new cycle
+        if (now - this.lastOrbitUpdate < this.orbitUpdateInterval) return;
+        this.lastOrbitUpdate = now;
+
+        // Process each satellite in the current cycle
+        for (const [satelliteId, satellite] of this.satellites) {
+            this._processSatelliteOrbitCycle(satelliteId, satellite, simulationTime, now);
+        }
+    }
+
+    /**
+     * Process orbit cycle for a single satellite
+     * @private
+     */
+    _processSatelliteOrbitCycle(satelliteId, satellite, simulationTime, cycleStartTime) {
+        const streamer = this._getOrCreateStreamer(satelliteId);
+        const cycle = this.orbitPropagationCycles.get(satelliteId);
+
+        // Create orbit point from current satellite state
+        const orbitPoint = {
+            position: satellite.position.toArray(),
+            velocity: satellite.velocity.toArray(),
+            time: simulationTime.getTime(),
+            centralBodyNaifId: satellite.centralBodyNaifId
+        };
+
+        // Always add current physics point
+        const hasNewPhysicsPoint = streamer.addPoint(orbitPoint);
+
+        // Check if we need to start a new propagation cycle
+        // Use the streamer's own parameters (which may have been customized per satellite)
+        // instead of overriding with global display settings
+        const extensionResult = streamer.needsExtension();
+
+        // Don't start new cycle if:
+        // 1. One is already in progress
+        // 2. We don't need extension
+        // 3. We already have sufficient orbit data
+        if (cycle?.inProgress) {
+            // Check if current cycle has timed out
+            if (cycleStartTime - cycle.startTime > this.orbitUpdateInterval) {
+                console.warn(`[SatelliteEngine] Orbit propagation cycle timed out for satellite ${satelliteId}, starting new cycle`);
+                this._cancelOrbitCycle(satelliteId);
+            } else {
+                // Cycle still in progress, just publish current data if we have new physics points
+                if (hasNewPhysicsPoint) {
+                    this._publishOrbitStream(satelliteId, streamer.getStreamingData());
+                }
+                return;
+            }
+        }
+
+        // Check if extension is actually needed
+        if (extensionResult.needsExtension) {
+            // Start new propagation cycle - pass simulationTime
+            this._startOrbitPropagationCycle(satelliteId, streamer, extensionResult.needsCompleteRedraw, cycleStartTime, simulationTime);
+        } else {
+            // No extension needed, just publish current data if we have new physics points
+            if (hasNewPhysicsPoint) {
+                this._publishOrbitStream(satelliteId, streamer.getStreamingData());
+            }
+        }
+    }
+
+    /**
+     * Start a new orbit propagation cycle
+     * @private
+     */
+    _startOrbitPropagationCycle(satelliteId, streamer, isCompleteRedraw, startTime, simulationTime) {
+        // Mark cycle as in progress
+        this.orbitPropagationCycles.set(satelliteId, {
+            inProgress: true,
+            startTime: startTime,
+            timeoutId: null
+        });
+
+        // Set timeout to cancel cycle if it takes too long
+        const timeoutId = setTimeout(() => {
+            console.warn(`[SatelliteEngine] Orbit propagation cycle forced timeout for satellite ${satelliteId}`);
+            this._cancelOrbitCycle(satelliteId);
+        }, this.orbitUpdateInterval);
+
+        // Update timeout in cycle tracking
+        const cycle = this.orbitPropagationCycles.get(satelliteId);
+        cycle.timeoutId = timeoutId;
+
+        // Start the actual propagation
+        this._extendOrbitCycleAsync(satelliteId, streamer, isCompleteRedraw, simulationTime);
+    }
+
+    /**
+     * Cancel an in-progress orbit cycle
+     * @private
+     */
+    _cancelOrbitCycle(satelliteId) {
+        const cycle = this.orbitPropagationCycles.get(satelliteId);
+        if (cycle) {
+            if (cycle.timeoutId) {
+                clearTimeout(cycle.timeoutId);
+            }
+            this.orbitPropagationCycles.delete(satelliteId);
+
+            // Reset streamer extension state
+            const streamer = this.orbitStreamers.get(satelliteId);
+            if (streamer) {
+                streamer.setExtensionState(false, 0);
+            }
+        }
+    }
+
+    /**
+     * Get or create orbit streamer for satellite
+     * @private
+     */
+    _getOrCreateStreamer(satelliteId) {
+        if (!this.orbitStreamers.has(satelliteId)) {
+            // Get satellite-specific parameters if available, otherwise use global defaults
+            const satellite = this.satellites.get(satelliteId);
+            let params;
+            
+            if (satellite?.orbitSimProperties) {
+                // Use satellite-specific parameters if they exist
+                params = {
+                    periods: satellite.orbitSimProperties.periods || 1.5,
+                    pointsPerPeriod: satellite.orbitSimProperties.pointsPerPeriod || 64
+                };
+            } else {
+                // Fall back to global display settings
+                params = this._getOrbitDisplayParams();
+            }
+            
+            // Get central body data from physics engine
+            const physicsEngine = this._getPhysicsEngineRef();
+            let centralBodyData = null;
+            
+            if (satellite && physicsEngine?.bodies) {
+                centralBodyData = physicsEngine.bodies[satellite.centralBodyNaifId];
+            }
+            
+            this.orbitStreamers.set(satelliteId, new OrbitStreamer(satelliteId, params, centralBodyData));
+        }
+        return this.orbitStreamers.get(satelliteId);
+    }
+
+    /**
+     * Get orbit display parameters from display settings
+     * @private
+     */
+    _getOrbitDisplayParams() {
+        // Get parameters from DisplaySettingsManager if available
+        const physicsEngine = this._getPhysicsEngineRef();
+        const displaySettings = physicsEngine?.app3d?.displaySettingsManager;
+
+        // Update orbit update interval from display settings
+        const newOrbitUpdateInterval = displaySettings?.getSetting('orbitUpdateInterval');
+        if (newOrbitUpdateInterval && newOrbitUpdateInterval !== this.orbitUpdateInterval) {
+            this.orbitUpdateInterval = newOrbitUpdateInterval;
+            console.log(`[SatelliteEngine] Updated orbit update interval to ${this.orbitUpdateInterval}ms`);
+        }
+
+        return {
+            periods: displaySettings?.getSetting('orbitPredictionInterval') || 1.5,
+            pointsPerPeriod: displaySettings?.getSetting('orbitPointsPerPeriod') || 64
+        };
+    }
+
+    /**
+     * Extend orbit using cycle-based approach
+     * @private
+     * @param {string} satelliteId - Satellite ID
+     * @param {OrbitStreamer} streamer - Orbit streamer instance
+     * @param {boolean} isCompleteRedraw - Whether this is a complete redraw due to parameter changes
+     * @param {Date} simulationTime - Current simulation time
+     */
+    async _extendOrbitCycleAsync(satelliteId, streamer, isCompleteRedraw = false, simulationTime = null) {
+        // This method replaces _extendOrbitAsync with cycle management
+
+        streamer.setExtensionState(true, 0);
+
+        try {
+            // Check if cycle is still valid (not timed out)
+            const cycle = this.orbitPropagationCycles.get(satelliteId);
+            if (!cycle?.inProgress) {
+                console.warn(`[SatelliteEngine] Orbit cycle was cancelled for satellite ${satelliteId}`);
+                streamer.setExtensionState(false, 0);
+                return false;
+            }
+
+            // For complete redraw, use current satellite state; for extension, use latest streamed point
+            let startingPosition, startingVelocity;
+
+            const satellite = this.satellites.get(satelliteId);
+            if (!satellite) {
+                this._completeOrbitCycle(satelliteId, false);
+                return false;
+            }
+
+            if (isCompleteRedraw) {
+                // Complete redraw: start from current satellite position
+                startingPosition = satellite.position.toArray();
+                startingVelocity = satellite.velocity.toArray();
+            } else {
+                // Normal extension: start from latest streamed point
+                const startingPoint = streamer.getLatestPoint();
+                if (!startingPoint) {
+                    this._completeOrbitCycle(satelliteId, false);
+                    return false;
+                }
+                startingPosition = startingPoint.position;
+                startingVelocity = startingPoint.velocity;
+            }
+
+            // Calculate extension duration based on orbital periods only
+            const requiredDuration = streamer._calculateRequiredDuration(streamer.params);
+            
+            // Use current simulation time as start time (in seconds since epoch)
+            const currentSimTime = simulationTime || new Date();
+            const startTimeSeconds = currentSimTime.getTime() / 1000; // Convert to seconds since epoch
+            
+            // Debug and fallback for invalid duration
+            if (!Number.isFinite(requiredDuration) || requiredDuration <= 0) {
+                console.warn(`[SatelliteEngine] Invalid requiredDuration (${requiredDuration}) for satellite ${satelliteId}, using fallback`);
+                const fallbackDuration = 5400; // 90 minutes
+                const estimatedPeriod = fallbackDuration / streamer.params.periods;
+                const calculatedTimeStep = estimatedPeriod / streamer.params.pointsPerPeriod;
+                const timeStep = Math.max(0.1, Math.min(60, calculatedTimeStep));
+                
+                const propagationParams = {
+                    satellite: {
+                        position: startingPosition,
+                        velocity: startingVelocity,
+                        centralBodyNaifId: satellite.centralBodyNaifId,
+                        mass: satellite.mass,
+                        crossSectionalArea: satellite.crossSectionalArea,
+                        dragCoefficient: satellite.dragCoefficient,
+                        ballisticCoefficient: satellite.ballisticCoefficient
+                    },
+                    bodies: this._prepareBodiesForWorkers(physicsEngine.bodies),
+                    duration: fallbackDuration,
+                    timeStep: timeStep,
+                    startTime: startTimeSeconds, // Use current simulation time
+                    includeJ2: true,
+                    includeDrag: true,
+                    includeThirdBody: true,
+                    timeWarp: 1,
+                    method: this._integrationMethod,
+                    perturbationScale: this._perturbationScale
+                };
+                
+                // Use UnifiedSatellitePropagator directly (single system)
+                const { UnifiedSatellitePropagator } = await import('../core/UnifiedSatellitePropagator.js');
+                const rawOrbitPoints = await UnifiedSatellitePropagator.propagateOrbit(propagationParams);
+                
+                if (rawOrbitPoints && rawOrbitPoints.length > 0) {
+                    const resampledPoints = this._resampleOrbitPoints(rawOrbitPoints, streamer.params);
+                    streamer.addPredictedPoints(resampledPoints, true);
+                    this._completeOrbitCycle(satelliteId, true);
+                    return true;
+                } else {
+                    throw new Error('No orbit points generated with fallback duration');
+                }
+            }
+
+            // Use UnifiedSatellitePropagator directly for consistency
+            const physicsEngine = this._getPhysicsEngineRef();
+            if (!physicsEngine?.bodies) {
+                throw new Error('Physics bodies not available for orbit extension');
+            }
+
+            // Calculate timeStep based on pointsPerPeriod - resolution is PER PERIOD
+            const estimatedPeriod = requiredDuration / streamer.params.periods; // Single period duration
+            const calculatedTimeStep = estimatedPeriod / streamer.params.pointsPerPeriod;
+            const timeStep = Math.max(0.1, Math.min(60, calculatedTimeStep));
+
+            const propagationParams = {
+                satellite: {
+                    position: startingPosition,
+                    velocity: startingVelocity,
+                    centralBodyNaifId: satellite.centralBodyNaifId,
+                    mass: satellite.mass,
+                    crossSectionalArea: satellite.crossSectionalArea,
+                    dragCoefficient: satellite.dragCoefficient,
+                    ballisticCoefficient: satellite.ballisticCoefficient
+                },
+                bodies: this._prepareBodiesForWorkers(physicsEngine.bodies),
+                duration: requiredDuration,
+                timeStep: timeStep,
+                startTime: startTimeSeconds, // Use current simulation time
+                includeJ2: true,
+                includeDrag: true,
+                includeThirdBody: true,
+                timeWarp: 1,
+                method: this._integrationMethod,
+                perturbationScale: this._perturbationScale
+            };
+
+            // Use UnifiedSatellitePropagator directly (single system)
+            const { UnifiedSatellitePropagator } = await import('../core/UnifiedSatellitePropagator.js');
+            const rawOrbitPoints = await UnifiedSatellitePropagator.propagateOrbit(propagationParams);
+
+            // Check if cycle is still valid after propagation
+            const currentCycle = this.orbitPropagationCycles.get(satelliteId);
+            if (!currentCycle?.inProgress) {
+                console.warn(`[SatelliteEngine] Orbit cycle timed out during propagation for satellite ${satelliteId}`);
+                return false;
+            }
+
+            if (rawOrbitPoints && rawOrbitPoints.length > 0) {
+                // Resample points to achieve desired pointsPerPeriod resolution
+                const resampledPoints = this._resampleOrbitPoints(rawOrbitPoints, streamer.params);
+                streamer.addPredictedPoints(resampledPoints, true); // Mark as complete
+                this._completeOrbitCycle(satelliteId, true);
+                return true;
+            } else {
+                throw new Error('No orbit points generated');
+            }
+
+        } catch (error) {
+            console.warn(`[SatelliteEngine] Failed to extend orbit for satellite ${satelliteId}:`, error);
+            this._completeOrbitCycle(satelliteId, false);
+            return false;
+        }
+    }
+
+    /**
+     * Complete an orbit propagation cycle
+     * @private
+     */
+    _completeOrbitCycle(satelliteId, success) {
+        const cycle = this.orbitPropagationCycles.get(satelliteId);
+        if (cycle) {
+            // Clear timeout
+            if (cycle.timeoutId) {
+                clearTimeout(cycle.timeoutId);
+            }
+            // Remove cycle tracking
+            this.orbitPropagationCycles.delete(satelliteId);
+        }
+
+        const streamer = this.orbitStreamers.get(satelliteId);
+        if (streamer) {
+            streamer.setExtensionState(false, success ? 1 : 0);
+
+            if (success) {
+                // Publish updated data when cycle completes successfully
+                this._publishOrbitStream(satelliteId, streamer.getStreamingData());
+                console.log(`[SatelliteEngine] Completed orbit propagation for satellite ${satelliteId}, total points: ${streamer.physicsPoints.length + streamer.predictedPoints.length}`);
+            } else {
+                console.warn(`[SatelliteEngine] Failed orbit propagation for satellite ${satelliteId}`);
+            }
+        }
+    }
+
+    /**
+     * Publish orbit stream update event
+     * @private
+     */
+    _publishOrbitStream(satelliteId, streamData) {
+        // Dispatch event for visualization layer
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('orbitStreamUpdate', {
+                detail: {
+                    satelliteId,
+                    data: streamData
+                }
+            }));
+        }
+    }
+
+    /**
+     * Get orbit streaming data for a satellite (replaces legacy propagation methods)
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} options - Options for orbit data
+     * @returns {Object} Current orbit streaming data
+     */
+    getOrbitStreamingData(satelliteId, options = {}) {
+        const streamer = this.orbitStreamers.get(satelliteId);
+        if (!streamer) {
+            return { points: [], metadata: null };
+        }
+
+        return streamer.getStreamingData(options);
+    }
+
+    /**
+     * Force orbit extension for a satellite (replaces async propagation)
+     * @param {string} satelliteId - Satellite ID
+     * @param {Object} options - Extension options
+     * @returns {Promise<boolean>} Success status
+     */
+    async forceOrbitExtension(satelliteId, options = {}) {
+        const streamer = this._getOrCreateStreamer(satelliteId);
+
+        // Cancel any existing cycle for this satellite
+        this._cancelOrbitCycle(satelliteId);
+
+        // Force extension with custom parameters
+        let forceCompleteRedraw = false;
+        if (options.duration || options.periods || options.pointsPerPeriod) {
+            const oldParams = { ...streamer.params };
+            streamer.params = { ...streamer.params, ...options };
+
+            // Check if parameters changed significantly
+            forceCompleteRedraw = !streamer._areParamsEqual(oldParams, streamer.params);
+        }
+
+        // Get current simulation time from physics engine
+        const physicsEngine = this._getPhysicsEngineRef();
+        const currentSimTime = physicsEngine?.simulationTime || new Date();
+
+        // Start immediate cycle (outside normal cycle timing)
+        this._startOrbitPropagationCycle(satelliteId, streamer, forceCompleteRedraw, performance.now(), currentSimTime);
+
+        // Wait for cycle to complete (with timeout)
+        return new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+                const cycle = this.orbitPropagationCycles.get(satelliteId);
+                if (!cycle?.inProgress) {
+                    clearInterval(checkInterval);
+                    resolve(true);
+                }
+            }, 100);
+
+            // Timeout after 2 seconds
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                this._cancelOrbitCycle(satelliteId);
+                resolve(false);
+            }, 2000);
+        });
+    }
+
+    // ================================================================
+    // PRIVATE METHODS - Event Listeners for UI Integration
+    // ================================================================
+
+    /**
+     * Set up event listeners for satellite parameter changes from UI
+     * @private
+     */
+    _setupEventListeners() {
+        // Bind methods to preserve `this` context
+        this._handleSatelliteSimPropertiesChanged = this._handleSatelliteSimPropertiesChanged.bind(this);
+        
+        // Listen for satellite simulation properties changes from debug window
+        if (typeof window !== 'undefined') {
+            // Debug window dispatches to document, so listen on document
+            document.addEventListener('satelliteSimPropertiesChanged', this._handleSatelliteSimPropertiesChanged);
+            console.log('[SatelliteEngine] Event listener for satelliteSimPropertiesChanged added to document');
+        } else {
+            console.warn('[SatelliteEngine] Window not available, cannot add event listeners');
+        }
+    }
+
+    /**
+     * Remove event listeners
+     * @private
+     */
+    _removeEventListeners() {
+        if (typeof window !== 'undefined') {
+            document.removeEventListener('satelliteSimPropertiesChanged', this._handleSatelliteSimPropertiesChanged);
+        }
+    }
+
+    /**
+     * Resample orbit points to achieve desired resolution (pointsPerPeriod)
+     * @private
+     * @param {Array} rawPoints - Original orbit points from propagation
+     * @param {Object} params - Streaming parameters with periods and pointsPerPeriod
+     * @returns {Array} Resampled orbit points
+     */
+    _resampleOrbitPoints(rawPoints, params) {
+        if (!rawPoints || rawPoints.length === 0) return [];
+        if (!params.pointsPerPeriod || params.pointsPerPeriod <= 0) return rawPoints;
+
+        // Calculate desired total number of points
+        const desiredTotalPoints = Math.round(params.periods * params.pointsPerPeriod);
+        
+        // If desired points matches what we have, return as-is
+        if (rawPoints.length === desiredTotalPoints) {
+            return rawPoints;
+        }
+
+        // Resample using linear interpolation to achieve exact desired resolution
+        const resampledPoints = [];
+        const maxIndex = rawPoints.length - 1;
+        
+        for (let i = 0; i < desiredTotalPoints; i++) {
+            // Calculate floating point index in original array
+            const floatIndex = (i / (desiredTotalPoints - 1)) * maxIndex;
+            const lowerIndex = Math.floor(floatIndex);
+            const upperIndex = Math.min(lowerIndex + 1, maxIndex);
+            const t = floatIndex - lowerIndex; // Interpolation factor [0, 1]
+
+            if (lowerIndex === upperIndex || t === 0) {
+                // No interpolation needed
+                resampledPoints.push(rawPoints[lowerIndex]);
+            } else {
+                // Linear interpolation between two points
+                const lowerPoint = rawPoints[lowerIndex];
+                const upperPoint = rawPoints[upperIndex];
+                
+                const interpolatedPoint = {
+                    position: [
+                        lowerPoint.position[0] + t * (upperPoint.position[0] - lowerPoint.position[0]),
+                        lowerPoint.position[1] + t * (upperPoint.position[1] - lowerPoint.position[1]),
+                        lowerPoint.position[2] + t * (upperPoint.position[2] - lowerPoint.position[2])
+                    ],
+                    velocity: [
+                        lowerPoint.velocity[0] + t * (upperPoint.velocity[0] - lowerPoint.velocity[0]),
+                        lowerPoint.velocity[1] + t * (upperPoint.velocity[1] - lowerPoint.velocity[1]),
+                        lowerPoint.velocity[2] + t * (upperPoint.velocity[2] - lowerPoint.velocity[2])
+                    ],
+                    time: lowerPoint.time + t * (upperPoint.time - lowerPoint.time),
+                    centralBodyNaifId: lowerPoint.centralBodyNaifId
+                };
+                
+                resampledPoints.push(interpolatedPoint);
+            }
+        }
+
+        return resampledPoints;
+    }
+
+    /**
+     * Handle satellite simulation properties changes from debug window
+     * @private
+     */
+    _handleSatelliteSimPropertiesChanged(event) {
+        const { satelliteId, property, value } = event.detail || {};
+        
+        if (!satelliteId) {
+            console.warn('[SatelliteEngine] No satelliteId in event');
+            return;
+        }
+        
+        // Try both string and numeric versions of the ID
+        const stringId = String(satelliteId);
+        const satellite = this.satellites.get(stringId);
+        
+        if (!satellite) {
+            console.warn(`[SatelliteEngine] Satellite ${stringId} not found in physics engine`);
+            return;
+        }
+
+        console.log(`[SatelliteEngine] Updating ${property} to ${value} for satellite ${stringId}`);
+
+        // Store the parameters on the satellite object for persistence
+        if (!satellite.orbitSimProperties) {
+            satellite.orbitSimProperties = {};
+        }
+        satellite.orbitSimProperties[property] = value;
+
+        // Update the streamer parameters if they exist
+        const streamer = this.orbitStreamers.get(stringId);
+        if (streamer) {
+            // Update streamer parameters based on the property change
+            const newParams = { ...streamer.params };
+            
+            if (property === 'periods') {
+                newParams.periods = value;
+            } else if (property === 'pointsPerPeriod') {
+                newParams.pointsPerPeriod = value;
+            }
+            
+            // Update the streamer parameters (this will cause the next regular orbit cycle to use new params)
+            streamer.updateParams(newParams);
+            
+            console.log(`[SatelliteEngine] Updated streamer parameters for satellite ${stringId}:`, newParams);
+        }
     }
 }

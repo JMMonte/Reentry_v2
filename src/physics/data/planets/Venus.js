@@ -33,9 +33,18 @@ export default {
     orbitalPeriod: 224.7 * 86400, // seconds (224.7 Earth days)
     semiMajorAxis: 108.2e6, // km (0.72 AU)
 
+    // Atmospheric model for drag calculations
+    atmosphericModel: {
+        maxAltitude: 350, // km - Venus has very extensive atmosphere
+        minAltitude: 0,
+        referenceAltitude: 70, // km - above main cloud deck
+        referenceDensity: 0.1, // kg/m³ at 70km (very dense even at altitude)
+        scaleHeight: 15.9 // km - Venus scale height
+    },
+
     // Atmospheric properties (dense CO2 atmosphere)
     atmosphere: {
-        thickness: 190, // km - extends very high
+        thickness: 350, // km - Venus atmosphere extends much higher than Earth's (was 190)
         densityScaleHeight: 15.9, // km
         hazeIntensity: 5,
         scaleHeightMultiplier: 1.0,

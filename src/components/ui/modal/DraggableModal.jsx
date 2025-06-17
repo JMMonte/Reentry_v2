@@ -10,7 +10,7 @@ if (typeof window !== 'undefined') {
 const getGlobalZIndex = () => (typeof window !== 'undefined' ? window.__GLOBAL_MODAL_Z_INDEX__ : 9999);
 const bumpGlobalZIndex = () => (typeof window !== 'undefined' ? ++window.__GLOBAL_MODAL_Z_INDEX__ : 10000);
 
-// Performance: Throttle function for mouse events
+// Performance throttle function for mouse events
 function throttle(func, delay) {
   let timeoutId;
   let lastExecTime = 0;
@@ -30,7 +30,106 @@ function throttle(func, delay) {
   };
 }
 
-export function DraggableModal({ 
+// Memoized modal header component
+const ModalHeader = React.memo(function ModalHeader({
+  title,
+  leftElement,
+  isCollapsed,
+  onToggleCollapse,
+  onClose,
+  rightElement,
+  onStartDragging
+}) {
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    onStartDragging(e);
+  }, [onStartDragging]);
+
+  return (
+    <div 
+      className="flex items-center justify-between p-3 border-b bg-card cursor-move select-none"
+      onMouseDown={handleMouseDown}
+    >
+      <div className="flex items-center space-x-2">
+        {leftElement}
+        <GripHorizontal className="h-4 w-4 opacity-50" />
+        <span className="text-sm font-medium">
+          {title}
+        </span>
+      </div>
+      <div className="flex items-center space-x-2">
+        {rightElement}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggleCollapse}
+          className="h-6 w-6"
+        >
+          {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="h-6 w-6"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+});
+
+ModalHeader.propTypes = {
+  title: PropTypes.oneOfType([PropTypes.string, PropTypes.node]).isRequired,
+  leftElement: PropTypes.node,
+  isCollapsed: PropTypes.bool.isRequired,
+  onToggleCollapse: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
+  rightElement: PropTypes.node,
+  onStartDragging: PropTypes.func.isRequired
+};
+
+// Memoized resize handle component
+const ResizeHandle = React.memo(function ResizeHandle({ direction, onStartResize }) {
+  const handleMouseDown = useCallback((e) => {
+    onStartResize(e, direction);
+  }, [onStartResize, direction]);
+
+  const getHandleStyles = useCallback(() => {
+    const baseStyles = 'absolute bg-transparent hover:bg-blue-500/20 transition-colors';
+    
+    switch (direction) {
+      case 'vertical':
+        return `${baseStyles} bottom-0 left-0 right-0 h-2 cursor-ns-resize`;
+      case 'horizontal-right':
+        return `${baseStyles} top-0 bottom-0 right-0 w-2 cursor-ew-resize`;
+      case 'horizontal-left':
+        return `${baseStyles} top-0 bottom-0 left-0 w-2 cursor-ew-resize`;
+      case 'both-right':
+        return `${baseStyles} bottom-0 right-0 w-4 h-4 cursor-nwse-resize`;
+      case 'both-left':
+        return `${baseStyles} bottom-0 left-0 w-4 h-4 cursor-nesw-resize`;
+      default:
+        return baseStyles;
+    }
+  }, [direction]);
+
+  return (
+    <div
+      className={getHandleStyles()}
+      onMouseDown={handleMouseDown}
+    />
+  );
+});
+
+ResizeHandle.propTypes = {
+  direction: PropTypes.string.isRequired,
+  onStartResize: PropTypes.func.isRequired
+};
+
+// Main modal component with comprehensive performance optimizations
+export const DraggableModal = React.memo(function DraggableModal({ 
   title, 
   children, 
   defaultPosition = { x: 20, y: 80 },
@@ -59,7 +158,7 @@ export function DraggableModal({
   const resizeRef = useRef({ isResizing: false, startY: 0, startX: 0, startHeight: 0, startWidth: 0, direction: null });
   const [isMobile, setIsMobile] = useState(false);
   
-  // Performance: Cache expensive calculations
+  // Memoized constraints calculation
   const constraints = useMemo(() => ({
     maxHeight: maxHeight || (typeof window !== 'undefined' ? window.innerHeight * 0.9 : 600),
     maxWidth: maxWidth || (typeof window !== 'undefined' ? window.innerWidth * 0.9 : 800),
@@ -67,7 +166,7 @@ export function DraggableModal({
     minWidth
   }), [maxHeight, maxWidth, minHeight, minWidth]);
 
-  // Performance: Batch position updates using RAF
+  // Memoized RAF position updater
   const updatePositionRAF = useRef();
   const updatePosition = useCallback((newPosition) => {
     if (updatePositionRAF.current) {
@@ -78,7 +177,7 @@ export function DraggableModal({
     });
   }, []);
 
-  // Performance: Batch size updates using RAF
+  // Memoized RAF size updater
   const updateSizeRAF = useRef();
   const updateSize = useCallback((newSize) => {
     if (updateSizeRAF.current) {
@@ -91,24 +190,9 @@ export function DraggableModal({
     });
   }, []);
 
-  // Update dimensions based on content only for resizable modals
-  useEffect(() => {
-    if (resizable && !isCollapsed && contentRef.current && height === 'auto') {
-      const contentHeight = contentRef.current.scrollHeight;
-      const maxDefaultHeight = constraints.maxHeight;
-      if (contentHeight < maxDefaultHeight) {
-        setHeight(contentHeight);
-      } else {
-        setHeight(maxDefaultHeight);
-      }
-    }
-  }, [isCollapsed, children, resizable, height, constraints.maxHeight]);
-
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth <= 640);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+  // Memoized event handlers to prevent recreation
+  const handleToggleCollapse = useCallback(() => {
+    setIsCollapsed(prev => !prev);
   }, []);
 
   const startDragging = useCallback((e) => {
@@ -134,8 +218,8 @@ export function DraggableModal({
     };
   }, [position.x]);
 
-  // Performance: Throttled drag handler
-  const onDrag = useCallback(throttle((e) => {
+  // Memoized throttled drag handler for better performance
+  const onDrag = useMemo(() => throttle((e) => {
     if (dragRef.current.isDragging) {
       const newX = e.clientX - dragRef.current.startX;
       const newY = e.clientY - dragRef.current.startY;
@@ -198,182 +282,175 @@ export function DraggableModal({
     resizeRef.current.isResizing = false;
   }, []);
 
-  // Performance: Only add events when actually dragging/resizing
-  useEffect(() => {
-    if (!isOpen) return;
-    
-    let isActive = false;
-    
-    const checkActive = () => {
-      isActive = dragRef.current.isDragging || resizeRef.current.isResizing;
-    };
-    
-    const conditionalOnDrag = (e) => {
-      checkActive();
-      if (isActive) onDrag(e);
-    };
-    
-    const conditionalStopDragging = () => {
-      checkActive();
-      if (isActive) stopDragging();
-    };
-
-    // Only add expensive global listeners when actually needed
-    window.addEventListener('mousemove', conditionalOnDrag, { passive: true });
-    window.addEventListener('mouseup', conditionalStopDragging);
-    
-    return () => {
-      window.removeEventListener('mousemove', conditionalOnDrag);
-      window.removeEventListener('mouseup', conditionalStopDragging);
-      // Cancel any pending RAF calls
-      if (updatePositionRAF.current) cancelAnimationFrame(updatePositionRAF.current);
-      if (updateSizeRAF.current) cancelAnimationFrame(updateSizeRAF.current);
-    };
-  }, [isOpen, onDrag, stopDragging]);
-
-  // Bring to front on any click
-  const bringToFront = useCallback(() => {
-    setZIndex(bumpGlobalZIndex());
+  // Memoized mobile check handler
+  const checkMobile = useCallback(() => {
+    setIsMobile(window.innerWidth <= 640);
   }, []);
 
-  // Bring to front on mount or when opened
+  // Update dimensions based on content only for resizable modals
   useEffect(() => {
-    if (isOpen) {
-      bringToFront();
+    if (resizable && !isCollapsed && contentRef.current && height === 'auto') {
+      const contentHeight = contentRef.current.scrollHeight;
+      const maxDefaultHeight = constraints.maxHeight;
+      if (contentHeight < maxDefaultHeight) {
+        setHeight(contentHeight);
+      } else {
+        setHeight(maxDefaultHeight);
+      }
     }
-  }, [isOpen, bringToFront]);
+  }, [isCollapsed, children, resizable, height, constraints.maxHeight]);
 
-  // Performance: Memoize modal style calculation
-  const modalStyle = useMemo(() => {
+  useEffect(() => {
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, [checkMobile]);
+
+  // Event listeners for drag and resize - memoized to prevent recreation
+  useEffect(() => {
+    const checkActive = () => {
+      return dragRef.current.isDragging || resizeRef.current.isResizing;
+    };
+
+    const conditionalOnDrag = (e) => {
+      if (checkActive()) onDrag(e);
+    };
+
+    const conditionalStopDragging = () => {
+      if (checkActive()) stopDragging();
+    };
+
+    document.addEventListener('mousemove', conditionalOnDrag);
+    document.addEventListener('mouseup', conditionalStopDragging);
+
+    return () => {
+      document.removeEventListener('mousemove', conditionalOnDrag);
+      document.removeEventListener('mouseup', conditionalStopDragging);
+    };
+  }, [onDrag, stopDragging]);
+
+  // Memoized modal styles
+  const modalStyles = useMemo(() => {
+    const baseStyles = {
+      position: 'fixed',
+      left: `${position.x}px`,
+      top: `${position.y}px`,
+      zIndex: zIndex,
+      minWidth: `${constraints.minWidth}px`,
+      maxWidth: constraints.maxWidth ? `${constraints.maxWidth}px` : undefined,
+      width: width !== 'auto' ? `${width}px` : 'auto',
+      backgroundColor: 'hsl(var(--card))',
+      border: '1px solid hsl(var(--border))',
+      borderRadius: 'calc(var(--radius) - 2px)',
+      boxShadow: 'var(--shadow)',
+    };
+
     if (isMobile) {
       return {
-        left: '1vw',
-        top: 'unset',
-        bottom: 0,
-        width: '98vw',
-        minWidth: 0,
-        maxWidth: '98vw',
-        height: 'calc(100vh - 76px)', // 72px navbar + 4px gap
-        minHeight: 0,
-        maxHeight: 'calc(100vh - 76px)',
-        zIndex,
-        transform: 'none', // Don't use transform on mobile
-      };
-    } else {
-      return {
-        height: isCollapsed ? 'auto' : (resizable ? height : 'auto'),
-        width: resizable ? width : 'auto',
-        minHeight: isCollapsed ? 'auto' : constraints.minHeight,
-        minWidth: constraints.minWidth,
-        maxHeight: isCollapsed ? 'auto' : (resizable ? constraints.maxHeight : 'none'),
-        maxWidth: resizable ? constraints.maxWidth : 'none',
-        zIndex,
-        // Performance: Use will-change for better rendering
-        willChange: dragRef.current.isDragging || resizeRef.current.isResizing ? 'transform' : 'auto',
+        ...baseStyles,
+        left: '10px',
+        top: '10px',
+        right: '10px',
+        width: 'calc(100vw - 20px)',
+        maxWidth: 'calc(100vw - 20px)',
+        position: 'fixed'
       };
     }
-  }, [isMobile, position, isCollapsed, resizable, height, width, constraints, zIndex]);
+
+    return baseStyles;
+  }, [position, zIndex, constraints, width, isMobile]);
+
+  // Memoized content styles
+  const contentStyles = useMemo(() => {
+    const baseStyles = {
+      transition: 'max-height 0.2s ease-out',
+      overflow: 'auto',
+    };
+
+    if (isCollapsed) {
+      return {
+        ...baseStyles,
+        maxHeight: '0px',
+        padding: '0px',
+        overflow: 'hidden'
+      };
+    }
+
+    if (height !== 'auto') {
+      return {
+        ...baseStyles,
+        height: `${height}px`,
+        maxHeight: `${constraints.maxHeight}px`
+      };
+    }
+
+    return {
+      ...baseStyles,
+      maxHeight: `${constraints.maxHeight}px`
+    };
+  }, [isCollapsed, height, constraints.maxHeight]);
 
   if (!isOpen) return null;
 
   return (
     <div
       ref={modalRef}
-      className={`fixed bg-background/95 border rounded-lg shadow-lg ${className} group ${isMobile ? 'touch-none' : ''}`}
-      style={{
-        ...modalStyle,
-        contain: 'layout style paint',
-        // Use transform for hardware acceleration on desktop, left/top on mobile
-        ...(isMobile ? {} : {
-          transform: `translate(${position.x}px, ${position.y}px)`,
-          left: 0,
-          top: 0,
-        }),
-      }}
-      onMouseDown={bringToFront}
+      className={`bg-card text-card-foreground shadow-lg ${className}`}
+      style={modalStyles}
     >
-      {/* Header */}
+      <ModalHeader
+        title={title}
+        leftElement={leftElement}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={handleToggleCollapse}
+        onClose={onClose}
+        rightElement={rightElement}
+        onStartDragging={startDragging}
+      />
+      
       <div
-        className={`flex items-center justify-between p-2 bg-secondary/50 select-none rounded-t-lg ${isMobile ? '' : 'cursor-move'}`}
-        onMouseDown={isMobile ? undefined : startDragging}
+        ref={contentRef}
+        className="p-2"
+        style={contentStyles}
       >
-        <div className="flex items-center gap-2">
-          {leftElement}
-          <span className="text-sm font-medium">{title}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {rightElement}
-          <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => setIsCollapsed(!isCollapsed)}>
-            {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-          </Button>
-          <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        {children}
       </div>
 
-      {/* Content */}
-      {!isCollapsed && (
+      {resizable && !isMobile && (
         <>
-          <div 
-            ref={contentRef} 
-            className={`modal-content overflow-auto ${resizable && !isMobile ? 'pb-2' : ''}`}
-            style={{ 
-              height: resizable && !isMobile ? 'calc(100% - 48px)' : 'auto',
-              padding: '8px'
-            }}
-          >
-            {children}
-          </div>
-          {/* Resize handles only on desktop */}
-          {resizable && !isMobile && (
-            <>
-              {/* Left resize handle */}
-              <div
-                className="absolute top-2 bottom-2 -left-px w-1 cursor-ew-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
-                onMouseDown={(e) => startResizing(e, 'horizontal-left')}
-              />
-              {/* Right resize handle */}
-              <div
-                className="absolute top-2 bottom-2 -right-px w-1 cursor-ew-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
-                onMouseDown={(e) => startResizing(e, 'horizontal-right')}
-              />
-              {/* Bottom resize handle */}
-              <div
-                className="absolute left-2 right-2 -bottom-px h-1 cursor-ns-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
-                onMouseDown={(e) => startResizing(e, 'vertical')}
-              />
-              {/* Bottom-left corner resize handle */}
-              <div
-                className="absolute -bottom-px -left-px w-3 h-3 cursor-sw-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
-                onMouseDown={(e) => startResizing(e, 'both-left')}
-              />
-              {/* Bottom-right corner resize handle */}
-              <div
-                className="absolute -bottom-px -right-px w-3 h-3 cursor-se-resize bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
-                onMouseDown={(e) => startResizing(e, 'both-right')}
-              />
-              {/* Bottom center resize handle with grip icon */}
-              <div
-                className="absolute -bottom-px left-1/2 transform -translate-x-1/2 w-6 h-2 cursor-ns-resize flex items-center justify-center bg-primary opacity-0 hover:opacity-100 transition-opacity duration-150 rounded-full"
-                onMouseDown={(e) => startResizing(e, 'vertical')}
-              >
-                <GripHorizontal className="h-2 w-2 text-primary-foreground" />
-              </div>
-            </>
-          )}
+          <ResizeHandle direction="vertical" onStartResize={startResizing} />
+          <ResizeHandle direction="horizontal-right" onStartResize={startResizing} />
+          <ResizeHandle direction="horizontal-left" onStartResize={startResizing} />
+          <ResizeHandle direction="both-right" onStartResize={startResizing} />
+          <ResizeHandle direction="both-left" onStartResize={startResizing} />
         </>
       )}
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for optimal performance
+  return prevProps.title === nextProps.title &&
+    prevProps.isOpen === nextProps.isOpen &&
+    prevProps.defaultCollapsed === nextProps.defaultCollapsed &&
+    prevProps.className === nextProps.className &&
+    prevProps.resizable === nextProps.resizable &&
+    prevProps.minHeight === nextProps.minHeight &&
+    prevProps.maxHeight === nextProps.maxHeight &&
+    prevProps.minWidth === nextProps.minWidth &&
+    prevProps.maxWidth === nextProps.maxWidth &&
+    prevProps.defaultHeight === nextProps.defaultHeight &&
+    prevProps.defaultWidth === nextProps.defaultWidth &&
+    JSON.stringify(prevProps.defaultPosition) === JSON.stringify(nextProps.defaultPosition) &&
+    prevProps.children === nextProps.children &&
+    prevProps.onClose === nextProps.onClose;
+});
 
 DraggableModal.propTypes = {
-  title: PropTypes.node.isRequired,
-  children: PropTypes.node,
+  title: PropTypes.oneOfType([PropTypes.string, PropTypes.node]).isRequired,
+  children: PropTypes.node.isRequired,
   defaultPosition: PropTypes.shape({
     x: PropTypes.number,
-    y: PropTypes.number,
+    y: PropTypes.number
   }),
   rightElement: PropTypes.node,
   leftElement: PropTypes.node,
@@ -382,10 +459,12 @@ DraggableModal.propTypes = {
   onClose: PropTypes.func,
   defaultCollapsed: PropTypes.bool,
   minHeight: PropTypes.number,
-  maxHeight: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  maxHeight: PropTypes.number,
   minWidth: PropTypes.number,
   maxWidth: PropTypes.number,
   resizable: PropTypes.bool,
   defaultHeight: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  defaultWidth: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  defaultWidth: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
 };
+
+export default DraggableModal;

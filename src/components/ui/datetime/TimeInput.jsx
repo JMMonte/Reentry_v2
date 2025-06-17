@@ -1,92 +1,139 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import { Input } from "../input";
 import { cn } from "@/lib/utils";
 import PropTypes from 'prop-types';
 
-const TimeInput = ({
+// Memoized input field component
+const TimeInputField = React.memo(function TimeInputField({ 
+  label, 
+  value, 
+  onChange, 
+  min, 
+  max, 
+  padLength = 2,
+  className 
+}) {
+  const handleChange = useCallback((e) => {
+    onChange(e.target.value);
+  }, [onChange]);
+
+  const formattedValue = useMemo(() => {
+    return String(value).padStart(padLength, '0');
+  }, [value, padLength]);
+
+  return (
+    <div className="flex flex-col items-center">
+      <span className="text-[10px] text-muted-foreground font-mono">{label}</span>
+      <Input
+        type="number"
+        value={formattedValue}
+        onChange={handleChange}
+        className={className}
+        min={min}
+        max={max}
+      />
+    </div>
+  );
+});
+
+TimeInputField.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.number.isRequired,
+  onChange: PropTypes.func.isRequired,
+  min: PropTypes.number.isRequired,
+  max: PropTypes.number.isRequired,
+  padLength: PropTypes.number,
+  className: PropTypes.string
+};
+
+const TimeInput = React.memo(function TimeInput({
   hours,
   minutes,
   seconds,
   milliseconds,
   onTimeChange,
   className
-}) => {
-  const handleChange = (type, value) => {
+}) {
+  // Memoized change handlers to prevent recreation
+  const handleHoursChange = useCallback((value) => {
     let numValue = parseInt(value) || 0;
+    numValue = Math.max(0, Math.min(23, numValue));
+    onTimeChange('hours', numValue);
+  }, [onTimeChange]);
 
-    // Clamp values to valid ranges
-    switch (type) {
-      case 'hours':
-        numValue = Math.max(0, Math.min(23, numValue));
-        break;
-      case 'minutes':
-      case 'seconds':
-        numValue = Math.max(0, Math.min(59, numValue));
-        break;
-      case 'milliseconds':
-        numValue = Math.max(0, Math.min(999, numValue));
-        break;
-    }
+  const handleMinutesChange = useCallback((value) => {
+    let numValue = parseInt(value) || 0;
+    numValue = Math.max(0, Math.min(59, numValue));
+    onTimeChange('minutes', numValue);
+  }, [onTimeChange]);
 
-    onTimeChange(type, numValue);
-  };
+  const handleSecondsChange = useCallback((value) => {
+    let numValue = parseInt(value) || 0;
+    numValue = Math.max(0, Math.min(59, numValue));
+    onTimeChange('seconds', numValue);
+  }, [onTimeChange]);
 
-  const inputClass = "w-[4ch] text-center font-mono p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
-  const msInputClass = "w-[5ch] text-center font-mono p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
-  const labelClass = "text-[10px] text-muted-foreground font-mono";
+  const handleMillisecondsChange = useCallback((value) => {
+    let numValue = parseInt(value) || 0;
+    numValue = Math.max(0, Math.min(999, numValue));
+    onTimeChange('milliseconds', numValue);
+  }, [onTimeChange]);
+
+  // Memoized CSS classes
+  const inputClass = useMemo(() => 
+    "w-[4ch] text-center font-mono p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+    []
+  );
+
+  const msInputClass = useMemo(() => 
+    "w-[5ch] text-center font-mono p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+    []
+  );
 
   return (
     <div className={cn("flex items-end space-x-1", className)}>
-      <div className="flex flex-col items-center">
-        <span className={labelClass}>HH</span>
-        <Input
-          type="number"
-          value={String(hours).padStart(2, '0')}
-          onChange={(e) => handleChange('hours', e.target.value)}
-          className={inputClass}
-          min={0}
-          max={23}
-        />
-      </div>
+      <TimeInputField
+        label="HH"
+        value={hours}
+        onChange={handleHoursChange}
+        min={0}
+        max={23}
+        padLength={2}
+        className={inputClass}
+      />
       <span className="mb-2">:</span>
-      <div className="flex flex-col items-center">
-        <span className={labelClass}>MM</span>
-        <Input
-          type="number"
-          value={String(minutes).padStart(2, '0')}
-          onChange={(e) => handleChange('minutes', e.target.value)}
-          className={inputClass}
-          min={0}
-          max={59}
-        />
-      </div>
+      <TimeInputField
+        label="MM"
+        value={minutes}
+        onChange={handleMinutesChange}
+        min={0}
+        max={59}
+        padLength={2}
+        className={inputClass}
+      />
       <span className="mb-2">:</span>
-      <div className="flex flex-col items-center">
-        <span className={labelClass}>SS</span>
-        <Input
-          type="number"
-          value={String(seconds).padStart(2, '0')}
-          onChange={(e) => handleChange('seconds', e.target.value)}
-          className={inputClass}
-          min={0}
-          max={59}
-        />
-      </div>
+      <TimeInputField
+        label="SS"
+        value={seconds}
+        onChange={handleSecondsChange}
+        min={0}
+        max={59}
+        padLength={2}
+        className={inputClass}
+      />
       <span className="mb-2">.</span>
-      <div className="flex flex-col items-center">
-        <span className={labelClass}>MS</span>
-        <Input
-          type="number"
-          value={String(milliseconds).padStart(3, '0')}
-          onChange={(e) => handleChange('milliseconds', e.target.value)}
-          className={msInputClass}
-          min={0}
-          max={999}
-        />
-      </div>
+      <TimeInputField
+        label="MS"
+        value={milliseconds}
+        onChange={handleMillisecondsChange}
+        min={0}
+        max={999}
+        padLength={3}
+        className={msInputClass}
+      />
     </div>
   );
-};
+});
 
 TimeInput.propTypes = {
   hours: PropTypes.number.isRequired,

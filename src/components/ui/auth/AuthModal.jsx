@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { DraggableModal } from '../modal/DraggableModal';
 import { Button } from '../button';
 import PropTypes from 'prop-types';
@@ -8,7 +8,13 @@ import { supabase } from '@/supabaseClient';
 import { useToast } from '../Toast';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
-export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: externalSetMode, onSignupSuccess }) {
+export const AuthModal = React.memo(function AuthModal({ 
+    isOpen, 
+    onClose, 
+    mode: externalMode, 
+    setMode: externalSetMode, 
+    onSignupSuccess 
+}) {
     const [internalMode, setInternalMode] = useState('signin'); // 'signin' or 'signup'
     const mode = externalMode !== undefined ? externalMode : internalMode;
     const setMode = externalSetMode !== undefined ? externalSetMode : setInternalMode;
@@ -21,7 +27,17 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
     const [resetEmail, setResetEmail] = useState('');
     const { showToast } = useToast();
 
-    const handleAuth = async (e) => {
+    // Memoized modal dimensions
+    const modalDimensions = useMemo(() => ({
+        defaultPosition: { x: window.innerWidth / 2 - 160, y: window.innerHeight * 0.15 },
+        defaultWidth: 320,
+        defaultHeight: forgotMode ? 320 : 550,
+        minWidth: 250,
+        minHeight: 300,
+    }), [forgotMode]);
+
+    // Memoized event handlers
+    const handleAuth = useCallback(async (e) => {
         e.preventDefault();
         setLoading(true);
         if (mode === 'signup') {
@@ -65,9 +81,9 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
             }
             setLoading(false);
         }
-    };
+    }, [mode, password, confirmPassword, email, name, showToast, onSignupSuccess, onClose]);
 
-    const handleForgotPassword = async (e) => {
+    const handleForgotPassword = useCallback(async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
@@ -83,25 +99,38 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
             showToast('Failed to send reset email.');
         }
         setLoading(false);
-    };
+    }, [resetEmail, showToast]);
+
+    const handleModalClose = useCallback(() => {
+        onClose();
+        setEmail('');
+        setMode('signin');
+        setForgotMode(false);
+        setResetEmail('');
+    }, [onClose, setMode]);
+
+    const handleBackToSignIn = useCallback(() => {
+        setForgotMode(false);
+    }, []);
+
+    // Memoized input change handlers
+    const handleEmailChange = useCallback((e) => setEmail(e.target.value), []);
+    const handleNameChange = useCallback((e) => setName(e.target.value), []);
+    const handlePasswordChange = useCallback((e) => setPassword(e.target.value), []);
+    const handleConfirmPasswordChange = useCallback((e) => setConfirmPassword(e.target.value), []);
+    const handleResetEmailChange = useCallback((e) => setResetEmail(e.target.value), []);
 
     return (
         <DraggableModal
             title={forgotMode ? 'Reset Password' : (mode === 'signin' ? 'Sign In' : 'Sign Up')}
             isOpen={isOpen}
-            onClose={() => {
-                onClose();
-                setEmail('');
-                setMode('signin');
-                setForgotMode(false);
-                setResetEmail('');
-            }}
-            defaultPosition={{ x: window.innerWidth / 2 - 160, y: window.innerHeight * 0.15 }}
+            onClose={handleModalClose}
+            defaultPosition={modalDimensions.defaultPosition}
             resizable={true}
-            defaultWidth={320}
-            defaultHeight={forgotMode ? 320 : 550}
-            minWidth={250}
-            minHeight={300}
+            defaultWidth={modalDimensions.defaultWidth}
+            defaultHeight={modalDimensions.defaultHeight}
+            minWidth={modalDimensions.minWidth}
+            minHeight={modalDimensions.minHeight}
         >
             <div className="px-6 py-5 flex flex-col gap-2 items-center mb-2">
                 {forgotMode ? (
@@ -114,7 +143,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
                                 id="reset-email"
                                 type="email"
                                 value={resetEmail}
-                                onChange={e => setResetEmail(e.target.value)}
+                                onChange={handleResetEmailChange}
                                 required
                                 placeholder="you@email.com"
                                 className="w-full text-sm"
@@ -128,7 +157,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
                         <button
                             type="button"
                             className="text-xs text-blue-500 mt-3 hover:underline"
-                            onClick={() => setForgotMode(false)}
+                            onClick={handleBackToSignIn}
                         >
                             Back to sign in
                         </button>
@@ -153,7 +182,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
                                 id="auth-email"
                                 type="email"
                                 value={email}
-                                onChange={e => setEmail(e.target.value)}
+                                onChange={handleEmailChange}
                                 required
                                 placeholder="you@email.com"
                                 className="w-full text-sm"
@@ -167,7 +196,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
                                         id="auth-name"
                                         type="text"
                                         value={name}
-                                        onChange={e => setName(e.target.value)}
+                                        onChange={handleNameChange}
                                         required
                                         placeholder="Your name"
                                         className="w-full text-sm"
@@ -179,7 +208,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
                                         id="auth-password"
                                         type="password"
                                         value={password}
-                                        onChange={e => setPassword(e.target.value)}
+                                        onChange={handlePasswordChange}
                                         required
                                         placeholder="Create a password"
                                         className="w-full text-sm"
@@ -192,7 +221,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
                                         id="auth-confirm-password"
                                         type="password"
                                         value={confirmPassword}
-                                        onChange={e => setConfirmPassword(e.target.value)}
+                                        onChange={handleConfirmPasswordChange}
                                         required
                                         placeholder="Repeat your password"
                                         className="w-full text-sm"
@@ -208,7 +237,7 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
                                         id="auth-password"
                                         type="password"
                                         value={password}
-                                        onChange={e => setPassword(e.target.value)}
+                                        onChange={handlePasswordChange}
                                         required
                                         placeholder="Your password"
                                         className="w-full text-sm"
@@ -261,12 +290,12 @@ export function AuthModal({ isOpen, onClose, mode: externalMode, setMode: extern
             </div>
         </DraggableModal>
     );
-}
+});
 
 AuthModal.propTypes = {
     isOpen: PropTypes.bool.isRequired,
     onClose: PropTypes.func.isRequired,
     mode: PropTypes.string,
     setMode: PropTypes.func,
-    onSignupSuccess: PropTypes.func
+    onSignupSuccess: PropTypes.func,
 }; 

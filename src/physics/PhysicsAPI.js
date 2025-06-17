@@ -17,7 +17,6 @@
  * - Clear separation of concerns by physics domain
  * - Works as an embedded backend for the application
  * 
- * 🎯 Migration Status: ✅ COMPLETED
  * All components now use this new unified API structure.
  */
 
@@ -70,17 +69,22 @@ export const Orbital = {
             velocity: Array.isArray(initialState.velocity) ? initialState.velocity : initialState.velocity.toArray(),
             centralBodyNaifId: centralBody.naifId || centralBody.naif_id || 399,
             mass: initialState.mass || 1000,
-            crossSectionalArea: initialState.crossSectionalArea || 10,
+            crossSectionalArea: initialState.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
             dragCoefficient: initialState.dragCoefficient || 2.2
         };
 
         const bodies = { [satellite.centralBodyNaifId]: centralBody };
+
+        // Use current time as startTime
+        const currentTime = new Date();
+        const startTimeSeconds = currentTime.getTime() / 1000;
 
         return UnifiedSatellitePropagator.propagateOrbit({
             satellite,
             bodies,
             duration,
             timeStep,
+            startTime: startTimeSeconds, // Use current time
             includeJ2: true,
             includeDrag: true,
             includeThirdBody: false // Single body propagation for API compatibility
@@ -243,6 +247,9 @@ export const Orbital = {
                         const timeDiff = (nodeTime.getTime() - lastTime) / 1000; // seconds
 
                         if (timeDiff > 0) {
+                            // Get startTime for this propagation segment
+                            const segmentStartTime = lastTime / 1000; // Convert to seconds since epoch
+                            
                             // Propagate to this maneuver
                             const propagation = UnifiedSatellitePropagator.propagateOrbit({
                                 satellite: {
@@ -256,6 +263,7 @@ export const Orbital = {
                                 bodies: physicsEngine.bodies,
                                 duration: timeDiff,
                                 timeStep: Math.min(60, Math.max(1, timeDiff / 100)),
+                                startTime: segmentStartTime, // Use segment start time
                                 includeJ2: true,
                                 includeDrag: true,
                                 includeThirdBody: false
@@ -286,6 +294,9 @@ export const Orbital = {
                     maneuverPosition = currentPos;
                     maneuverVelocity = currentVel;
                 } else {
+                    // Get startTime for final propagation segment
+                    const finalStartTime = lastTime / 1000; // Convert to seconds since epoch
+                    
                     // Propagate from last maneuver to preview time
                     const finalProp = UnifiedSatellitePropagator.propagateOrbit({
                         satellite: {
@@ -299,6 +310,7 @@ export const Orbital = {
                         bodies: physicsEngine.bodies,
                         duration: finalTimeDiff,
                         timeStep: Math.min(60, Math.max(1, Math.abs(finalTimeDiff) / 100)),
+                        startTime: finalStartTime, // Use final segment start time
                         includeJ2: true,
                         includeDrag: true,
                         includeThirdBody: false
@@ -322,6 +334,9 @@ export const Orbital = {
                     maneuverPosition = currentPos;
                     maneuverVelocity = currentVel;
                 } else {
+                    // Get startTime for direct propagation
+                    const directStartTime = currentTime / 1000; // Convert to seconds since epoch
+                    
                     // Propagate to maneuver time
                     const propagation = UnifiedSatellitePropagator.propagateOrbit({
                         satellite: {
@@ -335,6 +350,7 @@ export const Orbital = {
                         bodies: physicsEngine.bodies,
                         duration: timeToManeuver,
                         timeStep: Math.min(60, Math.max(1, Math.abs(timeToManeuver) / 100)),
+                        startTime: directStartTime, // Use direct propagation start time
                         includeJ2: true,
                         includeDrag: true,
                         includeThirdBody: false
@@ -364,6 +380,9 @@ export const Orbital = {
                 centralBody
             );
 
+            // Get startTime for post-burn orbit (execution time)
+            const postBurnStartTime = executionTime.getTime() / 1000; // Convert to seconds since epoch
+
             // Propagate post-burn orbit using same system as actual maneuvers
             const postBurnOrbit = UnifiedSatellitePropagator.propagateOrbit({
                 satellite: {
@@ -377,8 +396,9 @@ export const Orbital = {
                 bodies: physicsEngine.bodies,
                 duration: orbitDuration,
                 timeStep: Math.max(30, orbitDuration / 200), // ~200 points per orbit
+                startTime: postBurnStartTime, // Use execution time as start time for post-burn orbit
                 includeJ2: true,
-                includeDrag: false, // No drag for preview clarity
+                includeDrag: true, // Include drag for realistic preview (was false)
                 includeThirdBody: false
             });
 
@@ -560,7 +580,7 @@ export const Forces = {
             velocity: Array.isArray(satellite.velocity) ? satellite.velocity : satellite.velocity.toArray(),
             centralBodyNaifId: centralBody.naifId || centralBody.naif_id || 399,
             mass: satellite.mass || 1000,
-            crossSectionalArea: satellite.crossSectionalArea || 10,
+            crossSectionalArea: satellite.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
             dragCoefficient: satellite.dragCoefficient || 2.2
         };
 

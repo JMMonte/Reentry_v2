@@ -1,72 +1,77 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Button } from '../button';
+import { User, LogOut, LogIn } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
 import PropTypes from 'prop-types';
 
-function UserMenu({ user, handleLogin, handleLogout, stringToColor }) {
-    if (user) {
+// OPTIMIZED PATTERN: Memoized UserMenu component
+const UserMenu = React.memo(function UserMenu({ user, handleLogin, handleLogout }) {
+    // Memoized menu items based on authentication state
+    const menuItems = useMemo(() => {
+        if (user) {
+            return [
+                {
+                    key: 'profile',
+                    icon: User,
+                    label: user.email || 'Profile',
+                    disabled: true,
+                    className: 'text-xs opacity-60'
+                },
+                {
+                    key: 'logout',
+                    icon: LogOut,
+                    label: 'Sign Out',
+                    onClick: handleLogout,
+                    className: 'text-red-600 hover:text-red-700'
+                }
+            ];
+        } else {
+            return [
+                {
+                    key: 'login',
+                    icon: LogIn,
+                    label: 'Sign In',
+                    onClick: handleLogin,
+                    className: 'text-blue-600 hover:text-blue-700'
+                }
+            ];
+        }
+    }, [user, handleLogin, handleLogout]);
+
+    // Memoized menu item renderer
+    const renderMenuItem = useCallback((item) => {
+        const IconComponent = item.icon;
         return (
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="flex items-center gap-2 px-3 py-1 shadow-sm" style={{ borderRadius: 8, minHeight: 36, border: 'none', cursor: 'pointer' }}>
-                        <span className="text-sm font-medium" style={{ marginRight: 10 }}>
-                            {user.user_metadata?.name || user.email}
-                        </span>
-                        <span
-                            className="inline-block"
-                            style={{
-                                width: 28,
-                                height: 28,
-                                borderRadius: '50%',
-                                background: stringToColor(user.user_metadata?.name || user.email || ''),
-                                display: 'inline-block',
-                                marginLeft: 0,
-                            }}
-                        />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    <div className="px-3 py-2 text-xs text-muted-foreground">
-                        {user.email || user.user_metadata?.name || 'User'}
-                    </div>
-                    <DropdownMenuItem onClick={handleLogout}>
-                        Logout
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
+            <DropdownMenuItem
+                key={item.key}
+                onClick={item.onClick}
+                disabled={item.disabled}
+                className={item.className}
+            >
+                <IconComponent className="mr-2 h-4 w-4" />
+                {item.label}
+            </DropdownMenuItem>
         );
-    }
-    // Not logged in
+    }, []);
+
     return (
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleLogin}
-                    >
-                        {/* User icon from lucide-react */}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-white">
-                            <circle cx="12" cy="8" r="4" />
-                            <path d="M6 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
-                        </svg>
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                    Sign In / Sign Up
-                </TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <User className="h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                {menuItems.map(renderMenuItem)}
+            </DropdownMenuContent>
+        </DropdownMenu>
     );
-}
+});
 
 UserMenu.propTypes = {
     user: PropTypes.object,
     handleLogin: PropTypes.func.isRequired,
-    handleLogout: PropTypes.func.isRequired,
-    stringToColor: PropTypes.func.isRequired,
+    handleLogout: PropTypes.func.isRequired
 };
 
 export default UserMenu; 

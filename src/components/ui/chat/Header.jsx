@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '../button';
 import PropTypes from 'prop-types';
 
-export function Header({ onRestartChat }) {
+export const Header = React.memo(function Header({ onRestartChat }) {
   return (
     <div className="flex items-center gap-2">
       <span>Chat</span>
@@ -16,7 +16,7 @@ export function Header({ onRestartChat }) {
       </Button>
     </div>
   );
-}
+});
 
 Header.propTypes = {
   onRestartChat: PropTypes.func.isRequired

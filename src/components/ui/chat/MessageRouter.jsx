@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { 
   UserMessage, 
@@ -8,16 +8,27 @@ import {
   ErrorMessage 
 } from './messages';
 
-export default function MessageRouter({ message, onCopy, copiedStates }) {
-  // Determine message type and role
-  const isUser = message.role === 'user';
-  const isAssistant = message.role === 'assistant';
-  const isTool = message.role === 'tool';
-  const isError = message.role === 'error' || message.type === 'error';
-  const eventType = message.type || message.role;
-  
-  // Check if message is currently streaming (this could be enhanced with actual streaming detection)
-  const isStreaming = message.status === 'streaming' || message.streaming;
+const MessageRouter = React.memo(function MessageRouter({ message, onCopy, copiedStates }) {
+  // Memoize message type detection to prevent recalculation
+  const messageTypeInfo = useMemo(() => {
+    const isUser = message.role === 'user';
+    const isAssistant = message.role === 'assistant';
+    const isTool = message.role === 'tool';
+    const isError = message.role === 'error' || message.type === 'error';
+    const eventType = message.type || message.role;
+    const isStreaming = message.status === 'streaming' || message.streaming;
+
+    return {
+      isUser,
+      isAssistant,
+      isTool,
+      isError,
+      eventType,
+      isStreaming
+    };
+  }, [message.role, message.type, message.status, message.streaming]);
+
+  const { isUser, isAssistant, isTool, isError, eventType, isStreaming } = messageTypeInfo;
 
   // Route to appropriate message component based on type
   if (isUser) {
@@ -79,7 +90,7 @@ export default function MessageRouter({ message, onCopy, copiedStates }) {
       isStreaming={isStreaming} 
     />
   );
-}
+});
 
 MessageRouter.propTypes = {
   message: PropTypes.shape({
@@ -94,3 +105,5 @@ MessageRouter.propTypes = {
   onCopy: PropTypes.func,
   copiedStates: PropTypes.object
 };
+
+export default MessageRouter;

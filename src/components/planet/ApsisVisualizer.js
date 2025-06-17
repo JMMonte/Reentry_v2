@@ -6,9 +6,10 @@ export class ApsisVisualizer {
     /** Shared circle geometry for outlined apoapsis */
     static _circleGeometry = new THREE.RingGeometry(0.8, 1.0, 16);
 
-    constructor(parent, color = 0xffffff) {
+    constructor(parent, color = 0xffffff, satelliteId = null) {
         this.parent = parent; // Can be orbit group or scene
         this.color = color;
+        this.satelliteId = satelliteId; // For distance cache optimization
         this.isOrbitGroup = parent && parent.isGroup && parent.type !== 'Scene';
 
         // Create materials with satellite's orbit color
@@ -35,11 +36,19 @@ export class ApsisVisualizer {
         // Apoapsis: create a toon outline effect using multiple layers
         this.createToonOutlineApoapsis();
 
-        // Periapsis scaling
+        // Periapsis scaling - use cached distance for better performance
         this.periapsisMesh.onBeforeRender = (renderer, scene, camera) => {
-            const worldPos = new THREE.Vector3();
-            this.periapsisMesh.getWorldPosition(worldPos);
-            const distance = camera.position.distanceTo(worldPos);
+            // Try to use cached satellite distance first
+            const satelliteId = `satellite_${this.satelliteId || 'unknown'}`;
+            let distance = window.app3d?.distanceCache?.getDistance?.(satelliteId);
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                const worldPos = new THREE.Vector3();
+                this.periapsisMesh.getWorldPosition(worldPos);
+                distance = camera.position.distanceTo(worldPos);
+            }
+            
             const scale = distance * 0.003;
             this.periapsisMesh.scale.set(scale, scale, scale);
         };
@@ -89,19 +98,34 @@ export class ApsisVisualizer {
 
         // Make apoapsis scale with distance - apply to group
         this.apoapsisMesh.onBeforeRender = (renderer, scene, camera) => {
-            const worldPos = new THREE.Vector3();
-            this.apoapsisMesh.getWorldPosition(worldPos);
-            const distance = camera.position.distanceTo(worldPos);
+            // Try to use cached satellite distance first
+            const satelliteId = `satellite_${this.satelliteId || 'unknown'}`;
+            let distance = window.app3d?.distanceCache?.getDistance?.(satelliteId);
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                const worldPos = new THREE.Vector3();
+                this.apoapsisMesh.getWorldPosition(worldPos);
+                distance = camera.position.distanceTo(worldPos);
+            }
+            
             const scale = distance * 0.003;
             this.apoapsisMesh.scale.set(scale, scale, scale);
-
         };
 
         // Also apply scaling to individual rings as backup in case group onBeforeRender doesn't work
         const scaleFunction = (renderer, scene, camera) => {
-            const worldPos = new THREE.Vector3();
-            this.apoapsisMesh.getWorldPosition(worldPos);
-            const distance = camera.position.distanceTo(worldPos);
+            // Try to use cached satellite distance first
+            const satelliteId = `satellite_${this.satelliteId || 'unknown'}`;
+            let distance = window.app3d?.distanceCache?.getDistance?.(satelliteId);
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                const worldPos = new THREE.Vector3();
+                this.apoapsisMesh.getWorldPosition(worldPos);
+                distance = camera.position.distanceTo(worldPos);
+            }
+            
             const scale = distance * 0.003;
             this.apoapsisMesh.scale.set(scale, scale, scale);
         };
@@ -161,43 +185,199 @@ export class ApsisVisualizer {
             return null;
         }
 
-        // Find periapsis (closest point) and apoapsis (farthest point)
-        let minDistance = Infinity;
-        let maxDistance = 0;
-        let periapsisPoint = null;
-        let apoapsisPoint = null;
-
-        for (const point of orbitPoints) {
-            const distance = Math.sqrt(point[0] ** 2 + point[1] ** 2 + point[2] ** 2);
-
-            if (distance < minDistance) {
-                minDistance = distance;
-                periapsisPoint = point;
-            }
-
-            if (distance > maxDistance) {
-                maxDistance = distance;
-                apoapsisPoint = point;
-            }
+        // Find NEXT periapsis and apoapsis, not absolute min/max
+        const nextApsisPoints = this._findNextApsisPoints(orbitPoints);
+        
+        if (!nextApsisPoints.periapsis && !nextApsisPoints.apoapsis) {
+            this.setVisible(false);
+            return null;
         }
 
         // Update mesh positions - use coordinates directly (same as satellite positioning)
-        if (periapsisPoint) {
-            this.periapsisMesh.position.fromArray(periapsisPoint);
+        if (nextApsisPoints.periapsis) {
+            this.periapsisMesh.position.fromArray(nextApsisPoints.periapsis.position);
             this.periapsisMesh.visible = true;
+        } else {
+            this.periapsisMesh.visible = false;
         }
 
-        if (apoapsisPoint && Math.abs(maxDistance - minDistance) > centralBody.radius * 0.01) {
+        if (nextApsisPoints.apoapsis && 
+            Math.abs(nextApsisPoints.apoapsis.distance - nextApsisPoints.periapsis?.distance || 0) > centralBody.radius * 0.01) {
             // Only show apoapsis if it's significantly different from periapsis
-            this.apoapsisMesh.position.fromArray(apoapsisPoint);
+            this.apoapsisMesh.position.fromArray(nextApsisPoints.apoapsis.position);
             this.apoapsisMesh.visible = true;
         } else {
             this.apoapsisMesh.visible = false;
         }
 
         return {
-            periapsisAltitude: minDistance - centralBody.radius,
-            apoapsisAltitude: maxDistance > minDistance ? maxDistance - centralBody.radius : null
+            periapsisAltitude: nextApsisPoints.periapsis ? nextApsisPoints.periapsis.distance - centralBody.radius : null,
+            apoapsisAltitude: nextApsisPoints.apoapsis ? nextApsisPoints.apoapsis.distance - centralBody.radius : null
+        };
+    }
+
+    /**
+     * Find the next periapsis and apoapsis points in the orbit
+     * @private
+     * @param {Array} orbitPoints - Array of orbit positions [[x,y,z], ...]
+     * @returns {Object} - {periapsis: {position, distance}, apoapsis: {position, distance}}
+     */
+    _findNextApsisPoints(orbitPoints) {
+        // Calculate distances for all points
+        const pointsWithDistance = orbitPoints.map((point, index) => ({
+            position: point,
+            distance: Math.sqrt(point[0] ** 2 + point[1] ** 2 + point[2] ** 2),
+            index: index
+        }));
+
+        let nextPeriapsis = null;
+        let nextApoapsis = null;
+
+        // Find local extrema (peaks and valleys in distance)
+        for (let i = 1; i < pointsWithDistance.length - 1; i++) {
+            const prev = pointsWithDistance[i - 1];
+            const curr = pointsWithDistance[i];
+            const next = pointsWithDistance[i + 1];
+
+            // Check for local minimum (periapsis)
+            if (curr.distance < prev.distance && curr.distance < next.distance) {
+                if (!nextPeriapsis) {
+                    nextPeriapsis = {
+                        position: curr.position,
+                        distance: curr.distance,
+                        index: curr.index
+                    };
+                }
+            }
+
+            // Check for local maximum (apoapsis)
+            if (curr.distance > prev.distance && curr.distance > next.distance) {
+                if (!nextApoapsis) {
+                    nextApoapsis = {
+                        position: curr.position,
+                        distance: curr.distance,
+                        index: curr.index
+                    };
+                }
+            }
+        }
+
+        // If we haven't found both, check the start and end points too
+        // (in case apsis is at orbit boundary)
+        if (!nextPeriapsis || !nextApoapsis) {
+            const startPoint = pointsWithDistance[0];
+            const endPoint = pointsWithDistance[pointsWithDistance.length - 1];
+
+            // Check if start point could be an apsis
+            if (pointsWithDistance.length > 2) {
+                const secondPoint = pointsWithDistance[1];
+                const secondLastPoint = pointsWithDistance[pointsWithDistance.length - 2];
+
+                // Start point as periapsis
+                if (!nextPeriapsis && startPoint.distance < secondPoint.distance && startPoint.distance < endPoint.distance) {
+                    nextPeriapsis = {
+                        position: startPoint.position,
+                        distance: startPoint.distance,
+                        index: startPoint.index
+                    };
+                }
+
+                // Start point as apoapsis
+                if (!nextApoapsis && startPoint.distance > secondPoint.distance && startPoint.distance > endPoint.distance) {
+                    nextApoapsis = {
+                        position: startPoint.position,
+                        distance: startPoint.distance,
+                        index: startPoint.index
+                    };
+                }
+
+                // End point as periapsis
+                if (!nextPeriapsis && endPoint.distance < secondLastPoint.distance && endPoint.distance < startPoint.distance) {
+                    nextPeriapsis = {
+                        position: endPoint.position,
+                        distance: endPoint.distance,
+                        index: endPoint.index
+                    };
+                }
+
+                // End point as apoapsis
+                if (!nextApoapsis && endPoint.distance > secondLastPoint.distance && endPoint.distance > startPoint.distance) {
+                    nextApoapsis = {
+                        position: endPoint.position,
+                        distance: endPoint.distance,
+                        index: endPoint.index
+                    };
+                }
+            }
+        }
+
+        // Fallback: if still no apsis found, use global min/max as last resort
+        if (!nextPeriapsis && !nextApoapsis) {
+            let minDistance = Infinity;
+            let maxDistance = 0;
+            let minPoint = null;
+            let maxPoint = null;
+
+            for (const point of pointsWithDistance) {
+                if (point.distance < minDistance) {
+                    minDistance = point.distance;
+                    minPoint = point;
+                }
+                if (point.distance > maxDistance) {
+                    maxDistance = point.distance;
+                    maxPoint = point;
+                }
+            }
+
+            nextPeriapsis = minPoint ? {
+                position: minPoint.position,
+                distance: minPoint.distance,
+                index: minPoint.index
+            } : null;
+
+            nextApoapsis = maxPoint ? {
+                position: maxPoint.position,
+                distance: maxPoint.distance,
+                index: maxPoint.index
+            } : null;
+        }
+
+        return { periapsis: nextPeriapsis, apoapsis: nextApoapsis };
+    }
+
+    /**
+     * Update visualization from next apsis points (temporal-aware method)
+     * Used by SimpleSatelliteOrbitVisualizer with proper temporal ordering
+     * @param {Object} nextApsisPoints - {periapsis: {position, distance, time}, apoapsis: {position, distance, time}}
+     * @param {Object} centralBody - Central body data for altitude calculation
+     */
+    updateFromNextApsisPoints(nextApsisPoints, centralBody) {
+        if (!nextApsisPoints || (!nextApsisPoints.periapsis && !nextApsisPoints.apoapsis)) {
+            this.setVisible(false);
+            return null;
+        }
+
+        // Update periapsis mesh position
+        if (nextApsisPoints.periapsis) {
+            this.periapsisMesh.position.fromArray(nextApsisPoints.periapsis.position);
+            this.periapsisMesh.visible = true;
+        } else {
+            this.periapsisMesh.visible = false;
+        }
+
+        // Update apoapsis mesh position
+        if (nextApsisPoints.apoapsis && 
+            Math.abs(nextApsisPoints.apoapsis.distance - (nextApsisPoints.periapsis?.distance || 0)) > centralBody.radius * 0.01) {
+            // Only show apoapsis if it's significantly different from periapsis
+            this.apoapsisMesh.position.fromArray(nextApsisPoints.apoapsis.position);
+            this.apoapsisMesh.visible = true;
+        } else {
+            this.apoapsisMesh.visible = false;
+        }
+
+        return {
+            periapsisAltitude: nextApsisPoints.periapsis ? nextApsisPoints.periapsis.distance - centralBody.radius : null,
+            apoapsisAltitude: nextApsisPoints.apoapsis ? nextApsisPoints.apoapsis.distance - centralBody.radius : null
         };
     }
 

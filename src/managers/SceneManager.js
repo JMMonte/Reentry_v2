@@ -127,7 +127,7 @@ export class SceneManager {
     }
 
     _updateVectors() {
-        const { displaySettingsManager, planetVectors, satelliteVectors, camera } = this.app;
+        const { displaySettingsManager, planetVectors, camera } = this.app;
         const showPlanetVectors = displaySettingsManager.getSetting('showPlanetVectors');
 
         // Early exit if planet vectors are hidden
@@ -148,10 +148,8 @@ export class SceneManager {
             });
         }
 
-        // Always update satellite vectors (they handle their own visibility)
-        if (satelliteVectors) {
-            satelliteVectors.update?.();
-        }
+        // Satellite vectors are now handled by individual SatelliteVectorVisualizer instances
+        // No global update needed - each satellite manages its own vectors
     }
 
     _resizePOIs() {
@@ -179,17 +177,35 @@ export class SceneManager {
         const tmp = this._poiTempVec;
         const baseScale = this._cachedPOIScale;
         
-        // Only update visible POIs
-        this.app.pickablePoints.forEach(mesh => {
+        // Only update visible POIs - use centralized distance cache for massive performance gain
+        this.app.pickablePoints.forEach((mesh, index) => {
             if (!mesh.visible) return;
-            mesh.getWorldPosition(tmp);
-            const s = baseScale * tmp.distanceTo(camera.position);
+            
+            // Try to use cached distance first
+            const poiId = `poi_${index}`;
+            let distance = this.app.distanceCache.getDistance(poiId);
+            
+            // Fallback to direct calculation if not cached
+            if (!distance || distance === 0) {
+                mesh.getWorldPosition(tmp);
+                distance = tmp.distanceTo(camera.position);
+            }
+            
+            const s = baseScale * distance;
             mesh.scale.set(s, s, 1);
         });
         
         if (this.app._poiIndicator && this.app._poiIndicator.visible) {
-            this.app._poiIndicator.getWorldPosition(tmp);
-            const s = baseScale * tmp.distanceTo(camera.position) * 1.2;
+            // Use cached distance for POI indicator
+            let distance = this.app.distanceCache.getDistance('poi_indicator');
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                this.app._poiIndicator.getWorldPosition(tmp);
+                distance = tmp.distanceTo(camera.position);
+            }
+            
+            const s = baseScale * distance * 1.2;
             this.app._poiIndicator.scale.set(s, s, 1);
         }
     }

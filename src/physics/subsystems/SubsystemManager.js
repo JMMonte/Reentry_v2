@@ -211,18 +211,63 @@ export class SubsystemManager {
         }
 
         // Get environmental data based on current simulation state
-        // For now, return baseline values but with physics engine integration placeholder
-        // TODO: Implement actual environmental condition calculations based on:
-        // - Distance from Sun (solar radiation varies with 1/r²)
-        // - Planetary magnetic fields when in SOI
-        // - Atmospheric density at current altitude
-        // - Plasma environment from solar wind/planetary magnetosphere
+        const bodies = this.physicsEngine.bodies;
+        const sun = bodies[10]; // Sun's NAIF ID
+        
+        let solarRadiation = 1361; // Default solar constant at 1 AU
+        let temperature = 2.7;     // Cosmic background temperature
+        let magneticField = 0;     // Default no magnetic field
+        let plasmaDensity = 0;     // Default no plasma
+        
+        // Calculate solar radiation based on distance from Sun
+        if (sun && sun.position) {
+            const sunPos = sun.position.toArray ? sun.position.toArray() : sun.position;
+            const distanceFromSun = Math.sqrt(sunPos[0]**2 + sunPos[1]**2 + sunPos[2]**2); // km
+            const distanceAU = distanceFromSun / 149597870.7; // Convert to AU
+            
+            // Solar radiation varies with inverse square of distance
+            solarRadiation = 1361 / (distanceAU * distanceAU);
+            
+            // Temperature increases with solar proximity (simplified model)
+            temperature = Math.max(2.7, 278 / distanceAU); // K
+        }
+        
+        // Check for planetary magnetic fields and atmosphere
+        for (const body of Object.values(bodies)) {
+            if (!body.position || !body.soiRadius) continue;
+            
+            const bodyPos = body.position.toArray ? body.position.toArray() : body.position;
+            const distanceFromBody = Math.sqrt(bodyPos[0]**2 + bodyPos[1]**2 + bodyPos[2]**2);
+            
+            // If within SOI, apply planetary environmental effects
+            if (distanceFromBody < body.soiRadius) {
+                // Magnetic field strength (simplified)
+                if (body.magneticMoment) {
+                    const fieldStrength = body.magneticMoment / (distanceFromBody**3);
+                    magneticField = Math.max(magneticField, fieldStrength);
+                }
+                
+                // Atmospheric effects
+                if (body.atmosphereHeight && distanceFromBody < (body.radius + body.atmosphereHeight)) {
+                    const altitude = distanceFromBody - body.radius;
+                    const scaleHeight = body.atmosphereHeight / 5; // Simplified scale height
+                    const density = Math.exp(-altitude / scaleHeight);
+                    plasmaDensity = Math.max(plasmaDensity, density * 1e6); // particles/m³
+                    
+                    // Temperature affected by atmospheric heating
+                    if (body.surfaceTemperature) {
+                        const atmosphericTemp = body.surfaceTemperature * Math.exp(-altitude / (scaleHeight * 2));
+                        temperature = Math.max(temperature, atmosphericTemp);
+                    }
+                }
+            }
+        }
         
         return {
-            solarRadiation: 1361, // W/m² - should vary with heliocentric distance
-            temperature: 2.7,     // K - should account for solar heating and thermal radiation
-            magneticField: 0,     // Tesla - should account for planetary fields
-            plasmaDensity: 0,     // particles/m³ - should vary with solar wind and magnetosphere
+            solarRadiation: Math.max(0, solarRadiation), // W/m²
+            temperature: Math.max(2.7, temperature),     // K
+            magneticField: Math.max(0, magneticField),   // Tesla
+            plasmaDensity: Math.max(0, plasmaDensity),   // particles/m³
             timestamp: Date.now()
         };
     }

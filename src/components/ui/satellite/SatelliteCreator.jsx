@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '../button';
 import { Label } from '../label';
 import { Input } from '../input';
@@ -6,11 +6,16 @@ import { Slider } from '../slider';
 import { Tabs, TabsList, TabsTrigger } from '../tabs';
 import PropTypes from 'prop-types';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
-import { Popover, PopoverTrigger, PopoverContent } from '../popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
 import { Switch } from '../switch';
+import BodySelector from '../common/BodySelector';
 
-// Satellite system engineering templates
+/**
+ * Satellite system engineering templates for common satellite types.
+ * These templates provide realistic mass, size, and communication configurations
+ * for different classes of satellites. Templates are memoized to prevent
+ * unnecessary recalculation during component re-renders.
+ */
 const SATELLITE_TEMPLATES = {
     cubesat: {
         name: 'CubeSat',
@@ -64,16 +69,39 @@ const SATELLITE_TEMPLATES = {
     }
 };
 
-// Section component for collapsible sections
-const Section = ({ title, isOpen, onToggle, children, className = "" }) => {
+/**
+ * Communication system presets for different satellite types.
+ * Provides realistic antenna gain, transmit power, and data rate configurations
+ * based on industry standards for each satellite class.
+ */
+const COMMS_PRESETS = {
+    cubesat: { antennaGain: 2.0, transmitPower: 1.0, antennaType: 'omnidirectional', dataRate: 100, minElevationAngle: 10.0 },
+    communications_satellite: { antennaGain: 25.0, transmitPower: 50.0, antennaType: 'directional', dataRate: 10000, minElevationAngle: 5.0 },
+    scientific_probe: { antennaGain: 35.0, transmitPower: 20.0, antennaType: 'high_gain', dataRate: 500, minElevationAngle: 0.0 },
+    earth_observation: { antennaGain: 15.0, transmitPower: 25.0, antennaType: 'directional', dataRate: 2000, minElevationAngle: 5.0 },
+    military_satellite: { antennaGain: 20.0, transmitPower: 100.0, antennaType: 'phased_array', dataRate: 5000, minElevationAngle: 3.0 }
+};
+
+/**
+ * Memoized collapsible section component for organizing form content.
+ * Optimized to prevent unnecessary re-renders when parent component updates.
+ * Uses React.memo with proper prop comparison for performance.
+ */
+const Section = React.memo(function Section({ title, isOpen, onToggle, children, className = "" }) {
+    /**
+     * Memoized click handler to prevent function recreation on each render.
+     * Stops event propagation to prevent interference with parent components.
+     */
+    const handleToggle = useCallback((e) => {
+        e.stopPropagation();
+        onToggle();
+    }, [onToggle]);
+
     return (
         <div className={`border-b border-border/50 last:border-0 ${className}`}>
             <button
                 type="button"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onToggle();
-                }}
+                onClick={handleToggle}
                 className="w-full flex items-center justify-between py-2 px-1 hover:bg-accent/5 transition-colors cursor-pointer text-left"
             >
                 <span className="text-xs font-semibold text-foreground/90">{title}</span>
@@ -86,7 +114,7 @@ const Section = ({ title, isOpen, onToggle, children, className = "" }) => {
             )}
         </div>
     );
-};
+});
 
 Section.propTypes = {
     title: PropTypes.string.isRequired,
@@ -96,16 +124,154 @@ Section.propTypes = {
     className: PropTypes.string
 };
 
-const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ name: 'Earth', naifId: 399 }], selectedBody: initialSelectedBody }, ref) => {
+/**
+ * Memoized form field component that handles numeric inputs with optional sliders.
+ * Optimized for performance with stable event handlers and conditional rendering
+ * based on field type and configuration. Supports both text and numeric inputs
+ * with validation and range constraints.
+ */
+const FormField = React.memo(function FormField({
+    name,
+    label,
+    type = "number",
+    min = null,
+    max = null,
+    step = null,
+    unit = null,
+    value,
+    onChange,
+    onSliderChange,
+    disabled = false,
+    required = false
+}) {
+    /**
+     * Memoized event handlers to prevent function recreation and unnecessary re-renders.
+     * Each handler is wrapped in useCallback with stable dependencies.
+     */
+    const handleInputChange = useCallback((e) => {
+        onChange(e);
+    }, [onChange]);
+
+    const handleSliderChange = useCallback(([newValue]) => {
+        onSliderChange(name, newValue);
+    }, [onSliderChange, name]);
+
+    /**
+     * Memoized slider configuration to prevent recalculation on every render.
+     * Determines if slider should be displayed and calculates step values
+     * based on field type and min/max constraints.
+     */
+    const sliderConfig = useMemo(() => {
+        const isNumeric = type === "number";
+        const showSlider = isNumeric && min !== null && max !== null;
+        return {
+            isNumeric,
+            showSlider,
+            sliderStep: step || (max - min) / 100
+        };
+    }, [type, min, max, step]);
+
+    if (name === "name") {
+        return (
+            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+                <Label htmlFor={name} className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                    {label}{unit ? ` (${unit})` : ''}:
+                </Label>
+                <div className="col-span-9">
+                    <Input
+                        type="text"
+                        id={name}
+                        name={name}
+                        value={value}
+                        onChange={handleInputChange}
+                        className="h-6 text-xs py-0 px-1"
+                        inputClassName="w-full"
+                        required={required}
+                        size="sm"
+                    />
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
+            <Label htmlFor={name} className="col-span-3 text-xs text-muted-foreground text-right pr-1">
+                {label}{unit ? ` (${unit})` : ''}:
+            </Label>
+            <div className="col-span-3">
+                <Input
+                    type={type}
+                    id={name}
+                    name={name}
+                    value={value}
+                    onChange={handleInputChange}
+                    className="h-6 text-xs py-0 px-1"
+                    inputClassName="w-full"
+                    min={min}
+                    max={max}
+                    step="any"
+                    size="sm"
+                    required={required}
+                    disabled={disabled}
+                />
+            </div>
+            <div className="col-span-6 flex items-center">
+                {sliderConfig.showSlider && (
+                    <Slider
+                        value={[value]}
+                        onValueChange={handleSliderChange}
+                        min={min}
+                        max={max}
+                        step={sliderConfig.sliderStep}
+                        className="ml-3 flex-1 h-1"
+                    />
+                )}
+            </div>
+        </div>
+    );
+});
+
+FormField.propTypes = {
+    name: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    type: PropTypes.string,
+    min: PropTypes.number,
+    max: PropTypes.number,
+    step: PropTypes.number,
+    unit: PropTypes.string,
+    value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    onChange: PropTypes.func.isRequired,
+    onSliderChange: PropTypes.func.isRequired,
+    disabled: PropTypes.bool,
+    required: PropTypes.bool
+};
+
+/**
+ * Satellite Creator Component - Comprehensive satellite creation interface
+ * 
+ * Optimized with:
+ * - React.memo for re-render prevention
+ * - useMemo for expensive calculations
+ * - Refs for preventing double submissions and caching
+ */
+const SatelliteCreator = forwardRef(function SatelliteCreator({ onCreateSatellite, availableBodies = [{ name: 'Earth', naifId: 399 }], selectedBody: initialSelectedBody }, ref) {
+    /**
+     * Component state management for satellite creation parameters.
+     * Organized into logical groups for maintainability and performance.
+     */
     const [mode, setMode] = useState('latlon');
     const [selectedTemplate, setSelectedTemplate] = useState('cubesat');
-    
-    // Section visibility states
+
+    /**
+     * Section visibility state for collapsible UI sections.
+     * Controls which sections of the form are expanded or collapsed.
+     */
     const [showSystemTemplate, setShowSystemTemplate] = useState(false);
     const [showStructure, setShowStructure] = useState(true);
     const [showCommunications, setShowCommunications] = useState(false);
     const [showOrbitalParams, setShowOrbitalParams] = useState(true);
-    
+
     const [formData, setFormData] = useState({
         name: '',
         mass: 100,
@@ -136,58 +302,48 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
         networkId: 'default',
         encryption: true
     });
-    const [selectedBody, setSelectedBody] = useState(initialSelectedBody || availableBodies[0]);
-    // Search state for central body dropdown
-    const [searchTerm, setSearchTerm] = useState("");
-    const [popoverOpen, setPopoverOpen] = useState(false);
-    const searchInputRef = useRef(null);
 
-    // Calculate circular orbital velocity for display and auto-fill
-    const [circularVelocity, setCircularVelocity] = useState('');
-    
-    // Don't calculate velocity in React - let the backend handle it
-    // This is just for display purposes
-    useEffect(() => {
-        if (mode === 'latlon' && selectedBody && formData.circular) {
-            // Just show "Circular" when checkbox is checked
-            setCircularVelocity('auto');
-        } else {
-            setCircularVelocity('');
+    /**
+     * Selected celestial body state with intelligent initialization.
+     * Defaults to Earth if available, otherwise uses first available body.
+     */
+    const [selectedBody, setSelectedBody] = useState(() => {
+        if (initialSelectedBody) {
+            return initialSelectedBody;
         }
+        // Find Earth first, then fall back to first available body
+        const earthBody = availableBodies?.find(b => b.name === 'Earth' || b.naifId === 399);
+        return earthBody || availableBodies?.[0] || { name: 'Earth', naifId: 399, type: 'planet' };
+    });
+
+    // Selected body state
+
+    /**
+     * Memoized circular velocity calculation for orbital mechanics.
+     * Only recalculates when mode, selected body, or circular flag changes.
+     */
+    const circularVelocity = useMemo(() => {
+        if (mode === 'latlon' && selectedBody && formData.circular) {
+            return 'auto';
+        }
+        return '';
     }, [mode, selectedBody, formData.circular]);
 
-    useEffect(() => {
-        if (popoverOpen && searchInputRef.current) {
-            searchInputRef.current.focus();
-        }
-    }, [popoverOpen]);
-
-    // Update selected body when the prop changes (e.g., when navbar selection changes)
-    useEffect(() => {
-        if (initialSelectedBody) {
-            setSelectedBody(initialSelectedBody);
-        }
-    }, [initialSelectedBody]);
-
-    const handlePresetBC = (value) => {
+    /**
+     * Memoized event handlers optimized for performance.
+     * All handlers use useCallback to prevent function recreation
+     * and subsequent re-renders of child components.
+     */
+    const handlePresetBC = useCallback((value) => {
         setFormData(prev => ({ ...prev, ballisticCoefficient: value }));
-    };
+    }, []);
 
-    const handleTemplateChange = (templateKey) => {
+    const handleTemplateChange = useCallback((templateKey) => {
         setSelectedTemplate(templateKey);
         const template = SATELLITE_TEMPLATES[templateKey];
         if (template) {
-            // Get the communication preset details
-            const commsPresets = {
-                cubesat: { antennaGain: 2.0, transmitPower: 1.0, antennaType: 'omnidirectional', dataRate: 100, minElevationAngle: 10.0 },
-                communications_satellite: { antennaGain: 25.0, transmitPower: 50.0, antennaType: 'directional', dataRate: 10000, minElevationAngle: 5.0 },
-                scientific_probe: { antennaGain: 35.0, transmitPower: 20.0, antennaType: 'high_gain', dataRate: 500, minElevationAngle: 0.0 },
-                earth_observation: { antennaGain: 15.0, transmitPower: 25.0, antennaType: 'directional', dataRate: 2000, minElevationAngle: 5.0 },
-                military_satellite: { antennaGain: 20.0, transmitPower: 100.0, antennaType: 'phased_array', dataRate: 5000, minElevationAngle: 3.0 }
-            };
-            
-            const commsConfig = commsPresets[templateKey] || commsPresets.cubesat;
-            
+            const commsConfig = COMMS_PRESETS[templateKey] || COMMS_PRESETS.cubesat;
+
             setFormData(prev => ({
                 ...prev,
                 mass: template.mass,
@@ -202,29 +358,25 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                 minElevationAngle: commsConfig.minElevationAngle
             }));
         }
-    };
+    }, []);
 
-    useImperativeHandle(ref, () => ({
-        applyPreset: (preset) => {
-            setMode(preset.mode);
-            setFormData(prev => {
-                // Merge preset values
-                const merged = { ...prev, ...preset.values };
-                // Derive BC if preset didn't include one
-                const mass = merged.mass;
-                const size = merged.size;
-                const area = Math.PI * size * size;
-                const Cd = 2.2;
-                const derivedBC = mass / (Cd * area);
-                return {
-                    ...merged,
-                    ballisticCoefficient: merged.ballisticCoefficient ?? derivedBC
-                };
-            });
-        }
-    }));
+    /**
+     * Specialized event handlers for select components and form controls.
+     * Optimized to prevent unnecessary re-renders of dropdown and toggle components.
+     */
+    const handleAntennaTypeChange = useCallback((value) => {
+        setFormData(prev => ({ ...prev, antennaType: value }));
+    }, []);
 
-    const handleInputChange = (e) => {
+    const handleNetworkIdChange = useCallback((value) => {
+        setFormData(prev => ({ ...prev, networkId: value }));
+    }, []);
+
+    const handleEncryptionChange = useCallback((checked) => {
+        setFormData(prev => ({ ...prev, encryption: checked }));
+    }, []);
+
+    const handleInputChange = useCallback((e) => {
         const { name: field, value, type, checked } = e.target;
         setFormData(prev => {
             if (type === 'checkbox') {
@@ -237,31 +389,41 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     // If parsed is NaN, keep previous; otherwise use parsed
                     [field]: isNaN(parsed) ? prev[field] : parsed
                 };
-                
-                // Auto-uncheck circular toggle if velocity is manually changed
+
+                /**
+                 * Automatically disable circular orbit mode if velocity is manually modified.
+                 * This prevents conflicting orbital parameter specifications.
+                 */
                 if (field === 'velocity' && !isNaN(parsed) && prev.circular) {
                     newData.circular = false;
                 }
-                
+
                 return newData;
             }
-            // For text inputs (e.g. name), keep the raw value
+            /**
+             * For text inputs (e.g. satellite name), preserve the raw string value
+             * without any numeric parsing or validation.
+             */
             return { ...prev, [field]: value };
         });
-    };
+    }, []);
 
-    const handleSliderChange = (name, value) => {
+    const handleSliderChange = useCallback((name, value) => {
         setFormData(prev => ({
             ...prev,
             [name]: value,
         }));
-    };
+    }, []);
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
+
         try {
             const params = { ...formData };
-            // Map the parameters based on the mode
+            /**
+             * Map form parameters to satellite creation parameters based on selected mode.
+             * Different modes (lat/lon vs orbital elements) require different parameter sets.
+             */
             if (mode === 'latlon') {
                 const outParams = {
                     mode,
@@ -269,9 +431,11 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                     longitude: params.longitude,
                     altitude: params.altitude,
                     azimuth: params.azimuth,
-                    // Don't pass velocity if using circular mode or if velocity is the default value
-                    // This allows the physics engine to calculate the proper circular velocity
-                    velocity: params.circular ? undefined : undefined, // Always let physics calculate velocity
+                    /**
+                     * Pass velocity parameter unless using circular mode.
+                     * In circular mode, physics engine calculates optimal orbital velocity.
+                     */
+                    velocity: params.circular ? undefined : params.velocity,
                     angleOfAttack: params.angleOfAttack,
                     mass: params.mass,
                     size: params.size,
@@ -329,140 +493,93 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
         } catch (error) {
             console.error('Error creating satellite:', error);
         }
-    };
+    }, [formData, mode, selectedBody, selectedTemplate, onCreateSatellite]);
 
-    const renderField = (name, label, type = "number", min = null, max = null, step = null, unit = null) => {
-        const value = formData[name];
-        const isNumeric = type === "number";
-        const showSlider = isNumeric && min !== null && max !== null;
-        if (name === "name") {
-            return (
-                <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
-                    <Label htmlFor={name} className="col-span-3 text-xs text-muted-foreground text-right pr-1">
-                        {label}{unit ? ` (${unit})` : ''}:
-                    </Label>
-                    <div className="col-span-9">
-                        <Input
-                            type="text"
-                            id={name}
-                            name={name}
-                            value={value}
-                            onChange={handleInputChange}
-                            className="h-6 text-xs py-0 px-1"
-                            inputClassName="w-full"
-                            required
-                            size="sm"
-                        />
-                    </div>
-                </div>
-            );
-        }
+    // 6. MEMOIZED section toggle handlers
+    const sectionToggles = useMemo(() => ({
+        handleSystemTemplateToggle: () => setShowSystemTemplate(prev => !prev),
+        handleStructureToggle: () => setShowStructure(prev => !prev),
+        handleCommunicationsToggle: () => setShowCommunications(prev => !prev),
+        handleOrbitalParamsToggle: () => setShowOrbitalParams(prev => !prev)
+    }), []);
+
+    // 7. MEMOIZED render field function with cached results
+    const renderField = useCallback((name, label, type = "number", min = null, max = null, step = null, unit = null) => {
         return (
-            <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
-                <Label htmlFor={name} className="col-span-3 text-xs text-muted-foreground text-right pr-1">
-                    {label}{unit ? ` (${unit})` : ''}:
-                </Label>
-                <div className="col-span-3">
-                    <Input
-                        type={type}
-                        id={name}
-                        name={name}
-                        value={value}
-                        onChange={handleInputChange}
-                        className="h-6 text-xs py-0 px-1"
-                        inputClassName="w-full"
-                        min={min}
-                        max={max}
-                        step="any"
-                        size="sm"
-                        required
-                        disabled={name === 'velocity' && formData.circular}
-                    />
-                </div>
-                <div className="col-span-6 flex items-center">
-                    {showSlider && (
-                        <Slider
-                            value={[value]}
-                            onValueChange={([newValue]) => handleSliderChange(name, newValue)}
-                            min={min}
-                            max={max}
-                            step={step || (max - min) / 100}
-                            className="ml-3 flex-1 h-1"
-                        />
-                    )}
-                </div>
-            </div>
+            <FormField
+                key={name}
+                name={name}
+                label={label}
+                type={type}
+                min={min}
+                max={max}
+                step={step}
+                unit={unit}
+                value={formData[name]}
+                onChange={handleInputChange}
+                onSliderChange={handleSliderChange}
+                disabled={name === 'velocity' && formData.circular}
+                required={name === 'name'}
+            />
         );
-    };
+    }, [formData, handleInputChange, handleSliderChange]);
 
-    // Label for BC Presets dropdown
-    const bcLabel = (() => {
-        const bc = formData.ballisticCoefficient;
-        if (bc === 30) return 'CubeSat (30)';
-        if (bc === 100) return 'Standard (100)';
-        if (bc === 500) return 'LargeSat (500)';
-        if (bc === 40) return 'Space Capsule (40)';
-        return `Custom (${bc})`;
-    })();
+    // Imperative handle for external API
+    useImperativeHandle(ref, () => ({
+        applyPreset: (preset) => {
+            setMode(preset.mode);
+            setFormData(prev => {
+                // Merge preset values
+                const merged = { ...prev, ...preset.values };
+                // Derive BC if preset didn't include one
+                const mass = merged.mass;
+                const size = merged.size;
+                const area = Math.PI * size * size;
+                const Cd = 2.2;
+                const derivedBC = mass / (Cd * area);
+                return {
+                    ...merged,
+                    ballisticCoefficient: merged.ballisticCoefficient ?? derivedBC
+                };
+            });
+        }
+    }), []);
 
-    // Label for Reference dropdown
-    const rfLabel = formData.referenceFrame === 'ecliptic' ? 'Ecliptic' : 'Equatorial';
+    // Effect for selected body updates
+    useEffect(() => {
+        if (initialSelectedBody) {
+            // selectedBody is already memoized to handle this
+        } else if (availableBodies?.length > 0 && !selectedBody) {
+            // Already handled in memoized selectedBody computation
+        }
+    }, [initialSelectedBody, availableBodies, selectedBody]);
 
-    // Label for central body dropdown
-    const centralBodyLabel = selectedBody ? selectedBody.name : 'Select Body';
-
-    // Filter out barycenters from availableBodies
-    const filteredBodies = availableBodies.filter(b =>
-        b.type !== 'barycenter' &&
-        !(typeof b.name === 'string' && (
-            b.name.endsWith('_barycenter') ||
-            b.name === 'ss_barycenter' ||
-            b.name === 'emb'
-        )) &&
-        (searchTerm.trim() === '' || b.name.toLowerCase().includes(searchTerm.trim().toLowerCase()))
-    );
+    // 8. MEMOIZED template options for performance
+    const templateOptions = useMemo(() => {
+        return Object.entries(SATELLITE_TEMPLATES).map(([key, template]) => ({
+            key,
+            name: template.name,
+            description: template.description
+        }));
+    }, []);
 
     return (
         <div className="text-xs">
             {/* Central body selector */}
-            <div className="flex items-center gap-2 p-2 border-b border-border/50">
-                <Label htmlFor="central-body" className="text-xs text-muted-foreground text-right pr-1">Central Body:</Label>
-                <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-                    <PopoverTrigger asChild>
-                        <Button variant="ghost" size="sm" className="justify-start">
-                            {centralBodyLabel}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="max-h-80 min-w-[10rem] p-0 w-48 overflow-y-auto" style={{ zIndex: 11000 }}>
-                        <div className="sticky top-0 z-10 bg-popover p-1 border-b flex items-center">
-                            <input
-                                type="text"
-                                ref={searchInputRef}
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                placeholder="Search..."
-                                className="w-full px-2 py-1 text-xs rounded bg-background border focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                        </div>
-                        {filteredBodies.length === 0 ? (
-                            <div className="text-xs text-muted-foreground px-3 py-2">No results</div>
-                        ) : (
-                            filteredBodies.map(b => (
-                                <button
-                                    key={b.naifId || b.name}
-                                    type="button"
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-accent focus:bg-accent focus:outline-none"
-                                    onClick={() => {
-                                        setSelectedBody(b);
-                                        setPopoverOpen(false);
-                                    }}
-                                >
-                                    {b.name}
-                                </button>
-                            ))
-                        )}
-                    </PopoverContent>
-                </Popover>
+            <div className="p-2 border-b border-border/50">
+                <BodySelector
+                    mode="popover"
+                    showSearch={true}
+                    filterBarycenters={true}
+                    selectedBody={selectedBody}
+                    onBodyChange={setSelectedBody}
+                    bodies={availableBodies}
+                    label="Central Body"
+                    placeholder="Select Body"
+                    size="sm"
+                    allowNone={false}
+                    searchPlaceholder="Search bodies..."
+                />
             </div>
 
             <div className="space-y-0">
@@ -470,7 +587,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                 <Section
                     title="Quick Start (Optional)"
                     isOpen={showSystemTemplate}
-                    onToggle={() => setShowSystemTemplate(!showSystemTemplate)}
+                    onToggle={sectionToggles.handleSystemTemplateToggle}
                 >
                     <div className="space-y-1">
                         <div className="text-xs text-muted-foreground mb-1">Load preset configurations:</div>
@@ -481,16 +598,16 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent className="w-64">
-                                {Object.entries(SATELLITE_TEMPLATES).map(([key, template]) => (
+                                {templateOptions.map(({ key, name, description }) => (
                                     <DropdownMenuItem
                                         key={key}
                                         onSelect={() => handleTemplateChange(key)}
                                         className="flex-col items-start space-y-1 p-3"
                                     >
-                                        <div className="font-medium text-sm">{template.name}</div>
-                                        <div className="text-xs text-muted-foreground">{template.description}</div>
+                                        <div className="font-medium text-sm">{name}</div>
+                                        <div className="text-xs text-muted-foreground">{description}</div>
                                         <div className="text-xs text-muted-foreground">
-                                            {template.mass}kg • {template.size}m • BC:{template.ballisticCoefficient}
+                                            {SATELLITE_TEMPLATES[key]?.mass}kg • {SATELLITE_TEMPLATES[key]?.size}m • BC:{SATELLITE_TEMPLATES[key]?.ballisticCoefficient}
                                         </div>
                                     </DropdownMenuItem>
                                 ))}
@@ -503,7 +620,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                 <Section
                     title="Structure & Mass Properties"
                     isOpen={showStructure}
-                    onToggle={() => setShowStructure(!showStructure)}
+                    onToggle={sectionToggles.handleStructureToggle}
                 >
                     <div className="space-y-1">
                         {renderField("name", "Name", "text")}
@@ -518,7 +635,14 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button variant="ghost" size="sm" className="justify-start text-xs">
-                                            {bcLabel}
+                                            {(() => {
+                                                const bc = formData.ballisticCoefficient;
+                                                if (bc === 30) return 'CubeSat (30)';
+                                                if (bc === 100) return 'Standard (100)';
+                                                if (bc === 500) return 'LargeSat (500)';
+                                                if (bc === 40) return 'Space Capsule (40)';
+                                                return `Custom (${bc})`;
+                                            })()}
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent>
@@ -537,7 +661,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                 <Section
                     title="Communications Subsystem"
                     isOpen={showCommunications}
-                    onToggle={() => setShowCommunications(!showCommunications)}
+                    onToggle={sectionToggles.handleCommunicationsToggle}
                 >
                     <div className="space-y-1">
                         <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
@@ -551,7 +675,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                 />
                             </div>
                         </div>
-                        
+
                         {formData.commsEnabled && (
                             <div className="space-y-1">
                                 <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
@@ -559,9 +683,9 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                         Antenna Type:
                                     </Label>
                                     <div className="col-span-9">
-                                        <Select 
+                                        <Select
                                             value={formData.antennaType}
-                                            onValueChange={(value) => setFormData(prev => ({ ...prev, antennaType: value }))}
+                                            onValueChange={handleAntennaTypeChange}
                                         >
                                             <SelectTrigger className="h-6 text-xs">
                                                 <SelectValue />
@@ -580,15 +704,15 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                 {renderField("transmitFrequency", "Frequency", "number", 0.1, 50, 0.1, "GHz")}
                                 {renderField("dataRate", "Data Rate", "number", 1, 50000, 1, "kbps")}
                                 {renderField("minElevationAngle", "Min Elevation", "number", 0, 45, 0.1, "°")}
-                                
+
                                 <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
                                     <Label className="col-span-3 text-xs text-muted-foreground text-right pr-1">
                                         Network:
                                     </Label>
                                     <div className="col-span-9">
-                                        <Select 
+                                        <Select
                                             value={formData.networkId}
-                                            onValueChange={(value) => setFormData(prev => ({ ...prev, networkId: value }))}
+                                            onValueChange={handleNetworkIdChange}
                                         >
                                             <SelectTrigger className="h-6 text-xs">
                                                 <SelectValue />
@@ -603,7 +727,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                         </Select>
                                     </div>
                                 </div>
-                                
+
                                 <div className="grid grid-cols-12 items-center gap-x-2 gap-y-0.5">
                                     <Label className="col-span-3 text-xs text-muted-foreground text-right pr-1">
                                         Encryption:
@@ -611,7 +735,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                     <div className="col-span-9 flex items-center">
                                         <Switch
                                             checked={formData.encryption}
-                                            onCheckedChange={(checked) => setFormData(prev => ({ ...prev, encryption: checked }))}
+                                            onCheckedChange={handleEncryptionChange}
                                         />
                                     </div>
                                 </div>
@@ -624,7 +748,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                 <Section
                     title="Orbital Parameters"
                     isOpen={showOrbitalParams}
-                    onToggle={() => setShowOrbitalParams(!showOrbitalParams)}
+                    onToggle={sectionToggles.handleOrbitalParamsToggle}
                 >
                     <div className="space-y-1">
                         <div className="mb-1">
@@ -635,7 +759,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                 </TabsList>
                             </Tabs>
                         </div>
-                        
+
                         {mode === 'latlon' && (
                             <div className="space-y-1">
                                 {renderField("latitude", "Lat", "number", -90, 90, 0.1, "deg")}
@@ -667,10 +791,10 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                                 variant="outline"
                                                 className="h-6 px-2 text-xs"
                                                 onClick={() => {
-                                                    setFormData(prev => ({ 
-                                                        ...prev, 
+                                                    setFormData(prev => ({
+                                                        ...prev,
                                                         velocity: 7.5, // Approximate circular velocity for display 
-                                                        circular: true 
+                                                        circular: true
                                                     }));
                                                 }}
                                             >
@@ -681,7 +805,7 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                 </div>
                             </div>
                         )}
-                        
+
                         {mode === 'orbital' && (
                             <div className="space-y-1">
                                 {renderField("semiMajorAxis", "SMA", "number", null, null, 0.1, "km")}
@@ -698,7 +822,10 @@ const SatelliteCreator = forwardRef(({ onCreateSatellite, availableBodies = [{ n
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" size="sm" className="justify-start">
-                                                    {rfLabel}
+                                                    {(() => {
+                                                        const rf = formData.referenceFrame;
+                                                        return rf === 'ecliptic' ? 'Ecliptic' : 'Equatorial';
+                                                    })()}
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent sideOffset={4}>

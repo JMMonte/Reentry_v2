@@ -99,7 +99,7 @@ self.onmessage = async function (e) {
                 velocity: initVel,
                 centralBodyNaifId: centralBodyNaifId || 399,
                 mass: 1000, // Default values for groundtrack
-                crossSectionalArea: 10,
+                crossSectionalArea: 2.0, // Realistic satellite cross-section
                 dragCoefficient: 2.2
             };
 

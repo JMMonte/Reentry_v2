@@ -213,15 +213,28 @@ export class GroundtrackPath {
             return;
         }
 
-        const bodiesMsg = bodies.map(b => ({
-            position: Array.isArray(b.position) 
-                ? { x: b.position[0], y: b.position[1], z: b.position[2] }
-                : { x: b.position.x, y: b.position.y, z: b.position.z },
+        const bodiesMsg = bodies.map(b => {
+            // Handle undefined or invalid position data
+            let position;
+            if (Array.isArray(b.position) && b.position.length >= 3) {
+                position = { x: b.position[0], y: b.position[1], z: b.position[2] };
+            } else if (b.position && typeof b.position === 'object' && 
+                       b.position.x !== undefined && b.position.y !== undefined && b.position.z !== undefined) {
+                position = { x: b.position.x, y: b.position.y, z: b.position.z };
+            } else {
+                // Fallback for invalid position data
+                console.warn(`[GroundtrackPath] Invalid position data for body ${b.naifId || b.id}:`, b.position);
+                position = { x: 0, y: 0, z: 0 };
+            }
+
+            return {
+                position,
             mass: b.mass || 0,
             GM: b.GM,
             naifId: b.id || b.naifId,
             type: b.type
-        }));
+            };
+        });
 
         const epochMs = typeof startTime === 'number'
             ? startTime

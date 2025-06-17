@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { Button } from '../button';
 import { Download, Eye, EyeOff, MapPin } from 'lucide-react';
@@ -9,7 +9,7 @@ import {
     DropdownMenuItem,
 } from '../dropdown-menu';
 
-export default function GroundTrackControls({
+const GroundTrackControls = React.memo(function GroundTrackControls({
     onDownloadCsv,
     planetList,
     setSelectedPlanet,
@@ -20,9 +20,15 @@ export default function GroundTrackControls({
     dispatchLayers,
 }) {
     const [menuOpen, setMenuOpen] = useState(false);
-    // Only show toggles for features this planet supports
-    const surfaceOptions = planet?.config?.surfaceOptions || {};
-    const optionMap = {
+    
+    // Memoize surface options computation
+    const surfaceOptions = useMemo(() => 
+        planet?.config?.surfaceOptions || {}, 
+        [planet?.config?.surfaceOptions]
+    );
+    
+    // Memoize option mapping (constant, but good practice)
+    const optionMap = useMemo(() => ({
         cities: 'addCities',
         airports: 'addAirports',
         spaceports: 'addSpaceports',
@@ -31,10 +37,30 @@ export default function GroundTrackControls({
         missions: 'addMissions',
         countryBorders: 'addCountryBorders',
         states: 'addStates',
-    };
-    const filteredLayers = Object.entries(layers).filter(
-        ([key]) => surfaceOptions[optionMap[key]],
+    }), []);
+    
+    // Memoize filtered layers computation
+    const filteredLayers = useMemo(() => 
+        Object.entries(layers).filter(([key]) => surfaceOptions[optionMap[key]]),
+        [layers, surfaceOptions, optionMap]
     );
+    
+    // Memoize event handlers
+    const handleToggleCoverage = useCallback(() => {
+        setShowCoverage(s => !s);
+    }, [setShowCoverage]);
+    
+    const handleToggleMenu = useCallback(() => {
+        setMenuOpen(m => !m);
+    }, []);
+    
+    const handlePlanetSelect = useCallback((index) => {
+        setSelectedPlanet(index);
+    }, [setSelectedPlanet]);
+    
+    const handleLayerToggle = useCallback((key) => {
+        dispatchLayers({ type: 'TOGGLE', key });
+    }, [dispatchLayers]);
 
     return (
         <>
@@ -62,7 +88,7 @@ export default function GroundTrackControls({
                         {planetList.map((p, i) => (
                             <DropdownMenuItem
                                 key={p.name}
-                                onSelect={() => setSelectedPlanet(i)}
+                                onSelect={() => handlePlanetSelect(i)}
                             >
                                 {p.name}
                             </DropdownMenuItem>
@@ -75,7 +101,7 @@ export default function GroundTrackControls({
                 variant="ghost"
                 size="icon"
                 className="w-8 h-8"
-                onClick={() => setShowCoverage(s => !s)}
+                onClick={handleToggleCoverage}
             >
                 {showCoverage ? (
                     <EyeOff className="h-4 w-4" />
@@ -89,7 +115,7 @@ export default function GroundTrackControls({
                     variant="ghost"
                     size="icon"
                     className="w-8 h-8"
-                    onClick={() => setMenuOpen(m => !m)}
+                    onClick={handleToggleMenu}
                 >
                     <MapPin className="h-4 w-4" />
                 </Button>
@@ -100,9 +126,7 @@ export default function GroundTrackControls({
                                 <input
                                     type="checkbox"
                                     checked={value}
-                                    onChange={() =>
-                                        dispatchLayers({ type: 'TOGGLE', key })
-                                    }
+                                    onChange={() => handleLayerToggle(key)}
                                 />
                                 {key
                                     .replace(/([A-Z])/g, ' $1')
@@ -114,7 +138,9 @@ export default function GroundTrackControls({
             </div>
         </>
     );
-}
+});
+
+export default GroundTrackControls;
 
 GroundTrackControls.propTypes = {
     onDownloadCsv: PropTypes.func.isRequired,

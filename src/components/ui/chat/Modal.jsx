@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback, useMemo } from 'react';
 import { DraggableModal } from '../modal/DraggableModal';
 import { DataTable } from '../table/DataTable';
 import { createRoot } from 'react-dom/client';
@@ -8,7 +8,7 @@ import { Header } from './Header';
 import { MessageArea } from './MessageArea';
 import { InputArea } from './InputArea';
 
-export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
+export const ChatModal = React.memo(function ChatModal({ isOpen, onClose, socket, modalPosition }) {
   const {
     messages,
     setMessages,
@@ -24,23 +24,30 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
     isWebSearchActive
   } = useSocket(socket);
 
-  // Handle restarting the chat
-  const handleRestartChat = () => {
+  // Memoize the restart chat handler
+  const handleRestartChat = useCallback(() => {
     setMessages([]);  // This now uses setMessagesWithCleanup from useSocket
     setUserMessage('');
     // Optionally, reset previousResponseId if exposed
     if (typeof window !== 'undefined' && window.previousResponseId) {
       window.previousResponseId.current = null;
     }
-  };
+  }, [setMessages, setUserMessage]);
 
-  // Calculate whether to show chat loader
-  const lastUserIdx = [...messages].reverse().findIndex(m => m.role === 'user');
-  const lastUserMessageIdx = lastUserIdx === -1 ? -1 : messages.length - 1 - lastUserIdx;
-  const hasStreamedThisTurn = messages.slice(lastUserMessageIdx + 1).some(
-    m => m.role === 'assistant' || m.role === 'tool'
-  );
-  const showChatLoader = isLoading && !hasStreamedThisTurn;
+  // Memoize chat loader calculation
+  const showChatLoader = useMemo(() => {
+    const lastUserIdx = [...messages].reverse().findIndex(m => m.role === 'user');
+    const lastUserMessageIdx = lastUserIdx === -1 ? -1 : messages.length - 1 - lastUserIdx;
+    const hasStreamedThisTurn = messages.slice(lastUserMessageIdx + 1).some(
+      m => m.role === 'assistant' || m.role === 'tool'
+    );
+    return isLoading && !hasStreamedThisTurn;
+  }, [messages, isLoading]);
+
+  // Memoize modal position
+  const memoizedModalPosition = useMemo(() => {
+    return modalPosition || { x: 100, y: 100 };
+  }, [modalPosition]);
 
   // Handle table rendering (debounced for performance)
   useEffect(() => {
@@ -83,12 +90,17 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
     };
   }, [messages, tableData]);
 
+  // Memoize header component
+  const headerComponent = useMemo(() => (
+    <Header onRestartChat={handleRestartChat} />
+  ), [handleRestartChat]);
+
   return (
     <DraggableModal
-      title={<Header onRestartChat={handleRestartChat} />}
+      title={headerComponent}
       isOpen={isOpen}
       onClose={onClose}
-      defaultPosition={modalPosition || { x: 100, y: 100 }}
+      defaultPosition={memoizedModalPosition}
       defaultWidth={450}
       defaultHeight={600}
       minWidth={300}
@@ -120,7 +132,7 @@ export function ChatModal({ isOpen, onClose, socket, modalPosition }) {
       </div>
     </DraggableModal>
   );
-}
+});
 
 ChatModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,

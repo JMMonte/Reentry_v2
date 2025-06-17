@@ -106,8 +106,6 @@ export class CelestialBodyEngine {
             }
             body.northPole.copy(orientation.northPole);
             
-
-            
             // Ensure type information is preserved from body configuration
             const bodyConfig = solarSystemDataManager.getBodyByNaif(body.naif_id) || solarSystemDataManager.getBodyByName(body.name);
             if (bodyConfig) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../popover";
 import { Button } from "../button";
 import { cn } from "@/lib/utils";
@@ -8,147 +8,178 @@ import { CalendarViews, VIEWS } from "./CalendarViews";
 import { TimeInput } from "./TimeInput";
 import PropTypes from 'prop-types';
 
-const formatDateTime = (date) => {
-  if (!date) return "";
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const hours = String(date.getUTCHours()).padStart(2, '0');
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-  const milliseconds = String(date.getUTCMilliseconds()).padStart(3, '0');
-
-  return {
-    date: `${year}-${month}-${day}`,
-    time: `${hours}:${minutes}:${seconds}.${milliseconds}`
-  };
-};
-
-const DateTimePicker = ({ date, onDateTimeChange }) => {
-  const initialDate = useMemo(() => {
+const DateTimePicker = function DateTimePicker({ date, onDateTimeChange }) {
+  
+  // Single source of truth for displayed time - starts with prop but updates from physics
+  const [currentDate, setCurrentDate] = useState(() => {
     if (!date) return new Date();
     if (date instanceof Date) return date;
-    try {
-      const parsedDate = parseISO(date);
-      return isValid(parsedDate) ? parsedDate : new Date();
-    } catch {
-      return new Date();
-    }
-  }, [date]);
-  
-  const [selectedDate, setSelectedDate] = useState(initialDate);
-  const [displayDate, setDisplayDate] = useState(initialDate);
-  const [view, setView] = useState(VIEWS.DAYS);
-  const [hours, setHours] = useState(initialDate.getUTCHours());
-  const [minutes, setMinutes] = useState(initialDate.getUTCMinutes());
-  const [seconds, setSeconds] = useState(initialDate.getUTCSeconds());
-  const [milliseconds, setMilliseconds] = useState(initialDate.getUTCMilliseconds());
-
-  const formattedDateTime = useMemo(() => {
-    try {
-      // Always try to show some valid time
-      let dateToFormat = date;
-      
-      // If date is invalid, use current time
-      if (!dateToFormat) {
-        dateToFormat = new Date();
-      } else if (typeof dateToFormat === 'string') {
-        const parsed = parseISO(dateToFormat);
-        dateToFormat = isValid(parsed) ? parsed : new Date();
-      } else if (dateToFormat instanceof Date && isNaN(dateToFormat.getTime())) {
-        dateToFormat = new Date();
+    if (typeof date === 'string') {
+      try {
+        const parsed = parseISO(date);
+        return isValid(parsed) ? parsed : new Date();
+      } catch {
+        console.warn('Invalid date string:', date);
+        return new Date();
       }
-      
-      return formatDateTime(dateToFormat);
-    } catch {
-      // Always return current time as fallback
-      return formatDateTime(new Date());
     }
+    return new Date();
+  });
+
+  // Direct physics engine subscription - MUCH simpler!
+  useEffect(() => {
+    const handleTimeUpdate = (event) => {
+      const { simulatedTime } = event.detail || {};
+      if (simulatedTime) {
+        const newTime = simulatedTime instanceof Date ? simulatedTime : new Date(simulatedTime);
+        setCurrentDate(prevTime => {
+          // Only update if time actually changed to prevent unnecessary renders
+          if (Math.abs(newTime.getTime() - prevTime.getTime()) > 100) { // 100ms threshold
+            return newTime;
+          }
+          return prevTime;
+        });
+      }
+    };
+    
+    // Listen directly to physics time updates
+    document.addEventListener('timeUpdate', handleTimeUpdate);
+    
+    return () => {
+      document.removeEventListener('timeUpdate', handleTimeUpdate);
+    };
+  }, []);
+
+  // Update from prop changes (user input)
+  useEffect(() => {
+    if (!date) return;
+    
+    let newDate;
+    if (date instanceof Date) {
+      newDate = date;
+    } else if (typeof date === 'string') {
+      try {
+        const parsed = parseISO(date);
+        if (isValid(parsed)) {
+          newDate = parsed;
+        } else {
+          return;
+        }
+      } catch {
+        console.warn('Invalid date string:', date);
+        return;
+      }
+    } else {
+      return;
+    }
+    
+    // Only update if significantly different to avoid fighting with physics updates
+    setCurrentDate(prevDate => {
+      if (Math.abs(newDate.getTime() - prevDate.getTime()) > 1000) { // 1 second threshold for prop updates
+        return newDate;
+      }
+      return prevDate;
+    });
   }, [date]);
 
-  const handleDaySelect = (day) => {
+  // Local state for calendar view
+  const [view, setView] = useState(VIEWS.DAYS);
+  const [displayDate, setDisplayDate] = useState(currentDate);
+  
+  // Sync displayDate with currentDate
+  useEffect(() => {
+    setDisplayDate(currentDate);
+  }, [currentDate]);
+
+  // Memoized format the display text
+  const formattedDateTime = useMemo(() => {
+    if (!currentDate) return { date: "", time: "" };
+    const year = currentDate.getUTCFullYear();
+    const month = String(currentDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(currentDate.getUTCDate()).padStart(2, '0');
+    const hours = String(currentDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(currentDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(currentDate.getUTCSeconds()).padStart(2, '0');
+    const milliseconds = String(currentDate.getUTCMilliseconds()).padStart(3, '0');
+
+    return {
+      date: `${year}-${month}-${day}`,
+      time: `${hours}:${minutes}:${seconds}.${milliseconds}`
+    };
+  }, [currentDate]);
+
+  // Event handlers
+  const handleDaySelect = useCallback((day) => {
     if (!day) return;
-    
-    const newDate = new Date(selectedDate);
+
+    const newDate = new Date(currentDate);
     newDate.setFullYear(day.getFullYear());
     newDate.setMonth(day.getMonth());
     newDate.setDate(day.getDate());
-    setSelectedDate(newDate);
-    setDisplayDate(newDate);
+
     onDateTimeChange(newDate.toISOString());
-  };
+  }, [currentDate, onDateTimeChange]);
 
-  const handleMonthSelect = (month) => {
-    const newDate = new Date(displayDate);
-    newDate.setMonth(month);
-    setDisplayDate(newDate);
-    setView(VIEWS.DAYS);
-  };
-
-  const handleYearSelect = (year) => {
-    const newDate = new Date(displayDate);
-    newDate.setFullYear(year);
-    setDisplayDate(newDate);
-    setView(VIEWS.MONTHS);
-  };
-
-  const handleTimeChange = (type, value) => {
+  const handleTimeChange = useCallback((type, value) => {
     const numValue = parseInt(value) || 0;
-    let newDate = new Date(selectedDate);
+    const newDate = new Date(currentDate);
 
     switch (type) {
       case 'hours':
         newDate.setUTCHours(numValue);
-        setHours(numValue);
         break;
       case 'minutes':
         newDate.setUTCMinutes(numValue);
-        setMinutes(numValue);
         break;
       case 'seconds':
         newDate.setUTCSeconds(numValue);
-        setSeconds(numValue);
         break;
       case 'milliseconds':
         newDate.setUTCMilliseconds(numValue);
-        setMilliseconds(numValue);
         break;
     }
 
-    setSelectedDate(newDate);
     onDateTimeChange(newDate.toISOString());
-  };
+  }, [currentDate, onDateTimeChange]);
 
-  const handleNow = () => {
+  const handleNow = useCallback(() => {
     const now = new Date();
-    setSelectedDate(now);
-    setDisplayDate(now);
-    setHours(now.getUTCHours());
-    setMinutes(now.getUTCMinutes());
-    setSeconds(now.getUTCSeconds());
-    setMilliseconds(now.getUTCMilliseconds());
     onDateTimeChange(now.toISOString());
     setView(VIEWS.DAYS);
-  };
+  }, [onDateTimeChange]);
 
-  const handlePrevMonth = () => {
+  const handleMonthSelect = useCallback((month) => {
+    const newDate = new Date(displayDate);
+    newDate.setMonth(month);
+    setDisplayDate(newDate);
+    setView(VIEWS.DAYS);
+  }, [displayDate]);
+
+  const handleYearSelect = useCallback((year) => {
+    const newDate = new Date(displayDate);
+    newDate.setFullYear(year);
+    setDisplayDate(newDate);
+    setView(VIEWS.MONTHS);
+  }, [displayDate]);
+
+  const handlePrevMonth = useCallback(() => {
     const newDate = new Date(displayDate);
     newDate.setMonth(newDate.getMonth() - 1);
     setDisplayDate(newDate);
-  };
+  }, [displayDate]);
 
-  const handleNextMonth = () => {
+  const handleNextMonth = useCallback(() => {
     const newDate = new Date(displayDate);
     newDate.setMonth(newDate.getMonth() + 1);
     setDisplayDate(newDate);
-  };
+  }, [displayDate]);
 
-  const handleViewChange = (e) => {
+  const handleViewChange = useCallback((e) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    
+
     switch (view) {
       case VIEWS.DAYS:
         setView(VIEWS.MONTHS);
@@ -162,7 +193,7 @@ const DateTimePicker = ({ date, onDateTimeChange }) => {
       default:
         setView(VIEWS.DAYS);
     }
-  };
+  }, [view]);
 
   return (
     <Popover>
@@ -185,31 +216,31 @@ const DateTimePicker = ({ date, onDateTimeChange }) => {
         <CalendarViews
           view={view}
           displayDate={displayDate}
-          selectedDate={selectedDate}
+          selectedDate={currentDate}
           onDaySelect={handleDaySelect}
           onMonthSelect={handleMonthSelect}
           onYearSelect={handleYearSelect}
           onPrevMonth={handlePrevMonth}
           onNextMonth={handleNextMonth}
           onViewChange={handleViewChange}
-          className="border-0"
         />
-        <div className="p-3 border-t flex items-center justify-between">
+        <div className="border-t p-3">
           <TimeInput
-            hours={hours}
-            minutes={minutes}
-            seconds={seconds}
-            milliseconds={milliseconds}
+            hours={currentDate.getUTCHours()}
+            minutes={currentDate.getUTCMinutes()}
+            seconds={currentDate.getUTCSeconds()}
+            milliseconds={currentDate.getUTCMilliseconds()}
             onTimeChange={handleTimeChange}
           />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleNow}
-            className="ml-2 text-sm text-muted-foreground hover:text-accent-foreground"
-          >
-            Now
-          </Button>
+          <div className="mt-2 flex justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNow}
+            >
+              Now
+            </Button>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

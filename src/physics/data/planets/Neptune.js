@@ -29,11 +29,25 @@ export default {
     tilt: 28.32, // degrees - axial tilt
 
     // Orbital properties
-    soiRadius: 86900000, // km - Sphere of Influence radius
-    orbitalPeriod: 164.79 * 365.25 * 86400, // seconds (164.79 Earth years)
-    semiMajorAxis: 4504.45e6, // km (30.10 AU)
+    soiRadius: 86800000, // km - Sphere of Influence radius
+    orbitalPeriod: 164.8 * 365.25 * 86400, // seconds (164.8 Earth years)
+    semiMajorAxis: 4.515e9, // km (30.18 AU)
 
-    // Atmospheric properties (ice giant)
+    // Atmospheric model for drag calculations
+    atmosphericModel: {
+        maxAltitude: 3000, // km - Neptune ice giant atmosphere extent
+        minAltitude: 0,
+        referenceAltitude: 50, // km - above 1-bar level
+        referenceDensity: 0.045, // kg/m³ at 50km (ice giant atmosphere)
+        scaleHeight: 20, // km - Neptune scale height
+        getDensity: function(altitude) {
+            // Custom density model for Neptune's ice giant atmosphere
+            if (altitude > this.maxAltitude) return 0;
+            return this.referenceDensity * Math.exp(-(altitude - this.referenceAltitude) / this.scaleHeight);
+        }
+    },
+
+    // Atmospheric properties (H2/He with ices)
     atmosphere: {
         limbFudgeFactor: 1.0,
         hazeIntensity: 1.5,

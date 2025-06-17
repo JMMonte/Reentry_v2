@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { AlertTriangle } from 'lucide-react';
 import { MessageBadge } from '../MessageBadge';
 
-export function ErrorMessage({ message }) {
+export const ErrorMessage = React.memo(function ErrorMessage({ message }) {
   return (
     <div
       id={`message-${message.id}`}
@@ -27,7 +27,7 @@ export function ErrorMessage({ message }) {
       </div>
     </div>
   );
-}
+});
 
 ErrorMessage.propTypes = {
   message: PropTypes.shape({

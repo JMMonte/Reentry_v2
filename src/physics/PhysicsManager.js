@@ -21,9 +21,7 @@ export class PhysicsManager {
 
         // Integration state
         this.isInitialized = false;
-        this._baseTimeStep = 1.0 / 60.0; // Base 60Hz physics timestep (16.67ms)
-        this._currentTimeStep = this._baseTimeStep; // Current adaptive timestep
-        this._accumulator = 0.0; // Time accumulator for adaptive timestep
+        // Removed complex timestep management - now handled by SatelliteIntegrator
 
         // Cached data for performance with size limits
         this.bodyStatesCache = new Map();
@@ -40,6 +38,10 @@ export class PhysicsManager {
 
         // Frame counter for reduced frequency updates
         this._frameCount = 0;
+
+        // Simple adaptive timestep management
+        this._currentTimeStep = 1.0; // Default 1 second timestep
+        this._baseTimeStep = 1.0;    // Base timestep for 1x time warp
     }
 
     /**
@@ -88,26 +90,37 @@ export class PhysicsManager {
 
 
     /**
-     * Step the simulation forward by deltaTime seconds
+     * Step simulation forward in time
      */
     async stepSimulation(deltaTime) {
-        if (!this.isInitialized) return;
+        if (!this.isInitialized) return null;
 
-        const state = await this.physicsEngine.step(deltaTime, 1); // timeWarp = 1 for initialization
+        try {
+            // Step physics forward
+            const state = await this.physicsEngine.step(deltaTime);
 
-        // Sync with existing celestial bodies
-        this._syncWithCelestialBodies(state);
+            // **CRITICAL FIX**: Update TimeUtils with new physics time
+            if (this.app?.timeUtils && state.time) {
+                this.app.timeUtils.updateFromPhysics(state.time);
+            }
 
-        // Update satellite states in existing managers
-        this._syncSatelliteStates(state);
+            // Sync with celestial bodies (visual update only)
+            this._syncWithCelestialBodies(state);
 
-        // Update orbit visualizations with new physics state
-        this._updateOrbitVisualizations();
+            // Sync with satellites (visual update only)
+            this._syncSatelliteStates(state);
 
-        // Dispatch physics update events
-        this._dispatchPhysicsUpdate(state);
+            // Orbit visualization now handled by streaming system (OrbitStreamer → orbitStreamUpdate events)
+            // No manual orbit updates needed
 
-        return state;
+            // Throttled physics event dispatch
+            this._dispatchPhysicsUpdate(state);
+
+            return state;
+        } catch (error) {
+            console.error('[PhysicsManager] Error in stepSimulation:', error);
+            return null;
+        }
     }
 
     /**
@@ -119,9 +132,17 @@ export class PhysicsManager {
             return;
         }
 
-
         // PhysicsEngine is the single source of truth
         const id = this.physicsEngine.addSatellite(satelliteData);
+        
+        // Trigger immediate physics update for responsive UI
+        if (id && this.physicsEngine) {
+            const currentState = this.physicsEngine.getSimulationState();
+            if (currentState) {
+                this._dispatchPhysicsUpdate(currentState, true); // immediate = true
+            }
+        }
+        
         return id;
     }
 
@@ -186,6 +207,10 @@ export class PhysicsManager {
             return [];
         }
 
+        // Get current simulation time
+        const currentSimTime = this.physicsEngine.simulationTime || new Date();
+        const startTimeSeconds = currentSimTime.getTime() / 1000; // Convert to seconds since epoch
+
         // Use UnifiedSatellitePropagator for trajectory generation
         const propagatedPoints = UnifiedSatellitePropagator.propagateOrbit({
             satellite: {
@@ -193,12 +218,13 @@ export class PhysicsManager {
                 velocity: satellite.velocity,
                 centralBodyNaifId: satellite.centralBodyNaifId || 399,
                 mass: satellite.mass || 1000,
-                crossSectionalArea: satellite.crossSectionalArea || 10,
+                crossSectionalArea: satellite.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
                 dragCoefficient: satellite.dragCoefficient || 2.2
             },
             bodies: state.bodies,
             duration,
             timeStep,
+            startTime: startTimeSeconds, // Use current simulation time
             includeJ2: true,
             includeDrag: true,
             includeThirdBody: false
@@ -222,7 +248,7 @@ export class PhysicsManager {
         const bodyPos = PhysicsVector3.fromArray(body.position);
         const parentPos = PhysicsVector3.fromArray(parent.position);
         const relPos = bodyPos.clone().sub(parentPos);
-        
+
         const bodyVel = PhysicsVector3.fromArray(body.velocity);
         const parentVel = PhysicsVector3.fromArray(parent.velocity);
         const relVel = bodyVel.clone().sub(parentVel);
@@ -289,154 +315,46 @@ export class PhysicsManager {
     }
 
     /**
-     * External physics step method for SimulationLoop integration
-     * @param {number} realDeltaTime - Real time elapsed in seconds
-     * @param {number} timeWarp - Current time warp factor
-     * @returns {Object} { stepsProcessed, interpolationFactor, physicsState }
+     * Step physics externally for testing (bypasses App3D time loop)
+     * @param {number} realDeltaTime - Real world delta time in seconds
+     * @param {number} timeWarp - Time warp multiplier
      */
     async stepPhysicsExternal(realDeltaTime, timeWarp) {
-        if (!this.isInitialized || !this.app.timeUtils) {
-            return { stepsProcessed: 0, interpolationFactor: 0, physicsState: null };
-        }
+        if (!this.isInitialized) return null;
 
-        // Fast path for paused state
-        if (timeWarp === 0) {
-            this._updateOrbitVisualizations();
-            return { stepsProcessed: 0, interpolationFactor: 0, physicsState: this.physicsEngine.getSimulationState() };
-        }
+        // Use the passed timeWarp parameter directly as deltaTime
+        // Don't apply timeWarp twice - the physics engine will handle time scaling
+        const physicsTimeStep = realDeltaTime;
 
-        // Optimized path for very high timewarps
-        if (timeWarp >= 100000) {
-            return this._stepPhysicsHighWarp(realDeltaTime, timeWarp);
-        }
+        try {
+            // Step physics forward - let physics engine handle time warp internally
+            const state = await this.physicsEngine.step(physicsTimeStep, timeWarp);
 
-        // Convert to simulation time delta
-        const simulatedDeltaSeconds = realDeltaTime * timeWarp;
-
-        // KSP-style adaptive timestep based on time warp
-        this._updateAdaptiveTimestep(timeWarp);
-
-        // Add to accumulator for adaptive timestep integration
-        this._accumulator += simulatedDeltaSeconds;
-
-        // Adaptive step limits based on time warp
-        const { maxSteps, maxAccumulator } = this._getTimeWarpLimits(timeWarp);
-
-        // Clamp accumulator to prevent spiral of death
-        if (this._accumulator > maxAccumulator) {
-            this._accumulator = maxAccumulator;
-        }
-
-        // Get current time once
-        let currentTime = this.app.timeUtils.getSimulatedTime();
-        let physicsState = null;
-
-        // Process accumulated time in adaptive timestep chunks
-        let stepsProcessed = 0;
-        let totalTimeToAdvance = 0;
-
-        // First, calculate total time we need to advance
-        while (this._accumulator >= this._currentTimeStep && stepsProcessed < maxSteps) {
-            totalTimeToAdvance += this._currentTimeStep;
-            this._accumulator -= this._currentTimeStep;
-            stepsProcessed++;
-        }
-
-        // If we have time to advance, process it efficiently
-        if (totalTimeToAdvance > 0) {
-            // Dynamic timestep calculation based on timewarp
-            let maxStepSize;
-
-            if (timeWarp >= 10000000) {
-                // Ultra-high warp: up to 1 hour steps
-                maxStepSize = 3600.0;
-            } else if (timeWarp >= 1000000) {
-                // Very high warp: up to 10 minute steps
-                maxStepSize = 600.0;
-            } else if (timeWarp >= 100000) {
-                // High warp: up to 1 minute steps
-                maxStepSize = 60.0;
-            } else if (timeWarp >= 10000) {
-                // Medium-high warp: up to 30 second steps
-                maxStepSize = 30.0;
-            } else if (timeWarp >= 1000) {
-                // Medium warp: up to 10 second steps
-                maxStepSize = 10.0;
-            } else {
-                // Low warp: up to 5 second steps
-                maxStepSize = 5.0;
+            // **CRITICAL FIX**: Update TimeUtils with new physics time
+            if (this.app?.timeUtils && state.time) {
+                this.app.timeUtils.updateFromPhysics(state.time);
             }
 
-            // For extreme timewarps, allow even larger steps if the total time is very large
-            if (timeWarp >= 1000000 && totalTimeToAdvance > 3600) {
-                // Allow up to 1% of total time as step size, but cap at 1 day
-                maxStepSize = Math.min(totalTimeToAdvance * 0.01, 86400.0);
-            }
+            // Sync with celestial bodies (visual update only)
+            this._syncWithCelestialBodies(state);
 
-            // Calculate number of steps needed
-            const numSteps = Math.max(1, Math.ceil(totalTimeToAdvance / maxStepSize));
-            const stepSize = totalTimeToAdvance / numSteps;
+            // Sync with satellites (visual update only)  
+            this._syncSatelliteStates(state);
 
-            // Update time first for celestial bodies (they use analytical ephemeris)
-            const finalTime = new Date(currentTime.getTime() + totalTimeToAdvance * 1000);
-            await this.physicsEngine.setTime(finalTime);
+            // Orbit visualization now handled by streaming system (OrbitStreamer → orbitStreamUpdate events)
+            // No manual orbit updates needed
 
-            // Then propagate satellites with the calculated step size
-            // For very large steps, we can do it in one go since orbits are stable
-            if (stepSize > 60.0) {
-                // Single large step for stable orbits
-                physicsState = await this.physicsEngine.step(totalTimeToAdvance, timeWarp);
-            } else {
-                // Multiple smaller steps for accuracy
-                for (let i = 0; i < numSteps; i++) {
-                    physicsState = await this.physicsEngine.step(stepSize, timeWarp);
-                }
-            }
+            // Setup time sync
+            this._setupTimeSync();
 
-            // Sync visuals with final state
-            this._syncWithCelestialBodies(physicsState);
-            this._syncSatelliteStates(physicsState);
+            // Throttled physics event dispatch
+            this._dispatchPhysicsUpdate(state);
 
-            // Update TimeUtils with final time (already declared above)
-            this.app.timeUtils.updateFromPhysics(finalTime);
-
-            // Dispatch physics update for components
-            this._dispatchPhysicsUpdate(physicsState);
-        } else {
-            // No physics steps, but get current state
-            physicsState = this.physicsEngine.getSimulationState();
+            return state;
+        } catch (error) {
+            console.error('[PhysicsManager] Error in stepPhysicsExternal:', error);
+            return null;
         }
-
-        // Calculate interpolation factor for smooth visuals
-        const interpolationFactor = this._currentTimeStep > 0 ? this._accumulator / this._currentTimeStep : 0;
-
-        // Performance feedback for high time warps
-        if (this._accumulator > this._currentTimeStep && stepsProcessed >= maxSteps) {
-            if (this._accumulator > maxAccumulator * 0.5) {
-                document.dispatchEvent(new CustomEvent('timeWarpLagging', {
-                    detail: {
-                        timeWarp,
-                        lag: this._accumulator,
-                        timestep: this._currentTimeStep
-                    }
-                }));
-            }
-        }
-
-        // Always update orbit visualizations for smooth rendering
-        this._updateOrbitVisualizations();
-
-        // Manage cache sizes periodically
-        if (stepsProcessed > 0) {
-            this._manageCaches();
-        }
-
-        return {
-            stepsProcessed,
-            interpolationFactor,
-            physicsState,
-            currentTimeStep: this._currentTimeStep
-        };
     }
 
     /**
@@ -448,42 +366,23 @@ export class PhysicsManager {
     }
 
     /**
-     * Optimized physics step for very high timewarps (>=100k)
+     * Update adaptive timestep based on time warp factor
      * @private
      */
-    async _stepPhysicsHighWarp(realDeltaTime, timeWarp) {
-        // Direct calculation for high timewarps - no complex conditionals
-        const timeToAdvance = realDeltaTime * timeWarp;
-
-        // Direct time advancement
-        const currentTime = this.app.timeUtils.getSimulatedTime();
-        const finalTime = new Date(currentTime.getTime() + timeToAdvance * 1000);
-
-        // Single physics update
-        await this.physicsEngine.setTime(finalTime);
-        const physicsState = await this.physicsEngine.step(timeToAdvance, this.getCurrentTimeWarp());
-
-        // Full syncing for satellites
-        this._syncWithCelestialBodies(physicsState);
-        this._syncSatelliteStates(physicsState);
-        this.app.timeUtils.updateFromPhysics(finalTime);
-
-        // Always dispatch physics updates for satellites
-        this._dispatchPhysicsUpdate(physicsState);
-
-        // Reduced frequency for orbit visualizations only
-        this._frameCount++;
-        if (this._frameCount % 10 === 0) {
-            this._updateOrbitVisualizations();
+    _updateAdaptiveTimestep(timeWarp) {
+        // Simple adaptive timestep: scale base timestep with time warp
+        // Clamp to reasonable bounds for stability
+        if (timeWarp <= 1) {
+            this._currentTimeStep = this._baseTimeStep;
+        } else if (timeWarp <= 100) {
+            this._currentTimeStep = this._baseTimeStep * timeWarp;
+        } else {
+            // For very high time warps, use larger but capped timesteps
+            this._currentTimeStep = Math.min(this._baseTimeStep * timeWarp, 60); // Max 60 seconds
         }
-
-        return {
-            stepsProcessed: 1,
-            interpolationFactor: 0,
-            physicsState,
-            totalDeltaTime: timeToAdvance
-        };
     }
+
+    // Removed _stepPhysicsHighWarp - no longer needed with simplified time warp handling
 
     /**
      * Sync existing satellites from the app to physics engine
@@ -506,7 +405,7 @@ export class PhysicsManager {
                         velocity: satellite.velocity.toArray(),
                         mass: satellite.mass || 1000,
                         size: satellite.size || 1,
-                        crossSectionalArea: satellite.crossSectionalArea || 10,
+                        crossSectionalArea: satellite.crossSectionalArea || PhysicsConstants.SATELLITE_DEFAULTS.CROSS_SECTIONAL_AREA,
                         dragCoefficient: satellite.dragCoefficient || 2.2,
                         centralBodyNaifId: satellite.centralBodyNaifId || 399
                     });
@@ -561,88 +460,6 @@ export class PhysicsManager {
         if (this.orbitPathsCache.size > this.cacheCleanupThreshold) {
             this._cleanupCache(this.orbitPathsCache, this.maxCacheSize);
         }
-    }
-
-
-    /**
-     * Update adaptive timestep based on time warp (KSP-style)
-     * Higher time warps use larger timesteps for better performance but lower precision
-     * @param {number} timeWarp - Current time warp factor
-     */
-    _updateAdaptiveTimestep(timeWarp) {
-        // Aggressive timestep scaling for high timewarps
-        // We want to actually advance time quickly at high warps
-
-        if (timeWarp <= 1) {
-            // Real-time or slower: use base timestep
-            this._currentTimeStep = this._baseTimeStep;
-        } else if (timeWarp <= 10) {
-            // Low warp: 0.02 to 0.1 seconds
-            const t = (timeWarp - 1) / 9;
-            this._currentTimeStep = this._baseTimeStep + t * (0.1 - this._baseTimeStep);
-        } else if (timeWarp <= 100) {
-            // Medium warp: 0.1 to 1 second
-            const t = Math.log10(timeWarp / 10);
-            this._currentTimeStep = 0.1 + t * 0.9;
-        } else if (timeWarp <= 1000) {
-            // High warp: 1 to 10 seconds
-            const t = Math.log10(timeWarp / 100);
-            this._currentTimeStep = 1.0 + t * 9.0;
-        } else if (timeWarp <= 10000) {
-            // Very high warp: 10 to 60 seconds
-            const t = Math.log10(timeWarp / 1000);
-            this._currentTimeStep = 10.0 + t * 50.0;
-        } else if (timeWarp <= 100000) {
-            // Extreme warp: 60 to 600 seconds (1-10 minutes)
-            const t = Math.log10(timeWarp / 10000);
-            this._currentTimeStep = 60.0 + t * 540.0;
-        } else if (timeWarp <= 1000000) {
-            // Ultra warp: 600 to 3600 seconds (10-60 minutes)
-            const t = Math.log10(timeWarp / 100000);
-            this._currentTimeStep = 600.0 + t * 3000.0;
-        } else {
-            // Maximum warp: 3600 to 86400 seconds (1-24 hours)
-            const t = Math.log10(timeWarp / 1000000);
-            this._currentTimeStep = 3600.0 + t * 82800.0;
-        }
-
-        // No artificial safety caps - we want full speed at high warps
-    }
-
-    /**
-     * Get time warp performance limits (KSP-style)
-     * @param {number} timeWarp - Current time warp factor
-     * @returns {Object} { maxSteps, maxAccumulator }
-     */
-    _getTimeWarpLimits(timeWarp) {
-        // Aggressive limits for high timewarps
-        // We want fewer frame subdivisions at high warps
-
-        let maxSteps;
-        let maxAccumulatorMultiplier;
-
-        if (timeWarp <= 100) {
-            // Low-medium warp: many steps for accuracy
-            maxSteps = 20;
-            maxAccumulatorMultiplier = 2.0;
-        } else if (timeWarp <= 10000) {
-            // High warp: fewer steps
-            maxSteps = 5;
-            maxAccumulatorMultiplier = 5.0;
-        } else if (timeWarp <= 1000000) {
-            // Very high warp: minimal steps
-            maxSteps = 2;
-            maxAccumulatorMultiplier = 10.0;
-        } else {
-            // Maximum warp: single step per frame
-            maxSteps = 1;
-            maxAccumulatorMultiplier = 20.0;
-        }
-
-        // Calculate max accumulator based on current timestep
-        const maxAccumulator = maxSteps * this._currentTimeStep * maxAccumulatorMultiplier;
-
-        return { maxSteps, maxAccumulator };
     }
 
     /**
@@ -737,7 +554,7 @@ export class PhysicsManager {
                     // Store absolute velocity (SSB-relative velocity from PositionManager)
                     celestialBody.absoluteVelocity = [...bodyState.velocity];
                     celestialBody.physicsVelocity = [...bodyState.velocity]; // Legacy alias
-                    
+
                     // Calculate local velocity (velocity relative to immediate parent)
                     if (parentNaifId && state.bodies[parentNaifId] && Array.isArray(state.bodies[parentNaifId].velocity)) {
                         // Body has a parent - calculate relative velocity
@@ -867,20 +684,6 @@ export class PhysicsManager {
     }
 
     /**
-     * Private: Update orbit visualizations
-     */
-    _updateOrbitVisualizations() {
-        if (!this.app.orbitManager) return;
-
-        // Use the new update method which checks if orbits need updating
-        try {
-            this.app.orbitManager.update();
-        } catch (error) {
-            console.warn('[PhysicsManager] Failed to update orbit visualizations:', error);
-        }
-    }
-
-    /**
      * Private: Find body by name in state
      */
     _findBodyByName(bodies, name) {
@@ -917,21 +720,24 @@ export class PhysicsManager {
     }
 
     /**
-     * Private: Dispatch physics update event
+     * Private: Dispatch physics update event (throttled to prevent CPU overheating)
      */
-    _dispatchPhysicsUpdate(state) {
+    _dispatchPhysicsUpdate(state, immediate = false) {
         if (typeof window !== 'undefined') {
-            // Dispatch general physics update event
+            // Allow immediate dispatch for critical events (like satellite creation)
+            if (!immediate) {
+                // Throttle physics events to max 10 per second for better responsiveness
+                const now = Date.now();
+                if (!this._lastPhysicsEventTime) this._lastPhysicsEventTime = 0;
+                if (now - this._lastPhysicsEventTime < 100) return; // 100ms = 10 updates per second max
+                this._lastPhysicsEventTime = now;
+            }
+
+            // Dispatch single consolidated physics update event
             window.dispatchEvent(new CustomEvent('physicsUpdate', {
                 detail: {
                     state,
                     time: this.physicsEngine.simulationTime
-                }
-            }));
-            // Also dispatch specific physics state update for React components
-            window.dispatchEvent(new CustomEvent('physicsStateUpdate', {
-                detail: {
-                    satellites: state.satellites || {}
                 }
             }));
         }
@@ -946,7 +752,7 @@ export class PhysicsManager {
         const bodyPos = PhysicsVector3.fromArray(body.position);
         const parentPos = PhysicsVector3.fromArray(parent.position);
         const relPos = bodyPos.clone().sub(parentPos);
-        
+
         const bodyVel = PhysicsVector3.fromArray(body.velocity);
         const parentVel = PhysicsVector3.fromArray(parent.velocity);
         const relVel = bodyVel.clone().sub(parentVel);

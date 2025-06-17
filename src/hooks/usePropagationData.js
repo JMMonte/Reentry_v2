@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 /**
- * Custom hook to manage satellite orbit propagation data
+ * Custom hook to manage satellite orbit propagation data using streaming system
  * @param {Object} satellite - The satellite object
  * @returns {Object} Propagation data and status
  */
@@ -9,80 +9,85 @@ export function usePropagationData(satellite) {
   const [propagationData, setPropagationData] = useState(null);
 
   useEffect(() => {
-    if (!satellite || !window.app3d?.satelliteOrbitManager) return;
-    
-    const updatePropagationData = () => {
-      const orbitManager = window.app3d.satelliteOrbitManager;
-      if (!orbitManager || !orbitManager.orbitCacheManager) {
+    if (!satellite) return;
+
+    const updatePropagationData = (streamData) => {
+      if (!streamData) {
         setPropagationData(null);
         return;
       }
 
-      const orbitData = orbitManager.orbitCacheManager.getCachedOrbit(satellite.id);
-      
-      if (orbitData && orbitData.points && orbitData.points.length > 0) {
-        // Calculate propagation duration from data or use cached duration
-        const lastPoint = orbitData.points[orbitData.points.length - 1];
-        const propagationDuration = orbitData.duration || lastPoint.time || 0; // seconds
-        
-        // Find SOI transitions
+      const { points, metadata } = streamData;
+
+      if (points && points.length > 0) {
+        // Calculate propagation duration from streaming data
+        const firstPoint = points[0];
+        const lastPoint = points[points.length - 1];
+        const propagationDuration = lastPoint.time ? (lastPoint.time - firstPoint.time) / 1000 : 0; // seconds
+
+        // Find SOI transitions from streaming data
         const soiTransitions = [];
         let lastBodyId = null;
-        
-        for (let i = 0; i < orbitData.points.length; i++) {
-          const point = orbitData.points[i];
-          if (lastBodyId !== null && point.centralBodyId !== lastBodyId) {
+
+        for (let i = 0; i < points.length; i++) {
+          const point = points[i];
+          const currentBodyId = point.centralBodyNaifId;
+          if (lastBodyId !== null && currentBodyId !== lastBodyId) {
             soiTransitions.push({
               index: i,
               time: point.time,
               fromBody: lastBodyId,
-              toBody: point.centralBodyId,
-              isEntry: point.isSOIEntry || false,
-              isExit: point.isSOIExit || false
+              toBody: currentBodyId,
+              isEntry: true,
+              isExit: false
             });
           }
-          lastBodyId = point.centralBodyId;
+          lastBodyId = currentBodyId;
         }
-        
+
         setPropagationData({
           duration: propagationDuration,
-          pointCount: orbitData.pointCount || orbitData.points.length,
-          maxPeriods: orbitData.maxPeriods || orbitData.requestedPeriods,
+          pointCount: points.length,
+          maxPeriods: metadata?.params?.periods || 1.5,
           soiTransitions: soiTransitions,
-          partial: orbitData.partial || false,
-          timestamp: orbitData.timestamp,
-          centralBodyId: orbitData.centralBodyNaifId,
-          pointsPerPeriod: orbitData.pointsPerPeriod,
-          requestedPeriods: orbitData.requestedPeriods
+          partial: metadata?.isExtending || false,
+          timestamp: Date.now(),
+          centralBodyId: lastPoint.centralBodyNaifId,
+          pointsPerPeriod: metadata?.params?.pointsPerPeriod || 64,
+          requestedPeriods: metadata?.params?.periods || 1.5,
+          isComplete: metadata?.isComplete || false,
+          progress: metadata?.progress || 0,
+          physicsCount: metadata?.physicsCount || 0,
+          predictedCount: metadata?.predictedCount || 0
         });
       } else {
         setPropagationData(null);
-        
-        // Trigger orbit calculation if no data exists
-        if (orbitManager.updateSatelliteOrbit) {
-          orbitManager.updateSatelliteOrbit(satellite.id);
-        }
       }
     };
-    
+
+    // Get current orbit streaming data from physics engine
+    const getOrbitData = () => {
+      const physicsEngine = window.app3d?.physicsIntegration?.physicsEngine;
+      if (physicsEngine?.satelliteEngine) {
+        const streamData = physicsEngine.satelliteEngine.getOrbitStreamingData(satellite.id);
+        updatePropagationData(streamData);
+      }
+    };
+
     // Initial update
-    updatePropagationData();
-    
-    // Listen for orbit updates
-    const handleOrbitUpdate = (e) => {
+    getOrbitData();
+
+    // Listen for orbit stream updates
+    const handleOrbitStreamUpdate = (e) => {
       if (e.detail?.satelliteId === satellite.id) {
-        updatePropagationData();
+        updatePropagationData(e.detail.data);
       }
     };
-    
-    document.addEventListener('orbitUpdated', handleOrbitUpdate);
-    
-    // Periodic update to catch any changes
-    const intervalId = setInterval(updatePropagationData, 1000);
-    
+
+    window.addEventListener('orbitStreamUpdate', handleOrbitStreamUpdate);
+
     return () => {
-      document.removeEventListener('orbitUpdated', handleOrbitUpdate);
-      clearInterval(intervalId);
+      window.removeEventListener('orbitStreamUpdate', handleOrbitStreamUpdate);
     };
   }, [satellite?.id]);
 

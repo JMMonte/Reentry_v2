@@ -292,7 +292,8 @@ export class AtmosphereComponent {
         this._invMat.makeRotationFromQuaternion(this._worldQuat);
         material.uniforms.uPlanetFrame.value.setFromMatrix4(this._invMat);
 
-        // Sun intensity
+        // Sun intensity - this is planet-to-sun distance, keep direct calculation for accuracy
+        // (This is not camera-related, so no cache optimization needed)
         const dist = this._planetPos.distanceTo(this._sunPos); // Distance between planet center and sun center
         const AU_KM = PhysicsConstants.PHYSICS.AU;
         const BASE = 10.6; // Base sun intensity factor

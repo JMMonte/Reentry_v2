@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { eventHandlerFactories } from './socketEvents';
 import { maybeEndTurn } from './conversation';
 import { handleCopy } from './clipboard';
@@ -17,7 +17,7 @@ export function useSocket(socket) {
     const CLEANUP_THRESHOLD = 600; // Clean up when exceeding this
     
     // Enhanced setMessages that manages memory by keeping only recent messages
-    const setMessagesWithCleanup = (newMessages) => {
+    const setMessagesWithCleanup = useCallback((newMessages) => {
         if (typeof newMessages === 'function') {
             setMessages(prevMessages => {
                 const updated = newMessages(prevMessages);
@@ -35,7 +35,7 @@ export function useSocket(socket) {
                 setMessages(newMessages);
             }
         }
-    };
+    }, [MAX_MESSAGES, CLEANUP_THRESHOLD]);
     
     // Track the latest previous_response_id for multi-turn context
     const previousResponseId = useRef(null);
@@ -48,8 +48,13 @@ export function useSocket(socket) {
     // Add state to track web-search activity
     const [isWebSearchActive, setIsWebSearchActive] = useState(false);
 
+    // Memoize the maybeEndTurn function
+    const memoizedMaybeEndTurn = useCallback(() => {
+        maybeEndTurn({ outstandingToolCalls, conversationEndReceived, setTurnInProgress });
+    }, []);
+
     // --- Event Handlers (bound with state/refs) dynamically ---
-    const deps = {
+    const deps = useMemo(() => ({
         setMessages: setMessagesWithCleanup,
         setTurnInProgress,
         setIsLoading,
@@ -57,14 +62,42 @@ export function useSocket(socket) {
         setThreadId,
         socket,
         outstandingToolCalls,
-        windowApi: window.api,
+        windowApi: (typeof window !== 'undefined' && window.api) || null,
         previousResponseId,
         conversationEndReceived,
-        maybeEndTurn: () => maybeEndTurn({ outstandingToolCalls, conversationEndReceived, setTurnInProgress })
-    };
-    const eventHandlers = Object.fromEntries(
-        Object.entries(eventHandlerFactories).map(([event, factory]) => [event, factory(deps)])
-    );
+        maybeEndTurn: memoizedMaybeEndTurn
+    }), [
+        setMessagesWithCleanup,
+        setTurnInProgress,
+        setIsLoading,
+        setIsConnected,
+        setThreadId,
+        socket,
+        memoizedMaybeEndTurn
+    ]);
+
+    const eventHandlers = useMemo(() => {
+        return Object.fromEntries(
+            Object.entries(eventHandlerFactories).map(([event, factory]) => [event, factory(deps)])
+        );
+    }, [deps]);
+
+    // Memoize web search handlers
+    const webSearchHandlers = useMemo(() => ({
+        handleWebSearchCall: (data) => {
+            if (data.toolCalls && Array.isArray(data.toolCalls) && data.toolCalls.some(tc => tc.name === 'web_search')) {
+                setIsWebSearchActive(true);
+            }
+        },
+        handleWebSearchResponse: (data) => {
+            if (data.toolResponses && Array.isArray(data.toolResponses) && data.toolResponses.some(resp => resp.name === 'web_search')) {
+                setIsWebSearchActive(false);
+            }
+        },
+        clearWebSearch: () => {
+            setIsWebSearchActive(false);
+        }
+    }), []);
 
     useEffect(() => {
         if (!socket) {
@@ -83,23 +116,10 @@ export function useSocket(socket) {
         }
 
         // Listen for web-search tool calls and clear events
-        const handleWebSearchCall = (data) => {
-            if (data.toolCalls && Array.isArray(data.toolCalls) && data.toolCalls.some(tc => tc.name === 'web_search')) {
-                setIsWebSearchActive(true);
-            }
-        };
-        const handleWebSearchResponse = (data) => {
-            if (data.toolResponses && Array.isArray(data.toolResponses) && data.toolResponses.some(resp => resp.name === 'web_search')) {
-                setIsWebSearchActive(false);
-            }
-        };
-        const clearWebSearch = () => {
-            setIsWebSearchActive(false);
-        };
-        socket.on('tool_call_sent', handleWebSearchCall);
-        socket.on('tool_call_response', handleWebSearchResponse);
-        socket.on('message', clearWebSearch);
-        socket.on('answer_end', clearWebSearch);
+        socket.on('tool_call_sent', webSearchHandlers.handleWebSearchCall);
+        socket.on('tool_call_response', webSearchHandlers.handleWebSearchResponse);
+        socket.on('message', webSearchHandlers.clearWebSearch);
+        socket.on('answer_end', webSearchHandlers.clearWebSearch);
 
         return () => {
             // socket.off('tool_call_sent');
@@ -109,15 +129,15 @@ export function useSocket(socket) {
             if (socket.offAny) {
                 socket.offAny();
             }
-            socket.off('tool_call_sent', handleWebSearchCall);
-            socket.off('tool_call_response', handleWebSearchResponse);
-            socket.off('message', clearWebSearch);
-            socket.off('answer_end', clearWebSearch);
+            socket.off('tool_call_sent', webSearchHandlers.handleWebSearchCall);
+            socket.off('tool_call_response', webSearchHandlers.handleWebSearchResponse);
+            socket.off('message', webSearchHandlers.clearWebSearch);
+            socket.off('answer_end', webSearchHandlers.clearWebSearch);
         };
-    }, [socket]);
+    }, [socket, eventHandlers, webSearchHandlers]);
 
     // --- User message sending logic ---
-    const sendMessage = async () => {
+    const sendMessage = useCallback(async () => {
         if (!userMessage.trim() || !isConnected || turnInProgress) return;
         setIsLoading(true);
         setTurnInProgress(true);
@@ -137,14 +157,14 @@ export function useSocket(socket) {
                 status: 'completed'
             }]);
         }
-    };
+    }, [userMessage, isConnected, turnInProgress, socket, setMessagesWithCleanup]);
 
     // --- Copy logic ---
-    const handleCopyWrapper = (text, id) => handleCopy(text, id, setCopiedStates);
+    const handleCopyWrapper = useCallback((text, id) => handleCopy(text, id, setCopiedStates), []);
 
     return {
         messages,
-        setMessages,
+        setMessages: setMessagesWithCleanup,
         userMessage,
         setUserMessage,
         threadId,

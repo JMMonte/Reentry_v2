@@ -279,7 +279,7 @@ const renderToolCallCard = ({ toolName, args, isDone, isStreaming }) => {
   );
 };
 
-export function ToolCallMessage({ message, isStreaming = false }) {
+export const ToolCallMessage = React.memo(function ToolCallMessage({ message, isStreaming = false }) {
   const isDone = message.status === 'done';
   const isResult = message.type === 'tool_call_response';
   
@@ -377,7 +377,7 @@ export function ToolCallMessage({ message, isStreaming = false }) {
       </div>
     </div>
   );
-}
+});
 
 ToolCallMessage.propTypes = {
   message: PropTypes.shape({

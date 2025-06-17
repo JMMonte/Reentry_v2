@@ -41,13 +41,13 @@ export class SOITransitionManager {
         }
 
         // 2. Check entry into child SOIs
-        const childTarget = this._checkChildEntry(currentId, currentBody, position, bodies);
+        const childTarget = this._checkChildEntry(currentId, currentBody, position, velocity, bodies);
         if (childTarget !== null) {
             return childTarget;
         }
 
         // 3. Check sibling transitions
-        const siblingTarget = this._checkSiblingEntry(currentId, currentBody, position, bodies);
+        const siblingTarget = this._checkSiblingEntry(currentId, currentBody, position, velocity, bodies);
         if (siblingTarget !== null) {
             return siblingTarget;
         }
@@ -175,17 +175,29 @@ export class SOITransitionManager {
      * Check if satellite should enter a child SOI
      * @private
      */
-    _checkChildEntry(currentId, currentBody, position, bodies) {
+    _checkChildEntry(currentId, currentBody, position, velocity, bodies) {
         const children = this.hierarchy.getChildren(currentId);
-        
+        if (children.length === 0) return null;
+
+        // Convert satellite position & velocity to global frame once
+        const globalPos = this._addVectors(position, this._getBodyPosition(currentBody));
+        const globalVel = this._addVectors(
+            velocity,
+            Array.isArray(currentBody.velocity) ? currentBody.velocity : currentBody.velocity.toArray()
+        );
+
         for (const childId of children) {
             const childBody = bodies[childId];
             if (!childBody?.soiRadius) continue;
 
-            const globalPosition = this._addVectors(position, this._getBodyPosition(currentBody));
-            const distanceToChild = this._distance(globalPosition, this._getBodyPosition(childBody));
+            const childPos = this._getBodyPosition(childBody);
+            const relVec = [globalPos[0] - childPos[0], globalPos[1] - childPos[1], globalPos[2] - childPos[2]];
+            const distanceToChild = this._magnitude(relVec);
 
-            if (distanceToChild < childBody.soiRadius * this.ENTER_FACTOR) {
+            // Radial velocity towards child (<0 means approaching)
+            const radialToChild = this._dot(relVec, globalVel) / (distanceToChild || 1);
+
+            if (distanceToChild < childBody.soiRadius * this.ENTER_FACTOR && radialToChild < 0) {
                 return childId;
             }
         }
@@ -197,24 +209,32 @@ export class SOITransitionManager {
      * Check if satellite should enter a sibling SOI
      * @private
      */
-    _checkSiblingEntry(currentId, currentBody, position, bodies) {
+    _checkSiblingEntry(currentId, currentBody, position, velocity, bodies) {
         const parent = this.hierarchy.getParent(currentId);
         if (parent === null) {
             return null; // No siblings if no parent
         }
 
         const siblings = this.hierarchy.getChildren(parent);
-        
+        if (siblings.length === 0) return null;
+
+        const globalPos = this._addVectors(position, this._getBodyPosition(currentBody));
+        const globalVel = this._addVectors(
+            velocity,
+            Array.isArray(currentBody.velocity) ? currentBody.velocity : currentBody.velocity.toArray()
+        );
+
         for (const siblingId of siblings) {
-            if (siblingId === currentId) continue; // Skip self
-            
+            if (siblingId === currentId) continue;
             const siblingBody = bodies[siblingId];
             if (!siblingBody?.soiRadius) continue;
 
-            const globalPosition = this._addVectors(position, this._getBodyPosition(currentBody));
-            const distanceToSibling = this._distance(globalPosition, this._getBodyPosition(siblingBody));
+            const siblingPos = this._getBodyPosition(siblingBody);
+            const relVec = [globalPos[0] - siblingPos[0], globalPos[1] - siblingPos[1], globalPos[2] - siblingPos[2]];
+            const distanceToSibling = this._magnitude(relVec);
+            const radialToSibling = this._dot(relVec, globalVel) / (distanceToSibling || 1);
 
-            if (distanceToSibling < siblingBody.soiRadius * this.ENTER_FACTOR) {
+            if (distanceToSibling < siblingBody.soiRadius * this.ENTER_FACTOR && radialToSibling < 0) {
                 return siblingId;
             }
         }

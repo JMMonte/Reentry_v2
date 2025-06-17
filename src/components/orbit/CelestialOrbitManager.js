@@ -375,10 +375,21 @@ export class CelestialOrbitManager {
             }
         }
         
-        // Distance from camera to orbit center
-        const distanceToOrbitCenter = cameraPos.distanceTo(orbitCenterPos);
+        // Distance from camera to orbit center - use cached distance if available
+        let distanceToOrbitCenter;
+        if (parentId && parentId !== 0) {
+            // Try to use cached distance for parent body
+            const parentBodyName = this.app.bodiesByNaifId?.[parentId]?.name;
+            distanceToOrbitCenter = parentBodyName ? 
+                window.app3d?.distanceCache?.getDistance?.(parentBodyName) : null;
+        }
         
-        // Get orbit radius
+        // Fallback to direct calculation if cache not available
+        if (!distanceToOrbitCenter || distanceToOrbitCenter === 0) {
+            distanceToOrbitCenter = cameraPos.distanceTo(orbitCenterPos);
+        }
+        
+        // Get orbit radius - this is between two celestial bodies, so keep direct calculation
         const orbitRadius = bodyPos.distanceTo(orbitCenterPos);
         
         // Don't cull if orbit radius is 0 (body at parent position)

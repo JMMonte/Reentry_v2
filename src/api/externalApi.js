@@ -44,35 +44,58 @@ export function setupExternalApi(app3d) {
         events: apiEvents,
 
         // ═══════════════════════════════════════════════════════════════════
-        // SATELLITE CREATION - Thin wrappers that delegate to services
+        // SATELLITE CREATION - Unified satellite creation methods
         // ═══════════════════════════════════════════════════════════════════
         
         /**
-         * Create satellite from orbital elements - delegates to SimulationStateManager
+         * Unified satellite creation method - routes to appropriate method based on mode
+         */
+        createSatellite: async (params) => {
+            try {
+                if (params.mode === 'latlon') {
+                    if (params.circular) {
+                        return await window.api.createSatelliteFromLatLonCircular(params);
+                    } else {
+                        return await window.api.createSatelliteFromLatLon(params);
+                    }
+                } else if (params.mode === 'orbital') {
+                    return await window.api.createSatelliteFromOrbitalElements(params);
+                } else {
+                    return { success: false, error: 'Unknown satellite creation mode. Use "latlon" or "orbital".' };
+                }
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+
+        /**
+         * Create satellite from orbital elements - delegates to physics engine
          */
         createSatelliteFromOrbitalElements: async (params) => {
             try {
-                if (!app3d?.simulationStateManager) {
-                    return { success: false, error: 'Simulation state manager not available' };
+                if (!app3d?.physicsIntegration?.physicsEngine) {
+                    return { success: false, error: 'Physics engine not available' };
                 }
 
-                // Emit creation start event
                 apiEvents.emit('satelliteCreationStarted', { type: 'orbitalElements', params });
 
-                // Delegate to existing service
-                const result = await app3d.simulationStateManager.createSatellite(params);
-                
-                if (result) {
-                    const response = { 
-                        success: true, 
-                        satellite: serializeSatellite(result),
-                        message: `Satellite created from orbital elements`
-                    };
-                    apiEvents.emit('satelliteCreated', response);
-                    return response;
-                } else {
-                    throw new Error('Failed to create satellite');
-                }
+                const naifId = params.centralBodyNaifId || params.planetNaifId || app3d.selectedBody?.naifId || 399;
+                const physicsResult = app3d.physicsIntegration.physicsEngine.createSatelliteFromOrbitalElements(params, naifId);
+
+                // Create UI satellite
+                const uiSatellite = await app3d.satellites.createUISatellite(physicsResult.id, {
+                    planetConfig: app3d.bodiesByNaifId?.[naifId] || { naifId },
+                    color: params.color,
+                    name: params.name
+                });
+
+                const response = { 
+                    success: true, 
+                    satellite: serializeSatellite(uiSatellite),
+                    message: `Satellite created from orbital elements`
+                };
+                apiEvents.emit('satelliteCreated', response);
+                return response;
             } catch (error) {
                 const response = { success: false, error: error.message };
                 apiEvents.emit('satelliteCreationFailed', response);
@@ -81,29 +104,33 @@ export function setupExternalApi(app3d) {
         },
 
         /**
-         * Create satellite from geographical position - delegates to SatelliteManager
+         * Create satellite from geographical position - delegates to physics engine  
          */
         createSatelliteFromLatLon: async (params) => {
             try {
-                if (!app3d?.createSatelliteFromLatLon) {
-                    return { success: false, error: 'Geographic satellite creation not available' };
+                if (!app3d?.physicsIntegration?.physicsEngine) {
+                    return { success: false, error: 'Physics engine not available' };
                 }
 
                 apiEvents.emit('satelliteCreationStarted', { type: 'latLon', params });
 
-                const result = await app3d.createSatelliteFromLatLon(params);
-                
-                if (result) {
-                    const response = { 
-                        success: true, 
-                        satellite: serializeSatellite(result),
-                        message: `Satellite created at ${params.latitude}°, ${params.longitude}°`
-                    };
-                    apiEvents.emit('satelliteCreated', response);
-                    return response;
-                } else {
-                    throw new Error('Failed to create satellite');
-                }
+                const naifId = params.centralBodyNaifId || params.planetNaifId || app3d.selectedBody?.naifId || 399;
+                const physicsResult = app3d.physicsIntegration.physicsEngine.createSatelliteFromGeographic(params, naifId);
+
+                // Create UI satellite
+                const uiSatellite = await app3d.satellites.createUISatellite(physicsResult.id, {
+                    planetConfig: app3d.bodiesByNaifId?.[naifId] || { naifId },
+                    color: params.color,
+                    name: params.name
+                });
+
+                const response = { 
+                    success: true, 
+                    satellite: serializeSatellite(uiSatellite),
+                    message: `Satellite created at ${params.latitude}°, ${params.longitude}°`
+                };
+                apiEvents.emit('satelliteCreated', response);
+                return response;
             } catch (error) {
                 const response = { success: false, error: error.message };
                 apiEvents.emit('satelliteCreationFailed', response);
@@ -116,24 +143,20 @@ export function setupExternalApi(app3d) {
          */
         createSatelliteFromLatLonCircular: async (params) => {
             try {
-                if (!app3d?.createSatelliteFromLatLonCircular) {
-                    return { success: false, error: 'Circular orbit creation not available' };
-                }
-
                 apiEvents.emit('satelliteCreationStarted', { type: 'latLonCircular', params });
 
-                const result = await app3d.createSatelliteFromLatLonCircular(params);
+                // Circular orbit is just a special case of lat/lon with circular=true
+                const result = await window.api.createSatelliteFromLatLon({ ...params, circular: true });
                 
-                if (result) {
+                if (result.success) {
                     const response = { 
-                        success: true, 
-                        satellite: serializeSatellite(result),
+                        ...result,
                         message: `Satellite created in circular orbit`
                     };
                     apiEvents.emit('satelliteCreated', response);
                     return response;
                 } else {
-                    throw new Error('Failed to create satellite');
+                    throw new Error(result.error || 'Failed to create satellite');
                 }
             } catch (error) {
                 const response = { success: false, error: error.message };
@@ -356,7 +379,7 @@ export function setupExternalApi(app3d) {
         },
 
         /**
-         * Focus camera on target - delegates to CameraControls
+         * Focus camera on target - delegates to SmartCamera
          */
         focusCamera: (target) => {
             try {
@@ -422,6 +445,25 @@ export function setupExternalApi(app3d) {
                 const response = { success: false, error: error.message };
                 apiEvents.emit('commsConfigUpdateFailed', response);
                 return response;
+            }
+        },
+
+        /**
+         * Get all available communication presets - delegates to CommunicationsService
+         */
+        getCommsPresets: () => {
+            try {
+                if (!app3d?.communicationsService) {
+                    return { success: false, error: 'Communications service not available' };
+                }
+
+                const presets = app3d.communicationsService.getPresets();
+                
+                const response = { success: true, presets };
+                apiEvents.emit('commsPresetsQueried', response);
+                return response;
+            } catch (error) {
+                return { success: false, error: error.message };
             }
         },
 

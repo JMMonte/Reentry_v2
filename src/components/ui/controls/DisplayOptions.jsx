@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Button } from '../button';
 import { Switch } from '../switch';
 import { Input } from '../input';
@@ -63,8 +63,8 @@ export const defaultSettings = {
   losAtmosphericRefraction: { value: true, name: 'Atmospheric Refraction', icon: Link,
     description: 'Include atmospheric refraction effects in line-of-sight calculations.'
   },
-  orbitUpdateInterval: { value: 30, name: 'Orbit Calc Interval (Hz)', icon: Circle, type: 'number', min: 1, max: 120, step: 1,
-    description: 'Number of orbit path recalculations per second (updates per second) while the simulation is running.'
+  orbitUpdateInterval: { value: 500, name: 'Orbit Update Interval (ms)', icon: Circle, type: 'number', min: 100, max: 5000, step: 100,
+    description: 'How often to update satellite orbit calculations (milliseconds). Lower values update more frequently but use more CPU.'
   },
   orbitPredictionInterval: { value: 1, name: 'Prediction Periods', icon: Circle, type: 'number', min: 0.1, max: 100, step: 0.1,
     description: 'Number of orbital periods to display. Works naturally for all orbit types.'
@@ -152,58 +152,28 @@ const categories = [
   }
 ];
 
-function Accordion({ sections, children, openIndexes, setOpenIndexes }) {
-  return (
-    <div className="space-y-1">
-      {sections.map((section, idx) => {
-        const isOpen = openIndexes.includes(idx);
-        return (
-          <div key={section.name} className="border rounded bg-muted/30">
-            <button
-              className="w-full flex justify-between items-center px-3 py-2 text-xs font-semibold text-left focus:outline-none focus:ring-2 focus:ring-primary rounded"
-              aria-expanded={isOpen}
-              onClick={() => {
-                setOpenIndexes((prev) =>
-                  prev.includes(idx)
-                    ? prev.filter((i) => i !== idx)
-                    : [...prev, idx]
-                );
-              }}
-              type="button"
-            >
-              <span>{section.name}</span>
-              <span className={`transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
-            </button>
-            <div
-              className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-96 py-1' : 'max-h-0 py-0'}`}
-              aria-hidden={!isOpen}
-            >
-              {children(idx)}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-Accordion.propTypes = {
-  sections: PropTypes.arrayOf(
-    PropTypes.shape({
-      name: PropTypes.string.isRequired,
-      keys: PropTypes.arrayOf(PropTypes.string).isRequired
-    })
-  ).isRequired,
-  children: PropTypes.func.isRequired,
-  openIndexes: PropTypes.arrayOf(PropTypes.number).isRequired,
-  setOpenIndexes: PropTypes.func.isRequired
-};
-
-function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
+// Memoized row component to prevent unnecessary re-renders
+const DisplayOptionRow = React.memo(function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
   const isNumber = setting.type === 'number';
   const isRange = setting.type === 'range';
   const isSelect = setting.type === 'select';
   const currentValue = value !== undefined ? value : setting.value;
+  
+  const handleNumberChange = useCallback((e) => {
+    onChange(keyName, parseFloat(e.target.value));
+  }, [keyName, onChange]);
+
+  const handleRangeChange = useCallback((e) => {
+    onChange(keyName, parseFloat(e.target.value));
+  }, [keyName, onChange]);
+
+  const handleSelectChange = useCallback((val) => {
+    onChange(keyName, val);
+  }, [keyName, onChange]);
+
+  const handleSwitchChange = useCallback((checked) => {
+    onChange(keyName, checked);
+  }, [keyName, onChange]);
   
   return (
     <div key={keyName} className="flex items-center justify-between px-2 py-1 text-xs">
@@ -232,7 +202,7 @@ function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
               max={setting.max}
               step={setting.step}
               value={currentValue}
-              onChange={e => onChange(keyName, parseFloat(e.target.value))}
+              onChange={handleNumberChange}
             />
             {loading && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
           </div>
@@ -244,11 +214,11 @@ function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
             max={setting.max}
             step={setting.step}
             value={currentValue}
-            onChange={e => onChange(keyName, parseFloat(e.target.value))}
+            onChange={handleRangeChange}
           />
         ) : isSelect ? (
           <div className="flex items-center">
-            <Select value={currentValue} onValueChange={val => onChange(keyName, val)}>
+            <Select value={currentValue} onValueChange={handleSelectChange}>
               <SelectTrigger className="text-xs h-6 w-32">
                 <SelectValue />
               </SelectTrigger>
@@ -266,14 +236,14 @@ function DisplayOptionRow({ keyName, setting, value, onChange, loading }) {
           <Switch
             className="scale-[0.6]"
             checked={currentValue}
-            onCheckedChange={checked => onChange(keyName, checked)}
+            onCheckedChange={handleSwitchChange}
             disabled={setting.disabled}
           />
         )}
       </div>
     </div>
   );
-}
+});
 
 DisplayOptionRow.propTypes = {
   keyName: PropTypes.string.isRequired,
@@ -283,24 +253,106 @@ DisplayOptionRow.propTypes = {
   loading: PropTypes.bool
 };
 
-export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
+// Memoized Accordion component
+const Accordion = React.memo(function Accordion({ sections, children, openIndexes, setOpenIndexes }) {
+  const toggleSection = useCallback((index) => {
+    setOpenIndexes(prev => 
+      prev.includes(index) 
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    );
+  }, [setOpenIndexes]);
+
+  return (
+    <div className="space-y-1">
+      {sections.map((section, idx) => {
+        const isOpen = openIndexes.includes(idx);
+        
+        return (
+          <div key={section.name} className="border-b border-border last:border-b-0">
+            <button
+              onClick={() => toggleSection(idx)}
+              className="w-full flex items-center justify-between p-2 text-xs hover:bg-accent transition-colors"
+              aria-expanded={isOpen}
+              aria-controls={`section-${idx}`}
+            >
+              <span className="text-muted-foreground">{section.name}</span>
+              <span className={`transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+            </button>
+            <div
+              id={`section-${idx}`}
+              className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-96 py-1' : 'max-h-0 py-0'}`}
+              aria-hidden={!isOpen}
+            >
+              {children(idx)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+Accordion.propTypes = {
+  sections: PropTypes.arrayOf(
+    PropTypes.shape({
+      name: PropTypes.string.isRequired,
+      keys: PropTypes.arrayOf(PropTypes.string).isRequired
+    })
+  ).isRequired,
+  children: PropTypes.func.isRequired,
+  openIndexes: PropTypes.arrayOf(PropTypes.number).isRequired,
+  setOpenIndexes: PropTypes.func.isRequired
+};
+
+export const DisplayOptions = React.memo(function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange }) {
   const [position, setPosition] = useState({ x: 40, y: 80 });
   const [openIdxs, setOpenIdxs] = useState([0]);
   const [loadingKeys, setLoadingKeys] = useState({});
+  
+  // Memoize settings values to prevent unnecessary recalculations
+  const settingsValues = useMemo(() => {
+    const values = {};
+    Object.keys(defaultSettings).forEach(key => {
+      values[key] = settings[key] !== undefined ? settings[key] : defaultSettings[key].value;
+    });
+    return values;
+  }, [settings]);
+  
+  // Memoize the toggle all function with optimized dependencies
+  const handleToggleAll = useCallback(() => {
+    // collect only boolean setting keys
+    const booleanKeys = Object.entries(defaultSettings)
+      .filter(([, setting]) => (setting.type === undefined || setting.type === 'boolean'))
+      .map(([key]) => key);
+    // check if all boolean settings are currently enabled
+    const allOn = booleanKeys.every(key => settingsValues[key]);
+    // toggle each boolean setting
+    booleanKeys.forEach(key => onSettingChange(key, !allOn));
+  }, [settingsValues, onSettingChange]); // Use memoized values instead of raw settings
 
-  // Clear loading state when the updated setting is applied
-  React.useEffect(() => {
-    Object.entries(loadingKeys).forEach(([key, pendingVal]) => {
-      if (settings[key] === pendingVal) {
+  // Memoize the change handler with debounced loading state
+  const handleSettingChange = useCallback((k, v) => {
+    // Only show loading for expensive operations
+    const expensiveOps = new Set([
+      'orbitUpdateInterval', 'orbitPredictionInterval', 'orbitPointsPerPeriod',
+      'physicsTimeStep', 'integrationMethod', 'perturbationScale', 'sensitivityScale'
+    ]);
+    
+    if (expensiveOps.has(k)) {
+      setLoadingKeys(prev => ({ ...prev, [k]: v }));
+      // Clear loading state after a reasonable timeout
+      setTimeout(() => {
         setLoadingKeys(prev => {
           const next = { ...prev };
-          delete next[key];
+          delete next[k];
           return next;
         });
-      }
-    });
-  }, [settings]);
-
+      }, 500); // 500ms should be enough for batched updates
+    }
+    
+    onSettingChange(k, v);
+  }, [onSettingChange]);
 
   return (
     <TooltipProvider>
@@ -320,18 +372,7 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
             variant="ghost"
             size="icon"
             className="w-8 h-8 mr-2"
-            onClick={() => {
-              // collect only boolean setting keys
-              const booleanKeys = Object.entries(defaultSettings)
-                .filter(([, setting]) => (setting.type === undefined || setting.type === 'boolean'))
-                .map(([key]) => key);
-              // check if all boolean settings are currently enabled
-              const allOn = booleanKeys.every(key =>
-                settings[key] !== undefined ? settings[key] : defaultSettings[key].value
-              );
-              // toggle each boolean setting
-              booleanKeys.forEach(key => onSettingChange(key, !allOn));
-            }}
+            onClick={handleToggleAll}
           >
             <CheckSquare className="h-4 w-4" />
           </Button>
@@ -348,11 +389,8 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
                     key={key}
                     keyName={key}
                     setting={setting}
-                    value={settings[key]}
-                    onChange={(k, v) => {
-                      setLoadingKeys(prev => ({ ...prev, [k]: v }));
-                      onSettingChange(k, v);
-                    }}
+                    value={settingsValues[key]}
+                    onChange={handleSettingChange}
                     loading={loadingKeys[key] !== undefined}
                   />
                 );
@@ -363,7 +401,7 @@ export function DisplayOptions({ settings, onSettingChange, isOpen, onOpenChange
       </DraggableModal>
     </TooltipProvider>
   );
-}
+});
 
 DisplayOptions.propTypes = {
   settings: PropTypes.object.isRequired,

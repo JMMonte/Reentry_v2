@@ -1,11 +1,11 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { drawGrid, drawPOI, drawGeoJSONLines, rasteriseCoverage } from './GroundTrackRendering';
 import { groundTrackService } from '@/services/GroundTrackService';
 
 const SAT_DOT_RADIUS = 4;
 
-export default function GroundTrackCanvas({
+const GroundTrackCanvas = React.memo(function GroundTrackCanvas({
     map,
     planetNaifId,
     width,
@@ -23,9 +23,10 @@ export default function GroundTrackCanvas({
     const tracksRef = useRef(tracks);
     const satsRef = useRef(satellites);
     const [processedTracks, setProcessedTracks] = useState({});
-    const frameRef = useRef(null);
+
     const lastRenderRef = useRef({});
     const needsRedrawRef = useRef(true);
+    const lastFrameTime = useRef(0);
     
     // Update refs when props change
     useEffect(() => {
@@ -38,34 +39,63 @@ export default function GroundTrackCanvas({
         needsRedrawRef.current = true;
     }, [satellites]);
     
+    // Memoize render parameters to reduce comparison overhead
+    const renderParams = useMemo(() => ({
+        map,
+        planetNaifId,
+        layers,
+        showCoverage,
+        groundtracksLength: groundtracks?.length || 0,
+        processedTracksCount: Object.keys(processedTracks).length
+    }), [map, planetNaifId, layers, showCoverage, groundtracks?.length, processedTracks]);
     
     // Check if render parameters have changed
     const checkNeedsRedraw = useCallback(() => {
-        const current = {
-            map,
-            planetNaifId,
-            layers: JSON.stringify(layers),
-            showCoverage,
-            groundtracks: JSON.stringify(groundtracks),
-            processedTracks: JSON.stringify(Object.keys(processedTracks))
-        };
-        
-        const hasChanged = Object.keys(current).some(key => 
-            current[key] !== lastRenderRef.current[key]
+        const hasChanged = Object.keys(renderParams).some(key => 
+            renderParams[key] !== lastRenderRef.current[key]
         );
         
         if (hasChanged) {
-            lastRenderRef.current = current;
+            lastRenderRef.current = renderParams;
             needsRedrawRef.current = true;
         }
         
         return hasChanged;
-    }, [map, planetNaifId, layers, showCoverage, groundtracks, processedTracks]);
+    }, [renderParams]);
     
-    useEffect(() => { tracksRef.current = tracks; }, [tracks]);
-    useEffect(() => { satsRef.current = satellites; }, [satellites]);
+    // Memoize POI categories to prevent recreation on every render
+    const poiCategories = useMemo(() => [
+        { key: 'cities', color: '#00A5FF' },
+        { key: 'airports', color: '#FF0000' },
+        { key: 'spaceports', color: '#FFD700' },
+        { key: 'groundStations', color: '#00FF00' },
+        { key: 'observatories', color: '#FF00FF' },
+        { key: 'missions', color: '#FFFF00' }
+    ], []);
 
+    // Memoize satellite color mapping to prevent recalculation on every render
+    const satelliteColors = useMemo(() => {
+        const colorMap = {};
+        Object.entries(satsRef.current || {}).forEach(([id, sat]) => {
+            const color = sat?.color ?? 0xffffff;
+            colorMap[id] = {
+                fillStyle: `#${color.toString(16).padStart(6, '0')}`,
+                strokeStyle: typeof color === 'string' 
+                    ? color 
+                    : `#${color.toString(16).padStart(6, '0')}`
+            };
+        });
+        return colorMap;
+    }, [satellites]); // Depend on satellites prop, not ref
+    
+    // Throttled draw frame function (max 30fps for better performance)
     const drawFrame = useCallback(() => {
+        const now = performance.now();
+        if (now - lastFrameTime.current < 33.33) { // ~30fps throttling instead of 60fps
+            return;
+        }
+        lastFrameTime.current = now;
+        
         const canvas = canvasRef.current;
         if (!canvas) return;
         
@@ -132,8 +162,15 @@ export default function GroundTrackCanvas({
             groundtracks.forEach(({ id, lat, lon }) => {
                 // Use existing GroundTrackService for consistent coordinate projection
                 const { x, y } = groundTrackService.projectToCanvas(lat, lon, width, height);
-                const color = satellites?.[id]?.color ?? 0xffffff;
-                ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+                // Use memoized color
+                const colorInfo = satelliteColors[id];
+                if (colorInfo) {
+                    ctx.fillStyle = colorInfo.fillStyle;
+                } else {
+                    // Fallback for satellites not in memoized colors
+                    const color = satellites?.[id]?.color ?? 0xffffff;
+                    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+                }
                 ctx.beginPath();
                 ctx.arc(x, y, SAT_DOT_RADIUS, 0, 2 * Math.PI);
                 ctx.fill();
@@ -142,12 +179,19 @@ export default function GroundTrackCanvas({
             // Draw ground-track polylines with viewport culling and LOD
             Object.entries(processedTracks).forEach(([id, processedPts]) => {
                 if (!processedPts?.length) return;
-                const satColor = satsRef.current[id]?.color ?? 0xffffff;
-                // Ensure color is bright and visible
-                const colorHex = typeof satColor === 'string' 
-                    ? satColor 
-                    : `#${satColor.toString(16).padStart(6, '0')}`;
-                ctx.strokeStyle = colorHex;
+                
+                // Use memoized color
+                const colorInfo = satelliteColors[id];
+                if (colorInfo) {
+                    ctx.strokeStyle = colorInfo.strokeStyle;
+                } else {
+                    // Fallback for satellites not in memoized colors
+                    const satColor = satsRef.current[id]?.color ?? 0xffffff;
+                    ctx.strokeStyle = typeof satColor === 'string' 
+                        ? satColor 
+                        : `#${satColor.toString(16).padStart(6, '0')}`;
+                }
+                
                 ctx.lineWidth = 2; // Increased for better visibility
                 ctx.globalAlpha = 0.8; // Make slightly transparent
                 
@@ -194,14 +238,6 @@ export default function GroundTrackCanvas({
 
             // POI layers from dynamic data
             if (layers.pois) {
-                const poiCategories = [
-                    { key: 'cities', color: '#00A5FF' },
-                    { key: 'airports', color: '#FF0000' },
-                    { key: 'spaceports', color: '#FFD700' },
-                    { key: 'groundStations', color: '#00FF00' },
-                    { key: 'observatories', color: '#FF00FF' },
-                    { key: 'missions', color: '#FFFF00' }
-                ];
                 poiCategories.forEach(({ key, color }) => {
                     const data = poiData?.[key] || [];
                     if (layers[key] && data.length) {
@@ -212,7 +248,7 @@ export default function GroundTrackCanvas({
         } catch (error) {
             console.error('[GroundTrackCanvas] Error drawing frame:', error);
         }
-    }, [map, width, height, layers, showCoverage, poiData, groundtracks, satellites, processedTracks, planetNaifId, planet]);
+    }, [map, width, height, layers, showCoverage, poiData, groundtracks, satellites, processedTracks, planetNaifId, planet, poiCategories, satelliteColors]);
 
     // Process tracks - now handling pre-processed data from worker
     useEffect(() => {
@@ -259,23 +295,13 @@ export default function GroundTrackCanvas({
         processAllTracks();
     }, [tracks, planetNaifId, width, height, physicsBodies]);
 
-    // Optimized render loop with dirty checking
+    // Only render when something actually changes - no continuous loop
     useEffect(() => {
-        const loop = () => {
-            // Only redraw if something has changed
-            if (needsRedrawRef.current || checkNeedsRedraw()) {
-                drawFrame();
-                needsRedrawRef.current = false;
-            }
-            frameRef.current = requestAnimationFrame(loop);
-        };
-        loop();
-        return () => {
-            if (frameRef.current) {
-                cancelAnimationFrame(frameRef.current);
-            }
-        };
-    }, [drawFrame, checkNeedsRedraw]);
+        if (needsRedrawRef.current || checkNeedsRedraw()) {
+            drawFrame();
+            needsRedrawRef.current = false;
+        }
+    }, [drawFrame, checkNeedsRedraw, tracks, satellites, layers, showCoverage, processedTracks]);
 
     return (
         <canvas
@@ -285,7 +311,7 @@ export default function GroundTrackCanvas({
             style={{ width: '100%', height: '100%', display: 'block' }}
         />
     );
-}
+});
 
 GroundTrackCanvas.propTypes = {
     map: PropTypes.object,
@@ -333,4 +359,6 @@ GroundTrackCanvas.propTypes = {
     physicsBodies: PropTypes.array,
     currentTime: PropTypes.number,
 };
+
+export default GroundTrackCanvas;
 

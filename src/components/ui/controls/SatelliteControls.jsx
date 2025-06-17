@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Button } from '../button';
 import { Input } from '../input';
-import { Satellite } from 'lucide-react';
+import { Satellite as SatelliteIcon } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -29,6 +29,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import PropTypes from 'prop-types';
 
+// Memoized validation schemas
 const latLonSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   latitude: z.string().transform(Number).pipe(
@@ -64,47 +65,61 @@ const orbitalElementsSchema = z.object({
   ),
 });
 
-export function SatelliteControls({ onCreateSatellite }) {
+// Memoized form default values
+const latLonDefaults = {
+  name: '',
+  latitude: '',
+  longitude: '',
+  altitude: '',
+};
+
+const orbitalElementsDefaults = {
+  name: '',
+  semiMajorAxis: '',
+  eccentricity: '',
+  inclination: '',
+  raan: '',
+  argumentOfPeriapsis: '',
+  trueAnomaly: '',
+};
+
+export const SatelliteControls = React.memo(function SatelliteControls({ onCreateSatellite }) {
   const [activeTab, setActiveTab] = useState('lat-lon');
   
-  const latLonForm = useForm({
+  // Memoized form configurations
+  const latLonFormConfig = useMemo(() => ({
     resolver: zodResolver(latLonSchema),
-    defaultValues: {
-      name: '',
-      latitude: '',
-      longitude: '',
-      altitude: '',
-    },
-  });
+    defaultValues: latLonDefaults,
+  }), []);
 
-  const orbitalElementsForm = useForm({
+  const orbitalElementsFormConfig = useMemo(() => ({
     resolver: zodResolver(orbitalElementsSchema),
-    defaultValues: {
-      name: '',
-      semiMajorAxis: '',
-      eccentricity: '',
-      inclination: '',
-      raan: '',
-      argumentOfPeriapsis: '',
-      trueAnomaly: '',
-    },
-  });
+    defaultValues: orbitalElementsDefaults,
+  }), []);
 
-  const onLatLonSubmit = (data) => {
+  const latLonForm = useForm(latLonFormConfig);
+  const orbitalElementsForm = useForm(orbitalElementsFormConfig);
+
+  // Memoized event handlers
+  const onLatLonSubmit = useCallback((data) => {
     if (onCreateSatellite) onCreateSatellite({ ...data, mode: 'latlon' });
     latLonForm.reset();
-  };
+  }, [onCreateSatellite, latLonForm]);
 
-  const onOrbitalElementsSubmit = (data) => {
+  const onOrbitalElementsSubmit = useCallback((data) => {
     if (onCreateSatellite) onCreateSatellite({ ...data, mode: 'orbital' });
     orbitalElementsForm.reset();
-  };
+  }, [onCreateSatellite, orbitalElementsForm]);
+
+  const handleTabChange = useCallback((value) => {
+    setActiveTab(value);
+  }, []);
 
   return (
     <Sheet>
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon">
-          <Satellite className="h-4 w-4" />
+          <SatelliteIcon className="h-4 w-4" />
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="p-4">
@@ -115,7 +130,7 @@ export function SatelliteControls({ onCreateSatellite }) {
           </SheetDescription>
         </SheetHeader>
         
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-4">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="lat-lon">Lat/Lon</TabsTrigger>
             <TabsTrigger value="orbital-elements">Orbital Elements</TabsTrigger>
@@ -283,7 +298,7 @@ export function SatelliteControls({ onCreateSatellite }) {
       </SheetContent>
     </Sheet>
   );
-}
+});
 
 SatelliteControls.propTypes = {
   onCreateSatellite: PropTypes.func.isRequired

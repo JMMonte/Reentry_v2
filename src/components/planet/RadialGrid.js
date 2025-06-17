@@ -1,15 +1,18 @@
 import * as THREE from 'three';
 import { WebGLLabels } from '../../utils/WebGLLabels.js';
+import { RENDER_ORDER } from './PlanetConstants.js';
 
 export class RadialGrid {
     /**
      * Create a radial grid attached to a specific planet based on its configuration.
      * @param {Planet} planet - The planet instance this grid belongs to.
      * @param {object} config - The radialGridConfig object for rendering.
+     * @param {LabelManager} labelManager - The unified label manager instance.
      */
-    constructor(planet, config) {
+    constructor(planet, config, labelManager = null) {
         this.planet = planet;
         this.config = config;
+        this.labelManager = labelManager;
 
         this.group = new THREE.Group();
         this.group.name = `${planet.name}_radialGrid`;
@@ -33,6 +36,7 @@ export class RadialGrid {
         }
 
         this.labelsSprites = [];
+        this.labelCategory = `radial_grid_${planet.naifId || planet.name}`;
         
         // Animation state for the entire grid
         this.fadeAnimation = {
@@ -43,6 +47,9 @@ export class RadialGrid {
             animating: false
         };
         this.animationDuration = 300; // 300ms fade duration
+        
+        // Track intended visibility state (separate from distance-based fading)
+        this.isManuallyVisible = true;
 
         if (!config) {
             console.warn(`RadialGrid: No config provided for planet ${planet.name}. Grid will not be created.`);
@@ -173,22 +180,41 @@ export class RadialGrid {
 
     // This function now expects an already scaled radius
     createLabel(text, scaledRadius) {
-        // Use WebGLLabels with matching configuration for visual consistency
-        const labelConfig = {
-            fontSize: 42,
-            fontFamily: 'sans-serif',
-            color: '#ffffff',
-            pixelScale: 0.0002,
-            sizeAttenuation: false,
-            transparent: true,
-            renderOrder: 999
-        };
-        
-        const sprite = WebGLLabels.createLabel(text, labelConfig);
-        const offset = 1.02;
-        sprite.position.set(scaledRadius * offset, 0, 0);
-        this.group.add(sprite);
-        this.labelsSprites.push(sprite);
+        if (this.labelManager) {
+            // Use LabelManager for consistent styling and management with planet-specific render orders
+            const label = this.labelManager.createLabel(text, 'DISTANCE_MARKER', {
+                position: new THREE.Vector3(scaledRadius * 1.02, 0, 0),
+                category: this.labelCategory,
+                userData: { radius: scaledRadius, planet: this.planet.name },
+                renderOrderOverrides: this.planet.renderOrderOverrides // Pass planet-specific render orders!
+            });
+            
+            this.group.add(label.sprite);
+            
+            // FORCE high render order to ensure labels render above ALL atmospheres
+            label.sprite.renderOrder = 1000;
+            label.sprite.material.depthWrite = false;
+            label.sprite.material.depthTest = true;
+            
+            this.labelsSprites.push(label);
+        } else {
+            // Fallback to direct WebGLLabels usage for backward compatibility
+            const labelConfig = {
+                fontSize: 42,
+                fontFamily: 'sans-serif',
+                color: '#ffffff',
+                pixelScale: 0.0002,
+                sizeAttenuation: false,
+                transparent: true,
+                renderOrder: RENDER_ORDER.DISTANCE_MARKERS
+            };
+            
+            const sprite = WebGLLabels.createLabel(text, labelConfig);
+            const offset = 1.02;
+            sprite.position.set(scaledRadius * offset, 0, 0);
+            this.group.add(sprite);
+            this.labelsSprites.push(sprite);
+        }
     }
 
     /**
@@ -198,11 +224,19 @@ export class RadialGrid {
     updateFading(camera) {
         if (!this.gridMesh || !camera) return;
         
-        // Early exit if grid is not visible
-        if (!this.group.visible) return;
+        // Early exit if grid is manually disabled
+        if (!this.isManuallyVisible) return;
         
         this.group.getWorldPosition(this.worldPosition);
-        const distance = camera.position.distanceTo(this.worldPosition);
+        
+        // Use centralized distance cache for better performance
+        const planetId = this.planet.name || 'unknown';
+        let distance = window.app3d?.distanceCache?.getDistance?.(planetId);
+        
+        // Fallback to direct calculation if cache not available
+        if (!distance || distance === 0) {
+            distance = camera.position.distanceTo(this.worldPosition);
+        }
         
         // Determine target opacity based on distance thresholds
         const soi = this.planet.soiRadius || 1000;
@@ -238,9 +272,8 @@ export class RadialGrid {
         // Apply opacity to entire group
         const opacity = this.fadeAnimation.currentOpacity;
         
-        // Always keep group visible so it can fade back in
-        // Instead control visibility of individual elements
-        this.group.visible = true;
+        // Only make group visible if manually enabled and has opacity
+        this.group.visible = this.isManuallyVisible && opacity > 0.01;
         
         // Update grid mesh opacity and visibility
         if (this.gridMesh) {
@@ -264,12 +297,29 @@ export class RadialGrid {
     }
 
     setVisible(visible) {
-        this.group.visible = visible;
+        this.isManuallyVisible = visible;
+        
+        if (!visible) {
+            // When manually disabled, hide everything immediately
+            this.group.visible = false;
+            if (this.gridMesh) {
+                this.gridMesh.visible = false;
+            }
+            this.labelsSprites.forEach(sprite => {
+                sprite.visible = false;
+            });
+        }
+        // When enabled, let updateFading() handle the visibility based on distance
     }
 
     dispose() {
-        // Dispose all label sprites using WebGLLabels utility
-        WebGLLabels.disposeLabels(this.labelsSprites);
+        if (this.labelManager) {
+            // Use LabelManager to dispose all labels in this category
+            this.labelManager.clearCategory(this.labelCategory);
+        } else {
+            // Fallback to direct disposal for backward compatibility
+            WebGLLabels.disposeLabels(this.labelsSprites);
+        }
 
         // Dispose geometries and materials for grid mesh
         this.group.traverse((object) => {
@@ -286,6 +336,9 @@ export class RadialGrid {
         if (this.parentRef) {
             this.parentRef.remove(this.group);
         }
+        
+        // Clear references
+        this.labelManager = null;
     }
 
     /** Update the grid's world position to match the planet's orbital position */

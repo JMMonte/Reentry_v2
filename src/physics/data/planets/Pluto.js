@@ -29,11 +29,11 @@ export default {
     rotationPeriod: -551855, // seconds (-6.3872 Earth days, retrograde)
     tilt: 122.53, // degrees - extreme axial tilt
 
-    // Orbital properties (part of Pluto-Charon binary system)
-    soiRadius: 5800000, // km (SOI for Pluto-Charon system around Sun)
-    orbitalPeriod: 6.387230 * 24 * 3600, // seconds - same as Charon (tidally locked)
-    semiMajorAxis: 5906.44e6, // km (39.48 AU from Sun - this is for heliocentric orbit)
-    
+    // Orbital properties
+    soiRadius: 6400000, // km - Sphere of Influence radius
+    orbitalPeriod: 248 * 365.25 * 86400, // seconds (248 Earth years)
+    semiMajorAxis: 5.906e9, // km (39.48 AU)
+
     // Multi-body system configuration
     multiBodySystemComponent: true, // Enable general multi-body system positioning based on all moon positions
     
@@ -50,7 +50,21 @@ export default {
         referenceFrame: 'pluto_equatorial' // Same reference frame as Charon
     },
 
-    // Atmospheric properties (thin, tenuous, variable)
+    // Atmospheric model for drag calculations
+    atmosphericModel: {
+        maxAltitude: 1600, // km - Pluto's extended atmosphere (New Horizons data)
+        minAltitude: 0,
+        referenceAltitude: 50, // km - above surface
+        referenceDensity: 1e-8, // kg/m³ at 50km (very thin nitrogen atmosphere)
+        scaleHeight: 50, // km - Pluto scale height
+        getDensity: function(altitude) {
+            // Thin nitrogen atmosphere discovered by New Horizons
+            if (altitude > this.maxAltitude) return 0;
+            return this.referenceDensity * Math.exp(-(altitude - this.referenceAltitude) / this.scaleHeight);
+        }
+    },
+
+    // Atmospheric properties (thin nitrogen atmosphere)
     atmosphere: {
         thickness: 20, // km - very rough estimate of extent
         densityScaleHeight: 60, // km (highly variable)

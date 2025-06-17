@@ -35,11 +35,25 @@ export default {
     tilt: 3.13, // degrees - small axial tilt
 
     // Orbital properties
-    soiRadius: 48_230_000, // km - Sphere of Influence radius
-    orbitalPeriod: 11.862 * 365.25 * 24 * 3600, // seconds (11.862 years)
-    semiMajorAxis: 778.5e6, // km - 5.2 AU
+    soiRadius: 48200000, // km - Sphere of Influence radius
+    orbitalPeriod: 11.86 * 365.25 * 86400, // seconds (11.86 Earth years)
+    semiMajorAxis: 778.5e6, // km (5.2 AU)
 
-    // Atmospheric properties
+    // Atmospheric model for drag calculations
+    atmosphericModel: {
+        maxAltitude: 5000, // km - Jupiter's massive atmosphere and thermosphere
+        minAltitude: 0,
+        referenceAltitude: 100, // km - above 1-bar level
+        referenceDensity: 0.16, // kg/m³ at 100km (dense hydrogen atmosphere)
+        scaleHeight: 27, // km - Jupiter scale height
+        getDensity: function(altitude) {
+            // Custom density model for Jupiter's massive atmosphere
+            if (altitude > this.maxAltitude) return 0;
+            return this.referenceDensity * Math.exp(-(altitude - this.referenceAltitude) / this.scaleHeight);
+        }
+    },
+
+    // Atmospheric properties (dense H2/He atmosphere)
     atmosphere: {
         limbFudgeFactor: 1,
         hazeIntensity: 2,

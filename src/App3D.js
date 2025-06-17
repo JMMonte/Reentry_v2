@@ -76,14 +76,16 @@ import { SimulationLoop } from './simulation/SimulationLoop.js';
 
 // New physics system
 import { PhysicsManager } from './physics/PhysicsManager.js';
+import { PhysicsConstants } from './physics/core/PhysicsConstants.js';
 import { LineOfSightManager } from './managers/LineOfSightManager.js';
 import { SatelliteCommsManager } from './managers/SatelliteCommsManager.js';
 import { CommunicationsService } from './services/CommunicationsService.js';
 import Physics from './physics/PhysicsAPI.js';
 import GroundStationService from './services/GroundStationService.js';
+import { LabelManager } from './managers/LabelManager.js';
 
 // Controls
-import { CameraControls } from './controls/CameraControls.js';
+import { SmartCamera } from './controls/SmartCamera.js';
 import {
     setupCamera,
     setupRenderer,
@@ -94,8 +96,6 @@ import {
 import { setupEventListeners as setupGlobalListeners }
     from './setup/setupListeners.js';
 import { defaultSettings } from './components/ui/controls/DisplayOptions.jsx';
-// Memory monitoring for development
-import { setupMemoryMonitoring } from './utils/MemoryMonitor.js';
 
 // Domain helpers
 import { Planet } from './components/planet/Planet.js';
@@ -160,6 +160,9 @@ class App3D extends EventTarget {
 
         // LineOfSightManager will be initialized after scene is ready
         this.lineOfSightManager = null;
+        
+        // LabelManager will be initialized after scene and camera are ready
+        this.labelManager = null;
 
         // Ground stations data - now managed by GroundStationService (accessed via getter)
 
@@ -193,13 +196,30 @@ class App3D extends EventTarget {
         this._tempWorldPos = new THREE.Vector3();
         this._tempSunPos = new THREE.Vector3();
 
-        // Caching for performance
+        // Advanced caching for performance
         this._lastFrustumUpdateFrame = -1;
         this._visibleBodies = new Set();
         this._bodyWorldPositions = new Map(); // Cache world positions
         this._lastUpdateFrame = new Map(); // Track when each body was last updated
         this._updateThreshold = 0.1; // Min distance change to trigger update (km)
         this._maxCacheEntries = 100; // Safety limit for position cache
+        
+        // Centralized distance cache system - MASSIVE performance optimization
+        this._distanceCache = new Map(); // objectId -> { distance, distanceSquared, lastUpdate }
+        this._lastCameraPosition = new THREE.Vector3();
+        this._cameraMovementThreshold = 1.0; // km - only recalc distances when camera moves significantly
+        this._distanceCacheFrameId = 0;
+        
+        // GPU-accelerated visibility system
+        this._visibilityCache = new Map(); // bodyId -> { visible, lastCheck, boundingSphere }
+        this._frustumCacheTimeout = 500; // ms - cache frustum results
+        this._hierarchicalCulling = true; // Enable hierarchical culling for nested objects
+        this._adaptiveUpdateRates = new Map(); // bodyId -> updateRate based on distance/importance
+        
+        // Advanced frame timing
+        this._frameTimeBuffer = new Array(60).fill(16.67); // Rolling average of frame times
+        this._frameTimeIndex = 0;
+        this._adaptiveThrottling = true; // Dynamically adjust update rates based on performance
     }
 
     // ───── Properties (read-only public) ──────────────────────────────────────
@@ -216,6 +236,15 @@ class App3D extends EventTarget {
     get labelRenderer() { return this.sceneManager.labelRenderer; }
     get composers() { return this.sceneManager.composers; }
     get physicsEngine() { return this.physicsIntegration; }
+    
+    // Expose distance cache methods for global use
+    get distanceCache() { 
+        return {
+            getDistance: this.getDistanceToCamera.bind(this),
+            getDistanceSquared: this.getDistanceToCameraSquared.bind(this),
+            isValid: () => this._distanceCacheFrameId > 0
+        };
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 4. LIFE-CYCLE
@@ -226,6 +255,8 @@ class App3D extends EventTarget {
      */
     async init() {
         try {
+
+
             // Dispose previous sceneManager if it exists
             if (this.sceneManager) {
                 this.sceneManager.dispose();
@@ -233,6 +264,9 @@ class App3D extends EventTarget {
             }
             this._setupCameraAndRenderer();
             await this.sceneManager.init();
+
+            // Initialize LabelManager after scene and camera are ready
+            this.labelManager = new LabelManager(this.sceneManager.scene, this.sceneManager.camera);
 
             // Initialize LineOfSightManager after scene is ready
             this.lineOfSightManager = new LineOfSightManager(
@@ -302,10 +336,9 @@ class App3D extends EventTarget {
             try {
                 await this.physicsIntegration.initialize(this.timeUtils.getSimulatedTime());
 
-                // Initialize satellite orbit manager after physics is ready
-                const { SatelliteOrbitManager } = await import('./managers/SatelliteOrbitManager.js');
-                this.satelliteOrbitManager = new SatelliteOrbitManager(this);
-                this.satelliteOrbitManager.initialize();
+                // Initialize simple satellite orbit visualizer after physics is ready
+                const { SimpleSatelliteOrbitVisualizer } = await import('./managers/SimpleSatelliteOrbitVisualizer.js');
+                this.satelliteOrbitManager = new SimpleSatelliteOrbitVisualizer(this);
 
                 // Initialize maneuver preview system
                 // DISABLED: Using SimpleManeuverPreview instead
@@ -340,7 +373,7 @@ class App3D extends EventTarget {
                 for (const planet of this.celestialBodies) {
                     // Only add vectors for planets with a mesh and rotationGroup
                     if (planet && planet.getMesh && planet.rotationGroup && this.sceneManager.scene) {
-                        const vec = new PlanetVectors(planet, this.sceneManager.scene, { name: planet.name, scale: planet.radius * 2 });
+                        const vec = new PlanetVectors(planet, this.sceneManager.scene, this.sun, { name: planet.name, scale: planet.radius * 2 }, this.labelManager);
                         this.planetVectors.push(vec);
                     }
                 }
@@ -365,17 +398,6 @@ class App3D extends EventTarget {
             // Re-apply display settings to ensure all are set with simulationLoop present
             this.displaySettingsManager?.applyAll?.();
 
-            // Set up memory monitoring in development
-            if (window.location.search.includes('debug')) {
-                this.memoryMonitor = setupMemoryMonitoring(this, {
-                    enabled: true,
-                    showOverlay: window.location.search.includes('memoryOverlay'),
-                    interval: 5000,
-                    warnThreshold: 1000,     // 1GB warning threshold
-                    criticalThreshold: 2000  // 2GB critical threshold
-                });
-            }
-
             this._isInitialized = true;
             this._dispatchSceneReady();
         } catch (err) {
@@ -391,12 +413,33 @@ class App3D extends EventTarget {
      */
     async _initializeLocalScene() {
         try {
-            const { createSceneObjects } = await import('./setup/setupScene.js');
+            const { initScene, createSceneObjects } = await import('./setup/setupScene.js');
+
+            // First initialize the basic scene (textures, lighting, post-processing)
+            // This will dispatch the 'assetsLoaded' event
+
+            await initScene(this);
+
+
+            // Then create the celestial objects
+
             await createSceneObjects(this);
+
             this.sceneObjectsInitialized = true;
 
+            // Only default to Earth if no body is currently being followed
+            // This preserves the user's current camera target and offset
             if (this.cameraControls && typeof this.cameraControls.follow === 'function') {
-                this.cameraControls.follow('Earth', this, true);
+                if (!this.cameraControls.followTarget) {
+                    // No body currently being followed, default to Earth
+                    this.cameraControls.follow('earth', this, true);
+                    
+                    // Dispatch bodySelected event to sync React state
+                    document.dispatchEvent(new CustomEvent('bodySelected', {
+                        detail: { body: 'earth' }
+                    }));
+                }
+                // If a body is already being followed, preserve that selection and camera offset
             }
 
             // Dispatch scene ready event
@@ -413,6 +456,9 @@ class App3D extends EventTarget {
 
         // Workers
         this.lineOfSightManager?.dispose();
+
+        // LabelManager cleanup
+        this.labelManager?.dispose?.();
 
         // Physics integration cleanup
         this.physicsIntegration?.cleanup?.();
@@ -511,9 +557,10 @@ class App3D extends EventTarget {
         this._bodyWorldPositions.clear();
         this._lastUpdateFrame.clear();
         this._visibleBodies.clear();
+        this._distanceCache.clear();
+        this._visibilityCache.clear();
 
-        // Stop memory monitoring
-        this.memoryMonitor?.stop();
+
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -527,7 +574,7 @@ class App3D extends EventTarget {
 
     _setupControls() {
         this._controls = setupControls(this._camera, this._renderer);
-        this.cameraControls = new CameraControls(this._camera, this._controls);
+        this.cameraControls = new SmartCamera(this._camera, this._controls);
     }
 
 
@@ -575,7 +622,7 @@ class App3D extends EventTarget {
 
     _syncConnectionsWorker() {
         if (!this.physicsIntegration?.physicsEngine) {
-            console.log('[App3D] No physics engine available');
+
             return;
         }
 
@@ -632,7 +679,7 @@ class App3D extends EventTarget {
     _resizePOIs() {
         if (!this.pickablePoints?.length) return;
 
-        const pixelSize = 8;
+        const pixelSize = PhysicsConstants.RENDERING.STANDARD_PIXEL_SIZE;
         const vFOV = THREE.MathUtils.degToRad(this.camera.fov);
         const halfH = window.innerHeight;
 
@@ -640,73 +687,42 @@ class App3D extends EventTarget {
         const scaleFor = dist =>
             (2 * Math.tan(vFOV / 2) * dist) * (pixelSize / halfH);
 
-        this.pickablePoints.forEach(mesh => {
+        this.pickablePoints.forEach((mesh, index) => {
             if (!mesh.visible) return;
-            mesh.getWorldPosition(tmp);
-            const s = scaleFor(tmp.distanceTo(this.camera.position));
+            
+            // Use cached distance for POI scaling
+            const poiId = `poi_${index}`;
+            let distance = this.distanceCache.getDistance(poiId);
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                mesh.getWorldPosition(tmp);
+                distance = tmp.distanceTo(this.camera.position);
+            }
+            
+            const s = scaleFor(distance);
             mesh.scale.set(s, s, 1);
         });
 
         if (this._poiIndicator) {
-            this._poiIndicator.getWorldPosition(tmp);
-            const s = scaleFor(tmp.distanceTo(this.camera.position)) * 1.2;
+            // Use cached distance for POI indicator scaling
+            let distance = this.distanceCache.getDistance('poi_indicator');
+            
+            // Fallback to direct calculation if cache not available
+            if (!distance || distance === 0) {
+                this._poiIndicator.getWorldPosition(tmp);
+                distance = tmp.distanceTo(this.camera.position);
+            }
+            
+            const s = scaleFor(distance) * 1.2;
             this._poiIndicator.scale.set(s, s, 1);
         }
     }
 
     // ───────── SATELLITE/STATE API (delegates to SimulationStateManager) ─────
-    createSatellite(p) { return this.simulationStateManager.createSatellite(p); }
     removeSatellite(i) { return this.simulationStateManager.removeSatellite(i); }
     importSimulationState(s) { return this.simulationStateManager.importState(s); }
     exportSimulationState() { return this.simulationStateManager.exportState(); }
-
-    // Satellite creation helpers - now call physics engine directly
-    async createSatelliteFromLatLon(p) {
-        const naifId = p.centralBodyNaifId || p.planetNaifId || this.selectedBody?.naifId || 399;
-        const planetConfig = this.bodiesByNaifId?.[naifId] || { naifId };
-
-        if (!this.physicsIntegration?.physicsEngine) {
-            throw new Error('Physics engine not available');
-        }
-
-        // Create physics satellite
-        const physicsResult = this.physicsIntegration.physicsEngine.createSatelliteFromGeographic(p, naifId);
-
-        // Create UI satellite
-        const uiSatellite = await this.satellites.createUISatellite(physicsResult.id, {
-            planetConfig,
-            color: p.color,
-            name: p.name
-        });
-
-        return { satellite: uiSatellite, ...physicsResult };
-    }
-
-    async createSatelliteFromOrbitalElements(p) {
-        const naifId = p.centralBodyNaifId || p.planetNaifId || this.selectedBody?.naifId || 399;
-        const planetConfig = this.bodiesByNaifId?.[naifId] || { naifId };
-
-        if (!this.physicsIntegration?.physicsEngine) {
-            throw new Error('Physics engine not available');
-        }
-
-        // Create physics satellite
-        const physicsResult = this.physicsIntegration.physicsEngine.createSatelliteFromOrbitalElements(p, naifId);
-
-        // Create UI satellite
-        const uiSatellite = await this.satellites.createUISatellite(physicsResult.id, {
-            planetConfig,
-            color: p.color,
-            name: p.name
-        });
-
-        return { satellite: uiSatellite, ...physicsResult };
-    }
-
-    async createSatelliteFromLatLonCircular(p) {
-        // Circular orbit is just a special case of lat/lon with circular=true
-        return this.createSatelliteFromLatLon({ ...p, circular: true });
-    }
 
     // Display-linked getters / setters
     getDisplaySetting(k) { return this.displaySettingsManager.getSetting(k); }
@@ -739,6 +755,12 @@ class App3D extends EventTarget {
 
             this.sceneManager.updateFrame?.(delta);
 
+            // Update LabelManager for all labels to face camera and handle fade animations
+            if (this.labelManager) {
+                this.labelManager.updateAllOrientations();
+                this.labelManager.updateFadeAnimations();
+            }
+
             if (Array.isArray(this.celestialBodies)) {
                 this.celestialBodies.forEach(planet => planet.update?.(delta, interpolationFactor));
             }
@@ -756,6 +778,9 @@ class App3D extends EventTarget {
                 this._lastCameraPos.distanceTo(this.camera.position) > this._updateThreshold;
             if (cameraMoved) {
                 this._lastCameraPos.copy(this.camera.position);
+                
+                // Update centralized distance cache when camera moves significantly
+                this._updateDistanceCache();
             }
 
             let sunMoved = false;
@@ -774,24 +799,72 @@ class App3D extends EventTarget {
                 this._lastFrustumUpdateFrame = this._frameCount;
             }
 
-            // Helper to check if a mesh is visible in the frustum
-            const isVisible = mesh => {
+            // GPU-accelerated visibility checking with hierarchical culling
+            const isVisible = (mesh, bodyId) => {
                 if (!mesh) return false;
-                mesh.updateWorldMatrix?.(true, false);
-                // Only check frustum for Meshes with geometry
-                if (mesh.isMesh && mesh.geometry) {
+                
+                // Check visibility cache first
+                const now = performance.now();
+                const cached = this._visibilityCache.get(bodyId);
+                if (cached && (now - cached.lastCheck) < this._frustumCacheTimeout) {
+                    return cached.visible;
+                }
+                
+                // Update world matrix only when needed
+                if (mesh.matrixWorldNeedsUpdate) {
+                    mesh.updateWorldMatrix?.(true, false);
+                }
+                
+                let visible = true;
+                
+                // Hierarchical culling: check parent visibility first
+                if (this._hierarchicalCulling && mesh.parent) {
+                    const parentVisible = this._checkParentVisibility(mesh.parent);
+                    if (!parentVisible) {
+                        visible = false;
+                    }
+                }
+                
+                if (visible && mesh.isMesh && mesh.geometry) {
                     const pos = mesh.geometry.attributes.position;
                     if (!pos || !pos.count || isNaN(pos.array[0])) {
-                        // Skip invalid geometry silently in production
-                        return false;
+                        visible = false;
+                    } else {
+                        // Use cached bounding sphere when possible
+                        if (!mesh.geometry.boundingSphere) {
+                            mesh.geometry.computeBoundingSphere();
+                        }
+                        
+                        // Fast sphere-frustum test first, then detailed intersection
+                        const sphere = mesh.geometry.boundingSphere;
+                        if (sphere && sphere.radius > 0) {
+                            const center = sphere.center.clone().applyMatrix4(mesh.matrixWorld);
+                            const radius = sphere.radius * mesh.scale.length();
+                            
+                            // Quick distance check before frustum test - use cached distance if available
+                            let distanceToCamera = this.distanceCache.getDistance(bodyId);
+                            if (!distanceToCamera || distanceToCamera === 0) {
+                                distanceToCamera = center.distanceTo(this.camera.position);
+                            }
+                            if (distanceToCamera > radius * 100) { // If very far, assume not visible
+                                visible = false;
+                            } else {
+                                visible = this._frustum.intersectsSphere({ center, radius });
+                            }
+                        } else {
+                            visible = this._frustum.intersectsObject(mesh);
+                        }
                     }
-                    if (!mesh.geometry.boundingSphere) {
-                        mesh.geometry.computeBoundingSphere();
-                    }
-                    return this._frustum.intersectsObject(mesh);
                 }
-                // For Groups or objects without geometry, assume visible
-                return true;
+                
+                // Cache the result
+                this._visibilityCache.set(bodyId, {
+                    visible,
+                    lastCheck: now,
+                    boundingSphere: mesh.geometry?.boundingSphere
+                });
+                
+                return visible;
             };
 
             // Throttle UI-only updates to every 3rd frame
@@ -806,7 +879,8 @@ class App3D extends EventTarget {
                     this.celestialBodies.forEach(body => {
                         if (body.getMesh) {
                             const mesh = body.getMesh();
-                            if (mesh && isVisible(mesh)) {
+                            const bodyId = body.name || body.id || Math.random().toString(36);
+                            if (mesh && isVisible(mesh, bodyId)) {
                                 this._visibleBodies.add(body);
                             }
                         }
@@ -884,16 +958,21 @@ class App3D extends EventTarget {
                 }
             });
 
-            // Update satellite vectors if visible and using new implementation
-            if (this.satelliteVectors?.update && this.displaySettingsManager?.getSetting('showSatVectors')) {
-                this.satelliteVectors.update();
-            }
+            // Satellite vectors are now handled by individual SatelliteVectorVisualizer instances
+            // No global update needed - each satellite manages its own vectors
 
             // Update satellite communications connections if enabled (throttled)
             if (this.lineOfSightManager?.isEnabled()) {
                 // Only update every 10 frames (about 6 times per second at 60fps)
                 if (this._frameCount % 10 === 0) {
-                    this._syncConnectionsWorker();
+                    // Use requestIdleCallback to avoid blocking main thread
+                    if (window.requestIdleCallback) {
+                        window.requestIdleCallback(() => {
+                            this._syncConnectionsWorker();
+                        }, { timeout: 16 }); // Max 16ms delay
+                    } else {
+                        this._syncConnectionsWorker();
+                    }
                 }
             }
 
@@ -903,12 +982,211 @@ class App3D extends EventTarget {
             }
 
             this.labelRenderer?.render?.(this.scene, this.camera);
+            
+            // Advanced frame timing for adaptive performance
+            if (this._adaptiveThrottling) {
+                this._updateFrameTimingMetrics(delta);
+                
+                // Feed performance data to display settings manager for auto-quality
+                if (this._displaySettingsManager?.monitorPerformance) {
+                    this._displaySettingsManager.monitorPerformance(delta * 1000);
+                }
+            }
+            
             this.stats?.end();
         } catch (error) {
             console.error('[App3D] tick() error:', error);
             this.stats?.end();
             // Don't re-throw to prevent animation loop from stopping
         }
+    }
+
+    /**
+     * Helper method for hierarchical culling
+     */
+    _checkParentVisibility(parent) {
+        // Traverse up the hierarchy to check if any parent is invisible
+        let current = parent;
+        while (current) {
+            if (current.visible === false) {
+                return false;
+            }
+            current = current.parent;
+        }
+        return true;
+    }
+
+    /**
+     * Update frame timing metrics for adaptive performance
+     */
+    _updateFrameTimingMetrics(delta) {
+        const frameTime = delta * 1000; // Convert to ms
+        this._frameTimeBuffer[this._frameTimeIndex] = frameTime;
+        this._frameTimeIndex = (this._frameTimeIndex + 1) % this._frameTimeBuffer.length;
+        
+        // Calculate average frame time
+        const avgFrameTime = this._frameTimeBuffer.reduce((a, b) => a + b, 0) / this._frameTimeBuffer.length;
+        
+        // Adjust update thresholds based on performance
+        if (avgFrameTime > 20) { // Above 60fps target
+            this._updateThreshold = Math.min(this._updateThreshold * 1.1, 1.0); // Increase threshold to reduce updates
+            this._frustumCacheTimeout = Math.min(this._frustumCacheTimeout * 1.1, 1000);
+        } else if (avgFrameTime < 14) { // Well above 60fps
+            this._updateThreshold = Math.max(this._updateThreshold * 0.9, 0.05); // Decrease threshold for better quality
+            this._frustumCacheTimeout = Math.max(this._frustumCacheTimeout * 0.9, 100);
+        }
+    }
+
+    /**
+     * Centralized distance cache system - MASSIVE performance optimization
+     * Calculates all camera-to-object distances once per frame when camera moves
+     */
+    _updateDistanceCache() {
+        if (!this.camera) return;
+        
+        this._distanceCacheFrameId++;
+        const cameraPos = this.camera.position;
+        
+        // Check if camera moved significantly
+        const cameraMovement = this._lastCameraPosition.distanceTo(cameraPos);
+        if (cameraMovement < this._cameraMovementThreshold && this._distanceCache.size > 0) {
+            return; // Skip update if camera hasn't moved much
+        }
+        
+        this._lastCameraPosition.copy(cameraPos);
+        
+        // Clear old cache entries
+        this._distanceCache.clear();
+        
+        // Pre-calculate distances for all scene objects
+        const tempPos = new THREE.Vector3();
+        
+        // Cache distances for celestial bodies
+        if (Array.isArray(this.celestialBodies)) {
+            this.celestialBodies.forEach(body => {
+                if (body.getMesh) {
+                    const mesh = body.getMesh();
+                    if (mesh) {
+                        mesh.getWorldPosition(tempPos);
+                        const distanceSquared = cameraPos.distanceToSquared(tempPos);
+                        const distance = Math.sqrt(distanceSquared);
+                        const bodyId = body.name || body.id || 'unknown';
+                        
+                        this._distanceCache.set(bodyId, {
+                            distance,
+                            distanceSquared,
+                            position: tempPos.clone(),
+                            frameId: this._distanceCacheFrameId
+                        });
+                    }
+                }
+            });
+        }
+        
+        // Cache distances for satellites
+        if (this.satellites?.getSatellitesMap) {
+            const satelliteMap = this.satellites.getSatellitesMap();
+            for (const [satId, satellite] of satelliteMap) {
+                if (satellite.mesh) {
+                    satellite.mesh.getWorldPosition(tempPos);
+                    const distanceSquared = cameraPos.distanceToSquared(tempPos);
+                    const distance = Math.sqrt(distanceSquared);
+                    
+                    this._distanceCache.set(`satellite_${satId}`, {
+                        distance,
+                        distanceSquared,
+                        position: tempPos.clone(),
+                        frameId: this._distanceCacheFrameId
+                    });
+                }
+            }
+        }
+        
+        // Cache distance for the sun
+        if (this.sun && this.sun.sun) {
+            this.sun.sun.getWorldPosition(tempPos);
+            const distanceSquared = cameraPos.distanceToSquared(tempPos);
+            const distance = Math.sqrt(distanceSquared);
+            
+            this._distanceCache.set('sun', {
+                distance,
+                distanceSquared,
+                position: tempPos.clone(),
+                frameId: this._distanceCacheFrameId
+            });
+        }
+        
+        // Cache distance for POI indicator if it exists
+        if (this._poiIndicator) {
+            this._poiIndicator.getWorldPosition(tempPos);
+            const distanceSquared = cameraPos.distanceToSquared(tempPos);
+            const distance = Math.sqrt(distanceSquared);
+            
+            this._distanceCache.set('poi_indicator', {
+                distance,
+                distanceSquared,
+                position: tempPos.clone(),
+                frameId: this._distanceCacheFrameId
+            });
+        }
+        
+        // Cache distances for other scene objects (POIs, etc.)
+        if (this.pickablePoints?.length) {
+            this.pickablePoints.forEach((mesh, index) => {
+                if (mesh.visible) {
+                    mesh.getWorldPosition(tempPos);
+                    const distanceSquared = cameraPos.distanceToSquared(tempPos);
+                    const distance = Math.sqrt(distanceSquared);
+                    
+                    this._distanceCache.set(`poi_${index}`, {
+                        distance,
+                        distanceSquared,
+                        position: tempPos.clone(),
+                        frameId: this._distanceCacheFrameId
+                    });
+                }
+            });
+        }
+    }
+
+    /**
+     * Get cached distance to camera for an object
+     * @param {string} objectId - Unique identifier for the object
+     * @param {THREE.Vector3} [fallbackPosition] - Fallback position if not cached
+     * @returns {number} Distance to camera
+     */
+    getDistanceToCamera(objectId, fallbackPosition = null) {
+        const cached = this._distanceCache.get(objectId);
+        if (cached && cached.frameId === this._distanceCacheFrameId) {
+            return cached.distance;
+        }
+        
+        // Fallback: calculate directly if not cached
+        if (fallbackPosition && this.camera) {
+            return this.camera.position.distanceTo(fallbackPosition);
+        }
+        
+        return 0;
+    }
+
+    /**
+     * Get cached squared distance to camera (avoids sqrt for comparisons)
+     * @param {string} objectId - Unique identifier for the object
+     * @param {THREE.Vector3} [fallbackPosition] - Fallback position if not cached
+     * @returns {number} Squared distance to camera
+     */
+    getDistanceToCameraSquared(objectId, fallbackPosition = null) {
+        const cached = this._distanceCache.get(objectId);
+        if (cached && cached.frameId === this._distanceCacheFrameId) {
+            return cached.distanceSquared;
+        }
+        
+        // Fallback: calculate directly if not cached  
+        if (fallbackPosition && this.camera) {
+            return this.camera.position.distanceToSquared(fallbackPosition);
+        }
+        
+        return 0;
     }
 
     /**

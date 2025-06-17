@@ -16,10 +16,11 @@ export class SatelliteVisualizer {
         }
         return SatelliteVisualizer._sharedMaterial;
     }
-    constructor(color, orientation, app3d) {
+    constructor(color, orientation, app3d, satelliteId = null) {
         this.color = color;
         this.orientation = orientation ? orientation.clone() : new THREE.Quaternion();
         this.app3d = app3d;
+        this.satelliteId = satelliteId; // For distance cache optimization
         
         // Pre-allocate vectors for onBeforeRender to avoid GC pressure
         this._meshWorldPos = new THREE.Vector3();
@@ -53,8 +54,14 @@ export class SatelliteVisualizer {
                 this.mesh.getWorldPosition(this._meshWorldPos);
                 camera.getWorldPosition(this._cameraWorldPos);
 
-                // Calculate distance
-                const distance = this._cameraWorldPos.distanceTo(this._meshWorldPos);
+                // Calculate distance - use cached distance if available
+                const satelliteId = this.satelliteId ? `satellite_${this.satelliteId}` : 'unknown_satellite';
+                let distance = window.app3d?.distanceCache?.getDistance?.(satelliteId);
+                
+                // Fallback to direct calculation if cache not available
+                if (!distance || distance === 0) {
+                    distance = this._cameraWorldPos.distanceTo(this._meshWorldPos);
+                }
 
                 // Compensate for parent scale
                 this._parentWorldScale.set(1, 1, 1);
@@ -94,8 +101,17 @@ export class SatelliteVisualizer {
     setColor(color) {
         this.color = color;
         if (this.mesh?.geometry) {
-            // Update vertex colors
-            const newColor = new THREE.Color(color);
+            // Update vertex colors - ensure color is properly converted
+            let newColor;
+            if (typeof color === 'number') {
+                newColor = new THREE.Color(color);
+            } else if (typeof color === 'string') {
+                newColor = new THREE.Color(color);
+            } else {
+                console.warn('[SatelliteVisualizer] Invalid color format:', color);
+                return;
+            }
+            
             const colorAttribute = this.mesh.geometry.attributes.color;
             if (colorAttribute) {
                 for (let i = 0; i < colorAttribute.count; i++) {

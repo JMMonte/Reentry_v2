@@ -5,11 +5,34 @@
  */
 import * as THREE from 'three';
 import { WebGLLabels } from '../utils/WebGLLabels.js';
+import { RENDER_ORDER } from '../components/planet/PlanetConstants.js';
 
 export class GhostPlanetManager {
-    constructor(app) {
+    constructor(app, labelManager = null) {
         this.app = app;
+        this.labelManager = labelManager;
         this.ghostPlanets = new Map(); // Map<satelliteId, Map<time, ghostData>>
+        
+        // Set up label category for ghost planets
+        this.labelCategory = 'ghost_planets';
+        
+        // Pre-allocate common geometries and materials to avoid repeated creation
+        this._sphereGeometry = new THREE.SphereGeometry(1, 32, 16); // Will be scaled per ghost
+        this._soiGeometry = new THREE.SphereGeometry(1, 16, 8); // Will be scaled per SOI
+        
+        // Base materials that will be cloned with different colors/properties
+        this._baseMaterial = new THREE.MeshBasicMaterial({
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide
+        });
+        
+        this._baseSoiMaterial = new THREE.MeshBasicMaterial({
+            transparent: true,
+            opacity: 0.1,
+            wireframe: true,
+            side: THREE.DoubleSide
+        });
     }
 
     /**
@@ -115,34 +138,29 @@ export class GhostPlanetManager {
         const ghostGroup = new THREE.Group();
         ghostGroup.name = `ghost_${targetPlanet.name}_${transition.time}`;
         
-        // Create ghost sphere
-        const radius = targetPlanet.radius || 1000; // km
-        const geometry = new THREE.SphereGeometry(radius, 32, 16);
-        const material = new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            opacity: 0.2,
-            transparent: true,
-            wireframe: true
-        });
+        // Reuse pre-allocated geometry with scaling instead of creating new geometry
+        const material = this._baseMaterial.clone();
+        material.color.setHex(targetPlanet.color || 0x888888);
         
-        const ghostMesh = new THREE.Mesh(geometry, material);
+        const ghostMesh = new THREE.Mesh(this._sphereGeometry, material);
+        ghostMesh.scale.setScalar(targetPlanet.radius || 1000); // Scale the geometry instead of creating new one
+        
         ghostGroup.add(ghostMesh);
         
-        // Add SOI sphere
+        // Add SOI visualization if available
         if (targetPlanet.soiRadius) {
-            const soiGeometry = new THREE.SphereGeometry(targetPlanet.soiRadius, 16, 8);
-            const soiMaterial = new THREE.MeshBasicMaterial({
-                color: 0x00ff00,
-                opacity: 0.1,
-                transparent: true,
-                wireframe: true
-            });
-            const soiMesh = new THREE.Mesh(soiGeometry, soiMaterial);
+            const soiMaterial = this._baseSoiMaterial.clone();
+            soiMaterial.color.setHex(targetPlanet.color || 0x888888);
+            
+            const soiMesh = new THREE.Mesh(this._soiGeometry, soiMaterial);
+            soiMesh.scale.setScalar(targetPlanet.soiRadius); // Scale instead of creating new geometry
+            soiMesh.name = `SOI_${targetPlanet.name}`;
+            
             ghostGroup.add(soiMesh);
         }
         
         // Add label to show time until SOI entry
-        const labelSprite = this._createGhostLabel(targetPlanet, transition, radius);
+        const labelSprite = this._createGhostLabel(targetPlanet, transition, targetPlanet.radius || 1000);
         if (labelSprite) {
             ghostGroup.add(labelSprite);
         }
@@ -167,27 +185,42 @@ export class GhostPlanetManager {
     }
 
     /**
-     * Create label for ghost planet using WebGLLabels
+     * Create label for ghost planet using LabelManager or WebGLLabels fallback
      */
     _createGhostLabel(targetPlanet, transition, radius) {
         const timeToSOI = transition.time; // seconds
         const hoursToSOI = (timeToSOI / 3600).toFixed(1);
         const labelText = `${targetPlanet.name} in ${hoursToSOI}h`;
         
-        // Use WebGLLabels for consistent styling
-        const labelConfig = {
-            fontSize: 32,
-            fontFamily: 'Arial',
-            color: '#ffffff',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)', // Semi-transparent background
-            padding: 8,
-            pixelScale: 0.0003,
-            sizeAttenuation: false,
-            renderOrder: 998
-        };
+        let sprite;
         
-        const sprite = WebGLLabels.createLabel(labelText, labelConfig);
-        sprite.position.y = radius * 1.5;
+        if (this.labelManager) {
+            // Use LabelManager for consistent styling
+            const label = this.labelManager.createLabel(labelText, 'GHOST_LABEL', {
+                category: this.labelCategory,
+                position: new THREE.Vector3(0, radius * 1.5, 0),
+                userData: {
+                    targetPlanet: targetPlanet.name,
+                    transitionTime: transition.time
+                }
+            });
+            sprite = label.sprite;
+        } else {
+            // Fallback to WebGLLabels
+            const labelConfig = {
+                fontSize: 32,
+                fontFamily: 'Arial',
+                color: '#ffffff',
+                backgroundColor: 'rgba(0, 0, 0, 0.7)', // Semi-transparent background
+                padding: 8,
+                pixelScale: 0.0003,
+                sizeAttenuation: false,
+                renderOrder: RENDER_ORDER.GHOST_LABELS
+            };
+            
+            sprite = WebGLLabels.createLabel(labelText, labelConfig);
+            sprite.position.y = radius * 1.5;
+        }
         
         return sprite;
     }
@@ -213,9 +246,10 @@ export class GhostPlanetManager {
      */
     _disposeGhostGroup(group) {
         group.traverse(child => {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) {
-                if (child.material.map) child.material.map.dispose();
+            if (child.geometry && child.geometry !== this._sphereGeometry && child.geometry !== this._soiGeometry) {
+                child.geometry.dispose();
+            }
+            if (child.material && child.material !== this._baseMaterial && child.material !== this._baseSoiMaterial) {
                 child.material.dispose();
             }
             // Dispose WebGL labels properly
@@ -229,6 +263,11 @@ export class GhostPlanetManager {
      * Clear all ghost planets
      */
     clearAll() {
+        // Use LabelManager for coordinated cleanup if available
+        if (this.labelManager && this.labelCategory) {
+            this.labelManager.clearCategory(this.labelCategory);
+        }
+        
         for (const [ghosts] of this.ghostPlanets) {
             for (const [ghost] of ghosts) {
                 if (ghost.group) {
@@ -268,5 +307,11 @@ export class GhostPlanetManager {
     dispose() {
         this.clearAll();
         this.app = null;
+        
+        // Dispose of shared geometries and materials
+        this._sphereGeometry.dispose();
+        this._soiGeometry.dispose();
+        this._baseMaterial.dispose();
+        this._baseSoiMaterial.dispose();
     }
 }

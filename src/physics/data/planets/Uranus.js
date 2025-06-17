@@ -30,10 +30,24 @@ export default {
 
     // Orbital properties
     soiRadius: 51800000, // km - Sphere of Influence radius
-    orbitalPeriod: 84.011 * 365.25 * 86400, // seconds (84.011 Earth years)
-    semiMajorAxis: 2875.04e6, // km (19.22 AU)
+    orbitalPeriod: 84.0 * 365.25 * 86400, // seconds (84 Earth years)
+    semiMajorAxis: 2.867e9, // km (19.18 AU)
 
-    // Atmospheric properties (ice giant)
+    // Atmospheric model for drag calculations
+    atmosphericModel: {
+        maxAltitude: 2500, // km - Uranus ice giant atmosphere extent
+        minAltitude: 0,
+        referenceAltitude: 50, // km - above 1-bar level
+        referenceDensity: 0.04, // kg/m³ at 50km (ice giant atmosphere)
+        scaleHeight: 27, // km - Uranus scale height
+        getDensity: function(altitude) {
+            // Custom density model for Uranus's ice giant atmosphere
+            if (altitude > this.maxAltitude) return 0;
+            return this.referenceDensity * Math.exp(-(altitude - this.referenceAltitude) / this.scaleHeight);
+        }
+    },
+
+    // Atmospheric properties (H2/He with ices)
     atmosphere: {
         hazeIntensity: 19,
         scaleHeightMultiplier: 1.0,

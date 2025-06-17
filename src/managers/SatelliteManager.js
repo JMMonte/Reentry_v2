@@ -2,11 +2,11 @@
 //
 // Responsibilities (UI-ONLY - Physics handled by SatelliteEngine)
 // • CRUD for Satellite UI instances
-// • Visual upkeep: orbits, ground tracks, etc.
+// • Visual upkeep: ground tracks (orbit visualization centralized)
 // • Syncing UI state with physics engine state (read-only)
 // • Keeps all distances in kilometres and velocities in km s-1
 //
-// External deps: Satellite, OrbitPath, Constants
+// External deps: Satellite
 // Public API: createUISatellite, updateAllFromPhysicsState,
 //             removeSatellite, updateSatelliteColor, getSatellitesMap, getSatellites
 //
@@ -14,13 +14,8 @@
 //       SatelliteManager only creates UI representations of existing physics satellites
 
 import { Satellite } from '../components/Satellite/Satellite.js';
-import { Constants } from '../physics/PhysicsAPI.js';
 import { objectPool } from '../utils/ObjectPool.js';
-
-/* ────────────── small helpers ────────────── */
-
-/** Safe Hill-sphere / SOI accessor with huge fallback. */
-const soi = body => body?.soiRadius ?? 1e12;
+// All orbit visualization now handled by SimpleSatelliteOrbitVisualizer
 
 /* ────────────── class ────────────── */
 
@@ -35,6 +30,12 @@ export class SatelliteManager {
         this._needsListFlush = false;   // micro-task flag
         this._lastOrbitUpdate = 0;      // perf.now timestamp
         this._nextId = 0; // Unique satellite ID counter
+
+        // Throttling for performance
+        this._lastUpdateTime = 0;
+        this._updateThreshold = 50; // 20Hz updates for UI
+        this._lastPathUpdateTime = 0;
+        this._pathUpdateThreshold = 1000; // 1Hz for path updates
     }
 
     /* ───── Satellite CRUD ───── */
@@ -45,23 +46,23 @@ export class SatelliteManager {
      */
     async createUISatellite(physicsId, uiParams = {}) {
         const id = String(physicsId);
-        
+
         // Don't create if already exists
         if (this._satellites.has(id)) {
             return this._satellites.get(id);
         }
-        
+
         // Get physics data
         const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
         if (!physicsEngine) {
             throw new Error('Physics engine not available');
         }
-        
+
         const physicsSat = physicsEngine.satellites.get(id);
         if (!physicsSat) {
             throw new Error(`Physics satellite ${id} not found`);
         }
-        
+
         // Create UI satellite - use physics satellite color if no UI color provided
         const finalColor = uiParams.color !== undefined ? uiParams.color : (physicsSat.color !== undefined ? physicsSat.color : 0xffff00);
         const sat = new Satellite({
@@ -73,10 +74,10 @@ export class SatelliteManager {
             color: finalColor,
             name: uiParams.name || physicsSat.name || `Satellite ${id}`
         });
-        
+
         this._satellites.set(id, sat);
         this._flushListSoon();
-        
+
         return sat;
     }
 
@@ -86,7 +87,7 @@ export class SatelliteManager {
     /** Remove satellite from both UI and physics */
     removeSatellite(id) {
         const strId = String(id);
-        
+
         // Remove from UI
         const sat = this._satellites.get(strId);
         if (sat) {
@@ -94,7 +95,7 @@ export class SatelliteManager {
             this._satellites.delete(strId);
             this._flushListSoon();
         }
-        
+
         // Remove from physics
         const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
         if (physicsEngine) {
@@ -105,13 +106,13 @@ export class SatelliteManager {
     /** Update satellite color in both UI and physics */
     updateSatelliteColor(id, color) {
         const strId = String(id);
-        
-        // Update UI
+
+        // Update UI - use fromPhysicsUpdate=true to prevent circular calls
         const sat = this._satellites.get(strId);
         if (sat) {
-            sat.setColor(color, true); // fromPhysicsUpdate=true to prevent loop
+            sat.setColor(color, true); // fromPhysicsUpdate = true to prevent recursion
         }
-        
+
         // Update physics
         const physicsEngine = this.app3d?.physicsIntegration?.physicsEngine;
         if (physicsEngine) {
@@ -135,25 +136,15 @@ export class SatelliteManager {
     /* ───── Render-loop hook ───── */
 
     /**
-     * @param {number} simTimeMs  – simulation epoch (ms)
-     * @param {number} realDtS    – real seconds since last frame
-     * @param {number} warpDtS    – warped sim-seconds since last frame
+     * Clean up pooled resources during render loop
      */
-    updateAll(simTimeMs, realDtS, warpDtS) {
-        const perfNow = performance.now();
-        const { timeWarp } = this.app3d.timeUtils;
+    updateAll() {
         const thirdBodies = this._collectThirdBodyPositions();
 
-        try {
-            this._updateVisualsAndPaths(
-                simTimeMs, realDtS, warpDtS, perfNow, timeWarp, thirdBodies
-            );
-        } finally {
-            // Release pooled vectors back to the pool
-            for (const body of thirdBodies) {
-                if (body.position) {
-                    objectPool.releaseVector3(body.position);
-                }
+        // Release pooled vectors back to the pool
+        for (const body of thirdBodies) {
+            if (body.position) {
+                objectPool.releaseVector3(body.position);
             }
         }
     }
@@ -168,8 +159,8 @@ export class SatelliteManager {
                 .filter(body => body.mass > 0 || body.GM > 0) // Only bodies with gravitational influence
                 .map(body => ({
                     name: body.name,
-                    position: Array.isArray(body.position) ? body.position : 
-                             (body.position.toArray ? body.position.toArray() : [0, 0, 0]),
+                    position: Array.isArray(body.position) ? body.position :
+                        (body.position.toArray ? body.position.toArray() : [0, 0, 0]),
                     mass: body.mass || 0,
                     GM: body.GM || 0,
                     naifId: body.naif || body.naifId,
@@ -186,106 +177,32 @@ export class SatelliteManager {
                     polarRadius: body.polarRadius || body.radius
                 }));
         }
-        
+
         // Fallback to visual bodies if physics engine not available
         const bodies = [];
         const celestialBodies = this.app3d.celestialBodies ?? [];
-        
+
         for (const body of celestialBodies) {
             if (!body) continue;
-            
+
             const mesh = body.getMesh?.() ?? body.mesh ?? body.sun ?? body.sunLight;
             if (!mesh) continue;
-            
+
             // Use object pooling to avoid creating new Vector3 every frame
             const pos = objectPool.getVector3();
             mesh.getWorldPosition(pos);
-            
-            bodies.push({ 
-                name: body.name, 
+
+            bodies.push({
+                name: body.name,
                 position: pos, // This will be released after use
-                mass: body.mass ?? 0 
+                mass: body.mass ?? 0
             });
         }
-        
+
         return bodies;
     }
 
-    _updateVisualsAndPaths(simMs, dtReal, dtWarp, perfNow, timeWarp, thirds) {
-        // Skip old orbit system if new orbit manager is available
-        if (this.app3d.satelliteOrbitManager) {
-            return;
-        }
-        
-        const dsm = this.app3d.displaySettingsManager;
-        const showOrbits = dsm.getSetting('showOrbits');
-        const orbitMs = 1000 / dsm.getSetting('orbitUpdateInterval');
-        const shouldUpdatePaths = perfNow - this._lastOrbitUpdate >= orbitMs;
-        const predPeriods = dsm.getSetting('orbitPredictionInterval');
-        const ptsPerPeriod = dsm.getSetting('orbitPointsPerPeriod');
-        const epochMs = this.app3d.timeUtils.getSimulatedTime()?.getTime?.() ?? simMs;
 
-        let updated = false;
-
-        for (const sat of this._satellites.values()) {
-            sat.orbitPath && (sat.orbitPath.visible = showOrbits);
-                if (!shouldUpdatePaths) continue;
-
-                const els = sat.getOrbitalElements?.();
-                if (!els) continue;
-
-                const ecc = els.eccentricity ?? 0;
-            const hyper = ecc >= 1;
-            const nearParab = !hyper && ecc >= 0.99;
-            const effP = predPeriods > 0 ? predPeriods : 1;
-            const r = sat.position.length();
-            const satSOI = soi(sat.planetConfig);
-
-                let periodS, pts;
-
-            if (hyper || nearParab) {
-                // For escape trajectories, propagate to SOI
-                const radialVel = sat.velocity.dot(sat.position) / r;
-                if (radialVel > 0 && satSOI > r) {
-                    periodS = (satSOI - r) / radialVel * 1.5; // Time to reach SOI with margin
-                } else {
-                    periodS = Constants.TIME.SECONDS_IN_DAY; // 1 day fallback
-                }
-                pts = Math.ceil(ptsPerPeriod * effP);
-            } else {
-                const baseP = Number.isFinite(els.period) && els.period > 0
-                    ? els.period
-                    : Constants.TIME.SECONDS_IN_DAY;
-                periodS = baseP * effP;
-                pts = ptsPerPeriod > 0
-                    ? Math.ceil(ptsPerPeriod * effP)
-                    : 180; // Default orbit points
-            }
-
-            // No artificial limits - let the user control via settings
-
-            try {
-                const posKm = sat.position.clone();
-
-                // Orbit path updates now handled by SatelliteOrbitManager
-                sat.groundTrackPath?.update(epochMs, posKm, sat.velocity, sat.id, thirds, periodS, pts, sat.centralBodyNaifId, null, null, 1024, 512);
-
-                updated = true;
-            } catch (err) {
-                console.error(`[SatelliteManager] path update failed for ${sat.id}:`, err);
-            }
-        }
-
-        if (updated && shouldUpdatePaths) this._lastOrbitUpdate = perfNow;
-    }
-
-    _applyDisplaySettings(sat) {
-        const show = this.app3d.displaySettingsManager?.getSetting('showOrbits');
-        sat.orbitPath?.setTraceVisible?.(show);
-        if (sat.orbitPath) sat.orbitPath.visible = show;
-        if (sat.orbitLine) sat.orbitLine.visible = show;
-        sat.apsisVisualizer?.setVisible?.(show);
-    }
 
     _flushListSoon() {
         if (this._needsListFlush) return;
@@ -307,22 +224,46 @@ export class SatelliteManager {
 
     /* ───── Legacy methods removed ───── */
     /* Physics methods moved to SimulationController/PhysicsEngine where they belong */
-
-    refreshOrbitPaths() { this._lastOrbitUpdate = 0; }
+    /* refreshOrbitPaths method removed - all orbit visualization now centralized */
 
     /**
      * Update all Satellite UI objects from the latest physics state.
      * @param {Object} physicsState - { satellites: { id: { ... } } }
      */
     updateAllFromPhysicsState(physicsState) {
+        const now = performance.now();
+
+        // Throttle updates for performance
+        if (now - this._lastUpdateTime < this._updateThreshold) {
+            return;
+        }
+        this._lastUpdateTime = now;
+
         const satStates = physicsState.satellites || {};
-        // Only update visuals for existing satellites
-        // Creation/deletion is handled by events
+
+        // CLEAN DELEGATION: Each satellite manages its own visual state
+        // SatelliteManager focuses on coordination, not implementation details
         for (const [id, satState] of Object.entries(satStates)) {
             const sat = this._satellites.get(id);
             if (sat) {
+                // Single responsibility: delegate to satellite
+                // Satellite knows best how to update its own visuals
                 sat.updateVisualsFromState(satState);
             }
+        }
+
+        // Path updates handled by centralized SimpleSatelliteOrbitVisualizer
+    }
+
+    /**
+     * Cleanup all satellites
+     */
+    cleanup() {
+        console.log(`[SatelliteManager] Cleaning up ${this._satellites.size} satellites`);
+
+        // Remove all satellites
+        for (const id of this._satellites.keys()) {
+            this.removeSatellite(id);
         }
     }
 }

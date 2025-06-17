@@ -63,36 +63,18 @@ export const getBodyDisplayName = (value, satellites, celestialBodies) => {
 };
 
 /**
- * Update camera target based on body selection
+ * Update camera target based on body selection - delegates to SmartCamera
  * @param {string} value - The body selection value
  * @param {Object} app3d - The App3D instance
- * @param {Array} celestialBodies - Array of celestial body instances
  * @param {boolean} [dispatchEvent=true] - Whether to dispatch the bodySelected event
  */
-export const updateCameraTarget = (value, app3d, celestialBodies = [], dispatchEvent = true) => {
+export const updateCameraTarget = (value, app3d, dispatchEvent = true) => {
   if (!app3d?.cameraControls) return;
 
   const formattedValue = formatBodySelection(value);
 
-  if (!formattedValue || formattedValue === 'none') {
-    app3d.cameraControls.clearCameraTarget();
-  } else {
-    // Handle dynamic planets using passed celestialBodies array instead of Planet.instances
-    const planetInstance = celestialBodies.find(p => p.name === formattedValue);
-    if (planetInstance) {
-      app3d.cameraControls.updateCameraTarget(planetInstance);
-    } else if (formattedValue.startsWith('satellite-')) {
-      const satelliteId = parseInt(formattedValue.split('-')[1], 10);
-      // Look up satellites via getSatellites() map
-      const sats = typeof app3d.satellites.getSatellites === 'function'
-        ? app3d.satellites.getSatellites()
-        : app3d.satellites;
-      const satellite = sats?.[satelliteId];
-      if (satellite) {
-        app3d.cameraControls.updateCameraTarget(satellite);
-      }
-    }
-  }
+  // Use SmartCamera's follow method - it handles all the lookup logic
+  app3d.cameraControls.follow(formattedValue, app3d, false);
 
   // Dispatch body selected event if requested
   if (dispatchEvent) {
@@ -140,13 +122,18 @@ export const getSatelliteOptions = (satellites) => {
 
 /**
  * Get options for planets based on instantiated celestial bodies
- * @param {Array<Planet|Sun>} celestialBodies - Array of instantiated bodies (e.g., from app.celestialBodies)
+ * @param {Array<Planet|Sun|Moon>} celestialBodies - Array of instantiated bodies (e.g., from app.celestialBodies)
  * @returns {Array<{value:string, text:string}>}
  */
 export const getPlanetOptions = (celestialBodies) => {
-  // Include all planets, barycenters, and the Sun (type: 'star')
+  // Include all planets, moons, barycenters, and the Sun (type: 'star')
   return (celestialBodies || [])
-    .filter(body => ((typeof body?.getMesh === 'function' && body.name) || body?.type === 'star' || body?.type === 'barycenter'))
+    .filter(body => (
+      (typeof body?.getMesh === 'function' && body.name) || 
+      body?.type === 'star' || 
+      body?.type === 'barycenter' || 
+      body?.type === 'moon'
+    ))
     .map(body => ({
       value: body.name,
       text:

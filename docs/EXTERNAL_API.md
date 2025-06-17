@@ -1,12 +1,72 @@
 # External API for Function Calling
 
-This document describes the comprehensive public API exposed to the frontend and AI assistant via `window.api`. This API allows external tools and the assistant to interact with the space simulation, covering satellite creation, mission planning, communications, ground tracking, and orbital mechanics.
+This document describes the public API exposed to the frontend and AI assistant via `window.api`. This API provides a thin event-driven wrapper that delegates to existing services for satellite creation, simulation control, communications, and basic orbital mechanics.
 
 ---
 
 ## Initialization
 
-The API is attached to `window.api` after the 3D scene is initialized. It is set up by `setupExternalApi(app3d)` in `src/simulation/externalApi.js` and is available after the scene is ready.
+The API is attached to `window.api` after the 3D scene is initialized. It is set up by `setupExternalApi(app3d)` in `src/api/externalApi.js` and is available after the scene is ready.
+
+## Event System
+
+The API includes a custom event emitter accessible via `window.api.events` that emits events for various operations. The event emitter has the following methods:
+
+- `on(event, listener)` - Subscribe to an event
+- `emit(event, ...args)` - Emit an event (internal use)
+
+### API-Specific Events
+
+These events are emitted directly by API operations:
+
+- `apiReady` - API is initialized and ready
+- `satelliteCreationStarted` - Satellite creation begins
+- `satelliteCreated` - Satellite successfully created
+- `satelliteCreationFailed` - Satellite creation failed
+- `satellitesQueried` - Satellite list was retrieved
+- `satelliteQueried` - Individual satellite was retrieved
+- `satelliteDeletionStarted` - Satellite deletion begins
+- `satelliteDeleted` - Satellite successfully removed
+- `satelliteDeletionFailed` - Satellite deletion failed
+- `timeChangeStarted` - Simulation time change begins
+- `timeChanged` - Simulation time updated
+- `timeChangeFailed` - Time change failed
+- `timeWarpChangeStarted` - Time warp change begins
+- `timeWarpChanged` - Time warp factor changed
+- `timeWarpChangeFailed` - Time warp change failed
+- `cameraFocusStarted` - Camera focus operation begins
+- `cameraFocused` - Camera focused on target
+- `cameraFocusFailed` - Camera focus failed
+- `commsConfigUpdateStarted` - Communication config update begins
+- `commsConfigUpdated` - Communication config updated
+- `commsConfigUpdateFailed` - Communication config update failed
+- `commsPresetsQueried` - Communication presets were retrieved
+- `apiTested` - API test completed
+
+### System Events (Forwarded)
+
+These events are forwarded from the simulation system:
+
+- `satelliteAdded` - System satellite addition (forwarded from 'satelliteAdded')
+- `satelliteRemoved` - System satellite removal (forwarded from 'satelliteRemoved')
+- `timeUpdated` - System time update (forwarded from 'timeUpdate')
+- `physicsUpdated` - Physics engine update (forwarded from 'physicsUpdate')
+
+Example usage:
+
+```js
+window.api.events.on("satelliteCreated", (data) => {
+  console.log("New satellite:", data.satellite);
+});
+
+window.api.events.on("apiReady", (data) => {
+  console.log("API ready, version:", data.version);
+});
+
+window.api.events.on("satelliteAdded", (data) => {
+  console.log("System event - satellite added:", data);
+});
+```
 
 ---
 
@@ -16,7 +76,7 @@ The API is attached to `window.api` after the 3D scene is initialized. It is set
 
 ### `createSatelliteFromOrbitalElements(params)`
 
-Create satellite from orbital elements (Keplerian).
+Create satellite from orbital elements (Keplerian) - delegates to SimulationStateManager.
 
 - **Parameters:**
   - `name` (string, optional) - Satellite name
@@ -30,11 +90,12 @@ Create satellite from orbital elements (Keplerian).
   - `trueAnomaly` (number, required) - True anomaly in degrees
   - `centralBodyNaifId` (number, optional) - Central body NAIF ID (default: 399=Earth)
   - `commsConfig` (object, optional) - Communication configuration
-- **Returns:** `{ success: true, satellite: { id, name } }`
+- **Returns:** `{ success: true, satellite: { id, name }, message: "Satellite created from orbital elements" }`
+- **Events:** Emits `satelliteCreationStarted`, then `satelliteCreated` or `satelliteCreationFailed`
 
 ### `createSatelliteFromLatLon(params)`
 
-Create satellite from geographical position with custom velocity.
+Create satellite from geographical position with custom velocity - delegates to SatelliteManager.
 
 - **Parameters:**
   - `name` (string, optional) - Satellite name
@@ -47,7 +108,8 @@ Create satellite from geographical position with custom velocity.
   - `azimuth` (number, required) - Launch azimuth in degrees
   - `angleOfAttack` (number, optional) - Angle of attack in degrees
   - `commsConfig` (object, optional) - Communication configuration
-- **Returns:** `{ success: true, satellite: { id, name } }`
+- **Returns:** `{ success: true, satellite: { id, name }, message: "Satellite created at {lat}°, {lon}°" }`
+- **Events:** Emits `satelliteCreationStarted`, then `satelliteCreated` or `satelliteCreationFailed`
 
 ### `createSatelliteFromLatLonCircular(params)`
 
@@ -62,7 +124,8 @@ Create satellite from geographical position with circular orbit.
   - `altitude` (number, required) - Altitude in km above surface
   - `azimuth` (number, optional) - Launch azimuth in degrees (default: 90=eastward)
   - `commsConfig` (object, optional) - Communication configuration
-- **Returns:** `{ success: true, satellite: { id, name } }`
+- **Returns:** `{ success: true, satellite: { id, name }, message: "Satellite created in circular orbit" }`
+- **Events:** Emits `satelliteCreationStarted`, then `satelliteCreated` or `satelliteCreationFailed`
 
 ---
 
@@ -70,269 +133,48 @@ Create satellite from geographical position with circular orbit.
 
 ### `getSatellites()`
 
-Get list of all satellites with detailed information.
+Get list of all satellites - delegates to SatelliteManager.
 
-- **Returns:** `{ success: true, satellites: [satellite_objects] }`
-- **Satellite Object:** Contains id, name, position, velocity, orbital elements, physics data, and communication status
+- **Returns:**
+  ```js
+  {
+    success: true,
+    satellites: [{
+      id: "satellite_id",
+      name: "Satellite Name",
+      color: "#ffffff",
+      centralBodyNaifId: 399
+    }, ...]
+  }
+  ```
+- **Events:** Emits `satellitesQueried`
 
 ### `getSatellite(id)`
 
 Get detailed information about a specific satellite.
 
-- **Parameters:** `id` (string|number) - Satellite ID
-- **Returns:** `{ success: true, satellite: satellite_object }`
+- **Parameters:** `id` (string|number|object) - Satellite ID (can be string, number, or object with id/satelliteId/name property)
+- **Returns:**
+  ```js
+  {
+    success: true,
+    satellite: {
+      id: "satellite_id",
+      name: "Satellite Name",
+      color: "#ffffff",
+      centralBodyNaifId: 399
+    }
+  }
+  ```
+- **Events:** Emits `satelliteQueried`
 
 ### `deleteSatellite(id)`
 
-Delete a satellite from the simulation.
+Delete a satellite from the simulation - delegates to SatelliteManager.
 
-- **Parameters:** `id` (string|number) - Satellite ID
-- **Returns:** `{ success: true, message: "Satellite deleted" }`
-
----
-
-## MISSION PLANNING & MANEUVERS
-
-### `addManeuverNode(satelliteId, params)`
-
-Add a maneuver node to a satellite.
-
-- **Parameters:**
-  - `satelliteId` (string|number) - Target satellite ID
-  - `executionTime` (Date|string|number) - When to execute the maneuver
-  - `deltaV` (object) - Delta-V vector {x, y, z} in km/s
-- **Returns:** `{ success: true, nodeId: string }`
-
-### `getManeuverNodes(satelliteId)`
-
-Get all maneuver nodes for a satellite.
-
-- **Parameters:** `satelliteId` (string|number) - Satellite ID
-- **Returns:** `{ success: true, nodes: [node_objects] }`
-
-### `deleteManeuverNode(satelliteId, nodeId)`
-
-Delete a specific maneuver node.
-
-- **Parameters:** 
-  - `satelliteId` (string|number) - Satellite ID
-  - `nodeId` (string) - Node ID
-- **Returns:** `{ success: true, message: "Node deleted" }`
-
-### `calculateHohmannTransfer(params)`
-
-Calculate Hohmann transfer parameters.
-
-- **Parameters:**
-  - `currentSemiMajorAxis` (number) - Current orbit SMA in km
-  - `targetSemiMajorAxis` (number) - Target orbit SMA in km
-  - `centralBodyNaifId` (number, optional) - Central body (default: 399=Earth)
-- **Returns:** `{ success: true, transfer: transfer_details }`
-
----
-
-## COMMUNICATION SYSTEMS
-
-### `getSatelliteComms(satelliteId)`
-
-Get communication status for a satellite.
-
-- **Parameters:** `satelliteId` (string|number) - Satellite ID
-- **Returns:** `{ success: true, comms: comm_status }`
-- **Comm Status:** Includes active connections, link quality, data rates, power consumption
-
-### `getCommunicationLinks()`
-
-Get all active communication links in the simulation.
-
-- **Returns:** `{ success: true, links: [link_objects] }`
-- **Link Object:** Contains source, target, quality, data rate, distance
-
-### `updateCommsConfig(satelliteId, config)`
-
-Update communication configuration for a satellite.
-
-- **Parameters:**
-  - `satelliteId` (string|number) - Satellite ID
-  - `config` (object) - New communication configuration
-- **Returns:** `{ success: true, config: updated_config }`
-
----
-
-## GROUND TRACKING
-
-### `getGroundTrack(satelliteId, options)`
-
-Get ground track projection for a satellite with full orbit propagation.
-
-- **Parameters:**
-  - `satelliteId` (string|number) - Satellite ID
-  - `options` (object, optional):
-    - `duration` (number) - Duration in seconds (default: orbital period)
-    - `numPoints` (number) - Number of points to calculate (default: 100)
-    - `includeCanvas` (boolean) - Include canvas coordinates (default: false)
-    - `canvasWidth` (number) - Canvas width in pixels (default: 1200)
-    - `canvasHeight` (number) - Canvas height in pixels (default: 600)
-- **Returns:** 
-  ```js
-  {
-    success: true,
-    groundTrack: [{
-      time: "2024-01-01T12:00:00.000Z",
-      latitude: 0.0,
-      longitude: -75.2,
-      altitude: 400.5,
-      x: 300,  // if includeCanvas: true
-      y: 200   // if includeCanvas: true
-    }, ...],
-    centralBody: "Earth",
-    centralBodyNaifId: 399,
-    duration: 5400,
-    numPoints: 100
-  }
-  ```
-
-### `getMultipleGroundTracks(satelliteIds, options)`
-
-Get ground tracks for multiple satellites simultaneously.
-
-- **Parameters:**
-  - `satelliteIds` (Array<string|number>) - Array of satellite IDs
-  - `options` (object, optional) - Same options as `getGroundTrack`
-- **Returns:**
-  ```js
-  {
-    success: true,
-    groundTracks: [{
-      satelliteId: "sat1",
-      groundTrack: [...],
-      centralBody: "Earth",
-      // ... other fields
-    }, ...],
-    failures: [{
-      satelliteId: "invalid_sat",
-      error: "Satellite not found"
-    }]
-  }
-  ```
-
-### `getGroundTrackCoverage(satelliteId, options)`
-
-Calculate ground track with coverage analysis including footprint radius.
-
-- **Parameters:**
-  - `satelliteId` (string|number) - Satellite ID
-  - `options` (object, optional):
-    - `duration` (number) - Duration in seconds
-    - `numPoints` (number) - Number of points
-    - `minElevation` (number) - Minimum elevation angle in degrees
-- **Returns:**
-  ```js
-  {
-    success: true,
-    groundTrack: [{
-      // ... standard ground track fields
-      coverageRadius: 15.2,        // degrees
-      coverageRadiusKm: 1689.5     // kilometers
-    }, ...],
-    statistics: {
-      averageCoverageRadiusKm: 1700,
-      approximateCoverageArea: 9079202,  // km²
-      bodyTotalArea: 510072000,          // km²
-      instantCoveragePercentage: 1.78,
-      satelliteId: "sat1",
-      centralBody: "Earth",
-      duration: 5400
-    }
-  }
-  ```
-
-### `getGroundStationVisibility(satelliteId, groundStation, options)`
-
-Calculate visibility windows between a satellite and ground station.
-
-- **Parameters:**
-  - `satelliteId` (string|number) - Satellite ID
-  - `groundStation` (object):
-    - `latitude` (number, required) - Latitude in degrees
-    - `longitude` (number, required) - Longitude in degrees
-    - `elevation` (number, optional) - Elevation in meters
-    - `name` (string, optional) - Station name
-  - `options` (object, optional):
-    - `duration` (number) - Analysis duration in seconds
-    - `minElevation` (number) - Minimum elevation angle (default: 5°)
-    - `numPoints` (number) - Resolution (default: 200)
-- **Returns:**
-  ```js
-  {
-    success: true,
-    groundStation: {
-      name: "DSN Madrid",
-      latitude: 40.4,
-      longitude: -4.25,
-      elevation: 834
-    },
-    satelliteId: "sat1",
-    centralBody: "Earth",
-    visibilityWindows: [{
-      startTime: "2024-01-01T12:00:00Z",
-      endTime: "2024-01-01T12:08:00Z",
-      duration: 480,  // seconds
-      maxElevation: 45.2,
-      points: [...]   // track points during visibility
-    }, ...],
-    totalWindows: 3,
-    totalVisibilityTime: 1440,  // seconds
-    analysisOptions: {
-      duration: 7200,
-      minElevation: 5,
-      numPoints: 200
-    }
-  }
-  ```
-
-### `getCurrentPositions(planetNaifId)` *(deprecated)*
-
-Get current surface positions of all satellites for a planet.
-
-- **Parameters:** `planetNaifId` (number, optional) - Planet NAIF ID (default: 399=Earth)
-- **Returns:** `{ success: true, positions: [position_objects] }`
-- **Note:** Consider using `getGroundTrack` with `numPoints: 1` for single position
-
-### `calculateCoverage(satelliteId)` *(deprecated)*
-
-Calculate satellite coverage footprint.
-
-- **Parameters:** `satelliteId` (string|number) - Satellite ID
-- **Returns:** `{ success: true, coverage: coverage_details }`
-- **Note:** Use `getGroundTrackCoverage` for more comprehensive analysis
-
----
-
-## ORBITAL MECHANICS
-
-### `getOrbitalElements(satelliteId)`
-
-Get orbital elements for a satellite.
-
-- **Parameters:** `satelliteId` (string|number) - Satellite ID
-- **Returns:** `{ success: true, elements: orbital_elements }`
-
-### `calculateOrbitalPeriod(semiMajorAxis, centralBodyNaifId)`
-
-Calculate orbital period for given parameters.
-
-- **Parameters:**
-  - `semiMajorAxis` (number) - Semi-major axis in km
-  - `centralBodyNaifId` (number, optional) - Central body (default: 399=Earth)
-- **Returns:** `{ success: true, period: period_in_seconds }`
-
-### `getSphereOfInfluence(naifId)`
-
-Get sphere of influence radius for a celestial body.
-
-- **Parameters:** `naifId` (number) - Body NAIF ID
-- **Returns:** `{ success: true, soiRadius: radius_in_km }`
+- **Parameters:** `id` (string|number|object) - Satellite ID
+- **Returns:** `{ success: true, message: "Satellite {id} deleted" }`
+- **Events:** Emits `satelliteDeletionStarted`, then `satelliteDeleted` or `satelliteDeletionFailed`
 
 ---
 
@@ -340,23 +182,32 @@ Get sphere of influence radius for a celestial body.
 
 ### `getSimulationTime()`
 
-Get current simulation time.
+Get current simulation time - delegates to TimeUtils.
 
-- **Returns:** `{ success: true, time: ISO_string, timestamp: number }`
+- **Returns:**
+  ```js
+  {
+    success: true,
+    time: "2024-01-01T12:00:00.000Z",  // ISO string
+    timestamp: 1704110400000            // Unix timestamp
+  }
+  ```
 
 ### `setSimulationTime(time)`
 
-Set simulation time.
+Set simulation time - delegates to TimeUtils.
 
-- **Parameters:** `time` (Date|string|number) - Target time
-- **Returns:** `{ success: true, time: ISO_string }`
+- **Parameters:** `time` (Date|string|number) - Target time (Date object, ISO string, or timestamp)
+- **Returns:** `{ success: true, time: "2024-01-01T12:00:00.000Z" }`
+- **Events:** Emits `timeChangeStarted`, then `timeChanged` or `timeChangeFailed`
 
-### `getTimeWarp()` / `setTimeWarp(factor)`
+### `setTimeWarp(factor)`
 
-Get or set time warp factor.
+Set time warp factor - delegates to SimulationController.
 
-- **Parameters:** `factor` (number) - Time multiplier (setTimeWarp only)
-- **Returns:** `{ success: true, timeWarp: number }`
+- **Parameters:** `factor` (number) - Time multiplier (must be positive)
+- **Returns:** `{ success: true, timeWarp: 10.0 }`
+- **Events:** Emits `timeWarpChangeStarted`, then `timeWarpChanged` or `timeWarpChangeFailed`
 
 ---
 
@@ -366,108 +217,270 @@ Get or set time warp factor.
 
 Get list of available celestial bodies.
 
-- **Returns:** `{ success: true, bodies: [body_objects] }`
+- **Returns:**
+  ```js
+  {
+    success: true,
+    bodies: [{
+      name: "Earth",
+      naifId: 399,
+      type: "planet",
+      radius: 6371,    // km
+      mass: 5.972e24   // kg
+    }, ...]
+  }
+  ```
 
 ### `focusCamera(target)`
 
-Focus camera on a celestial body or satellite.
+Focus camera on a celestial body or satellite - delegates to SmartCamera.
 
 - **Parameters:** `target` (string) - Body name or satellite ID
-- **Returns:** `{ success: true, target: string }`
+- **Returns:** `{ success: true, target: "Earth" }`
+- **Events:** Emits `cameraFocusStarted`, then `cameraFocused` or `cameraFocusFailed`
+
+---
+
+## COMMUNICATION SYSTEMS
+
+### `getSatelliteComms(satelliteId)`
+
+Get communication status for a satellite - delegates to CommunicationsService.
+
+- **Parameters:** `satelliteId` (string|number|object) - Satellite ID
+- **Returns:** `{ success: true, comms: comm_status_object }`
+
+### `getCommsPresets()`
+
+Get all available communication presets - delegates to CommunicationsService.
+
+- **Returns:**
+  ```js
+  {
+    success: true,
+    presets: {
+      "cubesat": {
+        antennaGain: 8.0,
+        transmitPower: 5.0,
+        antennaType: "omnidirectional",
+        protocols: ["inter_satellite", "ground_station"],
+        dataRate: 100,
+        minElevationAngle: 5.0,
+        networkId: "cubesat_network",
+        enabled: true
+      },
+      "communications_satellite": {
+        antennaGain: 25.0,
+        transmitPower: 50.0,
+        antennaType: "directional",
+        beamSteering: true,
+        protocols: ["inter_satellite", "ground_station", "relay"],
+        dataRate: 10000,
+        minElevationAngle: 5.0,
+        relayCapable: true,
+        networkId: "commercial_network",
+        enabled: true
+      },
+      // ... other presets
+    }
+  }
+  ```
+- **Events:** Emits `commsPresetsQueried`
+
+### `updateCommsConfig(satelliteId, config)`
+
+Update communication configuration for a satellite - delegates to CommunicationsService.
+
+- **Parameters:**
+  - `satelliteId` (string|number|object) - Satellite ID
+  - `config` (object) - New communication configuration
+- **Returns:** `{ success: true, config: updated_config }`
+- **Events:** Emits `commsConfigUpdateStarted`, then `commsConfigUpdated` or `commsConfigUpdateFailed`
+
+### `applyCommsPreset(satelliteId, presetName)`
+
+Apply a predefined communication preset - delegates to CommunicationsService.
+
+- **Parameters:**
+  - `satelliteId` (string|number|object) - Satellite ID
+  - `presetName` (string) - Name of preset to apply
+- **Returns:** `{ success: true, config: applied_config }`
+- **Available Presets:** Retrieved dynamically from CommunicationsService.getPresets()
+
+---
+
+## SPECIALIZED SERVICES
+
+### `getGroundTrack(id, options)`
+
+Get ground track projection for a satellite - delegates to GroundTrackService.
+
+- **Parameters:**
+  - `id` (string|number|object) - Satellite ID
+  - `options` (object, optional) - Options passed to GroundTrackService
+- **Returns:** Result from GroundTrackService (structure depends on service implementation)
+
+### `getPOIVisibility(options)`
+
+Get Point of Interest visibility analysis - delegates to POIVisibilityService.
+
+- **Parameters:** `options` (object, optional) - Options passed to POIVisibilityService
+- **Returns:** Result from POIVisibilityService (structure depends on service implementation)
+
+---
+
+## DIAGNOSTICS
+
+### `testAPI()`
+
+Test API connectivity and return system status.
+
+- **Returns:**
+  ```js
+  {
+    success: true,
+    timestamp: "2024-01-01T12:00:00.000Z",
+    apiVersion: "4.0-thin",
+    services: {
+      satellites: true,
+      physics: true,
+      communications: true,
+      timeUtils: true,
+      groundTrack: true,
+      poiVisibility: true,
+      simulation: true
+    },
+    satelliteCount: 5
+  }
+  ```
+- **Events:** Emits `apiTested`
 
 ---
 
 ## Example Usage
 
 ```js
-// Create a satellite with communication capabilities
-const result = window.api.createSatelliteFromLatLon({
-  name: "CommSat-1",
-  latitude: 0,
-  longitude: 0,
-  altitude: 400,
-  velocity: 7.8,
-  azimuth: 90,
-  commsConfig: {
-    preset: "cubesat",
-    antennaGain: 15,
-    transmitPower: 5
-  }
+// Wait for API to be ready
+window.api.events.on("apiReady", (data) => {
+  console.log("API ready:", data.version);
 });
 
-// Create from orbital elements
-window.api.createSatelliteFromOrbitalElements({
-  name: "Science-1",
+// Listen for satellite creation events
+window.api.events.on("satelliteCreationStarted", (data) => {
+  console.log("Creating satellite:", data.type, data.params);
+});
+
+window.api.events.on("satelliteCreated", (data) => {
+  console.log("Satellite created:", data.satellite);
+});
+
+window.api.events.on("satelliteCreationFailed", (data) => {
+  console.error("Satellite creation failed:", data.error);
+});
+
+// Create a satellite with communication capabilities
+const result = await window.api.createSatelliteFromOrbitalElements({
+  name: "CommSat-1",
   semiMajorAxis: 7000,
   eccentricity: 0.01,
   inclination: 98,
   raan: 120,
   argumentOfPeriapsis: 45,
-  trueAnomaly: 0
+  trueAnomaly: 0,
+  commsConfig: {
+    preset: "cubesat",
+  },
 });
 
-// Get satellite information including comms
-const satInfo = window.api.getSatellite("satellite_id");
-const commsStatus = window.api.getSatelliteComms("satellite_id");
+if (result.success) {
+  console.log("Created satellite:", result.satellite);
 
-// Get ground track with canvas coordinates
-const groundTrack = await window.api.getGroundTrack("satellite_id", {
-  duration: 5400,     // 1.5 hours
-  numPoints: 100,
-  includeCanvas: true,
-  canvasWidth: 1200,
-  canvasHeight: 600
+  // Get available communication presets first
+  const presetsResult = window.api.getCommsPresets();
+  if (presetsResult.success) {
+    console.log("Available presets:", Object.keys(presetsResult.presets));
+    console.log("CubeSat preset:", presetsResult.presets.cubesat);
+  }
+
+  // Apply communication preset
+  const commsResult = await window.api.applyCommsPreset(
+    result.satellite.id,
+    "communications_satellite"
+  );
+
+  // Get satellite details
+  const satInfo = window.api.getSatellite(result.satellite.id);
+  console.log("Satellite info:", satInfo);
+}
+
+// Create from geographical position
+const geoSat = await window.api.createSatelliteFromLatLonCircular({
+  name: "GeoSat-1",
+  latitude: 0,
+  longitude: 0,
+  altitude: 400,
+  azimuth: 90,
 });
 
-// Get ground track with coverage analysis
-const coverage = await window.api.getGroundTrackCoverage("satellite_id", {
-  duration: 86400,    // 24 hours
-  numPoints: 200
+// Control simulation with event monitoring
+window.api.events.on("timeChanged", (data) => {
+  console.log("Time changed to:", data.time);
 });
-console.log(`Coverage: ${coverage.statistics.instantCoveragePercentage}%`);
 
-// Check ground station visibility
-const visibility = await window.api.getGroundStationVisibility("satellite_id", {
-  name: "DSN Goldstone",
-  latitude: 35.4,
-  longitude: -116.9
-}, {
-  duration: 86400,    // 24 hours
-  minElevation: 10    // 10 degrees above horizon
+window.api.events.on("timeWarpChanged", (data) => {
+  console.log("Time warp set to:", data.timeWarp);
 });
-console.log(`${visibility.totalWindows} passes, total ${visibility.totalVisibilityTime}s`);
 
-// Get multiple satellite ground tracks
-const multiTracks = await window.api.getMultipleGroundTracks(
-  ["sat1", "sat2", "sat3"],
-  { duration: 3600, numPoints: 50 }
-);
+window.api.setTimeWarp(10);
+window.api.setSimulationTime(new Date());
 
-// Add maneuver node
-window.api.addManeuverNode("satellite_id", {
-  executionTime: new Date(Date.now() + 3600000), // 1 hour from now
-  deltaV: { x: 0.1, y: 0, z: 0 } // 100 m/s prograde
+// Get system status
+const status = window.api.testAPI();
+console.log("System status:", status);
+
+// Monitor system events
+window.api.events.on("satelliteAdded", (data) => {
+  console.log("System event - satellite added:", data);
+});
+
+window.api.events.on("physicsUpdated", (data) => {
+  console.log("Physics update:", data);
 });
 ```
 
 ---
 
-## Communication Configuration
+## Architecture Notes
 
-When creating satellites with communication capabilities, use the `commsConfig` parameter:
+This API is designed as a **thin event-driven wrapper** that:
 
-```js
-commsConfig: {
-  preset: "cubesat"|"smallsat"|"commercial"|"military",  // Predefined configs
-  antennaGain: 12.0,              // dBi
-  antennaType: "omnidirectional", // omnidirectional, directional, high_gain
-  transmitPower: 10.0,            // watts
-  transmitFrequency: 2.4,         // GHz
-  dataRate: 1000,                 // kbps
-  protocols: ["inter_satellite", "ground_station"],
-  enabled: true                   // Enable/disable communications
-}
-```
+- **Delegates** all operations to existing services rather than implementing functionality
+- **Emits events** for external monitoring and integration, including both API-specific events and forwarded system events
+- **Serializes data** for external consumption (e.g., satellite objects are simplified to `{ id, name }`)
+- **Standardizes responses** with consistent success/error format
+- **Extracts IDs** from various input formats using `extractSatelliteId()` helper:
+  - Strings and numbers are used directly
+  - Objects can contain `id`, `satelliteId`, or `name` properties
+  - Falls back to string conversion of the input
+
+### Helper Functions
+
+- `extractSatelliteId(input)` - Extracts satellite ID from string, number, or object
+- `serializeSatellite(sat)` - Converts satellite object to simple `{ id, name }` format
+
+### Event System Architecture
+
+- **APIEventEmitter** - Simple custom event emitter with `on()` and `emit()` methods
+- **API Events** - Events emitted directly by API operations (creation, deletion, etc.)
+- **System Events** - Events forwarded from the simulation system via `systemEventMap`
+- **Event Timing** - API events are emitted synchronously with operations
+
+The API does **not** implement:
+
+- Heavy orbital calculations (delegated to physics engine)
+- Complex maneuver planning (handled by existing maneuver system)
+- Advanced ground tracking (delegated to GroundTrackService)
+- Detailed communication modeling (delegated to CommunicationsService)
 
 ---
 
@@ -477,20 +490,34 @@ All API functions return objects with a `success` field:
 
 ```js
 // Success case
-{ success: true, data: result }
+{ success: true, data: result, message: "Operation completed" }
 
 // Error case
-{ success: false, error: "Error message" }
+{ success: false, error: "Error message describing what went wrong" }
 ```
+
+Common error scenarios:
+
+- Service not available (e.g., "Simulation state manager not available")
+- Invalid parameters (e.g., "Time warp must be a positive number")
+- Object not found (e.g., "Satellite {id} not found")
+- Operation failed (e.g., "Failed to create satellite")
+
+Error events are emitted for failed operations with the same error information.
 
 ---
 
-## Notes
+## Service Dependencies
 
-- All functions return standardized response objects with success/error indicators
-- Positions are in kilometers from the Solar System Barycenter
-- Velocities are in km/s
-- Times can be provided as Date objects, ISO strings, or timestamps
-- The API is available after the 3D scene initializes
-- Communication systems operate automatically once configured
-- Ground tracking uses real planetary rotation and coordinate transformations
+The API requires these services to be available in the App3D instance:
+
+- **Required for satellite operations:** `simulationStateManager`, `satellites`
+- **Required for time control:** `timeUtils`, `simulationController`
+- **Required for camera:** `cameraControls`
+- **Required for communications:** `communicationsService`
+- **Required for ground tracking:** `groundTrackService`
+- **Required for POI visibility:** `poiVisibilityService`
+- **Required for celestial bodies:** `celestialBodies`
+- **Required for physics:** `physicsIntegration`
+
+The `testAPI()` function can be used to check which services are available.

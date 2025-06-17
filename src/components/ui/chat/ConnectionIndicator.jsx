@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import PropTypes from 'prop-types';
 
-export function ConnectionIndicator({ socket, isConnected, isWebSearchActive }) {
+export const ConnectionIndicator = React.memo(function ConnectionIndicator({ socket, isConnected, isWebSearchActive }) {
   if (!socket) {
     return (
       <div className="flex justify-center">
@@ -35,7 +35,7 @@ export function ConnectionIndicator({ socket, isConnected, isWebSearchActive }) 
   }
 
   return null;
-}
+});
 
 ConnectionIndicator.propTypes = {
   socket: PropTypes.object,

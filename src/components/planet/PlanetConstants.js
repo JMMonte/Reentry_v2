@@ -6,11 +6,23 @@
 // General Render Order Constants
 export const RENDER_ORDER = {
     SOI: 0,
-    SURFACE: 0,
+    SURFACE: 110,    // Surface features (lines, borders) above atmosphere
     CLOUDS: 0,
+    POI: 113,        // POI markers above surface lines
     ATMOSPHERE: 100, // Much higher to ensure it renders after planet
-    POI: 3,
-    RINGS: 4
+    RINGS: 105,      // Above atmosphere
+    POI_LEADERS: 115, // Leader lines above POI markers
+    POI_LABELS: 118,  // Labels above leader lines
+    
+    // Label render orders - must be above all 3D elements
+    LABELS_BASE: 500,           // Base for all labels
+    DISTANCE_MARKERS: 500,      // Distance marker labels
+    POI_UI_LABELS: 510,         // POI UI labels
+    SATELLITE_LABELS: 520,      // Satellite and vehicle labels  
+    GHOST_LABELS: 525,          // Temporary/ghost object labels
+    PLANET_AXIS_LABELS: 530,    // Planet axis labels
+    VECTOR_LABELS: 535,         // Vector and directional labels
+    DEBUG_LABELS: 540,          // Debug labels (highest priority)
 };
 
 // Planet-specific constants

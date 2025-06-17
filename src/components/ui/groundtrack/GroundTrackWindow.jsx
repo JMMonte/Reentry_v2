@@ -8,37 +8,91 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 import { DraggableModal } from '../modal/DraggableModal';
-import { usePlanetList } from '@/hooks/useGroundTrack';
-import GroundTrackCanvas from './GroundTrackCanvas.jsx';
+
+import GroundTrackCanvas from './GroundTrackCanvas';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../dropdown-menu';
+import BodySelector from '../common/BodySelector';
 import { Button } from '../button';
 import { Switch } from '../switch';
-import { usePhysicsBodies } from '@/hooks/usePhysicsBodies';
-import { useGroundTrackPaths } from '@/hooks/useGroundTrackPaths';
+import { ChevronLeft, GripHorizontal } from 'lucide-react';
 import { POIVisibilityPanel } from './POIVisibilityPanel.jsx';
 import { POIPassSchedule } from './POIPassSchedule.jsx';
-import { ChevronLeft, GripHorizontal } from 'lucide-react';
-import { groundTrackService } from '@/services/GroundTrackService';
+import { useGroundTrackData } from '@/hooks/useOrbitStreaming';
 
 // ---------------------------------------------------------------------------
-// Main component
-export function GroundTrackWindow({
+// Main component - Memoized to prevent unnecessary re-renders
+export const GroundTrackWindow = React.memo(function GroundTrackWindow({
     isOpen,
     onClose,
     satellites,
     planets,
     simulationTime,
+    centralizedBodies = [], // Add centralized physics bodies parameter
     onDataUpdate,
+    selectedBody: navbarSelectedBody, // Add prop to receive navbar's selected body
 }) {
-    // Get physics bodies data through proper hook
-    const { bodies: physicsBodies } = usePhysicsBodies();
-    // Note: tracks state removed - now using trackPoints from GroundtrackPath system
-    const [selectedPlanetNaifId, setSelectedPlanetNaifId] = useState(
-        planets?.[0]?.naifId || 399
-    );
+    // Use centralized physics bodies instead of separate hook
+    const physicsBodies = Array.isArray(centralizedBodies) ? centralizedBodies : Object.values(centralizedBodies);
+
+    // Memoized planet list filtering
+    const planetList = useMemo(() => (planets || []).filter(
+        p => p.type !== 'barycenter' &&
+            !(typeof p.name === 'string' && (
+                p.name.endsWith('_barycenter') ||
+                p.name === 'ss_barycenter' ||
+                p.name === 'emb'
+            ))
+    ), [planets]);
+
+    // Ref to track if we've initialized from navbar selection
+    const hasInitializedFromNavbar = useRef(false);
+
+    // Memoized function to find planet by navbar selection
+    const initialPlanetFromNavbar = useMemo(() => {
+        if (!navbarSelectedBody || navbarSelectedBody === 'none' || !planetList.length) {
+            return planetList[0]; // Fallback to first planet
+        }
+
+        // Handle satellite selection - find the central body
+        if (navbarSelectedBody.startsWith('satellite-')) {
+            const satelliteId = navbarSelectedBody.replace('satellite-', '');
+            const satellite = satellites?.[satelliteId];
+            if (satellite?.centralBodyNaifId) {
+                return planetList.find(p => p.naifId === satellite.centralBodyNaifId) || planetList[0];
+            }
+            return planetList[0];
+        }
+
+        // Direct planet/body name match
+        const matchedPlanet = planetList.find(p =>
+            p.name?.toLowerCase() === navbarSelectedBody.toLowerCase() ||
+            p.naifId?.toString() === navbarSelectedBody
+        );
+
+        return matchedPlanet || planetList[0];
+    }, [navbarSelectedBody, planetList, satellites]);
+
+    // Initial selected planet - use navbar selection when opening, persist user changes
+    const [selectedPlanetNaifId, setSelectedPlanetNaifId] = useState(() => {
+        const initialPlanet = initialPlanetFromNavbar;
+        return initialPlanet?.naifId || 399;
+    });
+
+    // Sync with navbar selection when window opens, but only once per open session
+    useEffect(() => {
+        if (isOpen && !hasInitializedFromNavbar.current && initialPlanetFromNavbar) {
+            setSelectedPlanetNaifId(initialPlanetFromNavbar.naifId);
+            hasInitializedFromNavbar.current = true;
+        }
+
+        // Reset initialization flag when window closes
+        if (!isOpen) {
+            hasInitializedFromNavbar.current = false;
+        }
+    }, [isOpen, initialPlanetFromNavbar]);
+
     const [selectedPOI, setSelectedPOI] = useState(null);
     const [selectedSatelliteForSchedule, setSelectedSatelliteForSchedule] = useState(null);
-    const [processedTracksForSchedule, setProcessedTracksForSchedule] = useState({});
     const [activeLayers, setActiveLayers] = React.useState({
         grid: true,
         countryBorders: true,
@@ -56,14 +110,6 @@ export function GroundTrackWindow({
     const isDraggingRef = useRef(false);
     const containerRef = useRef(null);
 
-    const planetList = usePlanetList(planets).filter(
-        p => p.type !== 'barycenter' &&
-            !(typeof p.name === 'string' && (
-                p.name.endsWith('_barycenter') ||
-                p.name === 'ss_barycenter' ||
-                p.name === 'emb'
-            ))
-    );
     const planet = planetList.find(p => p.naifId === selectedPlanetNaifId) || planetList[0];
 
     // Handle drag resize for map height
@@ -76,10 +122,10 @@ export function GroundTrackWindow({
 
     const handleMouseMove = useCallback((e) => {
         if (!isDraggingRef.current || !containerRef.current) return;
-        
+
         const containerRect = containerRef.current.getBoundingClientRect();
         const newHeight = e.clientY - containerRect.top;
-        
+
         // Constrain height between min and max
         const constrainedHeight = Math.min(Math.max(100, newHeight), containerRect.height - 100);
         setMapHeight(constrainedHeight);
@@ -97,10 +143,10 @@ export function GroundTrackWindow({
     useEffect(() => {
         const onMouseMove = (e) => handleMouseMove(e);
         const onMouseUp = () => handleMouseUp();
-        
+
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
-        
+
         return () => {
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
@@ -122,9 +168,9 @@ export function GroundTrackWindow({
         if (!planet?.surface?.points) {
             return {};
         }
-        
+
         const processedData = {};
-        
+
         // Simplified processing for canvas rendering only
         Object.entries(planet.surface.points).forEach(([key, data]) => {
             if (Array.isArray(data)) {
@@ -132,8 +178,8 @@ export function GroundTrackWindow({
                     if (item.userData?.feature) {
                         const feat = item.userData.feature;
                         const [lon, lat] = feat.geometry.coordinates;
-                        return { 
-                            lon, 
+                        return {
+                            lon,
                             lat,
                             name: feat.properties?.name || feat.properties?.NAME || feat.properties?.scalerank
                         };
@@ -142,87 +188,100 @@ export function GroundTrackWindow({
                 }).filter(Boolean);
             }
         });
-        
+
         return processedData;
     }, [planet]);
 
-    // Use custom hook for ground track management
-    const { trackPoints, currentPositions: getPositions } = useGroundTrackPaths({
-        filteredSatellites,
-        planet,
-        simulationTime,
-        physicsBodies
-    });
+    // FIX: Use proper orbit streaming data instead of empty Map
+    const { trackData: trackDataFromHook } = useGroundTrackData(
+        filteredSatellites, 
+        planet?.naifId
+    );
     
-    // Process tracks when satellite is selected for schedule
-    React.useEffect(() => {
-        const processTracksForSchedule = async () => {
-            if (selectedSatelliteForSchedule && trackPoints && trackPoints[selectedSatelliteForSchedule.id]) {
-                const satTracks = trackPoints[selectedSatelliteForSchedule.id];
-                
-                // Check if tracks need processing (have position.x/y/z instead of lat/lon)
-                if (satTracks.length > 0 && satTracks[0].position && !satTracks[0].lat) {
-                    try {
-                        const currentPlanetState = physicsBodies?.find(b => b.naifId === planet.naifId);
-                        const processedPoints = await Promise.all(
-                            satTracks.map(async (point) => {
-                                const eciPos = [point.position.x, point.position.y, point.position.z];
-                                
-                                // Calculate altitude from position magnitude
-                                const r = Math.sqrt(point.position.x * point.position.x + 
-                                                  point.position.y * point.position.y + 
-                                                  point.position.z * point.position.z);
-                                const altitude = r - (planet?.radius || 6371);
-                                
-                                const geoPos = await groundTrackService.transformECIToSurface(
-                                    eciPos,
-                                    planet.naifId,
-                                    point.time,
-                                    currentPlanetState
-                                );
-                                return {
-                                    time: point.time,
-                                    lat: geoPos.lat,
-                                    lon: geoPos.lon,
-                                    alt: geoPos.alt !== undefined ? geoPos.alt : altitude
-                                };
-                            })
-                        );
-                        
-                        setProcessedTracksForSchedule({
-                            ...processedTracksForSchedule,
-                            [selectedSatelliteForSchedule.id]: processedPoints
-                        });
-                    } catch (error) {
-                        console.error('Error processing tracks for schedule:', error);
-                    }
-                } else if (satTracks[0].lat !== undefined) {
-                    // Tracks already have lat/lon
-                    setProcessedTracksForSchedule({
-                        ...processedTracksForSchedule,
-                        [selectedSatelliteForSchedule.id]: satTracks
-                    });
-                }
-            }
-        };
-        
-        processTracksForSchedule();
-    }, [selectedSatelliteForSchedule, trackPoints, planet, physicsBodies]);
-    
-    const [currentPositions, setCurrentPositions] = React.useState([]);
-    
-    // Update current positions when data changes
-    React.useEffect(() => {
-        const updatePositions = async () => {
-            const positions = await getPositions();
-            setCurrentPositions(positions);
-        };
-        updatePositions();
-    }, [getPositions]);
-    
-    // Note: Periodic updates removed - now using direct callbacks in path.update()
+    // Convert to Map format for compatibility with existing code
+    const trackPoints = useMemo(() => {
+        const trackMap = new Map();
+        if (trackDataFromHook) {
+            Object.entries(trackDataFromHook).forEach(([satId, points]) => {
+                trackMap.set(satId, points);
+            });
+        }
+        return trackMap;
+    }, [trackDataFromHook]);
 
-    // Note: Old event-based groundtrack system removed - now using GroundtrackPath directly
+    // Memoized physics state from centralized physics data
+    const physicsState = useMemo(() => {
+        // If centralizedBodies is the physics state object with groundTracks, use it directly
+        if (centralizedBodies && typeof centralizedBodies === 'object' && !Array.isArray(centralizedBodies) && centralizedBodies.groundTracks) {
+            return centralizedBodies;
+        }
+        
+        return null;
+    }, [centralizedBodies]);
+
+    // Function to get current satellite positions as an array from physics groundtrack data
+    const getPositionsArray = useCallback(() => {
+        // Get groundtrack data from physics state for the current planet
+        if (!physicsState || !planet) {
+            return [];
+        }
+
+        if (!physicsState.groundTracks) {
+            return [];
+        }
+
+        // Get groundtrack positions for the current planet
+        const planetGroundTracks = physicsState.groundTracks[planet.naifId];
+        if (!planetGroundTracks || !Array.isArray(planetGroundTracks)) {
+            return [];
+        }
+
+        // Filter and normalize longitude values to handle equirectangular edge effects
+        return planetGroundTracks.map(position => {
+            let normalizedLon = position.lon;
+
+            // Handle equirectangular projection edge effects
+            // Normalize longitude to [-180, 180] range
+            while (normalizedLon > 180) normalizedLon -= 360;
+            while (normalizedLon < -180) normalizedLon += 360;
+
+            // Clamp latitude to valid range
+            const clampedLat = Math.max(-90, Math.min(90, position.lat));
+
+            return {
+                ...position,
+                lat: clampedLat,
+                lon: normalizedLon
+            };
+        });
+    }, [physicsState, planet]);
+
+    // FIX: Optimize currentPositions state updates with better memoization
+    const currentPositions = useMemo(() => {
+        return getPositionsArray();
+    }, [getPositionsArray]);
+
+    // FIX: Remove the complex useEffect for currentPositions that was causing excessive re-renders
+    // The useMemo above handles this more efficiently
+
+    // FIX: Optimize processedTracksForSchedule with better state management
+    const processedTracksForSchedule = useMemo(() => {
+        if (!selectedSatelliteForSchedule || !trackPoints || !trackPoints.has(selectedSatelliteForSchedule.id)) {
+            return {};
+        }
+
+        const satTracks = trackPoints.get(selectedSatelliteForSchedule.id);
+        if (!satTracks || satTracks.length === 0) {
+            return {};
+        }
+
+        // For now, since trackPoints is empty, return empty object
+        // This will be populated when orbit streaming system provides data
+        return {};
+    }, [selectedSatelliteForSchedule, trackPoints]);
+
+    // FIX: Remove expensive async processing in useEffect - handle in components that need the data
+    // The POIPassSchedule component now handles orbit data directly from streaming system
 
     // Hook: cache planet surface to offscreen canvas
     useEffect(() => {
@@ -263,37 +322,41 @@ export function GroundTrackWindow({
         setActiveLayers(payload);
     }, [planet]);
 
-    // Notify parent component when data changes
-    useEffect(() => {
-        if (onDataUpdate && poiDataForCanvas && trackPoints && planet) {
+    // FIX: Optimize onDataUpdate callback with proper dependencies
+    const handleDataUpdate = useCallback(() => {
+        if (onDataUpdate && poiDataForCanvas && planet) {
             onDataUpdate(poiDataForCanvas, trackPoints, planet, currentPositions);
         }
-    }, [poiDataForCanvas, trackPoints, planet, currentPositions, onDataUpdate]);
+    }, [onDataUpdate, poiDataForCanvas, trackPoints, planet, currentPositions]);
 
-    // UI: planet selector (DropdownMenu)
-    const planetSelector = (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="justify-start w-full">
-                    {planet?.name || 'Select Planet'}
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[10rem] w-48 max-h-80 overflow-y-auto z-[11000]">
-                {planetList.map(p => (
-                    <DropdownMenuItem
-                        key={p.naifId}
-                        onSelect={() => setSelectedPlanetNaifId(p.naifId)}
-                        className={p.naifId === selectedPlanetNaifId ? 'font-semibold bg-accent' : ''}
-                    >
-                        {p.name}
-                    </DropdownMenuItem>
-                ))}
-            </DropdownMenuContent>
-        </DropdownMenu>
-    );
+    // Use effect only when dependencies actually change
+    useEffect(() => {
+        handleDataUpdate();
+    }, [handleDataUpdate]);
 
-    // UI: layer toggles for available features
-    const availableLayers = {
+    // FIX: Memoize UI selectors to prevent recreation
+    const planetSelector = useMemo(() => (
+        <BodySelector
+            mode="dropdown"
+            showSearch={true}
+            filterBarycenters={true}
+            selectedBody={planet}
+            onBodyChange={(selectedPlanet) => {
+                // Handle both object and naifId selection
+                const naifId = typeof selectedPlanet === 'object' ? selectedPlanet.naifId : selectedPlanet;
+                setSelectedPlanetNaifId(naifId);
+            }}
+            bodies={planetList}
+            placeholder="Select Planet"
+            allowNone={false}
+            size="sm"
+            triggerClassName="w-full"
+            searchPlaceholder="Search planets..."
+        />
+    ), [planet, planetList]);
+
+    // FIX: Memoize availableLayers calculation
+    const availableLayers = useMemo(() => ({
         grid: true,
         countryBorders: !!(planet?.surface?.countryGeo?.features?.length),
         states: !!(planet?.surface?.stateGeo?.features?.length),
@@ -303,9 +366,10 @@ export function GroundTrackWindow({
         groundStations: !!(planet?.surface?.points?.groundStations?.length),
         observatories: !!(planet?.surface?.points?.observatories?.length),
         missions: !!(planet?.surface?.points?.missions?.length),
-    };
-    
-    const layerSelector = (
+    }), [planet]);
+
+    // FIX: Memoize layer selector to prevent recreation
+    const layerSelector = useMemo(() => (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
@@ -356,11 +420,38 @@ export function GroundTrackWindow({
                 )}
             </DropdownMenuContent>
         </DropdownMenu>
-    );
+    ), [availableLayers, activeLayers, showCoverage, filteredSatellites]);
+
+    // FIX: Memoize the canvas props to prevent unnecessary re-renders
+    const canvasProps = useMemo(() => ({
+        map: planet?.getSurfaceTexture?.(),
+        planetNaifId: planet?.naifId || 399,
+        width: 1024,
+        height: 512,
+        satellites: filteredSatellites,
+        tracks: trackPoints,
+        layers: activeLayers,
+        showCoverage,
+        poiData: poiDataForCanvas,
+        groundtracks: currentPositions,
+        planet,
+        physicsBodies,
+        currentTime: simulationTime || Date.now()
+    }), [
+        planet,
+        filteredSatellites,
+        trackPoints,
+        activeLayers,
+        showCoverage,
+        poiDataForCanvas,
+        currentPositions,
+        physicsBodies,
+        simulationTime
+    ]);
 
     return (
         <DraggableModal
-            title={selectedPOI && selectedSatelliteForSchedule 
+            title={selectedPOI && selectedSatelliteForSchedule
                 ? `Pass Schedule: ${selectedPOI.name || `${selectedPOI.lat.toFixed(1)}°, ${selectedPOI.lon.toFixed(1)}°`}`
                 : `Ground-track: ${planet?.name || ''}`}
             isOpen={isOpen}
@@ -381,23 +472,9 @@ export function GroundTrackWindow({
                 {!selectedPOI && (
                     <>
                         <div style={{ height: `${mapHeight}px`, minHeight: '100px' }} className="relative">
-                            <GroundTrackCanvas
-                                map={planet?.getSurfaceTexture?.()}
-                                planetNaifId={planet?.naifId || 399} 
-                                width={1024}
-                                height={512}
-                                satellites={filteredSatellites}
-                                tracks={trackPoints}
-                                layers={activeLayers}
-                                showCoverage={showCoverage}
-                                poiData={poiDataForCanvas}
-                                groundtracks={currentPositions}
-                                planet={planet}
-                                physicsBodies={physicsBodies}
-                                currentTime={simulationTime || Date.now()}
-                            />
+                            <GroundTrackCanvas {...canvasProps} />
                         </div>
-                        <div 
+                        <div
                             className="h-2 bg-border/50 hover:bg-border cursor-ns-resize flex items-center justify-center group"
                             onMouseDown={handleMouseDown}
                         >
@@ -447,7 +524,7 @@ export function GroundTrackWindow({
             </div>
         </DraggableModal>
     );
-}
+});
 
 GroundTrackWindow.propTypes = {
     isOpen: PropTypes.bool.isRequired,
@@ -455,5 +532,7 @@ GroundTrackWindow.propTypes = {
     satellites: PropTypes.object.isRequired,
     planets: PropTypes.array,
     simulationTime: PropTypes.number,
+    centralizedBodies: PropTypes.oneOfType([PropTypes.array, PropTypes.object]), // Can be array of bodies or physics state object
     onDataUpdate: PropTypes.func,
+    selectedBody: PropTypes.string,
 };

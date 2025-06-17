@@ -174,26 +174,7 @@ export class PlanetManager {
         });
     }
 
-    /**
-     * Get memory usage stats
-     * @returns {Object}
-     */
-    getMemoryStats() {
-        return {
-            planetCount: this._planetsArray.length,
-            namedPlanets: this._planetsByName.size,
-            estimatedMemory: this._planetsArray.reduce((total, planet) => {
-                // Rough estimate based on planet complexity
-                const base = 1000; // Base memory per planet (KB)
-                const meshComplexity = planet.meshRes || 128;
-                const hasAtmosphere = planet.atmosphereThickness > 0 ? 500 : 0;
-                const hasSurface = planet.surface ? 2000 : 0;
-                const hasRings = planet.ringComponent ? 300 : 0;
-                
-                return total + base + (meshComplexity * 2) + hasAtmosphere + hasSurface + hasRings;
-            }, 0)
-        };
-    }
+
 }
 
 // Singleton instance

@@ -1,90 +1,90 @@
-import { useCallback, useMemo } from 'react';
-import { usePhysicsSatellites } from './usePhysicsSatellites.js';
-import { getPlanetOptions } from '../utils/BodySelectionUtils.js';
+import { useCallback, useMemo, useRef } from 'react';
 
 /**
  * Hook for satellite operations and data management
  * Extracts satellite-related logic from App.jsx
  */
-export function useSatelliteOperations(app3d, modalState, handleBodyChange, ready = true) {
-  // Get physics satellite data
-  const satellitesPhysics = usePhysicsSatellites(app3d);
+export function useSatelliteOperations(app3d, modalState, handleBodyChange, centralizedSatellites = {}) {
+  // Use centralized satellite data instead of separate hook
+  const satellitesPhysics = centralizedSatellites;
   
   // Get UI satellite data
   const satellitesUI = app3d?.satellites?.getSatellitesMap?.() || new Map();
   
-  // Memoized satellite data transformation
+  // Use refs to store stable method references
+  const stableMethodsRef = useRef(new Map());
+  
+  // Memoized satellite data transformation with stable method references
   const satellites = useMemo(() => {
-    return Object.values(satellitesPhysics)
-      .map(satState => {
-        const satUI = satellitesUI.get(satState.id);
-        if (!satUI) return null;
-        return {
-          ...satState,
-          color: satUI.color,
-          name: satUI.name,
-          setColor: satUI.setColor?.bind(satUI),
-          delete: satUI.delete?.bind(satUI)
+    const combined = {};
+    
+    // Clear stale method cache
+    const currentIds = new Set();
+    
+    for (const [id, physicsData] of Object.entries(satellitesPhysics)) {
+      currentIds.add(id);
+      const uiData = satellitesUI.get(id);
+      
+      // Get or create stable method references
+      let stableMethods = stableMethodsRef.current.get(id);
+      if (!stableMethods) {
+        stableMethods = {
+          setColor: (color) => {
+            const currentUI = app3d?.satellites?.getSatellitesMap?.()?.get(id);
+            if (currentUI && typeof currentUI.setColor === 'function') {
+              currentUI.setColor(color);
+            }
+          },
+          delete: () => {
+            const currentUI = app3d?.satellites?.getSatellitesMap?.()?.get(id);
+            if (currentUI && typeof currentUI.delete === 'function') {
+              currentUI.delete();
+            }
+          }
         };
-      })
-      .filter(Boolean);
-  }, [satellitesPhysics, satellitesUI]);
-
-  // Memoized available bodies calculation using the same logic as navbar
-  const availableBodies = useMemo(() => {
-    // Wait for scene to be ready, just like the navbar does
-    if (!ready || !app3d?.celestialBodies) {
-      return [{ name: 'Earth', naifId: 399, type: 'planet' }];
-    }
-    
-    // Use getPlanetOptions to get the same filtered list as the navbar
-    const planetOptions = getPlanetOptions(app3d.celestialBodies);
-    
-    // Convert planet options to availableBodies format
-    const bodies = planetOptions.map(option => {
-      const body = app3d.celestialBodies.find(b => b.name === option.value);
-      return {
-        name: option.text,
-        naifId: body?.naifId ?? body?.naif_id,
-        type: body?.type || 'planet'
-      };
-    }).filter(b => b.naifId !== undefined && b.naifId !== null);
-    
-    // Fallback to Earth if no bodies found
-    if (bodies.length === 0) {
-      return [{ name: 'Earth', naifId: 399, type: 'planet' }];
-    }
-    
-    return bodies;
-  }, [ready, app3d?.celestialBodies]);
-
-  // Satellite creation callback
-  const onCreateSatellite = useCallback(async (params) => {
-    try {
-      let result;
-      if (params.mode === 'latlon') {
-        result = await app3d?.createSatelliteFromLatLon(params);
-      } else if (params.mode === 'orbital') {
-        result = await app3d?.createSatelliteFromOrbitalElements(params);
-      } else if (params.mode === 'circular') {
-        result = await app3d?.createSatelliteFromLatLonCircular(params);
+        stableMethodsRef.current.set(id, stableMethods);
       }
       
-      const satellite = result?.satellite || result;
-      if (satellite) {
-        modalState.setIsSatelliteModalOpen(false);
-        handleBodyChange(satellite);
-        app3d?.createDebugWindow?.(satellite);
-      }
-    } catch (error) {
-      console.error('Error creating satellite:', error);
+      combined[id] = {
+        id,
+        name: physicsData.name || `Satellite ${id}`,
+        color: uiData?.color || 0xffff00,
+        position: physicsData.position,
+        velocity: physicsData.velocity,
+        centralBodyNaifId: physicsData.centralBodyNaifId,
+        mass: physicsData.mass,
+        orbitalElements: physicsData.orbitalElements,
+        // Stable method references
+        setColor: stableMethods.setColor,
+        delete: stableMethods.delete,
+        // Additional UI state
+        isVisible: uiData?.isVisible !== false
+      };
     }
-  }, [app3d, handleBodyChange, modalState]);
+    
+    // Clean up stale method references
+    for (const [id] of stableMethodsRef.current) {
+      if (!currentIds.has(id)) {
+        stableMethodsRef.current.delete(id);
+      }
+    }
+    
+    return combined;
+  }, [satellitesPhysics, satellitesUI, app3d]);
+  
+  // Simple satellite creation handler 
+  const createSatellite = useCallback(() => {
+    if (modalState?.openSatelliteCreator) {
+      modalState.openSatelliteCreator();
+    }
+  }, [modalState]);
 
   return {
     satellites,
-    satellitesPhysics,
-    availableBodies,
-    onCreateSatellite,
+    createSatellite,
+    // No longer return availableBodies - consumers should use existing data sources:
+    // - app3d.celestialBodies for UI components
+    // - CelestialBodiesContext for React context
+    // - getPlanetOptions() for dropdown formatting
   };
 }

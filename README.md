@@ -63,7 +63,7 @@ graph TD
   B --> E[Atmosphere Domain: Drag, Density]
   B --> F[Utils Domain: Coordinates, Vectors]
   
-  B --> G[Web Workers: orbitPropagationWorker.js]
+  B --> G[Web Workers: SatelliteWorker.js (unified)]
   G --> H[Adaptive Integrator: RK4]
   G --> I[Drag & Perturbations Computation]
   G --> J[PostMessage: Orbit Updates]
