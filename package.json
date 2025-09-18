@@ -67,7 +67,7 @@
     "fs-extra": "^11.2.0",
     "katex": "^0.16.11",
     "lodash-es": "^4.17.21",
-    "lucide-react": "^0.462.0",
+    "lucide-react": "^0.542.0",
     "lz-string": "^1.5.0",
     "marked": "^14.1.2",
     "postprocessing": "^6.37.3",
